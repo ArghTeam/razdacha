@@ -6,6 +6,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/sagernet/sing v0.7.18
 	github.com/sagernet/sing-box v1.12.25
+	golang.org/x/crypto v0.41.0
 	modernc.org/sqlite v1.38.2
 )
 

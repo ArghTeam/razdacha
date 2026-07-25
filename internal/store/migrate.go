@@ -43,6 +43,15 @@ CREATE TABLE peers (
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `,
 	},
+	{
+		version: 2,
+		stmts: `
+CREATE TABLE sessions (
+  token_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL);
+CREATE INDEX sessions_expires_at ON sessions(expires_at);
+`,
+	},
 }
 
 // schemaVersion — версия схемы, которую ожидает этот код.
