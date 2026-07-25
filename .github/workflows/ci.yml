@@ -52,6 +52,76 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: go build -trimpath -ldflags '-s -w' ./...
 
+  # Golden-тесты сравнивают вывод генератора с нашими же ожиданиями. Этот job
+  # проверяет то, чего они не видят: принимает ли такой конфиг настоящий sing-box.
+  # Версия рантайма берётся из go.mod — библиотека и бинарник обязаны совпадать.
+  singbox-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # Единственный источник версии — go.mod. Модуль объявлен как v1.12.25,
+      # тег релиза такой же, а имена ассетов — без «v», поэтому храним обе формы.
+      - name: Версия sing-box из go.mod
+        id: sb
+        run: |
+          set -euo pipefail
+          version="$(go mod edit -json | jq -r '
+            .Require[] | select(.Path == "github.com/sagernet/sing-box") | .Version
+          ')"
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "github.com/sagernet/sing-box не найден в go.mod" >&2
+            exit 1
+          fi
+          echo "tag=$version" >> "$GITHUB_OUTPUT"
+          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: ~/.cache/razdacha-sing-box
+          key: sing-box-${{ steps.sb.outputs.tag }}-linux-amd64
+
+      - name: Скачать sing-box ${{ steps.sb.outputs.tag }}
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          TAG: ${{ steps.sb.outputs.tag }}
+          VERSION: ${{ steps.sb.outputs.version }}
+        run: |
+          set -euo pipefail
+          dir="sing-box-${VERSION}-linux-amd64"
+          mkdir -p ~/.cache/razdacha-sing-box
+          curl -fsSL -o /tmp/sing-box.tar.gz \
+            "https://github.com/SagerNet/sing-box/releases/download/${TAG}/${dir}.tar.gz"
+          tar -xzf /tmp/sing-box.tar.gz -C /tmp "${dir}/sing-box"
+          mv "/tmp/${dir}/sing-box" ~/.cache/razdacha-sing-box/sing-box
+          chmod +x ~/.cache/razdacha-sing-box/sing-box
+
+      - name: Проверить golden-конфиги
+        env:
+          VERSION: ${{ steps.sb.outputs.version }}
+        run: |
+          set -euo pipefail
+          sb=~/.cache/razdacha-sing-box/sing-box
+          # Совпадение версий бинарника и библиотеки — сам предмет проверки.
+          actual="$("$sb" version | awk 'NR==1 {print $NF}')"
+          if [ "$actual" != "$VERSION" ]; then
+            echo "рантайм sing-box $actual, в go.mod $VERSION" >&2
+            exit 1
+          fi
+          status=0
+          for f in internal/singbox/testdata/*.json; do
+            echo "::group::sing-box check $f"
+            "$sb" check -c "$f" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
   lint:
     runs-on: ubuntu-latest
     steps:
