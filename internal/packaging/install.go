@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"time"
@@ -32,6 +33,13 @@ type Installer struct {
 	Site      SiteConfig
 	Log       *slog.Logger
 
+	// ExternalAddr — внешний адрес сервера для SAN сертификата. Пустое
+	// значение в публичном режиме означает «определи сам».
+	ExternalAddr string
+
+	// DetectExternal подменяется в тестах; по умолчанию — DetectExternalAddr.
+	DetectExternal func() (netip.Addr, error)
+
 	// Now подменяется в тестах; по умолчанию — time.Now.
 	Now func() time.Time
 }
@@ -39,14 +47,15 @@ type Installer struct {
 // NewInstaller собирает установщик с дефолтами для Debian/Ubuntu.
 func NewInstaller(root string) *Installer {
 	return &Installer{
-		Root:      root,
-		NginxDir:  DefaultNginxDir,
-		StateDir:  DefaultStateDir,
-		TLSDir:    DefaultTLSDir,
-		SysctlDir: DefaultSysctlDir,
-		Site:      DefaultSiteConfig(),
-		Log:       slog.Default(),
-		Now:       time.Now,
+		Root:           root,
+		NginxDir:       DefaultNginxDir,
+		StateDir:       DefaultStateDir,
+		TLSDir:         DefaultTLSDir,
+		SysctlDir:      DefaultSysctlDir,
+		Site:           DefaultSiteConfig(),
+		Log:            slog.Default(),
+		DetectExternal: DetectExternalAddr,
+		Now:            time.Now,
 	}
 }
 
@@ -66,6 +75,10 @@ type Result struct {
 
 	// SysctlWritten — записан ли drop-in с параметрами ядра.
 	SysctlWritten bool
+
+	// ExternalAddr — внешний адрес, попавший в SAN сертификата. Пусто, если
+	// режим не публичный или адрес определить не удалось.
+	ExternalAddr string
 }
 
 func (i *Installer) sitePath() string {
@@ -106,11 +119,13 @@ func (i *Installer) Install() (Result, error) {
 		return res, err
 	}
 
-	ip := net.ParseIP(i.Site.ListenAddr)
-	if ip == nil {
-		return res, fmt.Errorf("%w: адрес панели %q не разобран", ErrBadConfig, i.Site.ListenAddr)
+	ips, external, err := i.certIPs()
+	if err != nil {
+		return res, err
 	}
-	cert, issued, err := EnsureCertificate(i.tlsDir(), []net.IP{ip}, i.now())
+	res.ExternalAddr = external
+
+	cert, issued, err := EnsureCertificate(i.tlsDir(), ips, i.now())
 	if err != nil {
 		return res, err
 	}
@@ -157,6 +172,62 @@ func (i *Installer) Install() (Result, error) {
 	i.applySysctl()
 
 	return res, nil
+}
+
+// certIPs собирает адреса для SAN сертификата и возвращает вторым значением
+// внешний адрес, если он в SAN попал.
+//
+// Первым всегда идёт адрес панели внутри VPN: он же становится CommonName, и
+// он же — тот адрес, который работает всегда. В публичном режиме к нему
+// добавляется внешний адрес сервера: без него браузер при заходе по публичному
+// IP ругается на несовпадение имени, а это предупреждение страшнее и
+// непонятнее, чем «неизвестный издатель».
+//
+// Не определившийся внешний адрес — не повод останавливать установку: панель
+// поднимется на одном адресе, а в лог уйдёт причина.
+func (i *Installer) certIPs() ([]net.IP, string, error) {
+	panelAddr := i.Site.ListenAddr
+	if i.Site.allInterfaces() {
+		// Слушаем всё, но `0.0.0.0` в сертификат не положишь.
+		panelAddr = DefaultPanelAddr
+	}
+	panelIP := net.ParseIP(panelAddr)
+	if panelIP == nil {
+		return nil, "", fmt.Errorf("%w: адрес панели %q не разобран", ErrBadConfig, panelAddr)
+	}
+	ips := []net.IP{panelIP}
+
+	if !i.Site.Public {
+		return ips, "", nil
+	}
+
+	external, err := i.externalAddr()
+	if err != nil {
+		i.log().Warn("внешний адрес не определён, сертификат будет только на адрес VPN",
+			"адрес", panelAddr, "причина", err)
+		return ips, "", nil
+	}
+	if external.String() == panelAddr {
+		return ips, "", nil
+	}
+	return append(ips, net.IP(external.AsSlice())), external.String(), nil
+}
+
+func (i *Installer) externalAddr() (netip.Addr, error) {
+	if i.ExternalAddr != "" {
+		addr, err := netip.ParseAddr(i.ExternalAddr)
+		if err != nil {
+			return netip.Addr{}, fmt.Errorf("внешний адрес %q не разобран: %w", i.ExternalAddr, err)
+		}
+		if !addr.Is4() {
+			return netip.Addr{}, fmt.Errorf("внешний адрес %s должен быть IPv4", addr)
+		}
+		return addr, nil
+	}
+	if i.DetectExternal == nil {
+		return DetectExternalAddr()
+	}
+	return i.DetectExternal()
 }
 
 // checkNginx отвечает на вопрос «есть ли вообще что настраивать». Без него
