@@ -136,11 +136,13 @@ UI не имеет отдельной аутентификации, потому
 /etc/razdacha/config.yaml        настройки (порт, пул, DNS, MTU)
 /etc/razdacha/tls/cert.pem       самоподписанный сертификат панели
 /etc/razdacha/tls/key.pem        приватный ключ, 0600
+/etc/razdacha/nginx-default-disabled.json   отметка: дефолтный сайт Debian снят нами
 /var/lib/razdacha/state.db       SQLite: пиры, туннели, правила
 /var/lib/razdacha/lists/         кэш скачанных списков
 /etc/sing-box/config.json        генерируется, править вручную бесполезно
 /etc/nginx/sites-available/razdacha   генерируется, помечен заголовком-маркером
 /etc/nginx/sites-enabled/razdacha     symlink на файл выше
+/etc/sysctl.d/99-razdacha.conf        ip_forward и ip_nonlocal_bind
 /etc/systemd/system/razdachad.service
 ```
 

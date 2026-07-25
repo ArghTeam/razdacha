@@ -14,6 +14,7 @@ import (
 // Пути по умолчанию — раскладка Debian/Ubuntu.
 const (
 	DefaultNginxDir = "/etc/nginx"
+	DefaultStateDir = "/etc/razdacha"
 	DefaultTLSDir   = "/etc/razdacha/tls"
 )
 
@@ -23,11 +24,13 @@ const (
 // в тестах туда подставляется временный каталог, и ни один путь не уезжает в
 // реальный /etc.
 type Installer struct {
-	Root     string
-	NginxDir string
-	TLSDir   string
-	Site     SiteConfig
-	Log      *slog.Logger
+	Root      string
+	NginxDir  string
+	StateDir  string
+	TLSDir    string
+	SysctlDir string
+	Site      SiteConfig
+	Log       *slog.Logger
 
 	// Now подменяется в тестах; по умолчанию — time.Now.
 	Now func() time.Time
@@ -36,12 +39,14 @@ type Installer struct {
 // NewInstaller собирает установщик с дефолтами для Debian/Ubuntu.
 func NewInstaller(root string) *Installer {
 	return &Installer{
-		Root:     root,
-		NginxDir: DefaultNginxDir,
-		TLSDir:   DefaultTLSDir,
-		Site:     DefaultSiteConfig(),
-		Log:      slog.Default(),
-		Now:      time.Now,
+		Root:      root,
+		NginxDir:  DefaultNginxDir,
+		StateDir:  DefaultStateDir,
+		TLSDir:    DefaultTLSDir,
+		SysctlDir: DefaultSysctlDir,
+		Site:      DefaultSiteConfig(),
+		Log:       slog.Default(),
+		Now:       time.Now,
 	}
 }
 
@@ -54,6 +59,13 @@ type Result struct {
 	CertIssued    bool
 	ConfigWritten bool
 	LinkCreated   bool
+
+	// DefaultSiteDisabled — сняли ли мы штатный сайт Debian, слушавший
+	// 0.0.0.0:80 мимо нашего конфига.
+	DefaultSiteDisabled bool
+
+	// SysctlWritten — записан ли drop-in с параметрами ядра.
+	SysctlWritten bool
 }
 
 func (i *Installer) sitePath() string {
@@ -123,11 +135,27 @@ func (i *Installer) Install() (Result, error) {
 	}
 	res.ConfigWritten = written
 
+	// Дефолтный сайт снимается до включения нашего: пока он на месте, nginx
+	// слушает 0.0.0.0:80, и панель видна из интернета мимо нашего конфига.
+	disabled, err := i.disableDefaultSite()
+	if err != nil {
+		return res, err
+	}
+	res.DefaultSiteDisabled = disabled
+
 	created, err := i.enableSite()
 	if err != nil {
 		return res, err
 	}
 	res.LinkCreated = created
+
+	sysctlWritten, err := i.writeSysctl()
+	if err != nil {
+		return res, err
+	}
+	res.SysctlWritten = sysctlWritten
+	i.applySysctl()
+
 	return res, nil
 }
 
@@ -203,8 +231,10 @@ func (i *Installer) enableSite() (bool, error) {
 	return true, nil
 }
 
-// Uninstall снимает наш конфиг и symlink, не трогая ничего чужого.
-// Отсутствие файлов ошибкой не считается: удаление тоже идемпотентно.
+// Uninstall снимает наш конфиг и symlink, возвращает дефолтный сайт Debian
+// (если снимали его мы) и удаляет наш drop-in с параметрами ядра. Ничего
+// чужого не трогает, отсутствие файлов ошибкой не считается: удаление тоже
+// идемпотентно.
 //
 // Сертификат остаётся: он лежит в /etc/razdacha и уходит вместе с ним.
 func (i *Installer) Uninstall() error {
@@ -226,22 +256,24 @@ func (i *Installer) Uninstall() error {
 	}
 
 	path := i.sitePath()
-	content, err := os.ReadFile(path)
-	switch {
+	switch content, err := os.ReadFile(path); {
 	case errors.Is(err, fs.ErrNotExist):
-		return nil
+		// конфига нет — снимать нечего
 	case err != nil:
 		return fmt.Errorf("чтение конфига nginx %s: %w", path, err)
-	}
-	if !isOurs(string(content)) {
+	case !isOurs(string(content)):
 		i.log().Warn("конфиг nginx писали не мы, оставлен", "путь", path)
-		return nil
+	default:
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("удаление конфига nginx %s: %w", path, err)
+		}
+		i.log().Info("конфиг nginx удалён", "путь", path)
 	}
-	if err := os.Remove(path); err != nil {
-		return fmt.Errorf("удаление конфига nginx %s: %w", path, err)
+
+	if err := i.restoreDefaultSite(); err != nil {
+		return err
 	}
-	i.log().Info("конфиг nginx удалён", "путь", path)
-	return nil
+	return i.removeSysctl()
 }
 
 // writeFile пишет файл через временный в том же каталоге: оборванная запись

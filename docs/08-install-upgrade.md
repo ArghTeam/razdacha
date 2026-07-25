@@ -22,7 +22,8 @@ curl -fsSL https://razdacha.example/install.sh | sh
 8. установка `sing-box` (пакет из репозитория, иначе бинарник в `/usr/local/bin`)
 9. установка `nginx`, если его нет: `apt-get install -y nginx`
 10. установка `razdacha.deb`
-11. `net.ipv4.ip_forward=1` → `/etc/sysctl.d/99-razdacha.conf`
+11. `net.ipv4.ip_forward=1` и `net.ipv4.ip_nonlocal_bind=1` →
+    `/etc/sysctl.d/99-razdacha.conf`
 12. генерация ключей сервера, `config.yaml`, инициализация БД
 13. сертификат панели в `/etc/razdacha/tls/` (см. ниже) и конфиг nginx
     в `/etc/nginx/sites-available/razdacha` + symlink в `sites-enabled`
@@ -71,9 +72,31 @@ curl -fsSL https://razdacha.example/install.sh | sh
    перезаписывает.
 3. **Symlink.** `/etc/nginx/sites-enabled/razdacha` → на файл выше. Если по этому пути
    уже лежит symlink на наш файл — ничего не делается. Если что-то другое — ошибка.
+4. **Снимает дефолтный сайт Debian** — `/etc/nginx/sites-enabled/default`. Пакет nginx
+   включает его сам, а слушает он `listen 80 default_server` и `listen [::]:80
+   default_server`, то есть `0.0.0.0:80` и `[::]:80` на публичном интерфейсе. Пока он
+   включён, панель видна из интернета мимо нашего конфига: наш файл при этом безупречен,
+   дыру создаёт чужой. Symlink снимается только если ведёт на `sites-available/default`;
+   сам файл в `sites-available` не трогается, он принадлежит пакету. Факт снятия
+   записывается в `/etc/razdacha/nginx-default-disabled.json`, и по этой отметке сайт
+   возвращается при удалении. Symlink с именем `default`, ведущий куда-то ещё, — чужая
+   настройка: не трогается, о чём пишется в лог.
 
-Ничего другого в `/etc/nginx` не трогается: ни `nginx.conf`, ни `default`, ни чужие
-сайты.
+Ничего другого в `/etc/nginx` не трогается: ни `nginx.conf`, ни файлы в
+`sites-available`, ни чужие сайты.
+
+## Почему nginx не стартует без `ip_nonlocal_bind`
+
+nginx привязан к `10.8.0.1`, а этот адрес появляется вместе с `wg0`, который создаёт
+демон. После перезагрузки nginx стартует раньше и падает с «cannot assign requested
+address» — юнит уходит в `failed`, панель недоступна до ручного рестарта.
+
+Лечится `net.ipv4.ip_nonlocal_bind=1` в том же `/etc/sysctl.d/99-razdacha.conf`:
+процессу разрешается слушать адрес, которого ещё нет. Установщик пишет параметр в drop-in
+(чтобы он пережил перезагрузку) и сразу проставляет его в `/proc/sys` (чтобы не ждать её).
+
+Порядок юнитов через `After=` эту задачу не решает: `razdachad` может уже стартовать, а
+`wg0` — ещё не подняться, и nginx снова не найдёт адрес.
 
 **Если nginx не установлен**, установщик ставит его через `apt-get install -y nginx`.
 Код настройки при отсутствии `/etc/nginx/sites-available` не падает с невнятной ошибкой
@@ -169,12 +192,15 @@ razdacha uninstall
 3. удаление таблицы `inet razdacha`, `ip rule` и таблицы маршрутизации 105
 4. удаление `/etc/sysctl.d/99-razdacha.conf` и перечитывание sysctl
 5. снятие symlink `/etc/nginx/sites-enabled/razdacha` и файла
-   `/etc/nginx/sites-available/razdacha`, затем `systemctl reload nginx`
+   `/etc/nginx/sites-available/razdacha`, возврат дефолтного сайта Debian, если снимали
+   его мы, затем `systemctl reload nginx`
 6. `apt remove razdacha`
 7. спрашивает отдельно: удалять ли `/var/lib/razdacha` (пиры и ключи) и `sing-box`
 
 Шаг 5 избирателен: symlink снимается, только если он ведёт на наш файл, а файл удаляется,
 только если в нём есть заголовок-маркер. Чужой конфиг с тем же именем остаётся на месте.
+Дефолтный сайт возвращается только при наличии отметки `/etc/razdacha/nginx-default-disabled.json`
+— если пользователь выключил его сам, удаление razdacha не включит его обратно.
 Сам nginx не удаляется — его могли поставить до нас и использовать для другого.
 Сертификат лежит в `/etc/razdacha/tls/` и уходит вместе с `/etc/razdacha`.
 
