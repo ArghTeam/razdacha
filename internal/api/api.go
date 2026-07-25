@@ -51,6 +51,8 @@ const (
 	codeBadRequest   = "bad_request"
 	codeTooMany      = "too_many_attempts"
 	codeNotFound     = "not_found"
+	codeConflict     = "conflict"
+	codeNotReady     = "not_ready"
 	codeInternal     = "internal"
 )
 
