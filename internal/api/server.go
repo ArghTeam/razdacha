@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/store"
+	"github.com/ArghTeam/razdacha/ui"
 )
 
 const (
@@ -57,6 +59,10 @@ type Config struct {
 	// коде. Пустое поле (и пустая строка от него) означает «ключа пока нет»:
 	// API отдаёт `server_public_key: null`, а выдача конфига честно отказывает.
 	ServerPublicKey func(context.Context) (string, error)
+
+	// UI — статика панели с корнем на index.html. Пустой означает встроенную
+	// сборку из ui/dist; тесты подставляют свою.
+	UI fs.FS
 }
 
 // Server — HTTP-сервер панели.
@@ -71,6 +77,7 @@ type Server struct {
 	// чтобы проверка блокировки не занимала секунды реального времени.
 	sleep     func(context.Context, time.Duration)
 	serverKey func(context.Context) (string, error)
+	ui        fs.FS
 	handler   http.Handler
 }
 
@@ -104,7 +111,11 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		log:       cfg.Logger,
 		now:       cfg.Now,
 		serverKey: cfg.ServerPublicKey,
+		ui:        cfg.UI,
 		verify:    make(chan struct{}, maxVerifications),
+	}
+	if s.ui == nil {
+		s.ui = ui.Files()
 	}
 	if s.log == nil {
 		s.log = slog.Default()
