@@ -128,9 +128,11 @@ func TestAPIDoesNotFallThroughToSPA(t *testing.T) {
 	ts := newUIServer(t, fakeUI())
 	cookie := ts.login(t)
 
+	// Существующий эндпоинт с сессией законно отдаёт 200 — но JSON, а не страницу.
+	// Несуществующие пути под /api/ обязаны давать ошибку, а не SPA со статусом 200.
 	for _, p := range []string{"/api/", "/api/peers", "/api/нет-такого"} {
 		resp := ts.do(t, request{method: http.MethodGet, path: p, cookies: []*http.Cookie{cookie}})
-		if resp.code == http.StatusOK {
+		if resp.code == http.StatusOK && p != "/api/peers" {
 			t.Errorf("%s: отдал 200, интерфейс подменил ответ API", p)
 			continue
 		}
