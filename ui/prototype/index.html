@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>razdacha — прототип панели</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="proto-banner">
+    Кликабельный прототип. Данные вымышленные, ничего никуда не отправляется.
+  </div>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">razdacha</span>
+      </div>
+      <nav class="tabs" id="tabs" role="tablist">
+        <button class="tab" role="tab" data-screen="peers">Клиенты</button>
+        <button class="tab" role="tab" data-screen="tunnels">Туннели</button>
+        <button class="tab" role="tab" data-screen="rules">Правила</button>
+        <button class="tab" role="tab" data-screen="diag">Диагностика</button>
+      </nav>
+      <button class="icon-btn" id="btn-settings" title="Настройки" aria-label="Настройки">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/><path d="M19.4 13a7.8 7.8 0 0 0 0-2l2-1.5-2-3.4-2.4 1a7.7 7.7 0 0 0-1.7-1L14.9 3h-3.9l-.4 2.6c-.6.3-1.2.6-1.7 1l-2.4-1-2 3.4L4.6 11a7.8 7.8 0 0 0 0 2l-2 1.5 2 3.4 2.4-1c.5.4 1.1.8 1.7 1l.4 2.6h3.9l.4-2.6c.6-.2 1.2-.6 1.7-1l2.4 1 2-3.4-2-1.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="screen" class="screen"></main>
+
+  <div class="apply-bar" id="apply-bar" hidden>
+    <div class="apply-inner">
+      <span class="apply-text">Есть непримененные изменения</span>
+      <button class="btn btn-primary" id="btn-apply">Применить</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" id="modal"></div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="mock-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
