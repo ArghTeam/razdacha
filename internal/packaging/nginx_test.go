@@ -74,8 +74,8 @@ func TestRenderProxyHeadersAndTimeouts(t *testing.T) {
 	}
 }
 
-// Критерий приёмки: панель не открывается наружу ни при какой комбинации
-// настроек. Проверяем и то, что публичный адрес вообще не доходит до текста.
+// В режиме по умолчанию панель не открывается наружу: публичный адрес не
+// доходит до текста конфига, а listen привязан к адресу wg0.
 func TestRenderNeverPublic(t *testing.T) {
 	out, err := validSite().Render()
 	if err != nil {
@@ -112,11 +112,96 @@ func TestValidateRejectsPublicAddresses(t *testing.T) {
 	}
 }
 
+// Тот же адрес, что отвергается без флага режима, с ним принимается: выход
+// панели в интернет — отдельное решение, а не следствие опечатки.
+func TestPublicModeAllowsPublicAddresses(t *testing.T) {
+	for name, addr := range map[string]string{
+		"все интерфейсы": AllInterfaces,
+		"публичный":      "203.0.113.10",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := validSite()
+			c.ListenAddr = addr
+			if _, err := c.Render(); !errors.Is(err, ErrPublicListen) {
+				t.Fatalf("без публичного режима ожидалась ErrPublicListen, получено: %v", err)
+			}
+
+			c.Public = true
+			if _, err := c.Render(); err != nil {
+				t.Fatalf("в публичном режиме адрес %s отвергнут: %v", addr, err)
+			}
+		})
+	}
+}
+
+// Демон на loopback — часть ADR 0008, которую ADR 0009 не отменял: публичный
+// режим открывает наружу nginx, а не razdachad.
 func TestValidateRejectsNonLoopbackUpstream(t *testing.T) {
-	c := validSite()
-	c.Upstream = "10.8.0.1:8080"
-	if _, err := c.Render(); !errors.Is(err, ErrPublicListen) {
-		t.Fatalf("ожидалась ErrPublicListen, получено: %v", err)
+	for name, public := range map[string]bool{"обычный режим": false, "публичный режим": true} {
+		t.Run(name, func(t *testing.T) {
+			c := validSite()
+			c.Public = public
+			c.Upstream = "10.8.0.1:8080"
+			if _, err := c.Render(); !errors.Is(err, ErrPublicListen) {
+				t.Fatalf("ожидалась ErrPublicListen, получено: %v", err)
+			}
+		})
+	}
+}
+
+// Публичный режим: слушаем все интерфейсы обоими портами. Отдельный listen на
+// 10.8.0.1 не нужен и был бы ошибкой конфигурации — адрес уже покрыт.
+func TestRenderPublicListensEverywhere(t *testing.T) {
+	c := PublicSiteConfig()
+	c.CertFile, c.KeyFile = "/etc/razdacha/tls/cert.pem", "/etc/razdacha/tls/key.pem"
+	out, err := c.Render()
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	for _, want := range []string{
+		"listen 80;",
+		"listen 443 ssl;",
+		"server_name _;",
+		"return 301 https://$host$request_uri;",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("в конфиге нет %q", want)
+		}
+	}
+	if strings.Contains(out, "listen 10.8.0.1:") {
+		t.Error("в публичном режиме остался отдельный listen на адрес wg0")
+	}
+}
+
+// limit_req обязан висеть на входе и только на нём: на «/» он ломал бы панель
+// (один экран тянет десятки запросов), а перебор пароля идёт не туда.
+func TestRenderLimitReqOnLoginOnly(t *testing.T) {
+	out, err := validSite().Render()
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	for _, want := range []string{
+		"limit_req_zone $binary_remote_addr zone=razdacha_login:1m rate=10r/m;",
+		"location = /api/login {",
+		"limit_req zone=razdacha_login burst=5 nodelay;",
+		"limit_req_status 429;",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("в конфиге нет %q", want)
+		}
+	}
+	if n := strings.Count(out, "limit_req zone="); n != 1 {
+		t.Fatalf("limit_req встречается %d раз, ожидался один — на входе", n)
+	}
+
+	login := strings.Index(out, "location = "+LoginPath+" {")
+	root := strings.Index(out, "location / {")
+	limit := strings.Index(out, "limit_req zone=")
+	if login < 0 || root < 0 {
+		t.Fatal("в конфиге нет обеих локаций")
+	}
+	if limit < login || limit > root {
+		t.Error("limit_req стоит не внутри локации входа")
 	}
 }
 

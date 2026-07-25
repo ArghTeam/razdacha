@@ -125,6 +125,11 @@ func TestEnsureCertificateReissues(t *testing.T) {
 			at:  now,
 			ips: []net.IP{net.ParseIP("10.9.0.1")},
 		},
+		// Переход в публичный режим: адрес VPN в SAN есть, внешнего нет.
+		"добавился внешний адрес": {
+			at:  now,
+			ips: []net.IP{ip, net.ParseIP("203.0.113.10")},
+		},
 		"ключ пропал": {
 			at:    now,
 			ips:   []net.IP{ip},
