@@ -12,6 +12,8 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/ArghTeam/razdacha/internal/netstack"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 	"github.com/ArghTeam/razdacha/ui"
 )
@@ -54,15 +56,24 @@ type Config struct {
 	// Now подменяется в тестах. Пустой — time.Now.
 	Now func() time.Time
 
-	// ServerPublicKey отдаёт публичный ключ wg0 — его требует клиентский конфиг,
-	// а в БД его нет: ключи сервера заводит слой netstack, которого ещё нет в
-	// коде. Пустое поле (и пустая строка от него) означает «ключа пока нет»:
-	// API отдаёт `server_public_key: null`, а выдача конфига честно отказывает.
+	// ServerPublicKey отдаёт публичный ключ wg0 — его требует клиентский конфиг.
+	// Ключи сервера заводит слой netstack при поднятии интерфейса. Пустое поле
+	// (и пустая строка от него) означает «ключа пока нет»: API отдаёт
+	// `server_public_key: null`, а выдача конфига честно отказывает.
 	ServerPublicKey func(context.Context) (string, error)
+
+	// PeerStats отдаёт замеры с wg0 по публичным ключам пиров. Пустое поле
+	// означает «источника нет», и производные поля пиров остаются null.
+	PeerStats func(context.Context) (map[string]netstack.WGPeerStat, error)
 
 	// UI — статика панели с корнем на index.html. Пустой означает встроенную
 	// сборку из ui/dist; тесты подставляют свою.
 	UI fs.FS
+
+	// Applier применяет конфиг sing-box по `POST /api/apply`. Пустой означает
+	// настоящий [singbox.NewApplier] — запись в /etc/sing-box/config.json,
+	// `sing-box check` и `systemctl reload`; тесты подставляют свой.
+	Applier Applier
 }
 
 // Server — HTTP-сервер панели.
@@ -77,7 +88,9 @@ type Server struct {
 	// чтобы проверка блокировки не занимала секунды реального времени.
 	sleep     func(context.Context, time.Duration)
 	serverKey func(context.Context) (string, error)
+	peerStat  func(context.Context) (map[string]netstack.WGPeerStat, error)
 	ui        fs.FS
+	applier   Applier
 	handler   http.Handler
 }
 
@@ -111,11 +124,16 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		log:       cfg.Logger,
 		now:       cfg.Now,
 		serverKey: cfg.ServerPublicKey,
+		peerStat:  cfg.PeerStats,
 		ui:        cfg.UI,
+		applier:   cfg.Applier,
 		verify:    make(chan struct{}, maxVerifications),
 	}
 	if s.ui == nil {
 		s.ui = ui.Files()
+	}
+	if s.applier == nil {
+		s.applier = singbox.NewApplier()
 	}
 	if s.log == nil {
 		s.log = slog.Default()

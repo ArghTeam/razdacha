@@ -5,15 +5,14 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/netip"
-	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/crypto/curve25519"
 
+	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -25,9 +24,10 @@ var ErrNoAddress = errors.New("в пуле не осталось свободн�
 // Приватный и pre-shared ключи в списке не отдаются: наружу они уходят ровно один
 // раз и целиком — в клиентском конфиге `/api/peers/{id}/config`.
 //
-// Производные поля — указатели, и это не стиль: источник у них один, слой netstack,
-// которого ещё нет. `null` означает «данных нет», ноль означал бы «замерили и там
-// ноль» — для «онлайн» и «последний хендшейк» это противоположные состояния.
+// Производные поля — указатели, и это не стиль: источник у них один, слой netstack.
+// `null` означает «данных нет» (интерфейс не поднят или пира на нём нет), ноль
+// означал бы «замерили и там ноль» — для «онлайн» и «последний хендшейк» это
+// противоположные состояния.
 type peerResponse struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
@@ -56,6 +56,24 @@ func newPeerResponse(p store.Peer) peerResponse {
 	}
 }
 
+// withStat дополняет ответ замером с wg0. Пир, которого на интерфейсе нет
+// (выключен или интерфейс не поднят), сюда не попадает и остаётся с null.
+func (resp peerResponse) withStat(st netstack.WGPeerStat, now time.Time) peerResponse {
+	online := st.Online(now)
+	resp.Online = &online
+	resp.RxBytes = &st.RxBytes
+	resp.TxBytes = &st.TxBytes
+	if !st.LastHandshake.IsZero() {
+		handshake := st.LastHandshake
+		resp.LastHandshake = &handshake
+	}
+	if st.Endpoint != "" {
+		endpoint := st.Endpoint
+		resp.Endpoint = &endpoint
+	}
+	return resp
+}
+
 // handleListPeers — `GET /api/peers`.
 func (s *Server) handleListPeers(w http.ResponseWriter, r *http.Request) {
 	list, err := s.store.Peers(r.Context())
@@ -63,9 +81,15 @@ func (s *Server) handleListPeers(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err, "Пир не найден")
 		return
 	}
+	stats := s.peerStats(r)
+	now := s.now()
 	out := make([]peerResponse, 0, len(list))
 	for _, p := range list {
-		out = append(out, newPeerResponse(p))
+		resp := newPeerResponse(p)
+		if st, ok := stats[p.PublicKey]; ok {
+			resp = resp.withStat(st, now)
+		}
+		out = append(out, resp)
 	}
 	writeJSON(w, s.log, http.StatusOK, out)
 }
@@ -195,7 +219,7 @@ func (s *Server) handlePeerConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conf, err := clientConfig(p, settings, serverKey)
+	conf, err := netstack.ClientConfig(p, settings, serverKey)
 	if err != nil {
 		// Конфиг без ключа сервера или без адреса подключения выглядит рабочим,
 		// но не подключается. Лучше внятный отказ, чем такой файл на телефоне.
@@ -209,39 +233,6 @@ func (s *Server) handlePeerConfig(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write([]byte(conf)); err != nil {
 		s.log.Debug("конфиг не дописан", "ошибка", err)
 	}
-}
-
-// clientConfig собирает клиентский конфиг по docs/03-networking.md.
-//
-// Все поля фиксированы и не настраиваются на уровне пира: DNS держит всю
-// селективность (docs/04-dns-fakeip.md), MTU обязан совпадать с MTU wg0
-// (ADR 0004), AllowedIPs включает ::/0 без выдачи IPv6-адреса намеренно,
-// PersistentKeepalive нужен мобильному клиенту за NAT.
-func clientConfig(p store.Peer, s store.Settings, serverPublicKey string) (string, error) {
-	var missing []string
-	if serverPublicKey == "" {
-		missing = append(missing, "публичный ключ сервера")
-	}
-	if s.EndpointHost == "" {
-		missing = append(missing, "адрес сервера для подключения")
-	}
-	if len(missing) > 0 {
-		return "", fmt.Errorf("конфиг пока не выдать: не задан %s", strings.Join(missing, ", "))
-	}
-
-	var b strings.Builder
-	b.WriteString("[Interface]\n")
-	fmt.Fprintf(&b, "PrivateKey = %s\n", p.PrivateKey)
-	fmt.Fprintf(&b, "Address    = %s/32\n", p.Address)
-	fmt.Fprintf(&b, "DNS        = %s\n", s.WGServerAddress)
-	fmt.Fprintf(&b, "MTU        = %d\n", s.ClientMTU)
-	b.WriteString("\n[Peer]\n")
-	fmt.Fprintf(&b, "PublicKey           = %s\n", serverPublicKey)
-	fmt.Fprintf(&b, "PresharedKey        = %s\n", p.PresharedKey)
-	fmt.Fprintf(&b, "Endpoint            = %s\n", net.JoinHostPort(s.EndpointHost, strconv.Itoa(s.WGListenPort)))
-	b.WriteString("AllowedIPs          = 0.0.0.0/0, ::/0\n")
-	b.WriteString("PersistentKeepalive = 25\n")
-	return b.String(), nil
 }
 
 // confFileName — имя файла для скачивания. Всё, кроме букв, цифр и дефиса,

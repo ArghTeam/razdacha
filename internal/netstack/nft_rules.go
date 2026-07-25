@@ -1,6 +1,3 @@
-// Package netstack владеет состоянием сети сервера: интерфейсом wg0,
-// nft-таблицей и маршрутизацией помеченного трафика. Всё — через netlink,
-// без вызова nft, ip и wg (инвариант конституции: широкая матрица ОС).
 package netstack
 
 import (
@@ -48,8 +45,6 @@ const (
 	TProxyAddr = "127.0.0.1"
 	// TProxyPort — порт inbound tproxy sing-box.
 	TProxyPort uint16 = 1602
-	// DefaultWGInterface — интерфейс клиентов.
-	DefaultWGInterface = "wg0"
 )
 
 // FakeIPRange — диапазон FakeIP sing-box (ADR 0005: только v4). Трафик на эти
