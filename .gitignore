@@ -1,0 +1,30 @@
+# сборка
+/bin/
+/dist/
+*.deb
+*.tar.gz
+
+# фронтенд
+node_modules/
+.svelte-kit/
+/ui/build/
+
+# локальное окружение
+.env
+.env.local
+*.local.yaml
+
+# секреты — на всякий случай, ключи никогда не должны попасть в репозиторий
+*.key
+*.pem
+wg*.conf
+/state/
+*.db
+*.db-wal
+*.db-shm
+
+# редакторы / ОС
+.DS_Store
+.idea/
+.vscode/
+*.swp

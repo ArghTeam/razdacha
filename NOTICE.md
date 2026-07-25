@@ -1,0 +1,30 @@
+# Атрибуция
+
+## Podkop
+
+Архитектура razdacha основана на [Podkop](https://github.com/itdoginfo/podkop)
+(© itdoginfo, GPL-2.0-or-later) — маршрутизаторе трафика для OpenWrt.
+
+Из Podkop взяты: модель конфигурации (направления маршрутизации, типы подключения,
+источники списков), механика селективной маршрутизации через FakeIP + nftables,
+логика разбора proxy-URL в outbound-конфигурацию sing-box, структура диагностики.
+Разбор с точными ссылками на исходные файлы — в
+[docs/research/podkop-analysis.md](docs/research/podkop-analysis.md), каждое решение
+в [docs/decisions/](docs/decisions/) содержит секцию «Источник в Podkop».
+
+razdacha распространяется под GPL-2.0-or-later — той же лицензией, что и Podkop.
+
+**Товарный знак.** «Podkop» — товарный знак itdoginfo. Согласно
+[trademark-политике Podkop](https://github.com/itdoginfo/podkop/blob/main/TRADEMARK.md)
+razdacha не использует это имя, его вариации или логотип, и не является официальным
+продуктом Podkop или производным от него по названию. Указание происхождения носит
+исключительно описательный характер.
+
+## Прочее
+
+- [sing-box](https://github.com/SagerNet/sing-box) (© SagerNet, GPL-3.0-or-later) —
+  движок маршрутизации, используется как отдельный процесс, не линкуется.
+- [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains) — курируемые
+  списки домены/подсети сервисов, загружаются в рантайме.
+- [wg-easy](https://github.com/wg-easy/wg-easy) — референс UX управления пирами
+  (код не используется).

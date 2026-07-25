@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/romanzhigalkin/Web/podkop"
+    ],
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(go fmt:*)",
+      "Bash(go run:*)",
+      "Bash(go mod:*)",
+      "Bash(go list:*)",
+      "Bash(go doc:*)",
+      "Bash(gofmt:*)",
+      "Bash(gofumpt:*)",
+      "Bash(golangci-lint:*)",
+      "Bash(make:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git branch:*)",
+      "Bash(git stash:*)",
+      "Bash(rg:*)",
+      "Bash(sing-box check:*)",
+      "Bash(sing-box version:*)"
+    ],
+    "deny": [
+      "Edit(/Users/romanzhigalkin/Web/podkop/**)",
+      "Write(/Users/romanzhigalkin/Web/podkop/**)",
+      "Bash(git -C /Users/romanzhigalkin/Web/podkop commit:*)",
+      "Bash(git -C /Users/romanzhigalkin/Web/podkop push:*)"
+    ]
+  }
+}
