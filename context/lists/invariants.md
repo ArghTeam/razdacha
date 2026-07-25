@@ -5,7 +5,13 @@ description: загрузка и кэш .srs/plain-списков, распис�
 ---
 
 ## Invariants
-- _No invariants recorded yet — add durable rules here as they're discovered._
+- Кэш пишется атомарно: тело целиком в память → проверка → временный файл рядом → `Sync` → `rename`. Битый, пустой и оборванный ответ валидный кэш не трогают.
+- Длина тела сверяется с `Content-Length` явно: `net/http` отдаёт `ErrUnexpectedEOF` не на всех видах обрыва, без сверки недокачанный список выглядит целым.
+- Неудачный прогон повторяется с нарастающей паузой (минута → 15 минут), а не через сутки: на свежем VPS сеть поднимается позже демона.
+- `.srs` читается через `srs.Read(r, true)`; без `recover = true` матчеры остаются скомпилированными и `ip_cidr` пуст.
+- В подсети идёт только IPv4 — nft-сет `razdacha_subnets` объявлен как `ipv4_addr` (ADR 0005). Битые строки считаются в `List.Skipped` и разбор не отменяют.
+- `Manager.Start(ctx)` возвращается сразу, первый прогон уходит в горутину: загрузка списков не задерживает старт демона.
 
 ## Key entry points
-- _No entry points recorded yet._
+- `internal/lists/manager.go` — `Sources(store.Snapshot)`, расписание, `Subnets()` для nft-сета.
+- `internal/lists/fetch.go` — условные запросы, таймауты, потолок размера, откат на кэш.
