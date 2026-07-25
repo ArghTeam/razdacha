@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/netstack"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 	"github.com/ArghTeam/razdacha/ui"
 )
@@ -68,6 +69,11 @@ type Config struct {
 	// UI — статика панели с корнем на index.html. Пустой означает встроенную
 	// сборку из ui/dist; тесты подставляют свою.
 	UI fs.FS
+
+	// Applier применяет конфиг sing-box по `POST /api/apply`. Пустой означает
+	// настоящий [singbox.NewApplier] — запись в /etc/sing-box/config.json,
+	// `sing-box check` и `systemctl reload`; тесты подставляют свой.
+	Applier Applier
 }
 
 // Server — HTTP-сервер панели.
@@ -84,6 +90,7 @@ type Server struct {
 	serverKey func(context.Context) (string, error)
 	peerStat  func(context.Context) (map[string]netstack.WGPeerStat, error)
 	ui        fs.FS
+	applier   Applier
 	handler   http.Handler
 }
 
@@ -119,10 +126,14 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		serverKey: cfg.ServerPublicKey,
 		peerStat:  cfg.PeerStats,
 		ui:        cfg.UI,
+		applier:   cfg.Applier,
 		verify:    make(chan struct{}, maxVerifications),
 	}
 	if s.ui == nil {
 		s.ui = ui.Files()
+	}
+	if s.applier == nil {
+		s.applier = singbox.NewApplier()
 	}
 	if s.log == nil {
 		s.log = slog.Default()
