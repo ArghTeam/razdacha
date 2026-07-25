@@ -23,7 +23,11 @@ razdacha не использует это имя, его вариации или
 ## Прочее
 
 - [sing-box](https://github.com/SagerNet/sing-box) (© SagerNet, GPL-3.0-or-later) —
-  движок маршрутизации, используется как отдельный процесс, не линкуется.
+  движок маршрутизации. Запускается отдельным процессом, и при этом пакет
+  `sing-box/option` линкуется в `razdachad` для типизированной сборки конфига
+  ([ADR 0006](docs/decisions/0006-go-daemon.md)). razdacha распространяется под
+  GPL-2.0-**or-later**, поэтому комбинация с GPL-3.0-кодом распространяется как
+  GPL-3.0-or-later.
 - [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains) — курируемые
   списки домены/подсети сервисов, загружаются в рантайме.
 - [wg-easy](https://github.com/wg-easy/wg-easy) — референс UX управления пирами

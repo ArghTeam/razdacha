@@ -3,6 +3,7 @@ package singbox
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -227,6 +228,58 @@ func TestDNSRulesPerAction(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("DNS-правила: %v, ожидалось %v", got, want)
+	}
+}
+
+// TestParsedFeedsGenerate держит стык двух половин слоя: то, что [Parse] кладёт в
+// Tunnel.Parsed, генератор обязан принимать без доработки напильником. Тег и type
+// в конфиг проставляет генератор, поэтому из parsed они выбрасываются.
+func TestParsedFeedsGenerate(t *testing.T) {
+	wg, err := os.ReadFile(filepath.Join("testdata", "wireguard-minimal.conf"))
+	if err != nil {
+		t.Fatalf("чтение фикстуры WireGuard: %v", err)
+	}
+	inputs := []string{
+		"vless://00000000-0000-0000-0000-000000000000@5.6.7.8:443?security=tls&sni=example.org#Франкфурт",
+		string(wg),
+	}
+
+	snap := store.Snapshot{Settings: store.DefaultSettings()}
+	for i, raw := range inputs {
+		res, err := Parse(raw)
+		if err != nil {
+			t.Fatalf("разбор входа %d: %v", i, err)
+		}
+		id := fmt.Sprintf("t%d", i)
+		snap.Tunnels = append(snap.Tunnels, store.Tunnel{
+			ID: id, Name: id, Type: res.Type, Source: res.Source,
+			Raw: raw, Parsed: res.Parsed, Enabled: true,
+		})
+		snap.Rules = append(snap.Rules, store.Rule{
+			ID: "r" + id, Name: id, Action: store.ActionTunnel, TunnelID: id,
+			Priority: i, Enabled: true,
+			Domains: []string{"example.org"}, PeerScope: store.ScopeAll,
+		})
+	}
+
+	var cfg struct {
+		Endpoints []map[string]any `json:"endpoints"`
+		Outbounds []map[string]any `json:"outbounds"`
+	}
+	if err := json.Unmarshal(generate(t, snap), &cfg); err != nil {
+		t.Fatalf("разбор конфига: %v", err)
+	}
+	if len(cfg.Outbounds) != 2 { // direct-out и vless
+		t.Fatalf("outbounds: %d, ожидалось 2", len(cfg.Outbounds))
+	}
+	if cfg.Outbounds[1]["type"] != "vless" || cfg.Outbounds[1]["tag"] != TunnelTag("t0") {
+		t.Errorf("outbound = %v", cfg.Outbounds[1])
+	}
+	if len(cfg.Endpoints) != 1 {
+		t.Fatalf("endpoints: %d, ожидался 1", len(cfg.Endpoints))
+	}
+	if cfg.Endpoints[0]["type"] != "wireguard" || cfg.Endpoints[0]["tag"] != TunnelTag("t1") {
+		t.Errorf("endpoint = %v", cfg.Endpoints[0])
 	}
 }
 
