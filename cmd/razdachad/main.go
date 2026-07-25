@@ -31,10 +31,21 @@ func main() {
 	dbPath := flag.String("db", defaultDBPath, "путь к файлу состояния")
 	setPassword := flag.Bool("set-password", false,
 		"прочитать пароль панели из stdin, сохранить и выйти")
+	resetNetwork := flag.Bool("reset-network", false,
+		"снять nft-правила и маршрутизацию, wg0 оставить, и выйти")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(version)
+		return
+	}
+
+	if *resetNetwork {
+		if err := resetNetfilter(); err != nil {
+			slog.Error("сброс сети", "ошибка", err)
+			os.Exit(2)
+		}
+		slog.Info("правила и маршрутизация сняты")
 		return
 	}
 
@@ -65,6 +76,12 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	}
 	defer func() { _ = wg.Close() }()
 	go syncWGPeers(ctx, st, wg)
+
+	stopNetfilter, err := startNetfilter(ctx, st, slog.Default())
+	if err != nil {
+		return err
+	}
+	defer stopNetfilter()
 
 	// Без пароля демон не стартует: панель доступна из интернета, и запуск
 	// «пока без авторизации» отдал бы наружу root-демон (ADR 0009).
