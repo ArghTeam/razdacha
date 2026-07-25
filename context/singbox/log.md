@@ -5,8 +5,14 @@
 
 ## 2026-07-25
 
+### #3 — генератор конфига из состояния БД
+
+**Changed:** `internal/singbox/{generate,dns,tunnel,ruleset}.go` — сборка `option.Options` из снимка состояния; доки 02 и 04 приведены к реализации.
+**New surface:** `Generate(store.Snapshot)` и `Marshal(option.Options)`.
+**Beware:** `sing-box check` ещё не вызывается; правило с одним plain-списком в конфиг не попадёт — пути для plain-списков доменов нет.
+
 ### #4 — парсеры proxy-URL и WireGuard .conf
 
-**Changed:** `internal/singbox/parse*.go` — разбор vless/ss/trojan/hysteria2/socks и INI WireGuard в структуры `sing-box/option`; зависимость `sing-box v1.12.25`.
-**New surface:** `Parse(raw)` — единственная точка разбора пользовательского ввода в туннель.
-**Beware:** `kcp` и `xhttp` из корпуса Podkop не поддерживаются — таких транспортов нет в sing-box, они отдают ошибку. `ech` из ссылки игнорируется: там base64 `ECHConfigList`, а sing-box ждёт PEM. `NOTICE.md` устарел — sing-box теперь линкуется, а не только запускается процессом.
+**Changed:** `internal/singbox/parse*.go` — разбор vless/ss/trojan/hysteria2/socks и INI WireGuard; зависимость `sing-box v1.12.25`.
+**New surface:** `Parse(raw)` — единственная точка разбора пользовательского ввода.
+**Beware:** `kcp` и `xhttp` из корпуса Podkop не поддерживаются; `ech` игнорируется — там base64, а sing-box ждёт PEM.
