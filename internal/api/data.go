@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -67,9 +68,9 @@ func (s *Server) idFrom(w http.ResponseWriter, r *http.Request) (string, bool) {
 
 // serverPublicKey отдаёт публичный ключ wg0.
 //
-// Ключей сервера пока нет: их создаёт слой netstack, которого ещё нет в коде.
-// Пустая строка означает «источника нет», и это состояние проходит через API
-// как null, а не как выдуманное значение.
+// Ключи сервера заводит слой netstack при первом поднятии интерфейса. Пустая
+// строка означает «источника нет», и это состояние проходит через API как null,
+// а не как выдуманное значение.
 func (s *Server) serverPublicKey(r *http.Request) (string, error) {
 	if s.serverKey == nil {
 		return "", nil
@@ -79,4 +80,19 @@ func (s *Server) serverPublicKey(r *http.Request) (string, error) {
 		return "", fmt.Errorf("чтение публичного ключа сервера: %w", err)
 	}
 	return key, nil
+}
+
+// peerStats читает замеры с wg0. Ошибка сюда не поднимается: список пиров
+// показывается и без статистики, а без списка панель бесполезна. Отсутствие
+// данных видно в ответе как null у производных полей.
+func (s *Server) peerStats(r *http.Request) map[string]netstack.WGPeerStat {
+	if s.peerStat == nil {
+		return nil
+	}
+	stats, err := s.peerStat(r.Context())
+	if err != nil {
+		s.log.Debug("статистика пиров недоступна", "ошибка", err)
+		return nil
+	}
+	return stats
 }
