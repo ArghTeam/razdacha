@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ArghTeam/razdacha/internal/api"
+	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -57,9 +59,21 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		return storePassword(ctx, st)
 	}
 
+	wg, err := startWG(ctx, st)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = wg.Close() }()
+	go syncWGPeers(ctx, st, wg)
+
 	// Без пароля демон не стартует: панель доступна из интернета, и запуск
 	// «пока без авторизации» отдал бы наружу root-демон (ADR 0009).
-	srv, err := api.New(ctx, api.Config{Addr: listen, Store: st})
+	srv, err := api.New(ctx, api.Config{
+		Addr:            listen,
+		Store:           st,
+		ServerPublicKey: wg.PublicKey,
+		PeerStats:       wg.Stats,
+	})
 	if errors.Is(err, api.ErrNoPassword) {
 		return fmt.Errorf("%w; задайте его: razdachad -set-password", err)
 	}
@@ -67,6 +81,57 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		return err
 	}
 	return srv.Run(ctx)
+}
+
+// wgSyncInterval — как часто состояние БД сверяется с интерфейсом.
+//
+// Сверка идёт диффом: на неизменном состоянии не выполняется ни одной записи и
+// живые хендшейки не страдают. Событийная перевыдача пиров приедет вместе с
+// применением конфига (issue #30), до неё периодическая сверка — способ не
+// заставлять пользователя перезапускать демон после добавления устройства.
+const wgSyncInterval = 10 * time.Second
+
+// startWG поднимает wg0 по настройкам из БД. Интерфейс — не опция: без него
+// демон не выполняет свою работу, поэтому ошибка здесь останавливает запуск.
+func startWG(ctx context.Context, st *store.Store) (*netstack.WGManager, error) {
+	settings, err := st.Settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := netstack.WGConfigFromSettings(settings)
+	if err != nil {
+		return nil, err
+	}
+	wg, err := netstack.NewWGManager(cfg, st, slog.Default())
+	if err != nil {
+		return nil, err
+	}
+	if err := wg.Up(ctx); err != nil {
+		_ = wg.Close()
+		return nil, err
+	}
+	return wg, nil
+}
+
+// syncWGPeers держит набор пиров на интерфейсе равным состоянию БД.
+// Интерфейс при остановке демона не снимается: рестарт не должен рвать клиентам
+// связь, а возврат системы в исходное состояние — дело удаления пакета.
+func syncWGPeers(ctx context.Context, st *store.Store, wg *netstack.WGManager) {
+	ticker := time.NewTicker(wgSyncInterval)
+	defer ticker.Stop()
+	for {
+		peers, err := st.Peers(ctx)
+		if err != nil {
+			slog.Error("чтение пиров", "ошибка", err)
+		} else if _, err := wg.SyncPeers(ctx, peers); err != nil {
+			slog.Error("синхронизация пиров", "ошибка", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // storePassword читает пароль из stdin, а не из аргумента командной строки:
