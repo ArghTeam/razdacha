@@ -72,7 +72,7 @@ func upstreamServer(s store.Settings) (option.DNSServerOptions, error) {
 		DNSServerAddressOptions: option.DNSServerAddressOptions{Server: host, ServerPort: port},
 	}
 	if _, err := netip.ParseAddr(host); err != nil {
-		remote.DialerOptions.DomainResolver = &option.DomainResolveOptions{Server: TagDNSBootstrap}
+		remote.DomainResolver = &option.DomainResolveOptions{Server: TagDNSBootstrap}
 	}
 
 	out := option.DNSServerOptions{Tag: TagDNSUpstream}
