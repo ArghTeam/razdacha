@@ -47,13 +47,14 @@ type errorResponse struct {
 
 // Коды ошибок. UI различает ситуации по ним, а не по тексту.
 const (
-	codeUnauthorized = "unauthorized"
-	codeBadRequest   = "bad_request"
-	codeTooMany      = "too_many_attempts"
-	codeNotFound     = "not_found"
-	codeConflict     = "conflict"
-	codeNotReady     = "not_ready"
-	codeInternal     = "internal"
+	codeUnauthorized  = "unauthorized"
+	codeBadRequest    = "bad_request"
+	codeTooMany       = "too_many_attempts"
+	codeNotFound      = "not_found"
+	codeConflict      = "conflict"
+	codeNotReady      = "not_ready"
+	codeInvalidConfig = "invalid_config"
+	codeInternal      = "internal"
 )
 
 // writeJSON отдаёт тело ответа. Ошибка записи означает оборванное соединение —
