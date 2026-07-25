@@ -51,6 +51,12 @@ type Config struct {
 	Logger *slog.Logger
 	// Now подменяется в тестах. Пустой — time.Now.
 	Now func() time.Time
+
+	// ServerPublicKey отдаёт публичный ключ wg0 — его требует клиентский конфиг,
+	// а в БД его нет: ключи сервера заводит слой netstack, которого ещё нет в
+	// коде. Пустое поле (и пустая строка от него) означает «ключа пока нет»:
+	// API отдаёт `server_public_key: null`, а выдача конфига честно отказывает.
+	ServerPublicKey func(context.Context) (string, error)
 }
 
 // Server — HTTP-сервер панели.
@@ -63,8 +69,9 @@ type Server struct {
 	verify   chan struct{}
 	// sleep выдерживает задержку после неудачного входа; в тестах подменяется,
 	// чтобы проверка блокировки не занимала секунды реального времени.
-	sleep   func(context.Context, time.Duration)
-	handler http.Handler
+	sleep     func(context.Context, time.Duration)
+	serverKey func(context.Context) (string, error)
+	handler   http.Handler
 }
 
 // New собирает сервер и проверяет условия запуска.
@@ -92,11 +99,12 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		addr:   addr,
-		store:  cfg.Store,
-		log:    cfg.Logger,
-		now:    cfg.Now,
-		verify: make(chan struct{}, maxVerifications),
+		addr:      addr,
+		store:     cfg.Store,
+		log:       cfg.Logger,
+		now:       cfg.Now,
+		serverKey: cfg.ServerPublicKey,
+		verify:    make(chan struct{}, maxVerifications),
 	}
 	if s.log == nil {
 		s.log = slog.Default()
