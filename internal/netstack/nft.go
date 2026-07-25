@@ -167,17 +167,28 @@ func addChain(conn nftConn, table *nftables.Table, ch NftChain) (*nftables.Chain
 	}), nil
 }
 
-// setElements переводит интервалы в элементы сета. Конец интервала включающий:
-// ядро хранит диапазон парой ключей, netipx отдаёт ровно такие границы.
+// setElements переводит интервалы в элементы сета.
+//
+// Диапазон задаётся парой элементов — началом и маркером конца с флагом
+// IntervalEnd, — а не полем KeyEnd. KeyEnd проверен на живом ядре 6.12 и
+// отвергается с EINVAL, тогда как маркеры принимаются: ядро хранит интервальный
+// сет как отсортированный список границ, и второй элемент закрывает диапазон.
+//
+// Маркер ставится на адрес **следующий** за концом: граница исключающая.
+// Для диапазона, упирающегося в 255.255.255.255, маркер не ставится — интервал
+// остаётся открытым до верха, что и требуется.
 func setElements(ranges []netipx.IPRange) []nftables.SetElement {
-	out := make([]nftables.SetElement, 0, len(ranges))
+	out := make([]nftables.SetElement, 0, len(ranges)*2)
 	for _, r := range ranges {
 		from := r.From().As4()
-		to := r.To().As4()
-		out = append(out, nftables.SetElement{
-			Key:    from[:],
-			KeyEnd: to[:],
-		})
+		out = append(out, nftables.SetElement{Key: from[:]})
+
+		next := r.To().Next()
+		if !next.IsValid() || !next.Is4() {
+			continue
+		}
+		end := next.As4()
+		out = append(out, nftables.SetElement{Key: end[:], IntervalEnd: true})
 	}
 	return out
 }
