@@ -5,6 +5,11 @@
 
 ## 2026-07-25
 
+### #16 — проверка nginx на стенде
+
+**Changed:** проверено на Debian 13 / nginx 1.26.3: `nginx -t`, TLS, WebSocket, отсутствие публичных сокетов, старт без `wg0` и переживание перезагрузки.
+**Beware:** после снятия `sites-enabled/default` нужен `restart`, а не `reload`: старый воркер держит `0.0.0.0:80`, пока завершается.
+
 ### #10 — sing-box check в CI
 
 **Changed:** job `singbox-check` — тег релиза выводится из `go.mod`, бинарник кэшируется, `sing-box check -c` гоняется по `internal/singbox/testdata/*.json`.
