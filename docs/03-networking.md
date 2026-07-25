@@ -108,7 +108,7 @@ table inet razdacha {
     }
 
     # подсети из правил, дополняются демоном
-    set routed_subnets {
+    set razdacha_subnets {
         type ipv4_addr; flags interval; auto-merge
     }
 
@@ -118,8 +118,8 @@ table inet razdacha {
         iifname != "wg0" return
         ip daddr @local_v4 return
 
-        ip daddr 198.18.0.0/15    meta mark set 0x00100000
-        ip daddr @routed_subnets  meta mark set 0x00100000
+        ip daddr 198.18.0.0/15      meta mark set 0x00100000
+        ip daddr @razdacha_subnets  meta mark set 0x00100000
     }
 
     chain proxy {
