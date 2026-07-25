@@ -218,8 +218,8 @@ func TestDNSRulesPerAction(t *testing.T) {
 			if !strings.HasPrefix(tag, "rule-") {
 				continue
 			}
-			got[tag] = r.DefaultOptions.DNSRuleAction.Action + ":" +
-				r.DefaultOptions.DNSRuleAction.RouteOptions.Server
+			got[tag] = r.DefaultOptions.Action + ":" +
+				r.DefaultOptions.RouteOptions.Server
 		}
 	}
 	want := map[string]string{
