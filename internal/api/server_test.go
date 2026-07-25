@@ -407,12 +407,23 @@ func TestSpoofedForwardedForDoesNotEvadeBlock(t *testing.T) {
 	}
 }
 
+// Ненаписанный эндпоинт отвечает 404, а не проваливается в SPA: интерфейс
+// отличает «раздела ещё нет» от «данных нет» именно по этому коду.
+// Отдача статики на путях вне `/api/` проверяется в static_test.go.
 func TestUnknownPath(t *testing.T) {
 	ts := newTestServer(t)
+	cookie := ts.login(t)
 
-	resp := ts.do(t, request{method: http.MethodGet, path: "/чего-то-нет"})
+	resp := ts.do(t, request{
+		method:  http.MethodGet,
+		path:    "/api/chego-to-net",
+		cookies: []*http.Cookie{cookie},
+	})
 	if resp.code != http.StatusNotFound {
 		t.Errorf("код = %d, ожидался 404", resp.code)
+	}
+	if got := decodeError(t, resp).Code; got != codeNotFound {
+		t.Errorf("код ошибки = %q, ожидался %q", got, codeNotFound)
 	}
 }
 

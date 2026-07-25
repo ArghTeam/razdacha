@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/store"
+	"github.com/ArghTeam/razdacha/ui"
 )
 
 const (
@@ -51,6 +53,9 @@ type Config struct {
 	Logger *slog.Logger
 	// Now подменяется в тестах. Пустой — time.Now.
 	Now func() time.Time
+	// UI — статика панели с корнем на index.html. Пустой означает встроенную
+	// сборку из ui/dist; тесты подставляют свою.
+	UI fs.FS
 }
 
 // Server — HTTP-сервер панели.
@@ -64,6 +69,7 @@ type Server struct {
 	// sleep выдерживает задержку после неудачного входа; в тестах подменяется,
 	// чтобы проверка блокировки не занимала секунды реального времени.
 	sleep   func(context.Context, time.Duration)
+	ui      fs.FS
 	handler http.Handler
 }
 
@@ -96,7 +102,11 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		store:  cfg.Store,
 		log:    cfg.Logger,
 		now:    cfg.Now,
+		ui:     cfg.UI,
 		verify: make(chan struct{}, maxVerifications),
+	}
+	if s.ui == nil {
+		s.ui = ui.Files()
 	}
 	if s.log == nil {
 		s.log = slog.Default()

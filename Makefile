@@ -30,8 +30,12 @@ lint:
 fmt:
 	gofumpt -l -w .
 
+# Сборки у интерфейса нет: ui/dist — готовая статика без сборщика, она уезжает
+# в бинарник через go:embed (см. tasks/22-ui.md). Цель оставлена, чтобы `make ui`
+# не молчал и не создавал впечатление, что шаг сборки просто забыли.
 ui:
-	cd ui && npm ci && npm run build
+	@test -f ui/dist/index.html || { echo "ui/dist/index.html не найден"; exit 1; }
+	@echo "интерфейс собирать нечем: ui/dist встраивается в бинарник как есть"
 
 # кросс-сборка под целевые архитектуры, см. docs/07-platform-support.md
 .PHONY: build-linux

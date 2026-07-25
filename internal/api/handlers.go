@@ -19,7 +19,11 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /api/logout", s.requireSession(http.HandlerFunc(s.handleLogout)))
 	mux.Handle("GET /api/session", s.requireSession(http.HandlerFunc(s.handleSession)))
 	mux.Handle("/api/", s.requireSession(http.HandlerFunc(s.handleUnknown)))
-	mux.HandleFunc("/", s.handleUnknown)
+
+	// Всё, что не `/api/`, — интерфейс. Более длинный шаблон у ServeMux
+	// выигрывает, поэтому REST-путь в SPA не проваливается: несуществующий
+	// `/api/…` отдаёт JSON-ошибку, а не страницу входа со статусом 200.
+	mux.Handle("/", s.static())
 
 	return mux
 }
@@ -149,8 +153,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleUnknown отвечает на всё, чего ещё нет. SPA приедет сюда же отдельной
-// задачей, поэтому корень тоже отвечает JSON, а не пустой страницей.
+// handleUnknown отвечает на всё под `/api/`, чего ещё нет. Интерфейс различает
+// «эндпоинта нет» и «данных нет» именно по этому 404 и говорит пользователю
+// «данные появятся позже» вместо пустого экрана.
 func (s *Server) handleUnknown(w http.ResponseWriter, _ *http.Request) {
 	writeError(w, s.log, http.StatusNotFound, codeNotFound, "Такого пути нет")
 }
