@@ -170,6 +170,11 @@ CREATE TABLE peers (
   created_at INTEGER NOT NULL);
 
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+CREATE TABLE sessions (
+  token_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL);
+CREATE INDEX sessions_expires_at ON sessions(expires_at);
 ```
 
 `ON DELETE RESTRICT` для `tunnel_id` намеренно: удаление туннеля, на который ссылается
@@ -191,3 +196,12 @@ CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 читается как дефолт из таблицы выше, неизвестный ключ игнорируется (откат на прежнюю
 версию демона не должен ронять чтение). `list_update_interval` хранится в секундах:
 `1d` из таблицы — форма записи для человека, не формат хранения.
+
+**Пароль панели — ключ `auth_password_hash` в той же таблице**, значение — хеш argon2id
+вместе с параметрами (формат PHC). В настройки, которые отдаёт и принимает API, ключ не
+входит: сохранение настроек из UI его не затирает, а `GET /api/settings` не выносит
+наружу даже хеш.
+
+**`sessions` — выданные сессии панели** ([ADR 0009](decisions/0009-public-panel-access.md)):
+хеш токена, а не сам токен, поэтому доступ к файлу БД не даёт готовой cookie. Смена
+пароля удаляет все строки, истёкшие убираются по расписанию.

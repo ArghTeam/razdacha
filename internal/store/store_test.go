@@ -39,7 +39,7 @@ func TestOpenCreatesSchema(t *testing.T) {
 		t.Fatalf("версия схемы = %d, ожидалась %d", v, schemaVersion())
 	}
 
-	for _, table := range []string{"tunnels", "rules", "peers", "settings"} {
+	for _, table := range []string{"tunnels", "rules", "peers", "settings", "sessions"} {
 		var name string
 		err := s.db.QueryRow(
 			`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
