@@ -1,4 +1,9 @@
 {
+  "statusLine": {
+    "type": "command",
+    "command": "bash \"/Users/romanzhigalkin/.claude/plugins/cache/ledgerloop/ledger/0.3.0/bin/statusline.sh\"",
+    "padding": 1
+  },
   "permissions": {
     "additionalDirectories": [
       "/Users/romanzhigalkin/Web/podkop"
