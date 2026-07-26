@@ -15,7 +15,7 @@ func withClash(t *testing.T, ts *testServer, h http.HandlerFunc) {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	ts.Server.clash = clash.New(clash.Options{
+	ts.clash = clash.New(clash.Options{
 		Addr:         srv.Listener.Addr().String(),
 		ProbeTimeout: 100 * time.Millisecond,
 		HTTPClient:   &http.Client{Timeout: 300 * time.Millisecond},
@@ -145,7 +145,7 @@ func TestCheckTunnelSingboxSilent(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	addr := srv.Listener.Addr().String()
 	srv.Close()
-	ts.Server.clash = clash.New(clash.Options{Addr: addr, ProbeTimeout: 100 * time.Millisecond})
+	ts.clash = clash.New(clash.Options{Addr: addr, ProbeTimeout: 100 * time.Millisecond})
 
 	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+tun.ID+"/check", "")
 	requireCode(t, resp, http.StatusServiceUnavailable)
@@ -244,7 +244,7 @@ func TestCheckForgottenAfterDelete(t *testing.T) {
 	requireCode(t, ts.auth(t, cookie, http.MethodDelete, "/api/tunnels/"+tun.ID, ""), http.StatusOK)
 
 	listTunnels(t, ts, cookie)
-	if _, ok := ts.Server.checks.get(tun.ID); ok {
+	if _, ok := ts.checks.get(tun.ID); ok {
 		t.Error("результат проверки пережил удаление туннеля")
 	}
 }

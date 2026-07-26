@@ -66,7 +66,7 @@ var (
 	ErrProbeFailed = errors.New("туннель не ответил на проверку")
 
 	// ErrBadResponse — ответ Clash API не разобран.
-	ErrBadResponse = errors.New("Clash API ответил непонятным телом")
+	ErrBadResponse = errors.New("непонятный ответ Clash API")
 )
 
 // Options — параметры клиента.
@@ -207,14 +207,14 @@ func (c *Client) Proxy(ctx context.Context, tag string) (Proxy, error) {
 	if err != nil {
 		return Proxy{}, err
 	}
-	switch {
-	case status == http.StatusOK:
+	switch status {
+	case http.StatusOK:
 		var p Proxy
 		if err := json.Unmarshal(body, &p); err != nil {
 			return Proxy{}, fmt.Errorf("%w: состояние туннеля %q: %w", ErrBadResponse, tag, err)
 		}
 		return p, nil
-	case status == http.StatusNotFound:
+	case http.StatusNotFound:
 		return Proxy{}, fmt.Errorf("%w: %s", ErrNotFound, tag)
 	default:
 		return Proxy{}, fmt.Errorf("%w: код %d, %s", ErrBadResponse, status, detail(body))
@@ -269,7 +269,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, in
 		}
 		return nil, 0, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
