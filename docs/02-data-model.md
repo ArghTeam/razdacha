@@ -12,18 +12,27 @@ Settings   │      │
 
 ## Tunnel
 
-Исходящий канал. Ровно один туннель = один outbound либо endpoint в конфиге sing-box.
+Исходящий канал. Один туннель = один тег, на который ссылаются правила: outbound, endpoint
+либо группа `urltest` ([ADR 0010](decisions/0010-tunnel-pool-urltest.md)).
 
 | Поле | Тип | Описание |
 |---|---|---|
 | `id` | uuid | |
 | `name` | string | отображаемое имя, уникально |
 | `type` | enum | `wireguard` \| `vless` \| `shadowsocks` \| `trojan` \| `hysteria2` \| `socks` \| `raw` |
-| `source` | enum | `url` \| `wg_conf` \| `json` — в каком виде пользователь ввёл конфиг |
-| `raw` | text | то, что вставил пользователь (URL, `.conf` или JSON) |
-| `parsed` | json | результат разбора, готовый к вклейке в конфиг sing-box |
+| `source` | enum | `url` \| `wg_conf` \| `json` \| `pool` — в каком виде пользователь ввёл конфиг |
+| `raw` | text | то, что вставил пользователь (URL, `.conf`, JSON или URL каталога при `pool`) |
+| `parsed` | json | результат разбора, готовый к вклейке в конфиг sing-box; при `pool` пуст |
+| `pool` | json | серверы пула, снятые с каталога; пуст у остальных форм |
+| `pool_updated_at` | ts | когда каталог обходили в последний раз; ноль — ни разу |
 | `enabled` | bool | |
 | `created_at` | ts | |
+
+**`source = pool`** — туннель, собранный из каталога бесплатных ключей: `raw` хранит URL
+каталога, `pool` — снятые с него серверы (URL, страна, подпись, пинг карточки). Такой
+туннель разворачивается в N vless-outbound'ов плюс `urltest` под тегом туннеля; ротацию и
+health-check ведёт sing-box ([ADR 0010](decisions/0010-tunnel-pool-urltest.md)). Выключение
+пула — штатный `enabled`.
 
 Производные поля (не хранятся, отдаются API): `status` (up/down/unknown), `latency_ms`,
 `last_check`.
@@ -151,7 +160,8 @@ Settings   │      │
 CREATE TABLE tunnels (
   id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, type TEXT NOT NULL,
   source TEXT NOT NULL, raw TEXT NOT NULL, parsed TEXT NOT NULL,
-  enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
+  enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL,
+  pool TEXT NOT NULL DEFAULT '[]', pool_updated_at INTEGER NOT NULL DEFAULT 0);
 
 CREATE TABLE rules (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, action TEXT NOT NULL,

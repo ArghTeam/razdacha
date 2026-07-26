@@ -31,3 +31,6 @@ wg*.conf
 .idea/
 .vscode/
 *.swp
+
+# воркtree фоновых агентов — рабочие копии, в истории им не место
+/.claude/worktrees/
