@@ -38,6 +38,9 @@ var (
 // на него завязаны nft-правила (docs/03-networking.md).
 const DefaultWGInterface = "wg0"
 
+// wgLinkTypeName — тип интерфейса, каким его называет ядро.
+const wgLinkTypeName = "wireguard"
+
 // wgHandshakeTimeout — после какого молчания пир считается офлайн. Клиенты шлют
 // keepalive раз в 25 секунд, поэтому три минуты — заведомо не флап.
 const wgHandshakeTimeout = 3 * time.Minute
@@ -66,6 +69,9 @@ type wgLinkOps interface {
 	Up(name string) error
 	// Delete снимает интерфейс. Отсутствие интерфейса ошибкой не считается.
 	Delete(name string) error
+	// DiagState читает состояние интерфейса, ничего не меняя. Отсутствие
+	// интерфейса — нулевое состояние, а не ошибка.
+	DiagState(name string) (DiagLinkState, error)
 }
 
 // wgDeviceOps — операции wgctrl над устройством WireGuard.

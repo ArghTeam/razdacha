@@ -1,9 +1,14 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
+	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -15,6 +20,19 @@ const (
 	statusError   = "error"
 	statusUnknown = "unknown"
 )
+
+// diagMTU — MTU клиентов и wg0 (ADR 0004). Расхождение — баг, а не настройка:
+// у клиента нет способа узнать, что сервер поднял интерфейс с другим MTU.
+const diagMTU = 1280
+
+// diagStaleFactor — во сколько интервалов обновления списки считаются
+// протухшими. Одного интервала мало: прогон занимает время, и проверка сразу
+// после срока показывала бы предупреждение на исправной системе.
+const diagStaleFactor = 2
+
+// errDiagNoSource — источника данных проверки в демоне нет. Отдельная ошибка,
+// а не пустой снимок: «unknown» обязан объяснять, чего не хватает.
+var errDiagNoSource = errors.New("источник данных не подключён к демону")
 
 // check — одна строка диагностики.
 type check struct {
@@ -30,43 +48,141 @@ type diagResponse struct {
 	Overall string  `json:"overall"`
 }
 
-// notReady — детализация проверки, источника которой ещё нет в коде. Проверка не
-// пропускается и не подделывается под «ok»: «неизвестно» это состояние, а не
-// отсутствие строки в списке.
-func notReady(layer string) string {
-	return "данных нет: слой " + layer + " ещё не написан"
+// DiagLists — свежесть кэша списков глазами диагностики. Заполняет
+// планировщик слоя lists; пока он не подключён к демону, источника нет.
+type DiagLists struct {
+	// Sources — сколько списков требуют правила.
+	Sources int
+	// Loaded — сколько из них лежит в кэше разобранными.
+	Loaded int
+	// LastRefresh — когда расписание отработало в последний раз. Нулевое
+	// время означает, что первый прогон ещё не закончился.
+	LastRefresh time.Time
+}
+
+// DiagSources — источники данных диагностики.
+//
+// Поля независимы: пустое означает «источника нет», и проверка отвечает
+// unknown с объяснением, а не пропадает из сводки (docs/05-api.md). Функции, а
+// не один интерфейс, потому что подключаются они порознь: wg0 живёт в демоне
+// на любой платформе, nftables — только под Linux, планировщик списков
+// приезжает отдельной задачей.
+type DiagSources struct {
+	// WG — состояние интерфейса клиентов, [netstack.WGManager.DiagState].
+	WG func(context.Context) (netstack.DiagWGState, error)
+	// Nft — состояние таблицы `inet razdacha`, [netstack.DiagNft].
+	Nft func(context.Context) (netstack.DiagNftState, error)
+	// IPForward — net.ipv4.ip_forward, [netstack.DiagIPForward].
+	IPForward func(context.Context) (bool, error)
+	// Lists — свежесть кэша списков.
+	Lists func(context.Context) (DiagLists, error)
 }
 
 // handleDiag — `GET /api/diag`.
 //
-// По-настоящему проверяется пока одно — собирается ли конфиг sing-box из текущего
-// состояния БД: это чистая функция, ей не нужны ни root, ни сеть. Остальное
-// (wg0, nftables, forwarding, path MTU, доступность туннелей, свежесть списков)
-// требует netstack, lists-планировщика и клиента Clash API и отдаётся как unknown.
+// Каждая проверка читает свой источник и отвечает по существу. Источник
+// недоступен — проверка остаётся в сводке со статусом unknown и причиной в
+// detail: молчаливое «данных нет» скрывает и поломку, и неподключённый слой.
 func (s *Server) handleDiag(w http.ResponseWriter, r *http.Request) {
-	snap, err := s.store.Snapshot(r.Context())
+	ctx := r.Context()
+	snap, err := s.store.Snapshot(ctx)
 	if err != nil {
 		s.storeError(w, err, "Состояние не прочитано")
 		return
 	}
 
+	wg, wgErr := diagRead(ctx, s.diag.WG)
+	nft, nftErr := diagRead(ctx, s.diag.Nft)
+	forward, forwardErr := diagRead(ctx, s.diag.IPForward)
+	lists, listsErr := diagRead(ctx, s.diag.Lists)
+
 	checks := []check{
-		{ID: "wg", Title: "WireGuard", Status: statusUnknown, Detail: notReady("netstack")},
+		wgCheck(wg, wgErr, snap),
 		singboxCheck(snap),
-		{ID: "nft", Title: "Правила nftables", Status: statusUnknown, Detail: notReady("netstack")},
+		nftCheck(nft, nftErr),
 		{
 			ID: "tunnels", Title: "Туннели", Status: statusUnknown,
 			Detail: "проверка доступности появится с клиентом Clash API",
 		},
-		{
-			ID: "lists", Title: "Списки", Status: statusUnknown,
-			Detail: "планировщик обновления списков ещё не подключён к демону",
-		},
-		{ID: "forward", Title: "IP forwarding", Status: statusUnknown, Detail: notReady("netstack")},
-		{ID: "mtu", Title: "Path MTU", Status: statusUnknown, Detail: notReady("netstack")},
+		listsCheck(lists, listsErr, snap.Settings, s.now()),
+		forwardCheck(forward, forwardErr, nft, nftErr),
+		mtuCheck(wg, wgErr, snap.Settings),
 	}
 
 	writeJSON(w, s.log, http.StatusOK, diagResponse{Checks: checks, Overall: overall(checks)})
+}
+
+// diagRead читает источник, подставляя [errDiagNoSource] вместо неподключённого.
+func diagRead[T any](ctx context.Context, src func(context.Context) (T, error)) (T, error) {
+	var zero T
+	if src == nil {
+		return zero, errDiagNoSource
+	}
+	v, err := src(ctx)
+	if err != nil {
+		return zero, err
+	}
+	return v, nil
+}
+
+// diagUnknown — единственный способ выдать unknown: причина всегда в detail.
+func diagUnknown(c check, what string, err error) check {
+	c.Status = statusUnknown
+	c.Detail = what + ": " + err.Error()
+	return c
+}
+
+// wgCheck — интерфейс поднят, слушает настроенный порт, и на нём столько же
+// пиров, сколько включено в БД.
+func wgCheck(st netstack.DiagWGState, err error, snap store.Snapshot) check {
+	c := check{ID: "wg", Title: "WireGuard"}
+	if err != nil {
+		return diagUnknown(c, "состояние интерфейса не прочитано", err)
+	}
+
+	name := st.Name
+	if name == "" {
+		name = netstack.DefaultWGInterface
+	}
+	if !st.Exists {
+		c.Status = statusError
+		c.Detail = fmt.Sprintf("интерфейса %s нет: демон его не поднял", name)
+		return c
+	}
+	if !st.Up {
+		c.Status = statusError
+		c.Detail = fmt.Sprintf("интерфейс %s есть, но не поднят: клиенты не подключатся", name)
+		return c
+	}
+	if want := snap.Settings.WGListenPort; st.ListenPort != want {
+		c.Status = statusError
+		c.Detail = fmt.Sprintf("%s слушает порт %d, в настройках %d: клиенты идут не туда",
+			name, st.ListenPort, want)
+		return c
+	}
+
+	enabled := diagEnabledPeers(snap.Peers)
+	if st.Peers != enabled {
+		c.Status = statusWarn
+		c.Detail = fmt.Sprintf("на %s пиров %d, включённых в базе %d: синхронизация ещё не прошла",
+			name, st.Peers, enabled)
+		return c
+	}
+	c.Status = statusOK
+	c.Detail = fmt.Sprintf("%s поднят, порт %d, пиров %d", name, st.ListenPort, st.Peers)
+	return c
+}
+
+// diagEnabledPeers — сколько пиров должно быть на интерфейсе: выключенный
+// остаётся в БД, но с интерфейса снимается.
+func diagEnabledPeers(peers []store.Peer) int {
+	n := 0
+	for _, p := range peers {
+		if p.Enabled {
+			n++
+		}
+	}
+	return n
 }
 
 // singboxCheck собирает конфиг из снимка состояния. Ошибка здесь означает, что
@@ -89,6 +205,186 @@ func singboxCheck(snap store.Snapshot) check {
 	c.Detail = fmt.Sprintf("конфиг собирается: туннелей %d, правил %d",
 		len(snap.Tunnels), len(snap.Rules))
 	return c
+}
+
+// nftCheck — таблица на месте, цепочки и сеты созданы.
+func nftCheck(st netstack.DiagNftState, err error) check {
+	c := check{ID: "nft", Title: "Правила nftables"}
+	if err != nil {
+		return diagUnknown(c, "состояние nftables не прочитано", err)
+	}
+
+	table := st.Table
+	if table == "" {
+		table = netstack.NftTable
+	}
+	if !st.Exists {
+		c.Status = statusError
+		c.Detail = fmt.Sprintf("таблицы inet %s нет: правила не залиты, трафик идёт мимо туннелей",
+			table)
+		return c
+	}
+	if chains, sets := st.DiagMissing(); len(chains) > 0 || len(sets) > 0 {
+		c.Status = statusError
+		c.Detail = fmt.Sprintf("таблица inet %s залита не целиком: %s",
+			table, diagMissingText(chains, sets))
+		return c
+	}
+	c.Status = statusOK
+	c.Detail = fmt.Sprintf("таблица inet %s на месте: цепочек %d, сетов %d, подсетей в сете %d",
+		table, len(st.Chains), len(st.Sets), st.SubnetIntervals)
+	return c
+}
+
+// diagMissingText перечисляет недостающие объекты таблицы.
+func diagMissingText(chains, sets []string) string {
+	var parts []string
+	if len(chains) > 0 {
+		parts = append(parts, "нет цепочек "+strings.Join(chains, ", "))
+	}
+	if len(sets) > 0 {
+		parts = append(parts, "нет сетов "+strings.Join(sets, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// forwardCheck — форвардинг включён и обратный путь есть: без masquerade
+// ответы на трафик клиентов не вернутся, сколько бы ip_forward ни стоял.
+func forwardCheck(forward bool, forwardErr error, nft netstack.DiagNftState, nftErr error) check {
+	c := check{ID: "forward", Title: "IP forwarding"}
+	if forwardErr != nil {
+		return diagUnknown(c, "net.ipv4.ip_forward не прочитан", forwardErr)
+	}
+	if !forward {
+		c.Status = statusError
+		c.Detail = "net.ipv4.ip_forward выключен: трафик клиентов дальше wg0 не уходит"
+		return c
+	}
+	if nftErr != nil {
+		return diagUnknown(c,
+			"ip_forward включён; masquerade проверить нечем, состояние nftables не прочитано",
+			nftErr)
+	}
+	if !nft.Exists {
+		c.Status = statusError
+		c.Detail = "ip_forward включён, но таблицы nft нет: masquerade не настроен"
+		return c
+	}
+	if !nft.Masquerade {
+		c.Status = statusError
+		c.Detail = fmt.Sprintf(
+			"ip_forward включён, но в цепочке %s нет masquerade: ответы клиентам не вернутся",
+			netstack.ChainPostrouting)
+		return c
+	}
+	c.Status = statusOK
+	c.Detail = "ip_forward включён, masquerade на " + diagOIf(nft.MasqueradeOIf)
+	return c
+}
+
+// diagOIf — как назвать интерфейс masquerade в сводке.
+func diagOIf(name string) string {
+	if name == "" {
+		return "всём исходящем трафике"
+	}
+	return name
+}
+
+// mtuCheck — 1280 и на wg0, и в том, что уходит клиентам (ADR 0004).
+//
+// Проверяются оба конца: одинаково неверны и интерфейс с чужим MTU, и
+// настройка, из которой клиентам выдаётся не 1280.
+func mtuCheck(st netstack.DiagWGState, err error, settings store.Settings) check {
+	c := check{ID: "mtu", Title: "Path MTU"}
+
+	if settings.ClientMTU != diagMTU {
+		c.Status = statusError
+		c.Detail = fmt.Sprintf("клиентам выдаётся MTU %d, ADR 0004 требует %d",
+			settings.ClientMTU, diagMTU)
+		return c
+	}
+	if err != nil {
+		return diagUnknown(c,
+			fmt.Sprintf("клиентам выдаётся MTU %d; MTU интерфейса не прочитан", diagMTU), err)
+	}
+
+	name := st.Name
+	if name == "" {
+		name = netstack.DefaultWGInterface
+	}
+	if !st.Exists {
+		c.Status = statusUnknown
+		c.Detail = fmt.Sprintf("клиентам выдаётся MTU %d; интерфейса %s нет, сверять не с чем",
+			diagMTU, name)
+		return c
+	}
+	if st.MTU != diagMTU {
+		c.Status = statusError
+		c.Detail = fmt.Sprintf("MTU %s равен %d, клиентам выдаётся %d: пакеты будут рваться",
+			name, st.MTU, diagMTU)
+		return c
+	}
+	c.Status = statusOK
+	c.Detail = fmt.Sprintf("%d и на %s, и в клиентских конфигах", diagMTU, name)
+	return c
+}
+
+// listsCheck — свежесть кэша списков.
+//
+// Планировщик слоя lists к демону ещё не подключён (issue #39), поэтому
+// отсутствие источника здесь ожидаемо и названо своими словами.
+func listsCheck(l DiagLists, err error, settings store.Settings, now time.Time) check {
+	c := check{ID: "lists", Title: "Списки"}
+	if errors.Is(err, errDiagNoSource) {
+		c.Status = statusUnknown
+		c.Detail = "планировщик обновления списков ещё не подключён к демону"
+		return c
+	}
+	if err != nil {
+		return diagUnknown(c, "состояние кэша списков не прочитано", err)
+	}
+
+	if l.Sources == 0 {
+		c.Status = statusOK
+		c.Detail = "правила не ссылаются на списки — обновлять нечего"
+		return c
+	}
+	if l.LastRefresh.IsZero() {
+		c.Status = statusWarn
+		c.Detail = fmt.Sprintf("списки ещё ни разу не обновлялись: источников %d", l.Sources)
+		return c
+	}
+
+	age := now.Sub(l.LastRefresh)
+	if limit := diagStaleFactor * settings.ListUpdateInterval; limit > 0 && age > limit {
+		c.Status = statusWarn
+		c.Detail = fmt.Sprintf("кэш протух: обновлялся %s назад при интервале %s",
+			diagAge(age), diagAge(settings.ListUpdateInterval))
+		return c
+	}
+	if l.Loaded < l.Sources {
+		c.Status = statusWarn
+		c.Detail = fmt.Sprintf("загружено %d списков из %d: остальные не скачались",
+			l.Loaded, l.Sources)
+		return c
+	}
+	c.Status = statusOK
+	c.Detail = fmt.Sprintf("обновлены %s назад: списков %d", diagAge(age), l.Loaded)
+	return c
+}
+
+// diagAge — возраст по-русски: строка уходит в UI как есть.
+func diagAge(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "меньше минуты"
+	case d < time.Hour:
+		return fmt.Sprintf("%d мин", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%d ч", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%d дн", int(d.Hours()/24))
+	}
 }
 
 // overall — худший из статусов. «Неизвестно» хуже «ok», но лучше предупреждения:

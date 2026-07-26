@@ -77,11 +77,11 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	defer func() { _ = wg.Close() }()
 	go syncWGPeers(ctx, st, wg)
 
-	stopNetfilter, err := startNetfilter(ctx, st, slog.Default())
+	nf, err := startNetfilter(ctx, st, slog.Default())
 	if err != nil {
 		return err
 	}
-	defer stopNetfilter()
+	defer nf.stop()
 
 	// Без пароля демон не стартует: панель доступна из интернета, и запуск
 	// «пока без авторизации» отдал бы наружу root-демон (ADR 0009).
@@ -90,6 +90,13 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		Store:           st,
 		ServerPublicKey: wg.PublicKey,
 		PeerStats:       wg.Stats,
+		// Источник свежести списков не заполнен: планировщик слоя lists к
+		// демону ещё не подключён, и проверка честно говорит об этом сама.
+		Diag: api.DiagSources{
+			WG:        wg.DiagState,
+			Nft:       nf.nftState,
+			IPForward: netstack.DiagIPForward,
+		},
 	})
 	if errors.Is(err, api.ErrNoPassword) {
 		return fmt.Errorf("%w; задайте его: razdachad -set-password", err)
@@ -98,6 +105,17 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		return err
 	}
 	return srv.Run(ctx)
+}
+
+// netfilter — то, что демон получает от подсистемы правил: снятие при
+// остановке и чтение состояния для диагностики. Тип объявлен здесь, а не в
+// netfilter_linux.go, потому что нужен обеим сборкам.
+type netfilter struct {
+	// stop вызывается при остановке демона.
+	stop func()
+	// nftState отдаёт состояние таблицы диагностике. Пустое поле означает
+	// «источника нет», и проверка отвечает unknown с объяснением.
+	nftState func(context.Context) (netstack.DiagNftState, error)
 }
 
 // wgSyncInterval — как часто состояние БД сверяется с интерфейсом.

@@ -18,10 +18,12 @@ type fakeNftConn struct {
 	ops      []string
 	chains   []*nftables.Chain
 	sets     map[string][]nftables.SetElement
+	setList  []*nftables.Set
 	rules    []*nftables.Rule
 	flushes  int
 	flushErr error
 	listErr  error
+	readErr  error
 }
 
 func newFakeNftConn(existing ...string) *fakeNftConn {
@@ -59,6 +61,7 @@ func (f *fakeNftConn) AddChain(c *nftables.Chain) *nftables.Chain {
 func (f *fakeNftConn) AddSet(s *nftables.Set, vals []nftables.SetElement) error {
 	f.ops = append(f.ops, "add-set:"+s.Name)
 	f.sets[s.Name] = vals
+	f.setList = append(f.setList, s)
 	return nil
 }
 
@@ -66,6 +69,43 @@ func (f *fakeNftConn) AddRule(r *nftables.Rule) *nftables.Rule {
 	f.ops = append(f.ops, "add-rule:"+r.Chain.Name)
 	f.rules = append(f.rules, r)
 	return r
+}
+
+// Чтение состояния идёт по тому же, что записала заливка: так диагностика
+// проверяется на настоящем составе таблицы, а не на выдуманном.
+
+func (f *fakeNftConn) ListChainsOfTableFamily(nftables.TableFamily) ([]*nftables.Chain, error) {
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
+	return f.chains, nil
+}
+
+func (f *fakeNftConn) GetSets(*nftables.Table) ([]*nftables.Set, error) {
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
+	return f.setList, nil
+}
+
+func (f *fakeNftConn) GetSetElements(s *nftables.Set) ([]nftables.SetElement, error) {
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
+	return f.sets[s.Name], nil
+}
+
+func (f *fakeNftConn) GetRules(_ *nftables.Table, c *nftables.Chain) ([]*nftables.Rule, error) {
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
+	var out []*nftables.Rule
+	for _, r := range f.rules {
+		if r.Chain != nil && r.Chain.Name == c.Name {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeNftConn) Flush() error {

@@ -30,3 +30,7 @@ func (unsupportedWGLink) Up(name string) error {
 func (unsupportedWGLink) Delete(name string) error {
 	return fmt.Errorf("%w: интерфейс %s", ErrWGUnsupported, name)
 }
+
+func (unsupportedWGLink) DiagState(name string) (DiagLinkState, error) {
+	return DiagLinkState{}, fmt.Errorf("%w: интерфейс %s", ErrWGUnsupported, name)
+}

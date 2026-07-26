@@ -66,6 +66,10 @@ type Config struct {
 	// означает «источника нет», и производные поля пиров остаются null.
 	PeerStats func(context.Context) (map[string]netstack.WGPeerStat, error)
 
+	// Diag — источники данных диагностики. Пустые поля означают «источника
+	// нет»: проверка отвечает unknown с объяснением, а не исчезает из сводки.
+	Diag DiagSources
+
 	// UI — статика панели с корнем на index.html. Пустой означает встроенную
 	// сборку из ui/dist; тесты подставляют свою.
 	UI fs.FS
@@ -89,6 +93,7 @@ type Server struct {
 	sleep     func(context.Context, time.Duration)
 	serverKey func(context.Context) (string, error)
 	peerStat  func(context.Context) (map[string]netstack.WGPeerStat, error)
+	diag      DiagSources
 	ui        fs.FS
 	applier   Applier
 	handler   http.Handler
@@ -125,6 +130,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		now:       cfg.Now,
 		serverKey: cfg.ServerPublicKey,
 		peerStat:  cfg.PeerStats,
+		diag:      cfg.Diag,
 		ui:        cfg.UI,
 		applier:   cfg.Applier,
 		verify:    make(chan struct{}, maxVerifications),

@@ -9,9 +9,6 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-// wgLinkTypeName — тип интерфейса, каким его называет ядро.
-const wgLinkTypeName = "wireguard"
-
 // netlinkWGLink — операции над wg0 через netlink. Бинарники `ip` и `wg-quick`
 // не вызываются: набор и версии утилит на целевой матрице ОС не совпадают.
 type netlinkWGLink struct{}
@@ -118,6 +115,25 @@ func (netlinkWGLink) Delete(name string) error {
 		return fmt.Errorf("удаление интерфейса %s: %w", name, err)
 	}
 	return nil
+}
+
+// DiagState читает интерфейс, ничего не меняя: диагностике нужны факт
+// существования, флаг IFF_UP, MTU и тип.
+func (netlinkWGLink) DiagState(name string) (DiagLinkState, error) {
+	link, err := wgLinkByName(name)
+	if err != nil {
+		return DiagLinkState{}, err
+	}
+	if link == nil {
+		return DiagLinkState{}, nil
+	}
+	attrs := link.Attrs()
+	return DiagLinkState{
+		Exists: true,
+		Up:     attrs.Flags&net.FlagUp != 0,
+		MTU:    attrs.MTU,
+		Type:   link.Type(),
+	}, nil
 }
 
 // wgLinkByName отличает «интерфейса нет» (nil, nil) от ошибки netlink.
