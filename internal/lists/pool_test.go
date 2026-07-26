@@ -3,10 +3,12 @@ package lists
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -210,8 +212,13 @@ func TestPoolManagerWritesOnlyOnChange(t *testing.T) {
 	}
 }
 
-// Порядок и пинг из каталога изменением не считаются: иначе каждый обход
+// Пинг и подписи из каталога изменением состава не считаются: иначе каждый обход
 // переписывал бы конфиг и перезапускал sing-box.
+//
+// Порядок серверов, в отличие от прежнего поведения, значим — это приоритет отбора в
+// конфиг, и перетасованный список слияние приводит в порядок (см. TestMergePool*).
+// Поэтому здесь дрейфует только то, что каталог действительно меняет от запроса к
+// запросу: пинг и подпись карточки.
 func TestPoolManagerIgnoresPingDrift(t *testing.T) {
 	srv, _ := catalogServer(t)
 	w := &poolWriter{}
@@ -227,7 +234,7 @@ func TestPoolManagerIgnoresPingDrift(t *testing.T) {
 	for i, s := range w.last {
 		s.PingMS += 137
 		s.Title = "другая подпись"
-		stored[len(w.last)-1-i] = s
+		stored[i] = s
 	}
 	m.SetTunnels([]PoolTunnel{{
 		ID: "pppp", Name: "пул", CatalogURL: catalog, Enabled: true, Servers: stored,
@@ -304,6 +311,157 @@ func TestPoolTunnels(t *testing.T) {
 	if got[0].ID != "b" || got[0].CatalogURL != DefaultPoolCatalogURL ||
 		got[0].Enabled || len(got[0].Servers) != 1 {
 		t.Errorf("пул выбран не целиком: %+v", got[0])
+	}
+}
+
+// poolCards изображает выдачу каталога: n карточек, пинг убывает с номером, так что
+// лучшие по пингу — последние.
+func poolCards(n int) []store.PoolServer {
+	out := make([]store.PoolServer, 0, n)
+	for i := range n {
+		out = append(out, store.PoolServer{
+			URL:     fmt.Sprintf("vless://key-%02d@10.0.0.%d:443", i, i+1),
+			Country: "Нидерланды",
+			Title:   fmt.Sprintf("сервер %d", i),
+			PingMS:  1000 - i,
+		})
+	}
+	return out
+}
+
+// poolURLs — ссылки списка по порядку.
+func poolURLs(servers []store.PoolServer) []string {
+	out := make([]string, 0, len(servers))
+	for _, s := range servers {
+		out = append(out, s.URL)
+	}
+	return out
+}
+
+// poolWithout — выдача каталога без перечисленных ссылок и с уехавшим пингом: сайт
+// отдаёт часть карточек без ссылки на ключ и меняет пинг на каждом обходе.
+func poolWithout(servers []store.PoolServer, skip ...string) []store.PoolServer {
+	skipped := make(map[string]bool, len(skip))
+	for _, u := range skip {
+		skipped[u] = true
+	}
+	out := make([]store.PoolServer, 0, len(servers))
+	for i := len(servers) - 1; i >= 0; i-- {
+		s := servers[i]
+		if skipped[s.URL] {
+			continue
+		}
+		s.PingMS += 137
+		s.Title = "подпись этого обхода"
+		out = append(out, s)
+	}
+	return out
+}
+
+// Первый обход выстраивает пул по пингу: окна ещё нет, все карточки новые, и в его
+// начале — лучшие. Пинг не показан — сервер уходит в конец, но не выбрасывается.
+func TestMergePoolFirstCrawlOrdersByPing(t *testing.T) {
+	cards := poolCards(4)
+	cards = append(cards, store.PoolServer{URL: "vless://key-nп@10.0.0.9:443"})
+
+	merged, changed := MergePool(nil, cards)
+	if !changed {
+		t.Fatal("первый обход не счёлся изменением")
+	}
+	want := []string{cards[3].URL, cards[2].URL, cards[1].URL, cards[0].URL, cards[4].URL}
+	if got := poolURLs(merged); !slices.Equal(got, want) {
+		t.Errorf("порядок %v, ожидался %v", got, want)
+	}
+}
+
+// Пинг и подпись известного сервера при обходе не перезаписываются, порядок не
+// пересчитывается: иначе отбор ехал бы от шума измерений чужого сайта, а с ним
+// менялся бы и конфиг (issue #68).
+func TestMergePoolFreezesKnownCards(t *testing.T) {
+	cards := poolCards(20)
+	stored, _ := MergePool(nil, poolWithout(cards))
+
+	merged, changed := MergePool(stored, poolWithout(cards))
+	if changed {
+		t.Error("дрейф пинга и подписей сочтён изменением состава")
+	}
+	if !slices.Equal(poolURLs(merged), poolURLs(stored)) {
+		t.Error("порядок пула пересчитался при неизменившемся наборе")
+	}
+	for i, s := range merged {
+		if s.PingMS != stored[i].PingMS || s.Title != stored[i].Title {
+			t.Fatalf("запись %d перезаписана: %+v, было %+v", i, s, stored[i])
+		}
+	}
+}
+
+// Новая карточка не выселяет из окна конфига живой сервер, даже если у неё пинг лучше
+// всех: смена окна стоит перезапуска sing-box, а работающему серверу замена не нужна.
+func TestMergePoolNewcomerWaitsBehindWindow(t *testing.T) {
+	cards := poolCards(20)
+	stored, _ := MergePool(nil, poolWithout(cards))
+
+	newcomer := store.PoolServer{URL: "vless://новый@10.9.9.9:443", PingMS: 1}
+	merged, changed := MergePool(stored, append(poolWithout(cards), newcomer))
+	if !changed {
+		t.Fatal("новая карточка не попала в пул")
+	}
+	if !slices.Equal(poolURLs(merged)[:PoolConfigServers], poolURLs(stored)[:PoolConfigServers]) {
+		t.Error("новая карточка сдвинула окно конфига")
+	}
+	// В хвосте она встаёт по пингу, то есть первой за окном.
+	if got := merged[PoolConfigServers].URL; got != newcomer.URL {
+		t.Errorf("за окном первым стоит %q, ожидался новый сервер с лучшим пингом", got)
+	}
+}
+
+// Карточка, не пришедшая на одном обходе, исчезнувшим сервером не считается: сайт
+// отдаёт часть карточек без ссылки почти на каждом запросе. Место она уступает только
+// после нескольких обходов подряд, и ровно своё — остальные не сдвигаются.
+func TestMergePoolReplacesOnlyAfterRepeatedMiss(t *testing.T) {
+	cards := poolCards(20)
+	stored, _ := MergePool(nil, poolWithout(cards))
+	victim := stored[3]
+
+	merged, changed := MergePool(stored, poolWithout(cards, victim.URL))
+	if !changed {
+		t.Fatal("пропуск карточки не отмечен в БД")
+	}
+	if merged[3].URL != victim.URL {
+		t.Fatalf("сервер уступил место после одного пропуска: на его позиции %q", merged[3].URL)
+	}
+	if merged[3].Misses != 1 {
+		t.Errorf("пропуск не посчитан: misses=%d", merged[3].Misses)
+	}
+	if !slices.Equal(poolURLs(merged), poolURLs(stored)) {
+		t.Error("одиночный пропуск карточки сдвинул состав пула")
+	}
+
+	for i := 1; i < poolMissesBeforeDrop; i++ {
+		merged, _ = MergePool(merged, poolWithout(cards, victim.URL))
+	}
+
+	if merged[3].URL == victim.URL {
+		t.Fatalf("сервер не уступил место после %d обходов подряд", poolMissesBeforeDrop)
+	}
+	// Место занимает лучший по пингу из остальных: пинг убывает с номером, серверов
+	// на четыре больше окна, значит это четвёртый по счёту.
+	if want := cards[len(cards)-PoolConfigServers-1].URL; merged[3].URL != want {
+		t.Errorf("место занял %q, ожидался лучший по пингу из остальных %q", merged[3].URL, want)
+	}
+	// Все прочие позиции окна на месте: позиция — это тег участника в конфиге.
+	for i := 0; i < PoolConfigServers; i++ {
+		if i == 3 {
+			continue
+		}
+		if merged[i].URL != stored[i].URL {
+			t.Errorf("позиция %d переехала с %q на %q", i, stored[i].URL, merged[i].URL)
+		}
+	}
+	// Исчезнувший сервер из пула ушёл, а его место занял бывший хвостовой: серверов
+	// стало на одного меньше.
+	if len(merged) != len(stored)-1 {
+		t.Errorf("серверов стало %d, ожидалось %d", len(merged), len(stored)-1)
 	}
 }
 

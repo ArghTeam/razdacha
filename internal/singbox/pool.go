@@ -3,7 +3,6 @@ package singbox
 import (
 	"fmt"
 	"log/slog"
-	"sort"
 	"time"
 
 	C "github.com/sagernet/sing-box/constant"
@@ -26,7 +25,8 @@ const (
 	// обязан быть меньше него.
 	poolIdleTimeout = 30 * time.Minute
 
-	// poolMaxServers — сколько серверов пула попадает в конфиг. Полнота не нужна:
+	// poolMaxServers — сколько серверов пула попадает в конфиг: первые столько в
+	// порядке приоритета, который ведёт слой lists. Полнота не нужна:
 	// работоспособность даёт горстка ключей, а каждый лишний участник — запись в
 	// outbounds[] и проба каждые PoolTestInterval. Шестнадцать переживают отказ
 	// большинства и оставляют конфиг читаемым руками.
@@ -41,8 +41,9 @@ const (
 	poolTestURL = "https://www.gstatic.com/generate_204"
 )
 
-// poolMemberTag — тег одного участника пула. Индекс — позиция в отсортированном
-// наборе, поэтому неизменившийся набор даёт те же теги, а значит и тот же JSON.
+// poolMemberTag — тег одного участника пула. Индекс — позиция в отобранном наборе,
+// а порядок отбора держит слой lists, поэтому уцелевший сервер сохраняет свой тег, и
+// неизменившийся набор даёт тот же JSON.
 func poolMemberTag(tunnelID string, i int) string {
 	return fmt.Sprintf("%s-%d", TunnelTag(tunnelID), i)
 }
@@ -113,13 +114,17 @@ func buildPool(t store.Tunnel, log *slog.Logger) ([]option.Outbound, bool) {
 	}), true
 }
 
-// selectPoolServers отбирает серверы для конфига: лучшие по пингу карточки, но не
-// больше poolMaxServers, и возвращает их в порядке возрастания URL.
+// selectPoolServers отбирает серверы для конфига: первые poolMaxServers штук в том
+// порядке, в каком они лежат в БД, без пустых ссылок и повторов.
 //
-// Порядок обязателен: `sameOnDisk` в apply.go сравнивает конфиг байт в байт, а
-// перезагрузка идёт через `systemctl reload-or-restart`, то есть перезапускает
-// sing-box и рвёт соединения во всех туннелях. Перетасованный JSON при том же
-// наборе серверов означал бы перезапуск на каждом обновлении каталога (ADR 0010).
+// Порядок в БД — это и есть приоритет отбора, а не случайность записи: его ведёт
+// слой lists при обходе каталога (`lists.MergePool`). Известный сервер держит своё
+// место, пока он есть в каталоге, новые встают на освободившиеся места лучшими по
+// пингу впереди. Пересортировка здесь по пингу из карточки была бы ошибкой: пинг
+// пляшет на каждом обходе, шестнадцать участников менялись бы вместе с ним, а с ними
+// и байты конфига. А байты решают всё: `sameOnDisk` в apply.go сравнивает конфиг
+// байт в байт, и любое расхождение идёт в `systemctl reload-or-restart`, то есть в
+// перезапуск sing-box с разрывом соединений во всех туннелях (ADR 0010, issue #68).
 func selectPoolServers(pool []store.PoolServer) []store.PoolServer {
 	seen := make(map[string]bool, len(pool))
 	uniq := make([]store.PoolServer, 0, len(pool))
@@ -129,30 +134,9 @@ func selectPoolServers(pool []store.PoolServer) []store.PoolServer {
 		}
 		seen[s.URL] = true
 		uniq = append(uniq, s)
-	}
-
-	// Отбор: сначала по пингу, при равенстве — по URL, чтобы порядок не зависел
-	// от порядка в БД. Пинг 0 означает «карточка его не показала» — такие уходят
-	// в конец, но не выбрасываются: без них пул из одних безымянных ключей был бы пуст.
-	sort.Slice(uniq, func(i, j int) bool {
-		a, b := poolRank(uniq[i].PingMS), poolRank(uniq[j].PingMS)
-		if a != b {
-			return a < b
+		if len(uniq) == poolMaxServers {
+			break
 		}
-		return uniq[i].URL < uniq[j].URL
-	})
-	if len(uniq) > poolMaxServers {
-		uniq = uniq[:poolMaxServers]
 	}
-
-	sort.Slice(uniq, func(i, j int) bool { return uniq[i].URL < uniq[j].URL })
 	return uniq
-}
-
-// poolRank переводит пинг в ключ сортировки: неизвестный пинг хуже любого известного.
-func poolRank(ping int) int {
-	if ping <= 0 {
-		return 1 << 30
-	}
-	return ping
 }
