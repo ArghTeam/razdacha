@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log/slog"
-	"reflect"
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/lists"
@@ -73,16 +72,24 @@ func startPools(ctx context.Context, st *store.Store, log *slog.Logger) *lists.P
 	// Start возвращается сразу: первый обход уходит в горутину, и старт демона не
 	// ждёт чужого сайта.
 	m.Start(ctx)
-	go syncPoolTunnels(ctx, st, m, tunnels, log)
+	go syncPoolTunnels(ctx, st, m, tunnels, poolTunnelsInterval, log)
 	return m
 }
 
 // syncPoolTunnels держит набор пулов равным состоянию БД. Появившийся пул
 // обходится сразу: ждать двенадцать часов до первого состава серверов незачем.
+//
+// Свежий набор уезжает в расписание на каждом такте — там лежит и состав серверов, с
+// которым сводится обход каталога, а пишет этот состав в БД само расписание. Внеплановый
+// же обход запускает только изменение [lists.PoolIdentity]: сравнивать целиком
+// [lists.PoolTunnel] нельзя, состав серверов в нём меняется после каждого обхода, и
+// каталог обходился бы каждые полминуты вместо двенадцати часов (issue #77).
+// Интервал сверки передаётся параметром: в проде это poolTunnelsInterval, в тестах —
+// доли секунды, иначе проверка расписания стоила бы полминуты ожидания.
 func syncPoolTunnels(ctx context.Context, st *store.Store, m *lists.PoolManager,
-	prev []lists.PoolTunnel, log *slog.Logger,
+	prev []lists.PoolTunnel, interval time.Duration, log *slog.Logger,
 ) {
-	ticker := time.NewTicker(poolTunnelsInterval)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -92,11 +99,12 @@ func syncPoolTunnels(ctx context.Context, st *store.Store, m *lists.PoolManager,
 		}
 
 		tunnels := poolTunnels(ctx, st, log)
-		if reflect.DeepEqual(tunnels, prev) {
-			continue
-		}
+		changed := !lists.SamePoolSet(tunnels, prev)
 		prev = tunnels
 		m.SetTunnels(tunnels)
+		if !changed {
+			continue
+		}
 		log.Info("набор пулов изменился", "пулов", len(tunnels))
 		if err := m.Refresh(ctx); err != nil && ctx.Err() == nil {
 			log.Warn("каталоги пулов обойдены не полностью", "ошибка", err)
