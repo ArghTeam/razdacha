@@ -3,6 +3,7 @@ package singbox
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
@@ -25,19 +26,37 @@ var singboxTypes = map[store.TunnelType]string{
 //
 // WireGuard уходит в endpoints и работает в userspace (ADR 0002): никаких
 // kernel-интерфейсов wg1/wg2 и bind_interface. Остальные протоколы — обычные
-// outbounds.
-func buildTunnels(list []store.Tunnel) ([]option.Endpoint, []option.Outbound, error) {
+// outbounds. Туннель-пул разворачивается в группу: N vless-outbound'ов плюс
+// `urltest` под тегом туннеля (ADR 0010).
+//
+// Третье значение — идентификаторы туннелей, которые в конфиг не попали, хотя
+// включены: пока это только пул без пригодных серверов. Правила на них
+// пропускаются так же, как правила на выключенный туннель, иначе они ссылались бы
+// на несуществующий тег и `sing-box check` отверг бы конфиг целиком.
+func buildTunnels(list []store.Tunnel, log *slog.Logger) (
+	[]option.Endpoint, []option.Outbound, map[string]bool, error,
+) {
 	var (
 		endpoints []option.Endpoint
 		outbounds []option.Outbound
 	)
+	skipped := make(map[string]bool)
 	for _, t := range list {
 		if !t.Enabled {
 			continue
 		}
+		if t.Source == store.SourcePool {
+			group, ok := buildPool(t, log)
+			if !ok {
+				skipped[t.ID] = true
+				continue
+			}
+			outbounds = append(outbounds, group...)
+			continue
+		}
 		typ, opts, err := tunnelOptions(t)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if typ == C.TypeWireGuard {
 			endpoints = append(endpoints, option.Endpoint{
@@ -49,7 +68,7 @@ func buildTunnels(list []store.Tunnel) ([]option.Endpoint, []option.Outbound, er
 			Type: typ, Tag: TunnelTag(t.ID), Options: opts,
 		})
 	}
-	return endpoints, outbounds, nil
+	return endpoints, outbounds, skipped, nil
 }
 
 // tunnelOptions отдаёт протокол sing-box и тело конфига туннеля.

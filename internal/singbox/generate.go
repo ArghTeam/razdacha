@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"sort"
 	"strconv"
@@ -35,7 +36,8 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 		tunnels[t.ID] = t
 	}
 
-	endpoints, outbounds, err := buildTunnels(snap.Tunnels)
+	log := slog.Default()
+	endpoints, outbounds, skipped, err := buildTunnels(snap.Tunnels, log)
 	if err != nil {
 		return option.Options{}, err
 	}
@@ -82,6 +84,12 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 					"правило %q ссылается на несуществующий туннель %s", r.Name, r.TunnelID)
 			}
 			if !t.Enabled {
+				continue
+			}
+			// Пул без пригодных серверов тега не получил, ссылаться не на что.
+			if skipped[t.ID] {
+				log.Warn("правило пропущено: у его туннеля-пула нет серверов",
+					"правило", r.Name, "туннель", t.Name)
 				continue
 			}
 			tunnelTag = TunnelTag(t.ID)
