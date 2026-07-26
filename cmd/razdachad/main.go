@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/api"
+	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -82,11 +83,11 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	// не останавливают — nil означает работу без списков.
 	listsMgr := startLists(ctx, st, dbPath, slog.Default())
 
-	stopNetfilter, err := startNetfilter(ctx, st, listsMgr, slog.Default())
+	nf, err := startNetfilter(ctx, st, listsMgr, slog.Default())
 	if err != nil {
 		return err
 	}
-	defer stopNetfilter()
+	defer nf.stop()
 
 	// Без пароля демон не стартует: панель доступна из интернета, и запуск
 	// «пока без авторизации» отдал бы наружу root-демон (ADR 0009).
@@ -95,6 +96,12 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		Store:           st,
 		ServerPublicKey: wg.PublicKey,
 		PeerStats:       wg.Stats,
+		Diag: api.DiagSources{
+			WG:        wg.DiagState,
+			Nft:       nf.nftState,
+			IPForward: netstack.DiagIPForward,
+			Lists:     listsDiag(st, listsMgr),
+		},
 	})
 	if errors.Is(err, api.ErrNoPassword) {
 		return fmt.Errorf("%w; задайте его: razdachad -set-password", err)
@@ -103,6 +110,42 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		return err
 	}
 	return srv.Run(ctx)
+}
+
+// netfilter — то, что демон получает от подсистемы правил: снятие при
+// остановке и чтение состояния для диагностики. Тип объявлен здесь, а не в
+// netfilter_linux.go, потому что нужен обеим сборкам.
+type netfilter struct {
+	// stop вызывается при остановке демона.
+	stop func()
+	// nftState отдаёт состояние таблицы диагностике. Пустое поле означает
+	// «источника нет», и проверка отвечает unknown с объяснением.
+	nftState func(context.Context) (netstack.DiagNftState, error)
+}
+
+// listsDiag — источник свежести списков для диагностики: набор источников
+// берётся из состояния БД, загруженность и время прогона — у планировщика.
+//
+// Планировщик не поднялся — источник не подделывается под пустой кэш: проверка
+// должна сказать, что списки не обновляются, а не что они свежие.
+func listsDiag(st *store.Store, m *lists.Manager) func(context.Context) (api.DiagLists, error) {
+	return func(ctx context.Context) (api.DiagLists, error) {
+		if m == nil {
+			return api.DiagLists{}, errors.New("кэш списков не открыт, планировщик не работает")
+		}
+		snap, err := st.Snapshot(ctx)
+		if err != nil {
+			return api.DiagLists{}, err
+		}
+		out := api.DiagLists{LastRefresh: m.LastRefresh()}
+		for _, src := range lists.Sources(snap) {
+			out.Sources++
+			if _, ok := m.List(src.URL); ok {
+				out.Loaded++
+			}
+		}
+		return out, nil
+	}
 }
 
 // wgSyncInterval — как часто состояние БД сверяется с интерфейсом.

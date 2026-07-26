@@ -28,6 +28,11 @@ type nftConn interface {
 	AddSet(s *nftables.Set, vals []nftables.SetElement) error
 	AddRule(r *nftables.Rule) *nftables.Rule
 	Flush() error
+	// Чтение состояния для диагностики: ничего не меняет.
+	ListChainsOfTableFamily(family nftables.TableFamily) ([]*nftables.Chain, error)
+	GetSets(t *nftables.Table) ([]*nftables.Set, error)
+	GetSetElements(s *nftables.Set) ([]nftables.SetElement, error)
+	GetRules(t *nftables.Table, c *nftables.Chain) ([]*nftables.Rule, error)
 }
 
 // Nft заливает и снимает таблицу inet razdacha.

@@ -20,6 +20,10 @@ type fakeWGLink struct {
 	up      bool
 	deleted bool
 	ensured int
+
+	// state и stateErr — что интерфейс отдаёт диагностике.
+	state    DiagLinkState
+	stateErr error
 }
 
 func (f *fakeWGLink) Ensure(_ string, mtu int) error {
@@ -36,6 +40,10 @@ func (f *fakeWGLink) EnsureAddr(_ string, addr netip.Prefix) error {
 func (f *fakeWGLink) Up(string) error { f.up = true; return nil }
 
 func (f *fakeWGLink) Delete(string) error { f.deleted = true; return nil }
+
+func (f *fakeWGLink) DiagState(string) (DiagLinkState, error) {
+	return f.state, f.stateErr
+}
 
 // fakeWGDevice — устройство WireGuard в памяти. Применяет к себе то, что ему
 // записали, чтобы повторная синхронизация видела уже применённое состояние.

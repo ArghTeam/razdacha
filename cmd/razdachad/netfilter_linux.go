@@ -18,16 +18,18 @@ import (
 // (`mgr` может быть nil — тогда только ручные). После каждого прогона
 // планировщика таблица перезаливается заново: сет — часть таблицы, отдельно от
 // неё он не обновляется.
-func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager, log *slog.Logger) (func(), error) {
+func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
+	log *slog.Logger,
+) (netfilter, error) {
 	nft, err := netstack.NewNft()
 	if err != nil {
-		return nil, fmt.Errorf("подключение к nftables: %w", err)
+		return netfilter{}, fmt.Errorf("подключение к nftables: %w", err)
 	}
 
 	route := netstack.NewRoute()
 	wan, err := route.DetectWAN()
 	if err != nil {
-		return nil, fmt.Errorf("определение внешнего интерфейса: %w", err)
+		return netfilter{}, fmt.Errorf("определение внешнего интерфейса: %w", err)
 	}
 
 	apply := func() (int, error) {
@@ -50,10 +52,10 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager, lo
 
 	count, err := apply()
 	if err != nil {
-		return nil, err
+		return netfilter{}, err
 	}
 	if err := route.Apply(); err != nil {
-		return nil, fmt.Errorf("маршрутизация помеченного трафика: %w", err)
+		return netfilter{}, fmt.Errorf("маршрутизация помеченного трафика: %w", err)
 	}
 	log.Info("правила залиты", "wan", wan, "подсетей", count)
 
@@ -64,7 +66,11 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager, lo
 	// Правила остаются в ядре после остановки демона: прямой трафик клиентов
 	// не должен пропадать оттого, что демон перезапускается. Снимает их
 	// --reset-network и удаление пакета.
-	return func() {}, nil
+	//
+	// Диагностика читает состояние своим соединением ([netstack.DiagNft]), а
+	// не тем, которым залиты правила: она ходит из обработчика HTTP, и
+	// соединение nftables пришлось бы делить между запросами.
+	return netfilter{stop: func() {}, nftState: netstack.DiagNft}, nil
 }
 
 // watchLists перезаливает правила после каждого прогона планировщика.
