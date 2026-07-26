@@ -136,15 +136,23 @@ func TestNftApplyObjects(t *testing.T) {
 	if !ok {
 		t.Fatalf("сета %s нет: %v", SetSubnets, f.sets)
 	}
-	if len(sub) != 1 {
-		t.Fatalf("элементов %s = %d, ожидался один интервал", SetSubnets, len(sub))
+	// Интервал задаётся парой элементов: начало и маркер конца с IntervalEnd.
+	// Поле KeyEnd живое ядро отвергает с EINVAL — проверено на Debian 13 (6.12).
+	if len(sub) != 2 {
+		t.Fatalf("элементов %s = %d, ожидались начало и маркер конца", SetSubnets, len(sub))
 	}
-	// Интервал хранится парой границ, конец включающий.
 	if got := sub[0].Key; len(got) != 4 || got[0] != 149 || got[3] != 0 {
 		t.Errorf("начало интервала = %v", got)
 	}
-	if got := sub[0].KeyEnd; len(got) != 4 || got[2] != 175 || got[3] != 255 {
-		t.Errorf("конец интервала = %v", got)
+	if sub[0].IntervalEnd {
+		t.Error("первый элемент помечен как конец интервала")
+	}
+	// Маркер ставится на адрес, следующий за концом: 149.154.175.255 + 1.
+	if got := sub[1].Key; len(got) != 4 || got[2] != 176 || got[3] != 0 {
+		t.Errorf("маркер конца = %v", got)
+	}
+	if !sub[1].IntervalEnd {
+		t.Error("маркер конца не помечен IntervalEnd")
 	}
 }
 
