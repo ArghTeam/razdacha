@@ -7,7 +7,7 @@ import {
   state, tunnelById, peerById, listTitle, toast, toastError,
   openModal, closeModal, modalShell, openMenu, notImplemented, refresh, markDirty,
 } from '../shell.js';
-import { $, $$, esc, lines, badLines, plural } from '../util.js';
+import { $, $$, esc, lines, badLines, validCidr, plural } from '../util.js';
 
 export const title = 'Правила';
 
@@ -23,21 +23,53 @@ const head = () => `
     <div class="screen-sub">Проверяются сверху вниз, первое совпадение выигрывает.</div>
   </div>`;
 
-const conditions = (r) => [...(r.community_lists || []), ...(r.domains || []), ...(r.subnets || [])];
+const conditions = (r) => ({
+  lists: r.community_lists || [],
+  domains: r.domains || [],
+  subnets: r.subnets || [],
+});
 
-/** Правило ниже перекрыто, если правило выше делит с ним хотя бы одно условие.
-    Без этого смысл порядка не виден, и пользователь чинит «неработающее» правило. */
-function shadowedBy(index) {
-  const mine = new Set(conditions(state.rules[index]));
+/** Домен правила выше забирает мой, если он тот же или мой — его поддомен:
+    sing-box сравнивает домены по суффиксу (docs/04-dns-fakeip.md). */
+function domainCovers(up, mine) {
+  const a = up.replace(/^\*\./, '').toLowerCase();
+  const b = mine.replace(/^\*\./, '').toLowerCase();
+  return a === b || b.endsWith(`.${a}`);
+}
+
+const ipToInt = (s) => s.split('.').reduce((acc, o) => (acc * 256) + Number(o), 0);
+
+/** Подсеть правила выше забирает мою, если моя лежит внутри неё. Голый адрес
+    считается /32 — валидатор его допускает. */
+function cidrCovers(up, mine) {
+  if (!validCidr(up) || !validCidr(mine)) return false;
+  const [ua, ub = '32'] = up.split('/');
+  const [ma, mb = '32'] = mine.split('/');
+  const bits = Number(ub);
+  if (bits > Number(mb)) return false;
+  if (bits === 0) return true;
+  const mask = (0xffffffff << (32 - bits)) >>> 0;
+  return ((ipToInt(ua) & mask) >>> 0) === ((ipToInt(ma) & mask) >>> 0);
+}
+
+/** Мои условия, которые уже забирает правило выше по порядку. Без этого смысл
+    порядка не виден, и пользователь чинит «неработающее» правило. */
+function overlap(mine, upper) {
   const hits = [];
-  for (let i = 0; i < index; i++) {
-    const up = state.rules[i];
+  for (const up of upper) {
     if (!up.enabled) continue;
-    const shared = conditions(up).filter((k) => mine.has(k));
+    const u = conditions(up);
+    const shared = [
+      ...mine.lists.filter((k) => u.lists.includes(k)),
+      ...mine.domains.filter((d) => u.domains.some((x) => domainCovers(x, d))),
+      ...mine.subnets.filter((n) => u.subnets.some((x) => cidrCovers(x, n))),
+    ];
     if (shared.length) hits.push({ rule: up, shared });
   }
   return hits;
 }
+
+const shadowedBy = (index) => overlap(conditions(state.rules[index]), state.rules.slice(0, index));
 
 export function view() {
   if (state.missing.has('rules')) {
@@ -108,6 +140,27 @@ export function view() {
 
 /* --- форма правила -------------------------------------------------------- */
 
+/** Порог, после которого каталог сервисов без поиска не читается. */
+const SEARCH_FROM = 8;
+
+/** Действия объясняются в форме: «напрямую» и «блокировать» путают постоянно. */
+const ACTION_HINT = {
+  direct: 'Мимо туннелей — трафик уходит напрямую, с IP этого сервера. Так выводят банки и госуслуги из-под более общего правила ниже.',
+  tunnel: 'Через выбранный туннель — ресурс видит его адрес, а не адрес сервера.',
+  block: 'Соединение отбрасывается: ресурс не открывается вовсе. Это не «напрямую», а «никуда».',
+};
+
+const PROBLEM = {
+  domain: { word: 'домен', tail: 'Ожидается example.com или *.example.com — без http:// и путей.' },
+  cidr: { word: 'подсеть', tail: 'Ожидается 203.0.113.0/24 или один адрес 203.0.113.7.' },
+};
+
+/** Правила, которые проверяются раньше этого. Новое встаёт последним. */
+function rulesAbove(id) {
+  const i = state.rules.findIndex((x) => x.id === id);
+  return i < 0 ? state.rules.slice() : state.rules.slice(0, i);
+}
+
 function modalRule(id) {
   const r = id ? state.rules.find((x) => x.id === id) : {
     id: null, name: '', action: 'tunnel', tunnel_id: (state.tunnels[0] || {}).id || null,
@@ -115,85 +168,190 @@ function modalRule(id) {
     peer_scope: 'all', peer_ids: [], resolve_real_ip: false,
   };
 
+  const above = rulesAbove(id);
+  const pos = above.length + 1;
+  const total = id ? state.rules.length : state.rules.length + 1;
+  const orderNote = pos === 1
+    ? 'Правила проверяются сверху вниз, побеждает первое совпавшее. Это правило первое: до остальных дойдёт только то, что оно не забрало.'
+    : `Правила проверяются сверху вниз, побеждает первое совпавшее. Это правило ${pos}-е из ${total}: `
+      + `${pos - 1} ${plural(pos - 1, 'правило', 'правила', 'правил')} выше ${plural(pos - 1, 'забирает', 'забирают', 'забирают')} `
+      + `свои ресурсы раньше${id ? '' : '; новое встаёт последним, порядок меняется стрелками в списке'}.`;
+
   const listsHtml = state.communityLists.length
     ? state.communityLists.map((l) => `
-      <label><input type="checkbox" name="list" value="${esc(l.key)}" ${(r.community_lists || []).includes(l.key) ? 'checked' : ''}>
-        ${esc(l.title)}</label>`).join('')
-    : '<span style="color:var(--fg-faint);font-size:13px">Каталог списков недоступен — задайте домены и подсети вручную.</span>';
+      <label class="rule-item" data-title="${esc(String(l.title).toLowerCase())} ${esc(l.key)}">
+        <input type="checkbox" name="list" value="${esc(l.key)}" ${(r.community_lists || []).includes(l.key) ? 'checked' : ''}>
+        <span class="rule-item-name">${esc(l.title)}</span>
+        ${l.has_subnets ? '<span class="rule-mini">подсети</span>' : ''}
+      </label>`).join('')
+    : '<span class="rule-none">Каталог списков недоступен — задайте домены и подсети вручную.</span>';
+
+  const searchHtml = state.communityLists.length > SEARCH_FROM
+    ? `<input type="search" class="rule-search" id="r-list-q" autocomplete="off" spellcheck="false"
+         placeholder="Поиск: youtube, telegram…" aria-label="Поиск по спискам">`
+    : '';
 
   const tunnelOpts = state.tunnels.map((t) =>
     `<option value="${esc(t.id)}" ${r.tunnel_id === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
 
   const peersHtml = state.peers.map((p) => `
-    <label><input type="checkbox" name="peer" value="${esc(p.id)}" ${(r.peer_ids || []).includes(p.id) ? 'checked' : ''}>
-      ${esc(p.name)}</label>`).join('');
+    <label class="rule-item"><input type="checkbox" name="peer" value="${esc(p.id)}" ${(r.peer_ids || []).includes(p.id) ? 'checked' : ''}>
+      <span class="rule-item-name">${esc(p.name)}</span></label>`).join('');
 
   openModal(modalShell(id ? r.name : 'Новое правило', `
-    <div class="field">
-      <label for="r-name">Название</label>
-      <input type="text" id="r-name" value="${esc(r.name)}" placeholder="YouTube и Google" autocomplete="off">
-    </div>
+    <div class="rule-form">
+      <div class="rule-order-note">${esc(orderNote)}</div>
 
-    <div class="field">
-      <label>Куда</label>
-      <div class="radios">
-        <label class="radio-pill"><input type="radio" name="action" value="direct" ${r.action === 'direct' ? 'checked' : ''}> напрямую</label>
-        <label class="radio-pill"><input type="radio" name="action" value="tunnel" ${r.action === 'tunnel' ? 'checked' : ''}> в туннель</label>
-        <label class="radio-pill"><input type="radio" name="action" value="block" ${r.action === 'block' ? 'checked' : ''}> блокировать</label>
-        <select id="r-tunnel" style="width:auto;min-width:160px" ${r.action === 'tunnel' ? '' : 'disabled'}>${tunnelOpts}</select>
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Готовые списки</label>
-      <div class="list-grid">${listsHtml}</div>
-    </div>
-
-    <div class="two-col">
       <div class="field">
-        <label for="r-domains">Свои домены</label>
-        <textarea id="r-domains" spellcheck="false" placeholder="example.com">${esc((r.domains || []).join('\n'))}</textarea>
-        <div class="line-errors" id="r-domains-err"></div>
+        <label for="r-name">Название</label>
+        <input type="text" id="r-name" value="${esc(r.name)}" placeholder="YouTube и Google" autocomplete="off">
       </div>
-      <div class="field">
-        <label for="r-subnets">Свои подсети</label>
-        <textarea id="r-subnets" spellcheck="false" placeholder="203.0.113.0/24">${esc((r.subnets || []).join('\n'))}</textarea>
-        <div class="line-errors" id="r-subnets-err"></div>
-      </div>
-    </div>
 
-    <div class="field">
-      <label>Для кого</label>
-      <div class="radios">
-        <label class="radio-pill"><input type="radio" name="scope" value="all" ${r.peer_scope === 'selected' ? '' : 'checked'}> все клиенты</label>
-        <label class="radio-pill"><input type="radio" name="scope" value="selected" ${r.peer_scope === 'selected' ? 'checked' : ''}> выбранные</label>
+      <div class="field">
+        <label>Куда</label>
+        <div class="radios">
+          <label class="radio-pill"><input type="radio" name="action" value="direct" ${r.action === 'direct' ? 'checked' : ''}> напрямую</label>
+          <label class="radio-pill"><input type="radio" name="action" value="tunnel" ${r.action === 'tunnel' ? 'checked' : ''}> в туннель</label>
+          <label class="radio-pill"><input type="radio" name="action" value="block" ${r.action === 'block' ? 'checked' : ''}> блокировать</label>
+          <select id="r-tunnel" class="rule-tunnel" ${r.action === 'tunnel' ? '' : 'disabled'}>${tunnelOpts}</select>
+        </div>
+        <div class="hint" id="r-action-hint"></div>
       </div>
-      <div class="list-grid" id="r-peers" style="margin-top:6px;${r.peer_scope === 'selected' ? '' : 'display:none'}">${peersHtml}</div>
+
+      <div class="field">
+        <label for="r-list-q">Готовые списки</label>
+        ${searchHtml}
+        <div class="rule-picked" id="r-picked" hidden></div>
+        <div class="list-grid rule-grid" id="r-lists">${listsHtml}
+          <span class="rule-none" id="r-lists-empty" hidden>Ничего не нашлось</span>
+        </div>
+        <div class="hint">Обновляются сами. Пометка «подсети» — у списка есть готовые диапазоны адресов, они ловятся даже без DNS.</div>
+      </div>
+
+      <div class="two-col">
+        <div class="field">
+          <label for="r-domains">Свои домены</label>
+          <textarea id="r-domains" spellcheck="false" placeholder="example.com">${esc((r.domains || []).join('\n'))}</textarea>
+          <div class="line-errors" id="r-domains-err"></div>
+          <div class="hint">По одному в строке, совпадение по суффиксу: <code>example.com</code> ловит и <code>cdn.example.com</code>.
+            Работает через FakeIP — клиент спрашивает домен у DNS сервера и получает подставной адрес, привязанный к этому правилу.</div>
+        </div>
+        <div class="field">
+          <label for="r-subnets">Свои подсети</label>
+          <textarea id="r-subnets" spellcheck="false" placeholder="203.0.113.0/24">${esc((r.subnets || []).join('\n'))}</textarea>
+          <div class="line-errors" id="r-subnets-err"></div>
+          <div class="hint">Тут FakeIP не участвует: клиент идёт сразу на настоящий адрес, спрашивать нечего.
+            Такой трафик метится по совпадению с nft-сетом — поэтому подсети ловят и приложения со своим DNS.</div>
+        </div>
+      </div>
+
+      <div class="rule-overlap" id="r-overlap" hidden></div>
+
+      <div class="field">
+        <label>Для кого</label>
+        <div class="radios">
+          <label class="radio-pill"><input type="radio" name="scope" value="all" ${r.peer_scope === 'selected' ? '' : 'checked'}> все клиенты</label>
+          <label class="radio-pill"><input type="radio" name="scope" value="selected" ${r.peer_scope === 'selected' ? 'checked' : ''}> выбранные</label>
+        </div>
+        <div class="list-grid rule-grid" id="r-peers" ${r.peer_scope === 'selected' ? '' : 'hidden'}>${peersHtml}</div>
+      </div>
     </div>`,
   `<button class="btn" data-act="close-modal">Отмена</button>
      <button class="btn btn-primary" data-act="save-rule" data-id="${esc(id || '')}">Сохранить</button>`),
   (m) => {
-    $$('input[name="action"]', m).forEach((el) => el.addEventListener('change', () => {
-      m.querySelector('#r-tunnel').disabled =
-        m.querySelector('input[name="action"]:checked').value !== 'tunnel';
-    }));
+    /* Куда: подсказка меняется вместе с выбором — она объясняет именно то
+       действие, которое пользователь только что нажал. */
+    const syncAction = () => {
+      const act = m.querySelector('input[name="action"]:checked').value;
+      m.querySelector('#r-tunnel').disabled = act !== 'tunnel';
+      m.querySelector('#r-action-hint').textContent = ACTION_HINT[act] || '';
+    };
+    $$('input[name="action"]', m).forEach((el) => el.addEventListener('change', syncAction));
+    syncAction();
+
     $$('input[name="scope"]', m).forEach((el) => el.addEventListener('change', () => {
-      m.querySelector('#r-peers').style.display =
-        m.querySelector('input[name="scope"]:checked').value === 'selected' ? '' : 'none';
+      m.querySelector('#r-peers').hidden =
+        m.querySelector('input[name="scope"]:checked').value !== 'selected';
     }));
-    const live = (sel, out, kind, word) => {
+
+    /* Выбранные списки повторяются строкой над каталогом: при поиске
+       отмеченное уезжает за фильтр, и без этой строки не видно, что выбрано. */
+    const picked = m.querySelector('#r-picked');
+    const renderPicked = () => {
+      const keys = $$('input[name="list"]:checked', m).map((e) => e.value);
+      picked.hidden = !keys.length;
+      picked.innerHTML = keys.map((k) =>
+        `<button type="button" class="rule-chip" data-key="${esc(k)}" title="Убрать">${esc(listTitle(k))} ✕</button>`).join('');
+    };
+    picked.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-key]');
+      if (!btn) return;
+      const box = m.querySelector(`input[name="list"][value="${CSS.escape(btn.dataset.key)}"]`);
+      if (box) box.checked = false;
+      renderPicked();
+      renderOverlap();
+    });
+
+    const q = m.querySelector('#r-list-q');
+    if (q) {
+      q.addEventListener('input', () => {
+        const needle = q.value.trim().toLowerCase();
+        let shown = 0;
+        $$('#r-lists .rule-item', m).forEach((el) => {
+          const hit = !needle || el.dataset.title.includes(needle);
+          el.hidden = !hit;
+          if (hit) shown++;
+        });
+        m.querySelector('#r-lists-empty').hidden = shown > 0;
+      });
+    }
+
+    /* Перекрытие считается по тому, что в форме сейчас, а не по сохранённому:
+       иначе пользователь узнаёт о конфликте только после «Сохранить». */
+    const box = m.querySelector('#r-overlap');
+    function renderOverlap() {
+      const mine = {
+        lists: $$('input[name="list"]:checked', m).map((e) => e.value),
+        domains: lines(m.querySelector('#r-domains').value),
+        subnets: lines(m.querySelector('#r-subnets').value),
+      };
+      const hits = overlap(mine, above);
+      box.hidden = !hits.length;
+      if (!hits.length) return;
+      box.innerHTML = '<strong>Это уже забирают правила выше</strong>'
+        + hits.map((h) => `<div class="rule-overlap-line">«${esc(h.rule.name)}» — ${
+          h.shared.map((k) => esc(listTitle(k))).join(', ')}</div>`).join('')
+        + '<div class="rule-overlap-tail">Для этих ресурсов сработает правило выше, а не это. '
+        + 'Либо уберите пересечение, либо поднимите правило стрелками в списке.</div>';
+    }
+
+    $$('input[name="list"]', m).forEach((el) => el.addEventListener('change', () => {
+      renderPicked();
+      renderOverlap();
+    }));
+
+    const live = (sel, out, kind) => {
       const el = m.querySelector(sel), o = m.querySelector(out);
       const upd = () => {
+        const all = el.value.split('\n');
         const bad = badLines(el.value, kind);
-        o.textContent = bad.length
-          ? `${plural(bad.length, 'Строка', 'Строки', 'Строки')} ${bad.join(', ')} — не ${word}`
+        el.classList.toggle('bad', bad.length > 0);
+        o.innerHTML = bad.length
+          ? bad.slice(0, 3).map((n) =>
+            `<div>Строка ${n}: «${esc(all[n - 1].trim())}» — не ${PROBLEM[kind].word}</div>`).join('')
+            + (bad.length > 3 ? `<div>…и ещё ${bad.length - 3}</div>` : '')
+            + `<div class="rule-overlap-tail">${PROBLEM[kind].tail}</div>`
           : '';
+        renderOverlap();
       };
       el.addEventListener('input', upd);
       upd();
     };
-    live('#r-domains', '#r-domains-err', 'domain', 'домен');
-    live('#r-subnets', '#r-subnets-err', 'cidr', 'подсеть');
+    live('#r-domains', '#r-domains-err', 'domain');
+    live('#r-subnets', '#r-subnets-err', 'cidr');
+
+    renderPicked();
+    renderOverlap();
     m.querySelector('#r-name').focus();
   });
 }
@@ -208,10 +366,19 @@ async function saveRule(id) {
   const listsSel = $$('input[name="list"]:checked', m).map((e) => e.value);
   const peerIds = $$('input[name="peer"]:checked', m).map((e) => e.value);
 
-  if (!name) { toast('Введите название правила', 'err'); return; }
-  if (badLines(m.querySelector('#r-domains').value, 'domain').length
-    || badLines(m.querySelector('#r-subnets').value, 'cidr').length) {
-    toast('Исправьте подсвеченные строки', 'err'); return;
+  if (!name) { toast('Введите название правила', 'err'); m.querySelector('#r-name').focus(); return; }
+
+  /* Молча выбросить непонятую строку нельзя: пользователь решит, что правило её
+     учитывает. Поэтому сохранение упирается в поле, где ошибка. */
+  const badDomains = badLines(m.querySelector('#r-domains').value, 'domain');
+  const badSubnets = badLines(m.querySelector('#r-subnets').value, 'cidr');
+  if (badDomains.length || badSubnets.length) {
+    const field = badDomains.length ? '#r-domains' : '#r-subnets';
+    const nums = badDomains.length ? badDomains : badSubnets;
+    const what = badDomains.length ? 'в доменах' : 'в подсетях';
+    toast(`Не разобрана ${plural(nums.length, 'строка', 'строки', 'строк')} ${nums.join(', ')} ${what} — исправьте или удалите`, 'err');
+    m.querySelector(field).focus();
+    return;
   }
   if (action === 'tunnel' && !m.querySelector('#r-tunnel').value) {
     toast('Сначала добавьте туннель', 'err'); return;
