@@ -12,6 +12,7 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 
+	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -139,29 +140,47 @@ func TestPoolBuildsGroupUnderTunnelTag(t *testing.T) {
 	}
 }
 
-// Неизменившийся набор серверов обязан давать байт-в-байт тот же конфиг: иначе
-// sameOnDisk не совпадает и sing-box перезапускается на каждом обновлении каталога.
+// Набор серверов, не изменившийся в БД, обязан давать байт-в-байт тот же конфиг:
+// иначе sameOnDisk не совпадает и sing-box перезапускается на каждом обновлении
+// каталога. Пинг и подписи карточек на конфиг не влияют — в него идут только ссылки.
 func TestPoolSerializationIsStable(t *testing.T) {
 	servers := poolServers(t, 8)
 
 	first := generate(t, poolFixture(servers))
 
-	// Тот же набор, но пришедший из БД в другом порядке и с другими подписями:
-	// на конфиг влияют только ссылки.
-	shuffled := make([]store.PoolServer, len(servers))
+	same := make([]store.PoolServer, len(servers))
 	for i, s := range servers {
 		s.Title = "другая подпись"
 		s.Country = "Германия"
-		shuffled[len(servers)-1-i] = s
+		s.PingMS += 137
+		s.Misses = 1
+		same[i] = s
 	}
-	second := generate(t, poolFixture(shuffled))
+	second := generate(t, poolFixture(same))
 
 	if string(first) != string(second) {
-		t.Fatal("порядок серверов в БД просочился в конфиг — обновление каталога будет перезапускать sing-box")
+		t.Fatal("пинг и подпись карточки просочились в конфиг — обновление каталога будет перезапускать sing-box")
 	}
 }
 
-// Потолок числа серверов соблюдается, и в конфиг попадают лучшие по пингу.
+// Отбор идёт по порядку в БД, а не пересортировкой по пингу: порядок — это приоритет,
+// который ведёт слой lists, и позиция в нём равна тегу участника. Пересортировка здесь
+// меняла бы состав конфига от шума измерений чужого сайта (issue #68).
+func TestPoolSelectsInStoredOrder(t *testing.T) {
+	servers := poolServers(t, poolMaxServers+9)
+
+	got := selectPoolServers(servers)
+	if len(got) != poolMaxServers {
+		t.Fatalf("отобрано %d серверов, потолок %d", len(got), poolMaxServers)
+	}
+	for i, s := range got {
+		if s.URL != servers[i].URL {
+			t.Fatalf("на позиции %d сервер %q, в БД на ней %q", i, s.URL, servers[i].URL)
+		}
+	}
+}
+
+// Потолок числа серверов соблюдается: в конфиг идут первые poolMaxServers штук.
 func TestPoolCapsServers(t *testing.T) {
 	servers := poolServers(t, poolMaxServers+9)
 	opts := mustGenerate(t, poolFixture(servers))
@@ -173,17 +192,15 @@ func TestPoolCapsServers(t *testing.T) {
 	if len(group.Outbounds) != poolMaxServers {
 		t.Fatalf("в группе %d участников, потолок %d", len(group.Outbounds), poolMaxServers)
 	}
+}
 
-	// Пинг в poolServers убывает с номером, значит отобраться должны последние.
-	selected := selectPoolServers(servers)
-	best := make(map[string]bool, len(selected))
-	for _, s := range selected {
-		best[s.URL] = true
-	}
-	for _, s := range servers[:9] {
-		if best[s.URL] {
-			t.Errorf("в отбор попал сервер с пингом %d, хотя есть быстрее", s.PingMS)
-		}
+// Окно конфига одно и то же по обе стороны границы слоёв: слияние в lists держит в
+// начале списка ровно тех, кого генератор потом возьмёт в конфиг. Разъехались — окно
+// поедет на каждом обходе каталога вместе с тегами участников.
+func TestPoolConfigWindowAgrees(t *testing.T) {
+	if lists.PoolConfigServers != poolMaxServers {
+		t.Fatalf("окно конфига разъехалось: lists.PoolConfigServers = %d, poolMaxServers = %d",
+			lists.PoolConfigServers, poolMaxServers)
 	}
 }
 
@@ -275,38 +292,174 @@ func TestPoolCorpusParses(t *testing.T) {
 	}
 }
 
-// Обновление каталога, не изменившее набор серверов, не перезапускает sing-box:
-// перезагрузка идёт через reload-or-restart и рвёт соединения во всех туннелях.
-func TestPoolApplyWithoutReload(t *testing.T) {
-	servers := poolServers(t, 8)
+// crawl изображает один обход каталога: карточки приходят в другом порядке, с другим
+// пингом и другими подписями, а часть ссылок не приходит вовсе. Именно так ведёт себя
+// vpnkeys.me: карточек с data-key-url на странице от обхода к обходу разное число.
+func crawl(servers []store.PoolServer, skip ...string) []store.PoolServer {
+	skipped := make(map[string]bool, len(skip))
+	for _, u := range skip {
+		skipped[u] = true
+	}
+	out := make([]store.PoolServer, 0, len(servers))
+	for i := len(servers) - 1; i >= 0; i-- {
+		s := servers[i]
+		if skipped[s.URL] {
+			continue
+		}
+		s.PingMS += 137
+		s.Title = "подпись этого обхода"
+		out = append(out, s)
+	}
+	return out
+}
+
+// urlsByTag — какой сервер стоит за каждым тегом участника группы.
+func urlsByTag(t store.Tunnel) map[string]string {
+	out := make(map[string]string)
+	for tag, s := range PoolMembers(t) {
+		out[tag] = s.URL
+	}
+	return out
+}
+
+// Обход каталога, отличающийся от предыдущего на несколько ссылок, не перезапускает
+// sing-box: перезагрузка идёт через reload-or-restart и рвёт соединения во всех
+// туннелях. Набор ссылок каталога пляшет на каждом запросе, и совпадающий обход —
+// случай, которого на живом сайте не бывает (issue #68). Слияние идёт через
+// lists.MergePool: повторять его логику в тесте значило бы дать ей разъехаться с той,
+// что работает в демоне.
+func TestPoolApplyWithoutReloadOnCatalogDrift(t *testing.T) {
+	catalog := poolServers(t, poolMaxServers+4)
 	check, reload := &fakeChecker{}, &fakeReloader{}
 	a, _ := applier(t, check, reload)
 
-	res, err := a.Apply(context.Background(), poolFixture(servers))
+	stored, changed := lists.MergePool(nil, crawl(catalog))
+	if !changed || len(stored) != len(catalog) {
+		t.Fatalf("первый обход дал %d серверов, changed=%v", len(stored), changed)
+	}
+	res, err := a.Apply(context.Background(), poolFixture(stored))
 	if err != nil {
 		t.Fatalf("первое применение: %v", err)
 	}
 	if !res.Changed || !res.Reloaded {
 		t.Fatalf("первое применение: changed=%v reloaded=%v", res.Changed, res.Reloaded)
 	}
+	before := urlsByTag(poolFixture(stored).Tunnels[0])
 
-	// Тот же набор, пришедший из каталога в другом порядке и с другим пингом.
-	again := make([]store.PoolServer, len(servers))
-	for i, s := range servers {
-		s.PingMS += 137
-		again[len(servers)-1-i] = s
+	// Второй обход: одна ссылка каталога не пришла, зато пришла новая — и с лучшим
+	// пингом, чем у всех известных. Ни то, ни другое не имеет права трогать окно
+	// конфига: место в нём занято живыми серверами.
+	newcomer := store.PoolServer{
+		URL:     corpusURLs(t)[len(catalog)],
+		Country: "Финляндия",
+		Title:   "новая карточка",
+		PingMS:  1,
 	}
-	res, err = a.Apply(context.Background(), poolFixture(again))
+	fresh := append(crawl(catalog, stored[len(stored)-1].URL), newcomer)
+
+	next, changed := lists.MergePool(stored, fresh)
+	if !changed {
+		t.Fatal("новая ссылка каталога не попала в БД")
+	}
+	res, err = a.Apply(context.Background(), poolFixture(next))
 	if err != nil {
 		t.Fatalf("повторное применение: %v", err)
 	}
 	if res.Changed || res.Reloaded {
-		t.Fatalf("неизменившийся набор перезапустил sing-box: changed=%v reloaded=%v",
+		t.Fatalf("набор, отличающийся на пару ссылок, перезапустил sing-box: changed=%v reloaded=%v",
 			res.Changed, res.Reloaded)
 	}
 	if reload.calls != 1 {
 		t.Fatalf("reload вызван %d раз, ожидался один", reload.calls)
 	}
+	if got := urlsByTag(poolFixture(next).Tunnels[0]); !sameTags(got, before) {
+		t.Errorf("состав группы поехал: было %v, стало %v", before, got)
+	}
+}
+
+// Исчезнувший из каталога участник заменяется, и только он: остальные пятнадцать
+// остаются на своих тегах. Сдвиг тега — это другой конфиг, то есть тот же перезапуск.
+func TestPoolReplacesOnlyMissingServer(t *testing.T) {
+	catalog := poolServers(t, poolMaxServers+4)
+	check, reload := &fakeChecker{}, &fakeReloader{}
+	a, _ := applier(t, check, reload)
+
+	stored, _ := lists.MergePool(nil, crawl(catalog))
+	if _, err := a.Apply(context.Background(), poolFixture(stored)); err != nil {
+		t.Fatalf("первое применение: %v", err)
+	}
+	before := urlsByTag(poolFixture(stored).Tunnels[0])
+
+	// Пропадает участник окна, а не сервер из хвоста.
+	victim := stored[3]
+	var victimTag string
+	for tag, u := range before {
+		if u == victim.URL {
+			victimTag = tag
+		}
+	}
+	if victimTag == "" {
+		t.Fatalf("сервер %q не участник группы", victim.URL)
+	}
+
+	// Одиночный пропуск карточки заменой не считается: сайт отдаёт часть карточек без
+	// ссылки на каждом обходе. Замена приходит после нескольких обходов подряд.
+	var replaced bool
+	for i := 0; i < 10 && !replaced; i++ {
+		stored, _ = lists.MergePool(stored, crawl(catalog, victim.URL))
+		res, err := a.Apply(context.Background(), poolFixture(stored))
+		if err != nil {
+			t.Fatalf("обход %d: %v", i+1, err)
+		}
+		replaced = res.Changed
+		if i == 0 && replaced {
+			t.Fatal("пропуск карточки на одном обходе сразу сменил состав конфига")
+		}
+	}
+	if !replaced {
+		t.Fatal("исчезнувший сервер так и не уступил место")
+	}
+
+	after := urlsByTag(poolFixture(stored).Tunnels[0])
+	if len(after) != len(before) {
+		t.Fatalf("участников стало %d, было %d", len(after), len(before))
+	}
+	for tag, was := range before {
+		got, ok := after[tag]
+		if !ok {
+			t.Errorf("тег %q исчез из группы", tag)
+			continue
+		}
+		if tag == victimTag {
+			if got == was {
+				t.Errorf("исчезнувший сервер остался в конфиге под тегом %q", tag)
+			}
+			continue
+		}
+		if got != was {
+			t.Errorf("тег %q переехал с %q на %q", tag, was, got)
+		}
+	}
+
+	// Место занимает лучший по пингу из остальных. Пинг в poolServers убывает с
+	// номером, серверов на четыре больше окна, значит вне конфига остались первые
+	// четыре, и лучший из них — четвёртый.
+	if want := catalog[len(catalog)-poolMaxServers-1].URL; after[victimTag] != want {
+		t.Errorf("место занял %q, а лучший по пингу из остальных — %q",
+			after[victimTag], want)
+	}
+}
+
+func sameTags(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for tag, url := range a {
+		if b[tag] != url {
+			return false
+		}
+	}
+	return true
 }
 
 // testLogger глушит предупреждения о пропущенных серверах: в тестах они ожидаемы.
