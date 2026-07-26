@@ -16,7 +16,11 @@ import (
 const (
 	DefaultNginxDir = "/etc/nginx"
 	DefaultStateDir = "/etc/razdacha"
-	DefaultTLSDir   = "/etc/razdacha/tls"
+	// DefaultConfDir — каталог настроек демона. Там же живёт сертификат панели,
+	// поэтому при полном удалении он снимается целиком: приватный ключ не должен
+	// пережить `uninstall -purge`.
+	DefaultConfDir = "/etc/razdacha"
+	DefaultTLSDir  = DefaultConfDir + "/tls"
 )
 
 // Installer настраивает nginx перед панелью.
