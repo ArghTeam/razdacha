@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/clash"
@@ -118,6 +119,160 @@ func (s *Server) withPoolState(ctx context.Context, out []tunnelResponse, byID m
 		}
 		out[i].Pool.Current = cur
 	}
+}
+
+// poolServersResponse — ответ `GET /api/tunnels/{id}/pool`: состав каталога по одному
+// серверу. Отдельной ручкой, а не полем списка туннелей: каталог — это сотня с лишним
+// записей, и возить их в каждом ответе экрана «Туннели» незачем.
+type poolServersResponse struct {
+	CatalogURL string               `json:"catalog_url"`
+	UpdatedAt  *time.Time           `json:"updated_at"`
+	Servers    []poolServerResponse `json:"servers"`
+}
+
+// poolServerResponse — один сервер каталога.
+//
+// Ссылки `vless://` здесь нет намеренно: в ней UUID ключа, а на экране от него пользы
+// нет. Alive и LatencyMS — указатели, потому что осмысленны они только для серверов в
+// ротации: остальных никто не проверял, и false был бы утверждением о непроверенном
+// сервере, а ноль — «ноль миллисекунд».
+type poolServerResponse struct {
+	Title      string `json:"title"`
+	Country    string `json:"country"`
+	PingMS     int    `json:"ping_ms"`
+	InRotation bool   `json:"in_rotation"`
+	Alive      *bool  `json:"alive"`
+	LatencyMS  *int   `json:"latency_ms"`
+	Current    bool   `json:"current"`
+}
+
+// handlePoolServers — `GET /api/tunnels/{id}/pool`.
+func (s *Server) handlePoolServers(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.idFrom(w, r)
+	if !ok {
+		return
+	}
+	t, err := s.store.Tunnel(r.Context(), id)
+	if err != nil {
+		s.storeError(w, err, "Туннель не найден")
+		return
+	}
+	if t.Source != store.SourcePool {
+		writeError(w, s.log, http.StatusBadRequest, codeBadRequest,
+			"Список серверов есть только у туннеля-пула")
+		return
+	}
+
+	out := poolServersResponse{CatalogURL: t.Raw, Servers: s.poolServers(r.Context(), t)}
+	if !t.PoolUpdatedAt.IsZero() {
+		at := t.PoolUpdatedAt.UTC()
+		out.UpdatedAt = &at
+	}
+	writeJSON(w, s.log, http.StatusOK, out)
+}
+
+// poolServers переводит состав пула из БД в ответ и дописывает живое состояние
+// участников ротации из Clash API.
+//
+// Ротацию считает не этот файл: набор участников и их теги даёт [singbox.PoolMembers] —
+// тот же отбор, что попал в конфиг. Свой второй отбор разошёлся бы с генератором.
+func (s *Server) poolServers(ctx context.Context, t store.Tunnel) []poolServerResponse {
+	tagByURL := make(map[string]string, len(t.Pool))
+	for tag, srv := range singbox.PoolMembers(t) {
+		tagByURL[srv.URL] = tag
+	}
+
+	// Выключенный пул живого состояния не получает: его нет в конфиге, и цифры о
+	// нём были бы ложью, а не нулём. Ошибка Clash API тоже оставляет поля пустыми.
+	var (
+		proxies map[string]clash.Proxy
+		current string
+	)
+	if t.Enabled && len(tagByURL) > 0 {
+		got, err := s.proxies().Proxies(ctx)
+		if err != nil {
+			s.log.Debug("живое состояние серверов пула недоступно", "ошибка", err)
+		} else {
+			proxies = got
+			if group, ok := proxies[singbox.TunnelTag(t.ID)]; ok {
+				current = group.Now
+			}
+		}
+	}
+
+	out := make([]poolServerResponse, 0, len(t.Pool))
+	seen := make(map[string]bool, len(t.Pool))
+	for _, srv := range t.Pool {
+		if srv.URL == "" || seen[srv.URL] {
+			continue
+		}
+		seen[srv.URL] = true
+
+		tag, inRotation := tagByURL[srv.URL]
+		item := poolServerResponse{
+			Title:      srv.Title,
+			Country:    srv.Country,
+			PingMS:     srv.PingMS,
+			InRotation: inRotation,
+			Current:    inRotation && tag == current,
+		}
+		if p, ok := proxies[tag]; inRotation && ok {
+			ms, up := p.Latency()
+			item.Alive = &up
+			if up {
+				v := int(ms / time.Millisecond)
+				item.LatencyMS = &v
+			}
+		}
+		out = append(out, item)
+	}
+
+	sortPoolServers(out)
+	return out
+}
+
+// sortPoolServers ставит ротацию впереди: сначала она по измеренной задержке, затем
+// остальные по стране. Порядок задаёт сервер, а не панель — иначе каждая отрисовка
+// пересобирала бы его своей сортировкой.
+func sortPoolServers(v []poolServerResponse) {
+	sort.SliceStable(v, func(i, j int) bool {
+		a, b := v[i], v[j]
+		if a.InRotation != b.InRotation {
+			return a.InRotation
+		}
+		if a.InRotation {
+			if la, lb := poolLatencyRank(a), poolLatencyRank(b); la != lb {
+				return la < lb
+			}
+		} else if a.Country != b.Country {
+			return a.Country < b.Country
+		}
+		if pa, pb := poolPingRank(a.PingMS), poolPingRank(b.PingMS); pa != pb {
+			return pa < pb
+		}
+		return a.Title < b.Title
+	})
+}
+
+// poolLatencyRank: измеренная задержка идёт первой, непроверенный — за живыми,
+// не ответивший — последним. Мёртвый сервер в начале списка сбивал бы с толку.
+func poolLatencyRank(s poolServerResponse) int {
+	switch {
+	case s.LatencyMS != nil:
+		return *s.LatencyMS
+	case s.Alive == nil:
+		return 1 << 20
+	default:
+		return 1 << 21
+	}
+}
+
+// poolPingRank: пинг карточки, где ноль означает «карточка его не показала».
+func poolPingRank(ping int) int {
+	if ping <= 0 {
+		return 1 << 20
+	}
+	return ping
 }
 
 // handleRefreshPool — `POST /api/tunnels/{id}/refresh`.

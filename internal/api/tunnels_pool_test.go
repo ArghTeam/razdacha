@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -291,6 +292,209 @@ func TestCreatePoolFromCatalogURL(t *testing.T) {
 	if len(list) != 1 || list[0].Pool == nil {
 		t.Fatalf("в списке %d туннелей, пула среди них нет", len(list))
 	}
+}
+
+// poolServers читает `GET /api/tunnels/{id}/pool` и отдаёт заодно сырое тело:
+// по нему проверяется, что ключи наружу не уехали.
+func poolServers(t *testing.T, ts *testServer, cookie *http.Cookie, id string) (poolServersResponse, string) {
+	t.Helper()
+	resp := ts.auth(t, cookie, http.MethodGet, "/api/tunnels/"+id+"/pool", "")
+	requireCode(t, resp, http.StatusOK)
+	var out poolServersResponse
+	decodeJSONBody(t, resp, &out)
+	return out, resp.body
+}
+
+// Ручка деталей отдаёт весь каталог, но живость — только для ротации: в конфиг идут
+// лучшие poolMaxServers, остальных никто не проверял, и у них alive и latency строго
+// null. Ссылки vless:// наружу не уходят вовсе — в них UUID ключа.
+func TestPoolServersRotationAndRest(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	tun := poolTunnel(t, ts.st, "Бесплатные VLESS", 20, true)
+
+	members := singbox.PoolMembers(tun)
+	// Двух участников объявляем живыми, один из них выбран группой; остальные
+	// проверены и не ответили.
+	var chosen string
+	proxies := map[string]clash.Proxy{}
+	i := 0
+	for tag := range members {
+		switch {
+		case i < 2:
+			proxies[tag] = clash.Proxy{
+				Name:    tag,
+				History: []clash.History{{Time: time.Now(), Delay: uint16(120 + i)}},
+			}
+			if chosen == "" {
+				chosen = tag
+			}
+		default:
+			proxies[tag] = clash.Proxy{Name: tag, History: []clash.History{{Delay: 0}}}
+		}
+		i++
+	}
+	proxies[singbox.TunnelTag(tun.ID)] = clash.Proxy{
+		Name: singbox.TunnelTag(tun.ID), Type: "URLTest", Now: chosen,
+	}
+	ts.poolProxies = &fakeProxies{proxies: proxies}
+
+	got, body := poolServers(t, ts, cookie, tun.ID)
+	if got.CatalogURL != tun.Raw {
+		t.Errorf("каталог %q, ожидался %q", got.CatalogURL, tun.Raw)
+	}
+	if got.UpdatedAt == nil {
+		t.Error("время обхода каталога не отдано")
+	}
+	if len(got.Servers) != 20 {
+		t.Fatalf("серверов в ответе %d, ожидалось 20 — весь каталог", len(got.Servers))
+	}
+	if strings.Contains(body, "vless://") {
+		t.Error("в ответе есть ссылки vless:// — наружу уехал UUID ключа")
+	}
+
+	var rotation, current, alive, restWithState int
+	for _, s := range got.Servers {
+		if !s.InRotation {
+			// Пустота не заполняется выдумкой: false был бы утверждением о
+			// непроверенном сервере, ноль — «ноль миллисекунд».
+			if s.Alive != nil || s.LatencyMS != nil {
+				restWithState++
+			}
+			if s.Current {
+				t.Error("сервер вне ротации объявлен текущим")
+			}
+			continue
+		}
+		rotation++
+		if s.Current {
+			current++
+		}
+		if s.Alive != nil && *s.Alive {
+			alive++
+		}
+	}
+	if rotation != len(members) {
+		t.Errorf("в ротации %d серверов, у генератора конфига их %d", rotation, len(members))
+	}
+	if restWithState != 0 {
+		t.Errorf("у %d серверов вне ротации заполнена живость", restWithState)
+	}
+	if alive != 2 {
+		t.Errorf("живых в ротации %d, ожидалось 2", alive)
+	}
+	if current != 1 {
+		t.Errorf("текущих серверов %d, ожидался один", current)
+	}
+	// Ротация идёт впереди: мёртвые и непроверенные в начале списка сбивали бы с толку.
+	if !got.Servers[0].InRotation || got.Servers[0].LatencyMS == nil {
+		t.Errorf("первым в списке %+v, ожидался живой участник ротации", got.Servers[0])
+	}
+	if got.Servers[len(got.Servers)-1].InRotation {
+		t.Error("последним в списке участник ротации, а не остаток каталога")
+	}
+}
+
+// Без живого sing-box живость неизвестна у всех, включая ротацию.
+func TestPoolServersWithoutClash(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	tun := poolTunnel(t, ts.st, "Бесплатные VLESS", 20, true)
+	ts.poolProxies = &fakeProxies{err: clash.ErrUnavailable}
+
+	got, _ := poolServers(t, ts, cookie, tun.ID)
+	for _, s := range got.Servers {
+		if s.Alive != nil || s.LatencyMS != nil || s.Current {
+			t.Fatalf("живость посчитана без Clash API: %+v", s)
+		}
+	}
+}
+
+// Выключенный пул за живым состоянием не ходит: его нет в конфиге.
+func TestPoolServersDisabledSkipsClash(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	tun := poolTunnel(t, ts.st, "Пул про запас", 20, false)
+	fake := &fakeProxies{proxies: map[string]clash.Proxy{}}
+	ts.poolProxies = fake
+
+	got, _ := poolServers(t, ts, cookie, tun.ID)
+	if len(got.Servers) != 20 {
+		t.Errorf("серверов в ответе %d, ожидалось 20: состав каталога сохраняется", len(got.Servers))
+	}
+	if fake.calls != 0 {
+		t.Errorf("Clash API опрошен %d раз ради выключенного пула", fake.calls)
+	}
+}
+
+// У обычного туннеля списка серверов нет — 400, а не пустой список.
+func TestPoolServersRejectsPlainTunnel(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	created, err := ts.st.CreateTunnel(context.Background(), store.Tunnel{
+		Name: "Резерв", Type: store.TunnelSOCKS, Source: store.SourceURL,
+		Raw: "socks5://10.0.0.1:1080", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+
+	requireCode(t, ts.auth(t, cookie, http.MethodGet, "/api/tunnels/"+created.ID+"/pool", ""),
+		http.StatusBadRequest)
+}
+
+// Встроенный пул не удаляется: иначе панель прячет кнопку, а API продолжает
+// разрешать. Выключение — штатный PATCH, оно работать обязано.
+func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	pool, created, err := ts.st.EnsureBuiltinPool(context.Background(),
+		"Бесплатные VLESS", lists.DefaultPoolCatalogURL)
+	if err != nil || !created {
+		t.Fatalf("EnsureBuiltinPool: %v (created=%v)", err, created)
+	}
+
+	resp := ts.auth(t, cookie, http.MethodDelete, "/api/tunnels/"+pool.ID, "")
+	requireCode(t, resp, http.StatusConflict)
+	if !strings.Contains(resp.body, "выключить") {
+		t.Errorf("отказ не объясняет, что делать вместо удаления: %s", resp.body)
+	}
+
+	list := listTunnels(t, ts, cookie)
+	if len(list) != 1 || !list[0].Builtin {
+		t.Fatalf("встроенный пул пропал из списка или потерял признак: %+v", list)
+	}
+	if list[0].Enabled {
+		t.Error("встроенный пул заведён включённым: свежая установка сама пошла бы за ключами")
+	}
+
+	requireCode(t, ts.auth(t, cookie, http.MethodPatch, "/api/tunnels/"+pool.ID, `{"enabled":true}`),
+		http.StatusOK)
+	after := listTunnels(t, ts, cookie)[0]
+	if !after.Enabled || !after.Builtin {
+		t.Errorf("включение встроенного пула не сработало: %+v", after)
+	}
+}
+
+// Пул, заведённый пользователем, удаляется как обычный туннель: запрет касается
+// только встроенного.
+func TestDeleteUserPoolIsAllowed(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels",
+		`{"name":"Свой пул","raw":"https://example.org/keys"}`)
+	requireCode(t, resp, http.StatusCreated)
+	var created tunnelResponse
+	decodeJSONBody(t, resp, &created)
+	if created.Builtin {
+		t.Error("пул пользователя помечен встроенным")
+	}
+
+	requireCode(t, ts.auth(t, cookie, http.MethodDelete, "/api/tunnels/"+created.ID, ""),
+		http.StatusOK)
 }
 
 // Превью показывает пул до сохранения и не жалуется на пустой конфиг.

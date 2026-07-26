@@ -32,6 +32,7 @@ func (s *Server) routes() http.Handler {
 	s.protect(mux, "DELETE /api/tunnels/{id}", s.handleDeleteTunnel)
 	s.protect(mux, "POST /api/tunnels/{id}/check", s.handleCheckTunnel)
 	s.protect(mux, "POST /api/tunnels/{id}/refresh", s.handleRefreshPool)
+	s.protect(mux, "GET /api/tunnels/{id}/pool", s.handlePoolServers)
 
 	s.protect(mux, "GET /api/rules", s.handleListRules)
 	s.protect(mux, "POST /api/rules", s.handleCreateRule)
