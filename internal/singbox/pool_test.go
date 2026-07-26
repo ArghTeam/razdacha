@@ -130,7 +130,7 @@ func TestPoolBuildsGroupUnderTunnelTag(t *testing.T) {
 	// Правило по-прежнему ссылается на один тег.
 	found := false
 	for _, r := range opts.Route.Rules {
-		if r.DefaultOptions.RuleAction.RouteOptions.Outbound == TunnelTag("pppp") {
+		if r.DefaultOptions.RouteOptions.Outbound == TunnelTag("pppp") {
 			found = true
 		}
 	}
@@ -219,7 +219,7 @@ func TestPoolWithoutServersIsSkipped(t *testing.T) {
 				t.Error("пул без серверов попал в конфиг")
 			}
 			for _, r := range opts.Route.Rules {
-				if r.DefaultOptions.RuleAction.RouteOptions.Outbound == TunnelTag("pppp") {
+				if r.DefaultOptions.RouteOptions.Outbound == TunnelTag("pppp") {
 					t.Error("правило ссылается на тег, которого в конфиге нет")
 				}
 			}
