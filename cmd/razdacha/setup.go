@@ -448,12 +448,18 @@ func startServices(ctx context.Context, log *slog.Logger) error {
 	if err := systemctl(ctx, "enable", "--now", "razdachad.service"); err != nil {
 		return err
 	}
-	// nginx мог не запускаться ни разу: reload на остановленном сервисе
-	// отвечает отказом, поэтому reload-or-restart.
+	// Именно restart, а не reload-or-restart.
+	//
+	// Установка снимает штатный сайт Debian, слушающий `0.0.0.0:80`, и добавляет
+	// свой на адресе wg0. При перечитывании конфига nginx оставляет прежние
+	// сокеты жить до конца работы старых воркеров: на свежепоставленной машине
+	// это давало открытый наружу 80-й порт и панель, не слушающую вовсе.
+	// Проверено на чистом Debian 13 — после reload `ss -tlpn` показывал
+	// `0.0.0.0:80`, после restart появлялись `10.8.0.1:80` и `:443`.
 	if err := systemctl(ctx, "enable", "nginx.service"); err != nil {
 		return err
 	}
-	if err := systemctl(ctx, "reload-or-restart", "nginx.service"); err != nil {
+	if err := systemctl(ctx, "restart", "nginx.service"); err != nil {
 		return err
 	}
 	log.Info("сервисы запущены")

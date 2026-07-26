@@ -81,7 +81,10 @@ func uninstall(ctx context.Context, opts uninstallOptions, in *os.File) error {
 		errs = append(errs, err)
 	}
 	if systemctlQuiet(ctx, "is-active", "nginx.service") {
-		if err := systemctl(ctx, "reload", "nginx.service"); err != nil {
+		// restart по той же причине, что и при установке: удаление возвращает
+		// штатный сайт, а его сокеты после reload не поднимутся, пока живы
+		// старые воркеры.
+		if err := systemctl(ctx, "restart", "nginx.service"); err != nil {
 			errs = append(errs, err)
 		}
 	}
