@@ -29,10 +29,15 @@ type tunnelResponse struct {
 	Status    *string    `json:"status"`
 	LatencyMS *int       `json:"latency_ms"`
 	LastCheck *time.Time `json:"last_check"`
+
+	// Pool — состав и состояние каталога; заполнен только у туннеля-пула
+	// (Source = pool). У остальных null, и карточка рисует обычный туннель.
+	Pool *poolResponse `json:"pool,omitempty"`
 }
 
-func newTunnelResponse(t store.Tunnel) tunnelResponse {
+func newTunnelResponse(t store.Tunnel, poolEvery time.Duration) tunnelResponse {
 	return tunnelResponse{
+		Pool:      newPoolResponse(t, poolEvery),
 		ID:        t.ID,
 		Name:      t.Name,
 		Type:      t.Type,
@@ -52,11 +57,14 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]tunnelResponse, 0, len(list))
 	alive := make(map[string]bool, len(list))
+	byID := make(map[string]store.Tunnel, len(list))
 	for _, t := range list {
 		alive[t.ID] = true
-		out = append(out, s.withCheck(newTunnelResponse(t)))
+		byID[t.ID] = t
+		out = append(out, s.withCheck(newTunnelResponse(t, s.poolInterval())))
 	}
 	s.checks.keep(alive)
+	s.withPoolState(r.Context(), out, byID)
 	writeJSON(w, s.log, http.StatusOK, out)
 }
 
@@ -113,7 +121,7 @@ func (s *Server) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err, "Туннель не найден")
 		return
 	}
-	writeJSON(w, s.log, http.StatusCreated, newTunnelResponse(created))
+	writeJSON(w, s.log, http.StatusCreated, newTunnelResponse(created, s.poolInterval()))
 }
 
 // handleUpdateTunnel — `PATCH /api/tunnels/{id}`. Смена raw означает повторный
@@ -155,7 +163,7 @@ func (s *Server) handleUpdateTunnel(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err, "Туннель не найден")
 		return
 	}
-	writeJSON(w, s.log, http.StatusOK, newTunnelResponse(t))
+	writeJSON(w, s.log, http.StatusOK, newTunnelResponse(t, s.poolInterval()))
 }
 
 // handleDeleteTunnel — `DELETE /api/tunnels/{id}`.

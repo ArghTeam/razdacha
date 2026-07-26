@@ -8,7 +8,9 @@ import {
   state, tunnelById, toast, toastError, openModal, closeModal, modalShell,
   openMenu, notImplemented, refresh, markDirty,
 } from '../shell.js';
-import { $, esc, plural, TUNNEL_LABEL, tunnelEndpoint } from '../util.js';
+import {
+  $, esc, plural, since, until, TUNNEL_LABEL, tunnelLabel, tunnelEndpoint, tunnelPool,
+} from '../util.js';
 
 export const title = 'Туннели';
 
@@ -23,6 +25,50 @@ const head = () => `
     <button class="btn btn-primary" data-act="add-tunnel">+ Добавить</button>
   </div>`;
 
+/* --- пул ------------------------------------------------------------------
+   Пул — тот же айтем списка, не отдельный экран и не отдельная сущность:
+   правило навешивается на него штатно (спека tasks/63-pool-tunnel-card.md).
+   Отличается он выделением строки и своим набором данных: каталог вместо
+   адреса, сколько серверов живо, какой выбран сейчас, когда обновлялся.
+
+   Выключенный пул не показывает живых серверов и текущий выбор: цифры от
+   выключенного туннеля — ложь, а не ноль. */
+
+/** Сколько серверов в каталоге и сколько из них живы. */
+function poolServers(pool, off) {
+  const total = Number(pool.servers_total) || 0;
+  if (!total) return '';
+  // Живых не знаем (поля нет) или знать нечего (пул выключен) — говорим только
+  // про размер каталога, а не подставляем ноль.
+  if (off || typeof pool.servers_alive !== 'number') {
+    return `<span class="badge">${total} ${plural(total, 'сервер', 'сервера', 'серверов')} в каталоге</span>`;
+  }
+  const alive = pool.servers_alive;
+  return `<span class="badge ${alive ? 'ok' : 'err'}">живых ${alive} из ${total}</span>`;
+}
+
+/** Сервер, через который пул идёт прямо сейчас. */
+function poolCurrent(pool, off) {
+  const cur = pool.current || {};
+  if (off || !cur.name) return '';
+  const parts = [String(cur.name)];
+  // Страна часто уже вписана в имя сервера каталогом — второй раз не повторяем.
+  if (cur.country && !parts[0].includes(cur.country)) parts.push(String(cur.country));
+  if (cur.latency_ms != null) parts.push(`${cur.latency_ms} мс`);
+  return `<div class="row-meta pool-now">Сейчас: ${esc(parts.join(' · '))}</div>`;
+}
+
+/** Расписание каталога. Следующего обновления у выключенного пула не будет —
+    обещать его нечем. */
+function poolSchedule(pool, off) {
+  const parts = [pool.updated_at ? `каталог обновлён ${since(pool.updated_at)}` : 'каталог ещё не загружался'];
+  if (!off) {
+    const next = until(pool.next_update_at);
+    if (next) parts.push(`дальше ${next}`);
+  }
+  return ' · ' + parts.join(' · ');
+}
+
 export function view() {
   if (state.missing.has('tunnels')) {
     return head() + `<div class="card">${notImplemented('Туннели')}</div>`;
@@ -30,6 +76,8 @@ export function view() {
 
   const rows = state.tunnels.map((t) => {
     const used = state.rules.filter((r) => r.tunnel_id === t.id).length;
+    const pool = tunnelPool(t);
+    const off = t.enabled === false;
     const st = t.enabled === false
       ? { cls: 'off', badge: '', label: 'выключен' }
       : t.status === 'up'
@@ -44,19 +92,23 @@ export function view() {
               ? { cls: 'off', badge: '<span class="badge">не применён</span>', label: '' }
               : { cls: 'off', badge: '<span class="badge">не проверялся</span>', label: '' };
     return `
-      <div class="row${t.enabled === false ? ' dim' : ''}">
+      <div class="row${pool ? ' pool' : ''}${off ? ' dim' : ''}">
         <span class="dot ${st.cls}"></span>
         <div class="row-main">
           <div class="row-title">${esc(t.name)}
-            <span class="badge">${esc(TUNNEL_LABEL[t.type] || t.type)}</span>
+            <span class="badge${pool ? ' accent' : ''}">${esc(tunnelLabel(t))}</span>
+            ${pool ? poolServers(pool, off) : ''}
             ${st.badge}
           </div>
           <div class="row-meta mono">${esc(tunnelEndpoint(t))}</div>
+          ${pool ? poolCurrent(pool, off) : ''}
           <div class="row-meta">${used
             ? `используют ${used} ${plural(used, 'правило', 'правила', 'правил')}`
-            : 'ни одно правило не ссылается'}${st.label ? ' · ' + st.label : ''}</div>
+            : 'ни одно правило не ссылается'}${st.label ? ' · ' + st.label : ''}${
+            pool ? poolSchedule(pool, off) : ''}</div>
         </div>
         <div class="row-actions">
+          ${pool ? `<button class="btn btn-sm" data-act="refresh-pool" data-id="${esc(t.id)}">Обновить</button>` : ''}
           <button class="btn btn-sm" data-act="check-tunnel" data-id="${esc(t.id)}">Проверить</button>
           <div class="menu-wrap">
             <button class="btn btn-sm btn-ghost" data-act="menu-tunnel" data-id="${esc(t.id)}" aria-label="Ещё">⋮</button>
@@ -204,6 +256,33 @@ export const actions = {
     } catch (err) {
       // 409 — на туннель ссылается правило; текст приходит с сервера.
       toastError(err, 'Туннель не удалён');
+    }
+  },
+
+  /* Перечитать каталог пула. Ручки ещё нет: 404 означает «не написали», и это
+     говорится словами — так же, как предпросмотр разбора в форме туннеля. */
+  'refresh-pool': async (id, btn) => {
+    const t = tunnelById(id);
+    btn.disabled = true;
+    btn.textContent = 'Обновляю…';
+    try {
+      const res = await api.tunnels.refresh(id);
+      // Ручка может вернуть весь туннель или только блок пула — принимаем оба.
+      if (res && res.pool) Object.assign(t, res);
+      else if (res) t.pool = { ...(t.pool || {}), ...res };
+      refresh();
+      const p = t.pool || {};
+      toast(typeof p.servers_alive === 'number' && p.servers_total
+        ? `${t.name}: живых ${p.servers_alive} из ${p.servers_total}`
+        : `${t.name}: каталог обновлён`);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Обновить';
+      if (err.missing) {
+        toast('Обновление каталога появится позже: POST /api/tunnels/{id}/refresh ещё не реализован');
+        return;
+      }
+      toastError(err, 'Каталог не обновлён');
     }
   },
 

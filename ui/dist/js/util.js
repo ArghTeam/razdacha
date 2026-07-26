@@ -47,14 +47,52 @@ export function isOnline(peer) {
   return (Date.now() - new Date(peer.last_handshake).getTime()) < 180_000;
 }
 
+/** Через сколько наступит момент в будущем — зеркало `since()`.
+    Нужно расписанию обновления каталога у пула. */
+export function until(iso) {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const sec = Math.floor((t - Date.now()) / 1000);
+  if (sec <= 0) return 'вот-вот';
+  if (sec < 60) return `через ${sec} ${plural(sec, 'секунду', 'секунды', 'секунд')}`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `через ${min} ${plural(min, 'минуту', 'минуты', 'минут')}`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `через ${h} ${plural(h, 'час', 'часа', 'часов')}`;
+  const d = Math.floor(h / 24);
+  return `через ${d} ${plural(d, 'день', 'дня', 'дней')}`;
+}
+
 export const TUNNEL_LABEL = {
   wireguard: 'WireGuard', vless: 'VLESS', shadowsocks: 'Shadowsocks',
   trojan: 'Trojan', hysteria2: 'Hysteria2', socks: 'SOCKS', raw: 'JSON',
+  // Пул — не протокол, а набор серверов из каталога: тип показывается словом,
+  // потому что от одиночного туннеля он отличается поведением, а не шифром.
+  pool: 'Пул',
 };
 
+/** Блок `pool` туннеля, если это пул. Иначе `null` — по нему экран и решает,
+    рисовать ли строку каталога и статистику серверов.
+
+    Пул узнаётся по `source`, а не по `type`: тип означает протокол, и пул из
+    vless-серверов — это vless (`store.Tunnel.validate` другого и не допускает).
+    Словом «Пул» подписан бейдж, потому что от одиночного туннеля пул отличается
+    поведением, а не шифром. */
+export const tunnelPool = (t) => (t && t.source === 'pool' ? (t.pool || {}) : null);
+
+/** Подпись типа на карточке. */
+export const tunnelLabel = (t) => (
+  tunnelPool(t) ? TUNNEL_LABEL.pool : (TUNNEL_LABEL[t.type] || t.type)
+);
+
 /** Адрес туннеля. Хранимый `parsed` пользуется server/server_port,
-    ответ `POST /api/tunnels/parse` — host/port; принимаем оба. */
+    ответ `POST /api/tunnels/parse` — host/port; принимаем оба.
+    У пула одного адреса нет вовсе — серверы меняются сами, — поэтому на его
+    месте стоит каталог, из которого они берутся. */
 export function tunnelEndpoint(t) {
+  const pool = tunnelPool(t);
+  if (pool) return pool.catalog_url || '—';
   const p = t.parsed || {};
   const host = p.server ?? p.host ?? t.host ?? '';
   const port = p.server_port ?? p.port ?? t.port ?? '';

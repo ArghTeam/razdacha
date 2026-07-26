@@ -47,6 +47,21 @@ func poolMemberTag(tunnelID string, i int) string {
 	return fmt.Sprintf("%s-%d", TunnelTag(tunnelID), i)
 }
 
+// PoolMembers отдаёт участников группы пула: тег в конфиге и сервер, которому он
+// соответствует. Порядок тот же, что в конфиге.
+//
+// Нужен слою api: Clash API отдаёт выбранный участник тегом, а показать
+// пользователю надо имя и страну сервера, и вычислять отбор второй раз своими
+// руками означало бы разойтись с генератором.
+func PoolMembers(t store.Tunnel) map[string]store.PoolServer {
+	servers := selectPoolServers(t.Pool)
+	out := make(map[string]store.PoolServer, len(servers))
+	for i, s := range servers {
+		out[poolMemberTag(t.ID, i)] = s
+	}
+	return out
+}
+
 // buildPool разворачивает туннель-пул в участников группы и сам `urltest`.
 //
 // Тег группы — TunnelTag(t.ID), то есть ровно тот, на который ссылаются правила:

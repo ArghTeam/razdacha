@@ -143,6 +143,9 @@ export const tunnels = {
   remove: (id) => del(`/api/tunnels/${encodeURIComponent(id)}`),
   parse: (raw) => post('/api/tunnels/parse', { raw }),
   check: (id) => post(`/api/tunnels/${encodeURIComponent(id)}/check`),
+  /** Пул: перечитать каталог и пересобрать список серверов. Пока ручки нет,
+      404 приходит как `err.missing` — экран говорит это словами. */
+  refresh: (id) => post(`/api/tunnels/${encodeURIComponent(id)}/refresh`),
 };
 
 /* --- Правила ------------------------------------------------------------- */

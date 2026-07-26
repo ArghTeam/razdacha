@@ -84,6 +84,19 @@ type Config struct {
 	// настоящий [singbox.NewApplier] — запись в /etc/sing-box/config.json,
 	// `sing-box check` и `systemctl reload`; тесты подставляют свой.
 	Applier Applier
+
+	// Pools обходит каталог туннеля-пула по `POST /api/tunnels/{id}/refresh`.
+	// Пустой означает, что расписание не запущено: ручка отвечает 503, а не
+	// делает вид, что обновила каталог.
+	Pools poolRefresher
+
+	// PoolEvery — период обхода каталога, от которого считается next_update_at
+	// в ответе. Ноль означает [lists.DefaultPoolInterval].
+	PoolEvery time.Duration
+
+	// PoolProxies — источник живого состояния пулов. Пустой означает настоящий
+	// клиент Clash API; тесты подставляют свой.
+	PoolProxies clashProxies
 }
 
 // Server — HTTP-сервер панели.
@@ -107,6 +120,10 @@ type Server struct {
 	// источник производных полей в `GET /api/tunnels`.
 	checks  *checkCache
 	handler http.Handler
+
+	pools       poolRefresher
+	poolEvery   time.Duration
+	poolProxies clashProxies
 }
 
 // New собирает сервер и проверяет условия запуска.
@@ -134,18 +151,21 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		addr:      addr,
-		store:     cfg.Store,
-		log:       cfg.Logger,
-		now:       cfg.Now,
-		serverKey: cfg.ServerPublicKey,
-		peerStat:  cfg.PeerStats,
-		diag:      cfg.Diag,
-		ui:        cfg.UI,
-		applier:   cfg.Applier,
-		clash:     clash.New(clash.Options{Addr: cfg.ClashAddr}),
-		checks:    newCheckCache(),
-		verify:    make(chan struct{}, maxVerifications),
+		addr:        addr,
+		store:       cfg.Store,
+		log:         cfg.Logger,
+		now:         cfg.Now,
+		serverKey:   cfg.ServerPublicKey,
+		peerStat:    cfg.PeerStats,
+		diag:        cfg.Diag,
+		ui:          cfg.UI,
+		applier:     cfg.Applier,
+		clash:       clash.New(clash.Options{Addr: cfg.ClashAddr}),
+		checks:      newCheckCache(),
+		pools:       cfg.Pools,
+		poolEvery:   cfg.PoolEvery,
+		poolProxies: cfg.PoolProxies,
+		verify:      make(chan struct{}, maxVerifications),
 	}
 	if s.ui == nil {
 		s.ui = ui.Files()

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>razdacha — экран «Туннели» на замоканном ответе</title>
+  <link rel="stylesheet" href="../dist/app.css">
+</head>
+<body>
+
+<!--
+  Стенд экрана «Туннели» на замоканном `GET /api/tunnels`.
+
+  Зачем: карточка пула (#63) написана под форму ответа, зафиксированную до
+  реализации ручки, — проверить её на живом демоне пока нечем. Стенд рисует тот
+  же `view()`, что и панель, но состояние подставляет руками.
+
+  Почему здесь, а не в `ui/dist`: `go:embed` забирает только `dist`, поэтому в
+  бинарник демона этот файл не попадает и мокапный ответ в продакшн-путь не
+  протаскивается.
+
+  Запуск (любой статический сервер, из корня репозитория):
+
+      python3 -m http.server 8123 --directory ui
+      # открыть http://localhost:8123/mock/tunnels.html
+
+  Кнопки живые: «Обновить» дёргает `POST /api/tunnels/{id}/refresh`, которого на
+  статическом сервере нет, — и показывает ровно тот текст, который увидит
+  пользователь до готовности ручки.
+-->
+
+<div id="app">
+  <main id="screen" class="screen"></main>
+  <div class="apply-bar" id="apply-bar" hidden>
+    <div class="apply-inner"><span class="apply-text">Есть непримененные изменения</span></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" id="modal"></div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module">
+import { state, closeMenu, closeModal, toastError } from '../dist/js/shell.js';
+import * as tunnels from '../dist/js/screens/tunnels.js';
+
+const hoursFromNow = (h) => new Date(Date.now() + h * 3600_000).toISOString();
+const hoursAgo = (h) => new Date(Date.now() - h * 3600_000).toISOString();
+
+/* Форма ответа зафиксирована в tasks/63-pool-tunnel-card.md — менять её здесь
+   нельзя, иначе стенд перестанет проверять то, что приедет с сервера. */
+state.tunnels = [
+  {
+    id: 'pool-1', name: 'Бесплатные VLESS', type: 'vless', source: 'pool',
+    enabled: true, status: 'up', latency_ms: 210,
+    pool: {
+      catalog_url: 'https://vpnkeys.me/protocol/vless',
+      servers_total: 24,
+      servers_alive: 19,
+      current: { name: 'VLESS (Netherlands) 8821', country: 'Netherlands', latency_ms: 210 },
+      updated_at: hoursAgo(2),
+      next_update_at: hoursFromNow(10),
+    },
+  },
+  {
+    id: 'pool-2', name: 'Пул про запас', type: 'vless', source: 'pool',
+    enabled: false, status: 'up', latency_ms: 190,
+    pool: {
+      catalog_url: 'https://vpnkeys.me/protocol/vless',
+      servers_total: 24,
+      servers_alive: 19,
+      current: { name: 'VLESS (Germany) 4410', country: 'Germany', latency_ms: 190 },
+      updated_at: hoursAgo(30),
+      next_update_at: hoursFromNow(6),
+    },
+  },
+  {
+    id: 'pool-3', name: 'Пул без ответа', type: 'vless', source: 'pool',
+    enabled: true, status: 'down',
+    pool: {
+      catalog_url: 'https://vpnkeys.me/protocol/vless',
+      servers_total: 24,
+      servers_alive: 0,
+      updated_at: null,
+      next_update_at: hoursFromNow(1),
+    },
+  },
+  {
+    id: 'wg-1', name: 'Нидерланды', type: 'wireguard', source: 'wg_conf',
+    enabled: true, status: 'up', latency_ms: 74,
+    parsed: { server: '203.0.113.10', server_port: 51820 },
+  },
+  {
+    id: 'vless-1', name: 'Резерв', type: 'vless', source: 'url',
+    enabled: false, status: 'not_applied',
+    parsed: { server: '198.51.100.7', server_port: 443 },
+  },
+];
+
+state.rules = [
+  { id: 'r1', tunnel_id: 'pool-1' },
+  { id: 'r2', tunnel_id: 'pool-1' },
+  { id: 'r3', tunnel_id: 'wg-1' },
+];
+
+const render = () => { document.querySelector('#screen').innerHTML = tunnels.view(); };
+document.addEventListener('razdacha:render', render);
+
+/* Делегирование то же, что в app.js: разметка перерисовывается целиком. */
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-act]');
+  if (!btn) { closeMenu(); return; }
+  if (!btn.dataset.act.startsWith('menu-')) closeMenu();
+  const fn = { ...tunnels.actions, 'close-modal': closeModal }[btn.dataset.act];
+  if (!fn) return;
+  const res = fn(btn.dataset.id || '', btn);
+  if (res && typeof res.catch === 'function') res.catch((err) => toastError(err));
+});
+
+render();
+</script>
+
+</body>
+</html>
