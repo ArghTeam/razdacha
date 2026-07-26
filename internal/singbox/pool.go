@@ -1,0 +1,143 @@
+package singbox
+
+import (
+	"fmt"
+	"log/slog"
+	"sort"
+	"time"
+
+	C "github.com/sagernet/sing-box/constant"
+	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing/common/json/badoption"
+
+	"github.com/ArghTeam/razdacha/internal/store"
+)
+
+// Параметры группы `urltest` туннеля-пула (ADR 0010).
+const (
+	// PoolTestInterval — как часто sing-box перепроверяет участников пула.
+	// Ротация внутри группы бесплатна: конфиг на диске не меняется, процесс не
+	// перезапускается, соседние туннели не задеты. Три минуты — компромисс между
+	// временем жизни мёртвого сервера в работе и постоянным фоновым трафиком.
+	PoolTestInterval = 3 * time.Minute
+
+	// poolIdleTimeout — через сколько простоя группа перестаёт проверяться.
+	// Значение sing-box по умолчанию; задано явно, потому что интервал проверки
+	// обязан быть меньше него.
+	poolIdleTimeout = 30 * time.Minute
+
+	// poolMaxServers — сколько серверов пула попадает в конфиг. Полнота не нужна:
+	// работоспособность даёт горстка ключей, а каждый лишний участник — запись в
+	// outbounds[] и проба каждые PoolTestInterval. Шестнадцать переживают отказ
+	// большинства и оставляют конфиг читаемым руками.
+	poolMaxServers = 16
+
+	// poolTolerance — насколько новый лидер должен быть быстрее текущего (мс),
+	// чтобы группа переключилась. Без запаса группа скакала бы на шуме измерений.
+	poolTolerance = 50
+
+	// poolTestURL — что запрашивается при проверке. Тот же адрес, что у sing-box
+	// по умолчанию; задан явно, чтобы конфиг не менялся при смене его дефолта.
+	poolTestURL = "https://www.gstatic.com/generate_204"
+)
+
+// poolMemberTag — тег одного участника пула. Индекс — позиция в отсортированном
+// наборе, поэтому неизменившийся набор даёт те же теги, а значит и тот же JSON.
+func poolMemberTag(tunnelID string, i int) string {
+	return fmt.Sprintf("%s-%d", TunnelTag(tunnelID), i)
+}
+
+// buildPool разворачивает туннель-пул в участников группы и сам `urltest`.
+//
+// Тег группы — TunnelTag(t.ID), то есть ровно тот, на который ссылаются правила:
+// снаружи пул остаётся одним туннелем (ADR 0010). Второе значение — false, если в
+// конфиг не попал ни один участник; тогда пул выпадает из конфига вместе со
+// ссылающимися на него правилами, как выключенный туннель. Ошибка здесь заморозила
+// бы весь конфиг, включая исправные туннели, из-за чужого недоступного каталога.
+func buildPool(t store.Tunnel, log *slog.Logger) ([]option.Outbound, bool) {
+	servers := selectPoolServers(t.Pool)
+	out := make([]option.Outbound, 0, len(servers)+1)
+	tags := make([]string, 0, len(servers))
+
+	for i, s := range servers {
+		res, err := Parse(s.URL)
+		if err != nil {
+			log.Warn("сервер пула пропущен: ссылка не разобрана",
+				"туннель", t.Name, "url", s.URL, "ошибка", err)
+			continue
+		}
+		if res.Outbound == nil {
+			log.Warn("сервер пула пропущен: не outbound",
+				"туннель", t.Name, "url", s.URL, "тип", res.Type)
+			continue
+		}
+		ob := *res.Outbound
+		// Тег привязан к позиции в наборе, а не к номеру принятого сервера:
+		// иначе один неразобравшийся ключ сдвинул бы теги всех следующих.
+		ob.Tag = poolMemberTag(t.ID, i)
+		out = append(out, ob)
+		tags = append(tags, ob.Tag)
+	}
+
+	if len(tags) == 0 {
+		log.Warn("туннель-пул пропущен: нет ни одного пригодного сервера",
+			"туннель", t.Name, "серверов_в_бд", len(t.Pool))
+		return nil, false
+	}
+
+	return append(out, option.Outbound{
+		Type: C.TypeURLTest,
+		Tag:  TunnelTag(t.ID),
+		Options: &option.URLTestOutboundOptions{
+			Outbounds:   tags,
+			URL:         poolTestURL,
+			Interval:    badoption.Duration(PoolTestInterval),
+			Tolerance:   poolTolerance,
+			IdleTimeout: badoption.Duration(poolIdleTimeout),
+		},
+	}), true
+}
+
+// selectPoolServers отбирает серверы для конфига: лучшие по пингу карточки, но не
+// больше poolMaxServers, и возвращает их в порядке возрастания URL.
+//
+// Порядок обязателен: `sameOnDisk` в apply.go сравнивает конфиг байт в байт, а
+// перезагрузка идёт через `systemctl reload-or-restart`, то есть перезапускает
+// sing-box и рвёт соединения во всех туннелях. Перетасованный JSON при том же
+// наборе серверов означал бы перезапуск на каждом обновлении каталога (ADR 0010).
+func selectPoolServers(pool []store.PoolServer) []store.PoolServer {
+	seen := make(map[string]bool, len(pool))
+	uniq := make([]store.PoolServer, 0, len(pool))
+	for _, s := range pool {
+		if s.URL == "" || seen[s.URL] {
+			continue
+		}
+		seen[s.URL] = true
+		uniq = append(uniq, s)
+	}
+
+	// Отбор: сначала по пингу, при равенстве — по URL, чтобы порядок не зависел
+	// от порядка в БД. Пинг 0 означает «карточка его не показала» — такие уходят
+	// в конец, но не выбрасываются: без них пул из одних безымянных ключей был бы пуст.
+	sort.Slice(uniq, func(i, j int) bool {
+		a, b := poolRank(uniq[i].PingMS), poolRank(uniq[j].PingMS)
+		if a != b {
+			return a < b
+		}
+		return uniq[i].URL < uniq[j].URL
+	})
+	if len(uniq) > poolMaxServers {
+		uniq = uniq[:poolMaxServers]
+	}
+
+	sort.Slice(uniq, func(i, j int) bool { return uniq[i].URL < uniq[j].URL })
+	return uniq
+}
+
+// poolRank переводит пинг в ключ сортировки: неизвестный пинг хуже любого известного.
+func poolRank(ping int) int {
+	if ping <= 0 {
+		return 1 << 30
+	}
+	return ping
+}

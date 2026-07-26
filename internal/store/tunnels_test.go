@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func sampleTunnel(name string) Tunnel {
@@ -66,6 +67,108 @@ func TestTunnelRoundTrip(t *testing.T) {
 	}
 	if _, err := s.Tunnel(ctx, got.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("после удаления ожидалась ErrNotFound, получено: %v", err)
+	}
+}
+
+func samplePool(name string) Tunnel {
+	return Tunnel{
+		Name:    name,
+		Type:    TunnelVLESS,
+		Source:  SourcePool,
+		Raw:     "https://vpnkeys.me/protocol/vless",
+		Enabled: true,
+	}
+}
+
+// Пул проходит полный круг: создаётся без своего конфига, наполняется отдельной
+// операцией и читается со временем обновления.
+func TestPoolTunnelRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	created, err := s.CreateTunnel(ctx, samplePool("пул vless"))
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+	if len(created.Pool) != 0 || !created.PoolUpdatedAt.IsZero() {
+		t.Errorf("свежий пул не пуст: %+v", created)
+	}
+
+	servers := []PoolServer{
+		{URL: "vless://a@1.2.3.4:443?type=tcp", Country: "Нидерланды", Title: "NL-1", PingMS: 42},
+		{URL: "vless://b@5.6.7.8:443?type=tcp", Country: "Германия", Title: "DE-1", PingMS: 88},
+	}
+	at := time.Unix(1750000000, 0).UTC()
+	if err := s.UpdateTunnelPool(ctx, created.ID, servers, at); err != nil {
+		t.Fatalf("UpdateTunnelPool: %v", err)
+	}
+
+	got, err := s.Tunnel(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Tunnel: %v", err)
+	}
+	if len(got.Pool) != 2 || got.Pool[0].URL != servers[0].URL || got.Pool[1].PingMS != 88 {
+		t.Errorf("серверы пула прочитаны не так, как записаны: %+v", got.Pool)
+	}
+	if !got.PoolUpdatedAt.Equal(at) {
+		t.Errorf("время обновления пула = %v, ожидалось %v", got.PoolUpdatedAt, at)
+	}
+
+	// Обновление туннеля целиком состав пула не теряет.
+	got.Name = "пул"
+	if err := s.UpdateTunnel(ctx, got); err != nil {
+		t.Fatalf("UpdateTunnel: %v", err)
+	}
+	after, err := s.Tunnel(ctx, got.ID)
+	if err != nil {
+		t.Fatalf("Tunnel после обновления: %v", err)
+	}
+	if len(after.Pool) != 2 || !after.PoolUpdatedAt.Equal(at) {
+		t.Errorf("обновление туннеля потеряло пул: %+v", after)
+	}
+}
+
+// Состав пула пишется только пулу: обычный туннель такой операцией не задеть.
+func TestUpdateTunnelPoolOnlyForPools(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	plain, err := s.CreateTunnel(ctx, sampleTunnel("обычный"))
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+	err = s.UpdateTunnelPool(ctx, plain.ID, []PoolServer{{URL: "vless://a@1.2.3.4:443"}}, time.Now())
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ожидалась ErrNotFound, получено: %v", err)
+	}
+}
+
+func TestPoolTunnelValidation(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	cases := map[string]func(*Tunnel){
+		"пул не vless":        func(v *Tunnel) { v.Type = TunnelTrojan },
+		"у пула свой конфиг":  func(v *Tunnel) { v.Parsed = []byte(`{"type":"vless"}`) },
+		"сервер без ссылки":   func(v *Tunnel) { v.Pool = []PoolServer{{Country: "Германия"}} },
+		"пустой URL каталога": func(v *Tunnel) { v.Raw = "" },
+	}
+	for name, broken := range cases {
+		t.Run(name, func(t *testing.T) {
+			v := samplePool("пул vless")
+			broken(&v)
+			if _, err := s.CreateTunnel(ctx, v); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
+			}
+		})
+	}
+
+	// Обратная сторона: серверы у не-пула — тоже ошибка, иначе они молча лежали бы
+	// в БД и не попадали в конфиг.
+	v := sampleTunnel("обычный")
+	v.Pool = []PoolServer{{URL: "vless://a@1.2.3.4:443"}}
+	if _, err := s.CreateTunnel(ctx, v); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ожидалась ErrInvalid на серверы у обычного туннеля, получено: %v", err)
 	}
 }
 

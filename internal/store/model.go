@@ -30,6 +30,9 @@ const (
 	SourceURL    TunnelSource = "url"
 	SourceWGConf TunnelSource = "wg_conf"
 	SourceJSON   TunnelSource = "json"
+	// SourcePool — туннель-пул: в Raw лежит URL каталога ключей, а серверы
+	// снимаются с него по расписанию (ADR 0010).
+	SourcePool TunnelSource = "pool"
 )
 
 // RuleAction — что делать с трафиком, попавшим под правило.
@@ -51,7 +54,19 @@ const (
 	ScopeSelected PeerScope = "selected"
 )
 
-// Tunnel — исходящий канал: ровно один outbound либо endpoint в конфиге sing-box.
+// PoolServer — один сервер туннеля-пула, снятый с карточки каталога. Ссылка
+// разбирается на слое singbox при генерации конфига, здесь она хранится как есть;
+// остальные поля нужны отбору по пингу и панели.
+type PoolServer struct {
+	URL     string `json:"url"`
+	Country string `json:"country,omitempty"`
+	Title   string `json:"title,omitempty"`
+	PingMS  int    `json:"ping_ms,omitempty"`
+}
+
+// Tunnel — исходящий канал: один тег в конфиге sing-box, на который ссылаются
+// правила. За тегом стоит outbound, endpoint либо группа urltest — последнее у
+// туннеля-пула (ADR 0010).
 type Tunnel struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
@@ -61,6 +76,12 @@ type Tunnel struct {
 	Parsed    json.RawMessage `json:"parsed"`
 	Enabled   bool            `json:"enabled"`
 	CreatedAt time.Time       `json:"created_at"`
+
+	// Pool — серверы пула; заполнен только при Source = SourcePool.
+	Pool []PoolServer `json:"pool,omitempty"`
+	// PoolUpdatedAt — когда каталог обходили в последний раз. Нулевое время
+	// означает, что обхода ещё не было и пул пока пуст.
+	PoolUpdatedAt time.Time `json:"pool_updated_at,omitempty"`
 }
 
 // Rule — правило маршрутизации: «эти ресурсы — в этот туннель».
@@ -116,7 +137,27 @@ func (t *Tunnel) validate() error {
 		return fmt.Errorf("%w: неизвестный тип туннеля %q", ErrInvalid, t.Type)
 	}
 	switch t.Source {
+	case SourcePool:
+		// Каталог разбирается только для vless: разборщик страницы снимает
+		// именно эти ключи, и участники группы собираются как vless-outbound'ы.
+		if t.Type != TunnelVLESS {
+			return fmt.Errorf("%w: туннель-пул %q бывает только типа vless, а не %q",
+				ErrInvalid, t.Name, t.Type)
+		}
+		if len(t.Parsed) > 0 {
+			return fmt.Errorf("%w: у туннеля-пула %q нет своего конфига, серверы берутся из каталога",
+				ErrInvalid, t.Name)
+		}
+		for _, s := range t.Pool {
+			if s.URL == "" {
+				return fmt.Errorf("%w: у сервера пула %q пустая ссылка", ErrInvalid, t.Name)
+			}
+		}
 	case SourceURL, SourceWGConf, SourceJSON:
+		if len(t.Pool) > 0 {
+			return fmt.Errorf("%w: у туннеля %q задан список серверов, но он не пул",
+				ErrInvalid, t.Name)
+		}
 	default:
 		return fmt.Errorf("%w: неизвестная форма конфига %q", ErrInvalid, t.Source)
 	}

@@ -52,6 +52,16 @@ CREATE TABLE sessions (
 CREATE INDEX sessions_expires_at ON sessions(expires_at);
 `,
 	},
+	{
+		// Туннель-пул (ADR 0010): серверы снимаются с каталога, поэтому лежат
+		// отдельно от parsed — тот у пула пуст, конфиг участников собирается
+		// из ссылок при генерации.
+		version: 3,
+		stmts: `
+ALTER TABLE tunnels ADD COLUMN pool TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE tunnels ADD COLUMN pool_updated_at INTEGER NOT NULL DEFAULT 0;
+`,
+	},
 }
 
 // schemaVersion — версия схемы, которую ожидает этот код.
