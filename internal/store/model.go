@@ -82,6 +82,11 @@ type Tunnel struct {
 	// PoolUpdatedAt — когда каталог обходили в последний раз. Нулевое время
 	// означает, что обхода ещё не было и пул пока пуст.
 	PoolUpdatedAt time.Time `json:"pool_updated_at,omitempty"`
+
+	// Builtin — запись завёл демон, а не пользователь ([Store.EnsureBuiltinPool]).
+	// Такую не удаляют, а выключают: см. [Store.DeleteTunnel]. Ставится один раз
+	// при заведении, [Store.UpdateTunnel] его не трогает.
+	Builtin bool `json:"builtin"`
 }
 
 // Rule — правило маршрутизации: «эти ресурсы — в этот туннель».
@@ -160,6 +165,12 @@ func (t *Tunnel) validate() error {
 		}
 	default:
 		return fmt.Errorf("%w: неизвестная форма конфига %q", ErrInvalid, t.Source)
+	}
+	// Встроенная разновидность пока одна — пул бесплатных ключей. У остальных
+	// форм флаг означал бы неудаляемый туннель, которого никто не заводил.
+	if t.Builtin && t.Source != SourcePool {
+		return fmt.Errorf("%w: встроенным бывает только туннель-пул, а не форма %q",
+			ErrInvalid, t.Source)
 	}
 	if t.Raw == "" {
 		return fmt.Errorf("%w: у туннеля %q пустой конфиг", ErrInvalid, t.Name)

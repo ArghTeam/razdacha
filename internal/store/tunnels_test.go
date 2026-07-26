@@ -259,3 +259,134 @@ func TestDeleteUnknownTunnel(t *testing.T) {
 		t.Fatalf("ожидалась ErrNotFound, получено: %v", err)
 	}
 }
+
+// Встроенный пул заводится один раз: повторный вызов (то есть повторный старт
+// демона) отдаёт ту же запись, а не заводит вторую.
+func TestEnsureBuiltinPoolIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	first, created, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	if err != nil {
+		t.Fatalf("EnsureBuiltinPool: %v", err)
+	}
+	if !created {
+		t.Fatal("первый вызов не создал встроенный пул")
+	}
+	if !first.Builtin || first.Source != SourcePool || first.Type != TunnelVLESS {
+		t.Errorf("встроенный пул заведён как %+v", first)
+	}
+	// Выключенным: свежая установка не должна сама пойти на чужой сайт за ключами.
+	if first.Enabled {
+		t.Error("встроенный пул заведён включённым")
+	}
+
+	second, created, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	if err != nil {
+		t.Fatalf("повторный EnsureBuiltinPool: %v", err)
+	}
+	if created {
+		t.Error("повторный вызов завёл вторую запись")
+	}
+	if second.ID != first.ID {
+		t.Errorf("повторный вызов отдал другой пул: %s вместо %s", second.ID, first.ID)
+	}
+
+	list, err := s.Tunnels(ctx)
+	if err != nil {
+		t.Fatalf("Tunnels: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("туннелей в БД %d, ожидался один", len(list))
+	}
+}
+
+// Признак встроенного держится на колонке, а не на имени и каталоге: переименованный
+// и переключённый на другой каталог пул остаётся тем же встроенным.
+func TestEnsureBuiltinPoolSurvivesRename(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	first, _, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	if err != nil {
+		t.Fatalf("EnsureBuiltinPool: %v", err)
+	}
+
+	first.Name = "Мой пул"
+	first.Raw = "https://example.org/keys"
+	first.Enabled = true
+	if err := s.UpdateTunnel(ctx, first); err != nil {
+		t.Fatalf("UpdateTunnel: %v", err)
+	}
+
+	got, err := s.Tunnel(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("Tunnel: %v", err)
+	}
+	if !got.Builtin {
+		t.Error("правка сняла признак встроенного — запрет на удаление обходится через PATCH")
+	}
+
+	same, created, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	if err != nil {
+		t.Fatalf("повторный EnsureBuiltinPool: %v", err)
+	}
+	if created || same.ID != first.ID {
+		t.Errorf("после переименования завёлся второй пул: created=%v id=%s", created, same.ID)
+	}
+}
+
+// Занятое пользователем имя не должно оставить установку без встроенного пула.
+func TestEnsureBuiltinPoolWorksAroundTakenName(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	if _, err := s.CreateTunnel(ctx, sampleTunnel("Бесплатные VLESS")); err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+
+	got, created, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	if err != nil {
+		t.Fatalf("EnsureBuiltinPool: %v", err)
+	}
+	if !created {
+		t.Fatal("встроенный пул не заведён из-за занятого имени")
+	}
+	if got.Name != "Бесплатные VLESS"+builtinNameSuffix {
+		t.Errorf("имя встроенного пула %q", got.Name)
+	}
+}
+
+// Встроенную запись не удаляют, а выключают: на следующем старте демон завёл бы её
+// снова, и «удалил» оказалось бы неправдой.
+func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	pool, _, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	if err != nil {
+		t.Fatalf("EnsureBuiltinPool: %v", err)
+	}
+
+	err = s.DeleteTunnel(ctx, pool.ID)
+	if !errors.Is(err, ErrInUse) {
+		t.Fatalf("ожидалась ErrInUse, получено: %v", err)
+	}
+	if !strings.Contains(err.Error(), "выключить") {
+		t.Errorf("ошибка не объясняет, что делать вместо удаления: %v", err)
+	}
+	if _, err := s.Tunnel(ctx, pool.ID); err != nil {
+		t.Errorf("встроенный пул всё-таки удалён: %v", err)
+	}
+}
+
+// Флаг встроенного бывает только у пула: у обычного туннеля он означал бы
+// неудаляемую запись, которую никто не заводил.
+func TestBuiltinOnlyForPool(t *testing.T) {
+	s := open(t)
+	tun := sampleTunnel("резерв")
+	tun.Builtin = true
+	if _, err := s.CreateTunnel(context.Background(), tun); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
+	}
+}
