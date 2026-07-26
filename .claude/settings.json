@@ -48,7 +48,7 @@
       "Bash(gh release:*)",
       "Bash(gh api:*)",
       "Bash(gh auth status:*)",
-      "Bash(ssh root@77.233.213.189:*)",
+      "Bash(ssh root@*)",
       "Bash(scp:*)",
       "Bash(curl:*)",
       "Bash(python3:*)",
