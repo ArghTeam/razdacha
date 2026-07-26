@@ -82,6 +82,40 @@ func TestSummaryUpgrade(t *testing.T) {
 	}
 }
 
+// TestSummaryPanelMode — режим панели печатается всегда, а его смена — отдельной
+// строкой с командой возврата. Молча уводить панель в интернет или из интернета
+// нельзя (#81).
+func TestSummaryPanelMode(t *testing.T) {
+	private, err := summary{PanelURL: "https://10.8.0.1", WGPort: 51820}.Render()
+	if err != nil {
+		t.Fatalf("сборка вывода: %v", err)
+	}
+	if !strings.Contains(private, "Режим панели:  приватный, панель доступна только из VPN.") {
+		t.Fatalf("нет строки о приватном режиме:\n%s", private)
+	}
+	if strings.Contains(private, "Режим изменён") {
+		t.Fatalf("режим не менялся, а вывод говорит обратное:\n%s", private)
+	}
+
+	public, err := summary{
+		PanelURL:         "https://10.8.0.1",
+		WGPort:           51820,
+		PanelPublic:      true,
+		PanelModeChanged: true,
+	}.Render()
+	if err != nil {
+		t.Fatalf("сборка вывода: %v", err)
+	}
+	for _, want := range []string{
+		"Режим панели:  публичный, панель отвечает на всех интерфейсах.",
+		"Режим изменён этим запуском; вернуть прежний: RAZDACHA_PUBLIC=0",
+	} {
+		if !strings.Contains(public, want) {
+			t.Fatalf("в выводе нет %q:\n%s", want, public)
+		}
+	}
+}
+
 // TestSummaryColor — на терминале QR раскрашивается, иначе его не прочитает
 // сканер в тёмной теме.
 func TestSummaryColor(t *testing.T) {

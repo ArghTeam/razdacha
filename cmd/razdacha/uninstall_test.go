@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ArghTeam/razdacha/internal/packaging"
@@ -98,6 +99,54 @@ func TestRemoveStateMissing(t *testing.T) {
 	opts := uninstallOptions{root: t.TempDir()}
 	if err := maybeRemoveState(opts, notATerminal(t), slog.Default()); err != nil {
 		t.Fatalf("повторное удаление: %v", err)
+	}
+}
+
+// procSys раскладывает параметры ядра в подменённом корне.
+func procSys(t *testing.T, forward, nonlocal string) string {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, "proc/sys/net/ipv4")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("подготовка /proc/sys: %v", err)
+	}
+	for name, value := range map[string]string{
+		"ip_forward": forward, "ip_nonlocal_bind": nonlocal,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(value+"\n"), 0o644); err != nil {
+			t.Fatalf("подготовка %s: %v", name, err)
+		}
+	}
+	return root
+}
+
+// TestRestoreSysctlKeepsForwardAndSaysSo — из двух параметров сбрасывается один.
+// ip_nonlocal_bind нужен только нам, а маршрутизацию мог включить кто угодно до
+// нас; молчаливой асимметрия быть не должна — команда обещает исходное
+// состояние, значит про оставленное она обязана сказать (#82).
+func TestRestoreSysctlKeepsForwardAndSaysSo(t *testing.T) {
+	root := procSys(t, "1", "1")
+
+	notes := restoreSysctl(root, slog.Default())
+
+	forward, err := os.ReadFile(filepath.Join(root, "proc/sys/net/ipv4/ip_forward"))
+	if err != nil || strings.TrimSpace(string(forward)) != "1" {
+		t.Fatalf("ip_forward = %q, ошибка %v: чужую маршрутизацию не обрываем", forward, err)
+	}
+	nonlocal, err := os.ReadFile(filepath.Join(root, "proc/sys/net/ipv4/ip_nonlocal_bind"))
+	if err != nil || strings.TrimSpace(string(nonlocal)) != "0" {
+		t.Fatalf("ip_nonlocal_bind = %q, ошибка %v: он нужен только нам", nonlocal, err)
+	}
+	if len(notes) == 0 || !strings.Contains(strings.Join(notes, "\n"), "ip_forward") {
+		t.Fatalf("про оставленный ip_forward ничего не сказано: %v", notes)
+	}
+}
+
+// TestRestoreSysctlSilentWhenForwardOff — говорить не о чем: маршрутизация и так
+// выключена.
+func TestRestoreSysctlSilentWhenForwardOff(t *testing.T) {
+	if notes := restoreSysctl(procSys(t, "0", "1"), slog.Default()); len(notes) != 0 {
+		t.Fatalf("лишние строки в выводе: %v", notes)
 	}
 }
 

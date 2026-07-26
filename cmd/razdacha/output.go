@@ -31,6 +31,14 @@ type summary struct {
 	// PanelURL — адрес панели изнутри VPN.
 	PanelURL string
 
+	// PanelPublic — режим панели: публичный означает, что nginx слушает все
+	// интерфейсы (ADR 0009).
+	PanelPublic bool
+
+	// PanelModeChanged — режим изменён этим запуском. Печатается отдельно:
+	// молча уводить панель в интернет или из интернета нельзя (issue #81).
+	PanelModeChanged bool
+
 	// Password — сгенерированный пароль панели. Пустой означает, что пароль уже
 	// был задан и мы его не знаем.
 	Password string
@@ -41,6 +49,22 @@ type summary struct {
 
 	// Color — раскрашивать ли QR управляющими последовательностями.
 	Color bool
+}
+
+// panelMode — режим панели словами.
+func (s summary) panelMode() string {
+	if s.PanelPublic {
+		return "публичный, панель отвечает на всех интерфейсах"
+	}
+	return "приватный, панель доступна только из VPN"
+}
+
+// previousPanelMode — значение RAZDACHA_PUBLIC, возвращающее прежний режим.
+func (s summary) previousPanelMode() string {
+	if s.PanelPublic {
+		return "0"
+	}
+	return "1"
 }
 
 // Render собирает текст фазы вывода.
@@ -78,6 +102,16 @@ func (s summary) Render() (string, error) {
 
 	line("После подключения интерфейс будет доступен по адресу:")
 	line("  %s", s.PanelURL)
+	nl()
+
+	// Режим печатается всегда, а его смена — отдельной строкой. Пользователь,
+	// обновившийся однострочником из README, должен видеть, открыта его панель
+	// в интернет или нет, и не узнавать об этом от сканеров.
+	line("Режим панели:  %s.", s.panelMode())
+	if s.PanelModeChanged {
+		line("  Режим изменён этим запуском; вернуть прежний: RAZDACHA_PUBLIC=%s",
+			s.previousPanelMode())
+	}
 	nl()
 
 	if s.Password != "" {

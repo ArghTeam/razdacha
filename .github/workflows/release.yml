@@ -48,6 +48,7 @@ jobs:
       - name: Сборка linux/amd64 и linux/arm64
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -62,7 +63,15 @@ jobs:
             cp LICENSE README.md "$out/"
             tar -czf "dist/razdacha-linux-$arch.tar.gz" -C "$out" .
           done
-          cp packaging/install.sh dist/install.sh
+          # install.sh из релиза ставит свою версию, а не последнюю: в копию
+          # подставляется тег, под которым она выкладывается. В репозитории
+          # BUILT_TAG остаётся пустым — запуск из main продолжает ставить
+          # последний релиз.
+          sed "s|^BUILT_TAG=\"\"$|BUILT_TAG=\"$TAG\"|" packaging/install.sh > dist/install.sh
+          if ! grep -q "^BUILT_TAG=\"$TAG\"$" dist/install.sh; then
+            echo "тег $TAG не подставился в install.sh: строка BUILT_TAG=\"\" изменилась?" >&2
+            exit 1
+          fi
           # Имена без «./»: install.sh ищет свою строку как ` <имя>` в конце,
           # и префикс каталога ломал бы поиск.
           (cd dist && sha256sum \

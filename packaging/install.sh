@@ -13,10 +13,12 @@
 #
 # Переменные окружения:
 #   RAZDACHA_DRY_RUN=1            прогнать только фазу проверок и выйти
-#   RAZDACHA_VERSION=v1.2.3       поставить конкретный релиз вместо последнего
+#   RAZDACHA_VERSION=v1.2.3       поставить конкретный релиз вместо своего
 #   RAZDACHA_REPO=owner/name      откуда качать релиз
 #   RAZDACHA_PREFIX=/usr/local/bin куда класть бинарники
-#   RAZDACHA_PUBLIC=1             панель на всех интерфейсах (ADR 0009)
+#   RAZDACHA_PUBLIC=1             панель на всех интерфейсах (ADR 0009);
+#                                 0 выключает публичный режим обратно,
+#                                 не задана — режим остаётся прежним
 #   RAZDACHA_PEER=имя             имя первого пира вместо client-1
 #   RAZDACHA_ALLOW_UNSUPPORTED=1  не отказываться на дистрибутиве вне матрицы
 
@@ -24,9 +26,18 @@ set -eu
 
 REPO="${RAZDACHA_REPO:-ArghTeam/razdacha}"
 PREFIX="${RAZDACHA_PREFIX:-/usr/local/bin}"
+
+# BUILT_TAG — тег, под которым выложена эта копия скрипта. Подставляется
+# workflow релиза при копировании файла в ассеты; в репозитории он пустой, и
+# запуск из рабочей копии ставит последний релиз, как раньше.
+#
+# Без этого install.sh из релиза v0.1.1 ставил v0.2.0: путь
+# /releases/latest/download был зашит, и тег ассета ни на что не влиял.
+BUILT_TAG=""
+
 # Не VERSION: /etc/os-release определяет эту переменную сам, и после разбора
 # дистрибутива тег релиза превратился бы в «12 (bookworm)».
-RELEASE_TAG="${RAZDACHA_VERSION:-}"
+RELEASE_TAG="${RAZDACHA_VERSION:-$BUILT_TAG}"
 DRY_RUN="${RAZDACHA_DRY_RUN:-}"
 STATE_DB="/var/lib/razdacha/state.db"
 NGINX_SITE="/etc/nginx/sites-available/razdacha"
@@ -358,8 +369,19 @@ run_setup() {
 	# условием возвращает единицу, и скрипт молча обрывался бы на первом же
 	# незаданном необязательном параметре.
 	set -- setup --daemon "$PREFIX/razdachad"
-	if [ -n "${RAZDACHA_PUBLIC:-}" ]; then
-		set -- "$@" --public
+	# Три состояния, а не два: переменной нет — режим панели остаётся тем,
+	# который сохранён в БД; переменная есть — она и решает. Раньше состояний
+	# было два, и обновление без переменной молча возвращало панель из
+	# публичного режима в приватный (issue #81).
+	if [ -n "${RAZDACHA_PUBLIC+set}" ]; then
+		case "$RAZDACHA_PUBLIC" in
+		"" | 0 | no | No | NO | false | False | FALSE)
+			set -- "$@" --public=false
+			;;
+		*)
+			set -- "$@" --public=true
+			;;
+		esac
 	fi
 	if [ -n "${RAZDACHA_PEER:-}" ]; then
 		set -- "$@" --peer "$RAZDACHA_PEER"
@@ -391,10 +413,11 @@ razdacha — установщик селективного VPN-шлюза.
 
 Переменные окружения:
   RAZDACHA_DRY_RUN=1             то же, что --dry-run
-  RAZDACHA_VERSION=v1.2.3        поставить конкретный релиз вместо последнего
+  RAZDACHA_VERSION=v1.2.3        поставить конкретный релиз вместо своего
   RAZDACHA_REPO=owner/name       откуда качать релиз
   RAZDACHA_PREFIX=/usr/local/bin куда класть бинарники
-  RAZDACHA_PUBLIC=1              панель на всех интерфейсах
+  RAZDACHA_PUBLIC=1              панель на всех интерфейсах; 0 — обратно в VPN;
+                                 не задана — режим остаётся прежним
   RAZDACHA_PEER=имя              имя первого пира вместо client-1
   RAZDACHA_ALLOW_UNSUPPORTED=1   не отказываться на дистрибутиве вне матрицы
 HELP
@@ -403,15 +426,23 @@ HELP
 # `--dry-run` аргументом — то же, что RAZDACHA_DRY_RUN=1: через `curl | sh`
 # аргументы передаются только как `sh -s -- --dry-run`, а на стенде скрипт
 # запускают файлом, и там так короче.
-for arg in "$@"; do
-	case "$arg" in
-	--dry-run) DRY_RUN=1 ;;
-	-h | --help)
-		show_help
-		exit 0
-		;;
-	*) die "неизвестный аргумент $arg" ;;
-	esac
-done
+parse_args() {
+	for arg in "$@"; do
+		case "$arg" in
+		--dry-run) DRY_RUN=1 ;;
+		-h | --help)
+			show_help
+			exit 0
+			;;
+		*) die "неизвестный аргумент $arg" ;;
+		esac
+	done
+}
 
-main
+# Точка входа отделена от определений: тесты подгружают скрипт через `.` с
+# RAZDACHA_SOURCE_ONLY=1 и проверяют выбор версии, не запуская ни одной проверки
+# и ничего не трогая на машине.
+if [ -z "${RAZDACHA_SOURCE_ONLY:-}" ]; then
+	parse_args "$@"
+	main
+fi
