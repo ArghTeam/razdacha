@@ -77,7 +77,12 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	defer func() { _ = wg.Close() }()
 	go syncWGPeers(ctx, st, wg)
 
-	stopNetfilter, err := startNetfilter(ctx, st, slog.Default())
+	// Планировщик списков поднимается до правил: первая же его выгрузка должна
+	// застать заливку правил готовой слушать обновления. Ошибки загрузки демон
+	// не останавливают — nil означает работу без списков.
+	listsMgr := startLists(ctx, st, dbPath, slog.Default())
+
+	stopNetfilter, err := startNetfilter(ctx, st, listsMgr, slog.Default())
 	if err != nil {
 		return err
 	}
