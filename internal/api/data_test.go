@@ -502,47 +502,6 @@ func TestRuleValidationIsBadRequest(t *testing.T) {
 	}
 }
 
-// TestDiag — сводка честная: собираемость конфига проверяется по-настоящему,
-// остальное отдаётся как unknown, а не как «ok».
-func TestDiag(t *testing.T) {
-	ts := newTestServer(t)
-	cookie := ts.login(t)
-
-	resp := ts.auth(t, cookie, http.MethodGet, "/api/diag", "")
-	requireCode(t, resp, http.StatusOK)
-
-	var out diagResponse
-	decodeJSONBody(t, resp, &out)
-	if len(out.Checks) != 7 {
-		t.Fatalf("проверок %d, ожидалось 7", len(out.Checks))
-	}
-	byID := make(map[string]check, len(out.Checks))
-	for _, c := range out.Checks {
-		byID[c.ID] = c
-	}
-	if byID["singbox"].Status != statusOK {
-		t.Errorf("sing-box: %+v, конфиг из пустого состояния обязан собираться", byID["singbox"])
-	}
-	for _, id := range []string{"wg", "nft", "forward", "mtu", "tunnels", "lists"} {
-		c, ok := byID[id]
-		if !ok {
-			t.Errorf("проверки %q нет в сводке", id)
-			continue
-		}
-		if c.Status != statusUnknown {
-			t.Errorf("%s = %q, ожидался unknown: источника данных ещё нет", id, c.Status)
-		}
-		if c.Detail == "" {
-			t.Errorf("%s: unknown без объяснения, чего не хватает", id)
-		}
-	}
-	if out.Overall != statusUnknown {
-		t.Errorf("overall = %q, ожидался unknown", out.Overall)
-	}
-
-	requireCode(t, ts.auth(t, cookie, http.MethodPost, "/api/diag/run", ""), http.StatusOK)
-}
-
 // TestAllocateAddressSkipsTaken — адрес сервера и занятые адреса пропускаются.
 func TestAllocateAddressSkipsTaken(t *testing.T) {
 	s := store.DefaultSettings()

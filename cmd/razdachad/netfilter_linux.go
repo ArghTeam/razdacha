@@ -7,16 +7,20 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
-// startNetfilter заливаетnft-правила и маршрутизацию помеченного трафика.
+// startNetfilter заливает nft-правила и маршрутизацию помеченного трафика.
 //
-// Подсети берутся из правил в БД. Слой lists сюда ещё не подключён: его
-// планировщик живёт отдельно от демона, и до его проводки в сет попадает
-// только то, что пользователь ввёл руками.
-func startNetfilter(ctx context.Context, st *store.Store, log *slog.Logger) (netfilter, error) {
+// Подсети берутся из правил в БД и из списков, которые качает планировщик
+// (`mgr` может быть nil — тогда только ручные). После каждого прогона
+// планировщика таблица перезаливается заново: сет — часть таблицы, отдельно от
+// неё он не обновляется.
+func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
+	log *slog.Logger,
+) (netfilter, error) {
 	nft, err := netstack.NewNft()
 	if err != nil {
 		return netfilter{}, fmt.Errorf("подключение к nftables: %w", err)
@@ -28,21 +32,36 @@ func startNetfilter(ctx context.Context, st *store.Store, log *slog.Logger) (net
 		return netfilter{}, fmt.Errorf("определение внешнего интерфейса: %w", err)
 	}
 
-	subnets, err := ruleSubnets(ctx, st)
-	if err != nil {
-		return netfilter{}, err
+	apply := func() (int, error) {
+		rules, err := ruleSubnets(ctx, st)
+		if err != nil {
+			return 0, err
+		}
+		subnets := nftSubnets(rules, mgr)
+		// Заливка идёт одной транзакцией (инвариант слоя netstack): окна без
+		// правил не возникает, и обновление сета не рвёт живые соединения.
+		rs, err := nft.Apply(netstack.NftConfig{WANInterface: wan, Subnets: subnets})
+		if err != nil {
+			return 0, fmt.Errorf("заливка правил: %w", err)
+		}
+		if rs.SkippedSubnets > 0 {
+			log.Warn("часть подсетей не разобрана", "пропущено", rs.SkippedSubnets)
+		}
+		return len(subnets), nil
 	}
 
-	rs, err := nft.Apply(netstack.NftConfig{WANInterface: wan, Subnets: subnets})
+	count, err := apply()
 	if err != nil {
-		return netfilter{}, fmt.Errorf("заливка правил: %w", err)
+		return netfilter{}, err
 	}
 	if err := route.Apply(); err != nil {
 		return netfilter{}, fmt.Errorf("маршрутизация помеченного трафика: %w", err)
 	}
+	log.Info("правила залиты", "wan", wan, "подсетей", count)
 
-	log.Info("правила залиты", "wan", wan, "подсетей", len(subnets),
-		"пропущено", rs.SkippedSubnets)
+	if mgr != nil {
+		go watchLists(ctx, mgr, apply, log)
+	}
 
 	// Правила остаются в ядре после остановки демона: прямой трафик клиентов
 	// не должен пропадать оттого, что демон перезапускается. Снимает их
@@ -52,6 +71,30 @@ func startNetfilter(ctx context.Context, st *store.Store, log *slog.Logger) (net
 	// не тем, которым залиты правила: она ходит из обработчика HTTP, и
 	// соединение nftables пришлось бы делить между запросами.
 	return netfilter{stop: func() {}, nftState: netstack.DiagNft}, nil
+}
+
+// watchLists перезаливает правила после каждого прогона планировщика.
+//
+// Неудачная перезаливка только пишется в лог: в ядре остаётся прежняя таблица
+// (пакет изменений откатывается целиком), клиенты продолжают работать, а
+// следующий прогон списков попробует снова.
+func watchLists(ctx context.Context, mgr *lists.Manager, apply func() (int, error), log *slog.Logger) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-mgr.Updates():
+		}
+		count, err := apply()
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Error("перезаливка правил после обновления списков", "ошибка", err)
+			continue
+		}
+		log.Info("правила перезалиты после обновления списков", "подсетей", count)
+	}
 }
 
 // resetNetfilter снимает всё, что демон добавил в сеть: таблицу, правило

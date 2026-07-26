@@ -13,9 +13,10 @@ import (
 
 // tunnelResponse — туннель, как его видит UI.
 //
-// Status, LatencyMS и LastCheck заполняет клиент Clash API, которого ещё нет:
-// пока они null. Ноль в latency означал бы «ноль миллисекунд», а «down» —
-// утверждение о туннеле, которого никто не проверял.
+// Status, LatencyMS и LastCheck заполняет последняя проверка по Clash API
+// (`POST /api/tunnels/{id}/check`, [checkCache]). Пока её не делали — null:
+// ноль в latency означал бы «ноль миллисекунд», а «down» — утверждение о
+// туннеле, которого никто не проверял.
 type tunnelResponse struct {
 	ID        string             `json:"id"`
 	Name      string             `json:"name"`
@@ -50,9 +51,12 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]tunnelResponse, 0, len(list))
+	alive := make(map[string]bool, len(list))
 	for _, t := range list {
-		out = append(out, newTunnelResponse(t))
+		alive[t.ID] = true
+		out = append(out, s.withCheck(newTunnelResponse(t)))
 	}
+	s.checks.keep(alive)
 	writeJSON(w, s.log, http.StatusOK, out)
 }
 

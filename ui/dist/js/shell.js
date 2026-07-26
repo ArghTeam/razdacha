@@ -18,6 +18,7 @@ export const state = {
   /** Эндпоинты, которых ещё нет: экран говорит об этом вместо пустого списка. */
   missing: new Set(),
   openMenu: null,
+  closeMenuExtra: null,
 };
 
 export const tunnelById = (id) => state.tunnels.find((t) => t.id === id);
@@ -69,17 +70,54 @@ export function modalShell(title, body, foot) {
 
 /* --- меню «⋮» ------------------------------------------------------------- */
 
+/** Отступ меню от кнопки и от края экрана. */
+const MENU_GAP = 4;
+
+/**
+ * Меню живёт в body, а не рядом с кнопкой: у `.card` стоит `overflow: hidden`
+ * ради скруглённых углов, и меню внутри строки обрезалось по краю карточки —
+ * пунктов было не видно. Позиция считается от кнопки и пересчитывается при
+ * прокрутке: `position: fixed` внутри обрезающего предка не спасает.
+ */
 export function openMenu(anchor, items) {
   closeMenu();
   const menu = document.createElement('div');
   menu.className = 'menu';
   menu.innerHTML = items.map((it) =>
     `<button data-act="${it.act}" data-id="${esc(it.id)}" class="${it.danger ? 'danger' : ''}">${esc(it.label)}</button>`).join('');
-  anchor.closest('.menu-wrap').appendChild(menu);
+  document.body.appendChild(menu);
+
+  const place = () => placeMenu(menu, anchor);
+  place();
+  window.addEventListener('scroll', place, true);
+  window.addEventListener('resize', place);
+
   state.openMenu = menu;
+  state.closeMenuExtra = () => {
+    window.removeEventListener('scroll', place, true);
+    window.removeEventListener('resize', place);
+  };
+}
+
+/** Прижимает меню к правому краю кнопки; если снизу не помещается — вверх. */
+function placeMenu(menu, anchor) {
+  const a = anchor.getBoundingClientRect();
+  const m = menu.getBoundingClientRect();
+
+  let left = a.right - m.width;
+  left = Math.min(Math.max(MENU_GAP, left), window.innerWidth - m.width - MENU_GAP);
+
+  const below = a.bottom + MENU_GAP;
+  const top = below + m.height > window.innerHeight && a.top - m.height - MENU_GAP > 0
+    ? a.top - m.height - MENU_GAP
+    : below;
+
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
 }
 
 export function closeMenu() {
+  if (state.closeMenuExtra) { state.closeMenuExtra(); state.closeMenuExtra = null; }
   if (state.openMenu) { state.openMenu.remove(); state.openMenu = null; }
 }
 

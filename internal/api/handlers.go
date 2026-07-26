@@ -30,12 +30,15 @@ func (s *Server) routes() http.Handler {
 	s.protect(mux, "POST /api/tunnels/parse", s.handleParseTunnel)
 	s.protect(mux, "PATCH /api/tunnels/{id}", s.handleUpdateTunnel)
 	s.protect(mux, "DELETE /api/tunnels/{id}", s.handleDeleteTunnel)
+	s.protect(mux, "POST /api/tunnels/{id}/check", s.handleCheckTunnel)
 
 	s.protect(mux, "GET /api/rules", s.handleListRules)
 	s.protect(mux, "POST /api/rules", s.handleCreateRule)
 	s.protect(mux, "PUT /api/rules/order", s.handleReorderRules)
 	s.protect(mux, "PATCH /api/rules/{id}", s.handleUpdateRule)
 	s.protect(mux, "DELETE /api/rules/{id}", s.handleDeleteRule)
+
+	s.protect(mux, "GET /api/lists/community", s.handleCommunityLists)
 
 	s.protect(mux, "GET /api/settings", s.handleSettings)
 	s.protect(mux, "PATCH /api/settings", s.handleUpdateSettings)

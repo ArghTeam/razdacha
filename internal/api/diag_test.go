@@ -80,6 +80,7 @@ func TestDiagAllGreen(t *testing.T) {
 	cookie := ts.login(t)
 
 	byID, _ := diagChecks(t, ts, cookie)
+	requireCode(t, ts.auth(t, cookie, http.MethodPost, "/api/diag/run", ""), http.StatusOK)
 	for _, id := range []string{"wg", "nft", "forward", "mtu", "lists", "singbox"} {
 		c, ok := byID[id]
 		if !ok {
@@ -106,7 +107,7 @@ func TestDiagUnknownAlwaysExplained(t *testing.T) {
 	if len(byID) != 7 {
 		t.Fatalf("проверок %d, ожидалось 7", len(byID))
 	}
-	for _, id := range []string{"wg", "nft", "forward", "mtu", "tunnels", "lists"} {
+	for _, id := range []string{"wg", "nft", "forward", "mtu", "lists"} {
 		c := byID[id]
 		if c.Status != statusUnknown {
 			t.Errorf("%s = %q, ожидался unknown: источника нет", id, c.Status)
@@ -336,5 +337,36 @@ func TestDiagListsCheck(t *testing.T) {
 				t.Error("проверка без пояснения")
 			}
 		})
+	}
+}
+
+// TestDiagTunnelsCheck — сводка по туннелям показывает измеренное и честно
+// называет непроверенное: «не проверялся» не то же самое, что «отвечает».
+func TestDiagTunnelsCheck(t *testing.T) {
+	tunnels := []store.Tunnel{
+		{ID: "t1", Name: "Нидерланды", Enabled: true},
+		{ID: "t2", Name: "Выключенный"},
+	}
+
+	if c := tunnelsCheck(nil, newCheckCache()); c.Status != statusOK || c.Detail == "" {
+		t.Errorf("без туннелей = %+v, ожидался объяснённый ok", c)
+	}
+
+	empty := newCheckCache()
+	if c := tunnelsCheck(tunnels, empty); c.Status != statusUnknown || c.Detail == "" {
+		t.Errorf("непроверенные туннели = %+v, ожидался объяснённый unknown", c)
+	}
+
+	up := newCheckCache()
+	up.put("t1", tunnelCheck{Status: tunnelUp})
+	if c := tunnelsCheck(tunnels, up); c.Status != statusOK {
+		t.Errorf("отвечающий туннель = %q (%s), ожидался ok", c.Status, c.Detail)
+	}
+
+	down := newCheckCache()
+	down.put("t1", tunnelCheck{Status: tunnelDown})
+	c := tunnelsCheck(tunnels, down)
+	if c.Status != statusWarn || !strings.Contains(c.Detail, "Нидерланды") {
+		t.Errorf("недоступный туннель = %+v, ожидался warn с именем", c)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -14,7 +15,7 @@ import (
 // собирается и на macOS ради разработки, но работать там ему нечем.
 var errNotLinux = errors.New("правила и маршрутизация доступны только в Linux")
 
-func startNetfilter(context.Context, *store.Store, *slog.Logger) (netfilter, error) {
+func startNetfilter(context.Context, *store.Store, *lists.Manager, *slog.Logger) (netfilter, error) {
 	return netfilter{}, errNotLinux
 }
 

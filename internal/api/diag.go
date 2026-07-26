@@ -100,10 +100,7 @@ func (s *Server) handleDiag(w http.ResponseWriter, r *http.Request) {
 		wgCheck(wg, wgErr, snap),
 		singboxCheck(snap),
 		nftCheck(nft, nftErr),
-		{
-			ID: "tunnels", Title: "Туннели", Status: statusUnknown,
-			Detail: "проверка доступности появится с клиентом Clash API",
-		},
+		tunnelsCheck(snap.Tunnels, s.checks),
 		listsCheck(lists, listsErr, snap.Settings, s.now()),
 		forwardCheck(forward, forwardErr, nft, nftErr),
 		mtuCheck(wg, wgErr, snap.Settings),
@@ -204,6 +201,50 @@ func singboxCheck(snap store.Snapshot) check {
 	c.Status = statusOK
 	c.Detail = fmt.Sprintf("конфиг собирается: туннелей %d, правил %d",
 		len(snap.Tunnels), len(snap.Rules))
+	return c
+}
+
+// tunnelsCheck — сводка по проверкам туннелей, сделанным с запуска демона.
+//
+// Сама проверка тут не запускается: она ходит в сеть через sing-box и делается
+// по кнопке в панели (`POST /api/tunnels/{id}/check`). Диагностика показывает
+// то, что уже измерено, а «не проверялось» называет своими словами — молча
+// выдавать это за «ok» нельзя.
+func tunnelsCheck(tunnels []store.Tunnel, cache *checkCache) check {
+	c := check{ID: "tunnels", Title: "Туннели"}
+
+	var enabled, checked int
+	var bad []string
+	for _, t := range tunnels {
+		if !t.Enabled {
+			continue
+		}
+		enabled++
+		res, ok := cache.get(t.ID)
+		if !ok {
+			continue
+		}
+		checked++
+		if res.Status != tunnelUp {
+			bad = append(bad, t.Name)
+		}
+	}
+
+	switch {
+	case enabled == 0:
+		c.Status = statusOK
+		c.Detail = "включённых туннелей нет"
+	case checked == 0:
+		c.Status = statusUnknown
+		c.Detail = fmt.Sprintf(
+			"туннели (%d) с запуска демона не проверялись: проверка запускается из панели", enabled)
+	case len(bad) > 0:
+		c.Status = statusWarn
+		c.Detail = "не отвечают: " + strings.Join(bad, ", ")
+	default:
+		c.Status = statusOK
+		c.Detail = fmt.Sprintf("проверено %d из %d, все отвечают", checked, enabled)
+	}
 	return c
 }
 
@@ -330,14 +371,11 @@ func mtuCheck(st netstack.DiagWGState, err error, settings store.Settings) check
 }
 
 // listsCheck — свежесть кэша списков.
-//
-// Планировщик слоя lists к демону ещё не подключён (issue #39), поэтому
-// отсутствие источника здесь ожидаемо и названо своими словами.
 func listsCheck(l DiagLists, err error, settings store.Settings, now time.Time) check {
 	c := check{ID: "lists", Title: "Списки"}
 	if errors.Is(err, errDiagNoSource) {
 		c.Status = statusUnknown
-		c.Detail = "планировщик обновления списков ещё не подключён к демону"
+		c.Detail = "планировщик обновления списков к демону не подключён"
 		return c
 	}
 	if err != nil {
