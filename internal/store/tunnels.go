@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,7 +18,8 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-const tunnelColumns = `id, name, type, source, raw, parsed, enabled, created_at`
+const tunnelColumns = `id, name, type, source, raw, parsed, enabled, created_at,
+	pool, pool_updated_at`
 
 // CreateTunnel добавляет туннель. Пустые ID и CreatedAt заполняются здесь.
 func (s *Store) CreateTunnel(ctx context.Context, t Tunnel) (Tunnel, error) {
@@ -30,11 +32,15 @@ func (s *Store) CreateTunnel(ctx context.Context, t Tunnel) (Tunnel, error) {
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = time.Now()
 	}
+	pool, err := marshalPool(t.Pool)
+	if err != nil {
+		return Tunnel{}, err
+	}
 
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO tunnels (`+tunnelColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO tunnels (`+tunnelColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ID, t.Name, string(t.Type), string(t.Source), t.Raw, string(t.Parsed),
-		t.Enabled, t.CreatedAt.Unix())
+		t.Enabled, t.CreatedAt.Unix(), pool, unixOrZero(t.PoolUpdatedAt))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return Tunnel{}, fmt.Errorf("%w: туннель с именем %q уже есть", ErrInvalid, t.Name)
@@ -92,11 +98,17 @@ func (s *Store) UpdateTunnel(ctx context.Context, t Tunnel) error {
 	if t.ID == "" {
 		return fmt.Errorf("%w: у обновляемого туннеля пустой идентификатор", ErrInvalid)
 	}
+	pool, err := marshalPool(t.Pool)
+	if err != nil {
+		return err
+	}
 
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE tunnels SET name = ?, type = ?, source = ?, raw = ?, parsed = ?, enabled = ?
+		`UPDATE tunnels SET name = ?, type = ?, source = ?, raw = ?, parsed = ?, enabled = ?,
+		 pool = ?, pool_updated_at = ?
 		 WHERE id = ?`,
-		t.Name, string(t.Type), string(t.Source), t.Raw, string(t.Parsed), t.Enabled, t.ID)
+		t.Name, string(t.Type), string(t.Source), t.Raw, string(t.Parsed), t.Enabled,
+		pool, unixOrZero(t.PoolUpdatedAt), t.ID)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return fmt.Errorf("%w: туннель с именем %q уже есть", ErrInvalid, t.Name)
@@ -158,12 +170,15 @@ type scanner interface {
 
 func scanTunnel(sc scanner) (Tunnel, error) {
 	var (
-		t         Tunnel
-		typ, src  string
-		parsed    string
-		createdAt int64
+		t          Tunnel
+		typ, src   string
+		parsed     string
+		pool       string
+		createdAt  int64
+		poolUpdate int64
 	)
-	if err := sc.Scan(&t.ID, &t.Name, &typ, &src, &t.Raw, &parsed, &t.Enabled, &createdAt); err != nil {
+	if err := sc.Scan(&t.ID, &t.Name, &typ, &src, &t.Raw, &parsed, &t.Enabled, &createdAt,
+		&pool, &poolUpdate); err != nil {
 		return Tunnel{}, err
 	}
 	t.Type = TunnelType(typ)
@@ -171,8 +186,65 @@ func scanTunnel(sc scanner) (Tunnel, error) {
 	if parsed != "" {
 		t.Parsed = []byte(parsed)
 	}
+	if err := parsePool(pool, &t.Pool); err != nil {
+		return Tunnel{}, err
+	}
 	t.CreatedAt = time.Unix(createdAt, 0).UTC()
+	if poolUpdate != 0 {
+		t.PoolUpdatedAt = time.Unix(poolUpdate, 0).UTC()
+	}
 	return t, nil
+}
+
+// UpdateTunnelPool записывает свежий состав пула, не трогая остального туннеля:
+// расписание обновления каталога знает только про серверы, а имя, тип и enabled
+// правит пользователь через панель.
+func (s *Store) UpdateTunnelPool(ctx context.Context, id string, servers []PoolServer, at time.Time) error {
+	pool, err := marshalPool(servers)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE tunnels SET pool = ?, pool_updated_at = ? WHERE id = ? AND source = ?`,
+		pool, unixOrZero(at), id, string(SourcePool))
+	if err != nil {
+		return fmt.Errorf("запись серверов пула %s: %w", id, err)
+	}
+	return checkAffected(res, fmt.Sprintf("туннель-пул %s", id))
+}
+
+// marshalPool сериализует серверы пула для колонки TEXT. nil хранится как пустой
+// список: колонка объявлена NOT NULL DEFAULT '[]'.
+func marshalPool(v []PoolServer) (string, error) {
+	if len(v) == 0 {
+		return "[]", nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("сериализация серверов пула: %w", err)
+	}
+	return string(b), nil
+}
+
+// parsePool разбирает колонку с серверами пула.
+func parsePool(s string, dst *[]PoolServer) error {
+	if s == "" || s == "[]" {
+		*dst = nil
+		return nil
+	}
+	if err := json.Unmarshal([]byte(s), dst); err != nil {
+		return fmt.Errorf("разбор серверов пула %q: %w", s, err)
+	}
+	return nil
+}
+
+// unixOrZero переводит время в колонку INTEGER: нулевое время хранится нулём, а не
+// отрицательной эпохой.
+func unixOrZero(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
 }
 
 // checkAffected превращает «ноль изменённых строк» в ErrNotFound.
