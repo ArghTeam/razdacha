@@ -96,6 +96,71 @@ func TestDiagAllGreen(t *testing.T) {
 	}
 }
 
+// TestDiagRunSingleCheck — `POST /api/diag/run?check=<id>` прогоняет одну
+// проверку. На этом держится показ хода в панели: строки обновляются по мере
+// готовности, а не все разом в конце.
+func TestDiagRunSingleCheck(t *testing.T) {
+	ts := newTestServer(t)
+	ts.diag = diagHealthySources()
+	cookie := ts.login(t)
+
+	sweep, _ := diagChecks(t, ts, cookie)
+	if len(sweep) != len(diagCheckIDs) {
+		t.Fatalf("в сводке %d проверок, объявлено %d", len(sweep), len(diagCheckIDs))
+	}
+
+	for _, id := range diagCheckIDs {
+		resp := ts.auth(t, cookie, http.MethodPost, "/api/diag/run?check="+id, "")
+		requireCode(t, resp, http.StatusOK)
+
+		var out diagResponse
+		decodeJSONBody(t, resp, &out)
+		if len(out.Checks) != 1 {
+			t.Fatalf("%s: проверок в ответе %d, ожидалась одна", id, len(out.Checks))
+		}
+		got := out.Checks[0]
+		if got.ID != id {
+			t.Errorf("запрошена %q, вернулась %q", id, got.ID)
+		}
+		if got.Status != sweep[id].Status {
+			t.Errorf("%s: по одной %q, в сводке %q", id, got.Status, sweep[id].Status)
+		}
+		if out.Overall != got.Status {
+			t.Errorf("%s: overall %q, ожидался статус единственной проверки %q",
+				id, out.Overall, got.Status)
+		}
+		if out.CheckedAt.IsZero() {
+			t.Errorf("%s: ответ без checked_at — панели нечего показать как время проверки", id)
+		}
+	}
+}
+
+// TestDiagRunUnknownCheck — опечатка в идентификаторе отвергается. Пустая
+// сводка в ответ на неё читалась бы как «проверять нечего».
+func TestDiagRunUnknownCheck(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	resp := ts.auth(t, cookie, http.MethodPost, "/api/diag/run?check=нет-такой", "")
+	requireCode(t, resp, http.StatusBadRequest)
+}
+
+// TestDiagCheckedAt — время проверки приходит с сервера: панель показывает
+// его как есть и не подставляет часы браузера.
+func TestDiagCheckedAt(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	resp := ts.auth(t, cookie, http.MethodGet, "/api/diag", "")
+	requireCode(t, resp, http.StatusOK)
+
+	var out diagResponse
+	decodeJSONBody(t, resp, &out)
+	if out.CheckedAt.IsZero() {
+		t.Fatal("GET /api/diag без checked_at")
+	}
+}
+
 // TestDiagUnknownAlwaysExplained — неподключённый источник даёт unknown с
 // объяснением, а не пустую строку: молчаливое «данных нет» скрывает и поломку,
 // и невыполненную проверку.

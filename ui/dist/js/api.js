@@ -171,7 +171,9 @@ export const settings = {
 
 export const diag = {
   get: () => get('/api/diag'),
-  run: () => post('/api/diag/run'),
+  /** Без `id` — все проверки одним ответом; с `id` — одна, чтобы экран
+      показывал ход построчно (docs/05-api.md#diagnostics). */
+  run: (id) => post(id ? `/api/diag/run?check=${encodeURIComponent(id)}` : '/api/diag/run'),
   singboxConfig: () => get('/api/diag/singbox-config', { expect: 'text' }),
   logs: (source, count = 200) =>
     get(`/api/logs?source=${encodeURIComponent(source)}&lines=${count}`, { expect: 'text' }),

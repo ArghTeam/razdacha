@@ -429,3 +429,52 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
   .row-actions { width: 100%; justify-content: flex-end; }
   .row .rule-order, .row .rule-num, .row .dot { order: -1; }
 }
+
+/* --- ход проверки в диагностике ---
+   Блок дописан в конец файла и ничего не переопределяет выше: правила экрана
+   диагностики живут в двух местах, зато параллельные ветки не спорят за одни
+   и те же строки. */
+
+.diag-progress {
+  height: 3px; border-radius: 2px; background: var(--bg-sunken);
+  overflow: hidden; margin: -4px 0 12px;
+}
+.diag-progress-fill {
+  height: 100%; background: var(--accent);
+  transition: width .2s ease-out;
+}
+
+/* Строка, которая ещё не ответила. Приглушена, но читаема: она сообщает, что
+   проверка идёт, а не что результат плохой. */
+.check.pending .check-title { color: var(--fg-dim); }
+.check.pending .check-detail { color: var(--fg-faint); font-style: italic; }
+
+/* Крутилка занимает ту же ширину, что и значок статуса: иначе строки
+   разъезжаются по мере того, как проверки отвечают. */
+.check-spin { position: relative; height: 19px; }
+.check-spin::after {
+  content: ''; position: absolute; left: 2px; top: 3px; width: 13px; height: 13px;
+  border: 2px solid var(--line-strong); border-top-color: var(--accent);
+  border-radius: 50%; animation: diag-spin .7s linear infinite;
+}
+@keyframes diag-spin { to { transform: rotate(360deg); } }
+
+/* Кнопка «Проверяю…» выключена на время прогона: нажать ещё раз нельзя, и это
+   должно быть видно, а не только не работать. */
+.btn[aria-busy="true"] { color: var(--fg-dim); }
+
+.overall-time {
+  margin-left: auto; color: var(--fg-dim); font-size: 13px;
+  text-align: right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .check-spin::after { animation-duration: 2.4s; }
+  .diag-progress-fill { transition: none; }
+}
+
+@media (max-width: 620px) {
+  /* На телефоне время съедает строку у заголовка сводки — переносим его вниз. */
+  .overall { flex-wrap: wrap; }
+  .overall-time { margin-left: 28px; width: 100%; text-align: left; }
+}
