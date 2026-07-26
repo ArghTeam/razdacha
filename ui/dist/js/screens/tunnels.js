@@ -34,14 +34,19 @@ const head = () => `
    Выключенный пул не показывает живых серверов и текущий выбор: цифры от
    выключенного туннеля — ложь, а не ноль. */
 
-/** Сколько серверов в каталоге и сколько из них живы. */
+/** Сколько серверов известно и сколько из них живы.
+
+    Именно «известно», а не «в каталоге»: список копит серверы между обходами и
+    выбрасывает сервер только после трёх пропусков подряд (issue #68), поэтому он
+    обычно больше того, что каталог отдаёт за раз — на стенде 137 против 125–128.
+    Подписать это «в каталоге» значило бы соврать в цифре, которую видно. */
 function poolServers(pool, off) {
   const total = Number(pool.servers_total) || 0;
   if (!total) return '';
   // Живых не знаем (поля нет) или знать нечего (пул выключен) — говорим только
-  // про размер каталога, а не подставляем ноль.
+  // про размер списка, а не подставляем ноль.
   if (off || typeof pool.servers_alive !== 'number') {
-    return `<span class="badge">${total} ${plural(total, 'сервер', 'сервера', 'серверов')} в каталоге</span>`;
+    return `<span class="badge">известно ${total} ${plural(total, 'сервер', 'сервера', 'серверов')}</span>`;
   }
   const alive = pool.servers_alive;
   return `<span class="badge ${alive ? 'ok' : 'err'}">живых ${alive} из ${total}</span>`;
@@ -85,9 +90,9 @@ function poolSchedule(pool, off) {
 }
 
 /* --- модалка «Детали» -----------------------------------------------------
-   У пула нет формы конфига: править в нём нечего, кроме каталога, а встроенный
-   пул не правят и не удаляют вовсе — его выключают. Вместо формы показывается
-   то, что у пула меняется само: состав серверов.
+   У пула нет формы конфига: править в нём нечего, кроме каталога, а сам пул не
+   правят и не удаляют вовсе — его выключают. Вместо формы показывается то, что
+   у пула меняется само: состав серверов.
 
    Список приходит отдельным запросом (`GET /api/tunnels/{id}/pool`), а не в
    ответе экрана: сотня с лишним серверов нужна только открытой модалке.
@@ -174,8 +179,8 @@ function poolDetailsHTML(t, data) {
     : '';
 
   return `
-    <div class="row-meta">${esc(when)} · ${servers.length} ${
-      plural(servers.length, 'сервер', 'сервера', 'серверов')} в каталоге</div>
+    <div class="row-meta">${esc(when)} · известно ${servers.length} ${
+      plural(servers.length, 'сервер', 'сервера', 'серверов')}</div>
     ${off}
     <div class="pool-sect">
       <div class="pool-sect-head">В ротации <span class="pool-fold-count">${live.length}</span></div>
@@ -184,7 +189,7 @@ function poolDetailsHTML(t, data) {
     </div>
     ${poolFold('Не отвечают', dead.length,
     `<div class="pool-list">${dead.map((s) => poolServerRow(s)).join('')}</div>`)}
-    ${poolFold('Остальные в каталоге', rest.length,
+    ${poolFold('Остальные — вне ротации', rest.length,
     `<div class="hint">Проверяются только серверы в ротации — в конфиг попадают лучшие
        по пингу каталога. Об остальных известно лишь то, что было на карточке.</div>
      <div class="chips">${poolCountries(rest)}</div>
@@ -278,9 +283,11 @@ export function view() {
 
 /* --- форма туннеля -------------------------------------------------------- */
 
+/* Ссылки https:// на каталог ключей в подсказке нет намеренно: пул в системе один,
+   его заводит демон, и такой ввод получает отказ (#71). Предлагать то, что не
+   сработает, — обещать несуществующее. */
 const IDLE_HINT = 'Вставьте ссылку vless://, ss://, trojan://, hysteria2://, socks5://, '
-  + 'конфиг WireGuard, JSON outbound — или ссылку https:// на каталог ключей, '
-  + 'тогда получится пул с ротацией.';
+  + 'конфиг WireGuard или JSON outbound.';
 
 function modalTunnel(id) {
   const t = id ? tunnelById(id) : null;
@@ -377,18 +384,26 @@ export const actions = {
   'edit-tunnel': (id) => modalTunnel(id),
   'save-tunnel': (id) => saveTunnel(id || null),
 
-  /* Меню строки. У пула есть «Детали» — состав серверов вместо формы конфига,
-     а у встроенного пула нет ни «Изменить» (править нечего), ни «Удалить»:
-     встроенное выключают, и API удалить его тоже не даёт. Пул, заведённый
-     руками, остаётся обычным туннелем со всеми пунктами. */
+  /* Меню строки. Наборов ровно два.
+
+     У пула — «Детали» (состав серверов вместо формы конфига) и включение.
+     «Изменить» нет: править нечего, кроме каталога. «Удалить» нет: пул в системе
+     один, его заводит демон, и API удалить его не даёт — прятать кнопку, оставляя
+     разрешение в API, значит расходиться с самим собой.
+
+     У остальных туннелей меню прежнее. Признак — то, что это пул, а не флаг
+     builtin: пул, не помеченный встроенным, бывает только следом ручной правки БД,
+     и «Изменить» с «Удалить» у него означали бы, что пулов заводят несколько. */
   'menu-tunnel': (id, btn) => {
     const t = tunnelById(id);
-    const items = [];
-    if (tunnelPool(t)) items.push({ act: 'pool-details', id, label: 'Детали' });
-    if (!t.builtin) items.push({ act: 'edit-tunnel', id, label: 'Изменить' });
-    items.push({ act: 'toggle-tunnel', id, label: t.enabled === false ? 'Включить' : 'Выключить' });
-    if (!t.builtin) items.push({ act: 'delete-tunnel', id, label: 'Удалить', danger: true });
-    openMenu(btn, items);
+    const toggle = { act: 'toggle-tunnel', id, label: t.enabled === false ? 'Включить' : 'Выключить' };
+    openMenu(btn, tunnelPool(t)
+      ? [{ act: 'pool-details', id, label: 'Детали' }, toggle]
+      : [
+        { act: 'edit-tunnel', id, label: 'Изменить' },
+        toggle,
+        { act: 'delete-tunnel', id, label: 'Удалить', danger: true },
+      ]);
   },
 
   'pool-details': (id) => modalPoolDetails(id),
