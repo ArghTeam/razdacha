@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-26
+
+### #63, #71, #74, #75 — блок pool в ответе, ручка деталей, WebSocket убран
+
+**Changed:** `internal/api/{tunnels,tunnels_pool,handlers}.go` — блок `pool` в ответе списка, `POST /api/tunnels/{id}/refresh`, `GET /api/tunnels/{id}/pool`, отказ на создание пула и на удаление встроенного. Обещание WebSocket убрано из документов и из панели: канала не было, а потребителя у него нет — графика трафика в интерфейсе не существует.
+**New surface:** `poolResponse` (`servers_total`, `servers_alive`, `current`, `updated_at`, `next_update_at`), список серверов с `in_rotation`.
+**Beware:** обновление по требованию не должно опираться на кэш расписания — так возник #74, когда свежий пул отвечал `404 «Туннель не найден»` до первого тика. Ссылки `vless://` наружу не отдаются: в них UUID. Проброс `Upgrade` в nginx оставлен намеренно и закреплён тестом — без него будущий канал сломался бы молча.
+
 ## 2026-07-25
 
 ### #25 — эндпоинты пиров, туннелей, правил и настроек
