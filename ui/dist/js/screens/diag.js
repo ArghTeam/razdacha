@@ -23,13 +23,25 @@ const OVERALL_TEXT = {
   error: 'Есть ошибки', unknown: 'Состояние неизвестно',
 };
 
-/** Ранг статусов из docs/05-api.md: «неизвестно» хуже ok, но лучше warn.
-    Считать общий статус приходится здесь: при прогоне по одной проверке сервер
-    видит только её и собрать сводку из семи не может. */
-const RANK = { ok: 0, unknown: 1, warn: 2, error: 3 };
-
-const worst = (checks) => (checks || []).reduce(
-  (acc, c) => ((RANK[c.status] ?? 1) > (RANK[acc] ?? 0) ? c.status : acc), 'ok');
+/** Сводный статус — той же логикой, что на сервере (`overall` в diag.go):
+    ошибка важнее предупреждения, а «неизвестно» не перебивает зелёные. Заголовок
+    «состояние неизвестно» над шестью галочками бесполезен и приучает его не
+    читать. Неизвестно в целом — только когда не ответила ни одна проверка.
+    Считать приходится и здесь: при прогоне по одной сервер видит только её. */
+function worst(checks) {
+  let bad = '';
+  let ok = false;
+  let unknown = false;
+  for (const c of checks || []) {
+    if (c.status === 'error') bad = 'error';
+    else if (c.status === 'warn' && bad !== 'error') bad = 'warn';
+    else if (c.status === 'ok') ok = true;
+    else if (c.status === 'unknown') unknown = true;
+  }
+  if (bad) return bad;
+  if (ok) return 'ok';
+  return unknown ? 'unknown' : 'ok';
+}
 
 /* --- ход перезапуска ------------------------------------------------------
    Экран перерисовывается целиком, поэтому ход живёт в модуле, а не в DOM:
@@ -241,6 +253,12 @@ async function rerun() {
 
   let checkedAt = null;
   let failed = 0;
+
+  // Туннели проверяются здесь же: кнопка обещает «проверить заново», а строка
+  // «туннели» иначе остаётся серой сколько ни жми — их статус берётся из
+  // проверок, запущенных вручную с экрана туннелей.
+  await probeTunnels();
+
   for (const id of run.ids) {
     run.current = id;
     refresh();
@@ -263,6 +281,19 @@ async function rerun() {
   refresh();
   if (failed) toast(`Проверок не ответило: ${failed}`, 'err');
   else toast('Проверки перезапущены');
+}
+
+/** Прогнать проверку каждого включённого туннеля. Ошибки не роняют перезапуск:
+    недоступный sing-box — сам по себе повод показать это в строке «туннели». */
+async function probeTunnels() {
+  try {
+    const list = await api.tunnels.list();
+    for (const t of list.filter((x) => x.enabled !== false)) {
+      try {
+        await api.tunnels.check(t.id);
+      } catch { /* строка «туннели» покажет, что именно не сошлось */ }
+    }
+  } catch { /* список не пришёл — проверки диагностики всё равно идут */ }
 }
 
 /** Проверка не ответила. Статус «неизвестно» с причиной, а не прошлый

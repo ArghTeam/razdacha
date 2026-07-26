@@ -184,8 +184,11 @@ func TestDiagUnknownAlwaysExplained(t *testing.T) {
 	if !strings.Contains(byID["lists"].Detail, "планировщик") {
 		t.Errorf("списки: %q не называет причину", byID["lists"].Detail)
 	}
-	if overall != statusUnknown {
-		t.Errorf("overall = %q, ожидался unknown", overall)
+	// singbox отвечает всегда (конфиг собирается из состояния БД), поэтому
+	// «в целом» остаётся ok: определённое сказать есть что. Проверяется здесь
+	// именно то, ради чего тест писался, — каждый unknown объяснён.
+	if overall != statusOK {
+		t.Errorf("overall = %q, ожидался ok: singbox ответил", overall)
 	}
 }
 
@@ -234,7 +237,10 @@ func TestDiagOverallRank(t *testing.T) {
 		want     string
 	}{
 		{"всё зелено", []string{statusOK, statusOK}, statusOK},
-		{"неизвестное хуже ok", []string{statusOK, statusUnknown}, statusUnknown},
+		// Непроведённая проверка не перебивает зелёные: заголовок «состояние
+		// неизвестно» над шестью галочками бесполезен и приучает его не читать.
+		{"неизвестное не перебивает ok", []string{statusOK, statusUnknown}, statusOK},
+		{"неизвестно всё — неизвестно и в целом", []string{statusUnknown, statusUnknown}, statusUnknown},
 		{"предупреждение хуже неизвестного", []string{statusUnknown, statusWarn}, statusWarn},
 		{"ошибка хуже всего", []string{statusWarn, statusError, statusUnknown}, statusError},
 	}
