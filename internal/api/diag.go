@@ -536,15 +536,38 @@ func diagAge(d time.Duration) string {
 	}
 }
 
-// overall — худший из статусов. «Неизвестно» хуже «ok», но лучше предупреждения:
-// это не поломка, а невыполненная проверка.
+// overall — сводный статус.
+//
+// «Неизвестно» не перебивает «ok»: непроведённая проверка — это не поломка, и
+// заголовок «состояние неизвестно» над шестью зелёными строками бесполезен, а
+// заодно приучает не смотреть на заголовок вовсе. Неизвестное считается только
+// тогда, когда неизвестно всё: сказать что-то определённое действительно нечем.
+//
+// Порядок: error > warn > ok > unknown, и unknown выигрывает лишь при полном
+// отсутствии ответивших проверок.
 func overall(checks []check) string {
-	rank := map[string]int{statusOK: 0, statusUnknown: 1, statusWarn: 2, statusError: 3}
-	worst := statusOK
+	var ok, unknown bool
+	worst := ""
+	rank := map[string]int{statusWarn: 1, statusError: 2}
 	for _, c := range checks {
-		if rank[c.Status] > rank[worst] {
-			worst = c.Status
+		switch c.Status {
+		case statusOK:
+			ok = true
+		case statusUnknown:
+			unknown = true
+		default:
+			if rank[c.Status] > rank[worst] {
+				worst = c.Status
+			}
 		}
 	}
-	return worst
+	switch {
+	case worst != "":
+		return worst
+	case ok:
+		return statusOK
+	case unknown:
+		return statusUnknown
+	}
+	return statusOK
 }
