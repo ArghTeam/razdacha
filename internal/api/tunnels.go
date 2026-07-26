@@ -224,6 +224,13 @@ func preview(res singbox.ParseResult) parsePreview {
 		Warnings: []string{},
 	}
 
+	// У пула нет ни адреса, ни шифра: серверы придут из каталога при первом обходе.
+	// Разбирать пустой Parsed незачем — иначе форма показала бы предупреждение о
+	// нечитаемом конфиге там, где читать нечего.
+	if res.Source == store.SourcePool {
+		return out
+	}
+
 	var probe struct {
 		Server     string `json:"server"`
 		ServerPort uint16 `json:"server_port"`

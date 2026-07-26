@@ -257,3 +257,74 @@ func TestRefreshPoolWithoutSchedule(t *testing.T) {
 	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+tun.ID+"/refresh", "")
 	requireCode(t, resp, http.StatusServiceUnavailable)
 }
+
+// Пул создаётся через ручку, а не в обход неё.
+//
+// Тест намеренно идёт полным путём «пользователь вставил URL каталога»: пулы,
+// заведённые прямо в store, скрыли от нас то, что Parse не узнавал http(s), и
+// создать пул было нечем при готовых store, singbox, lists и панели (issue #66).
+func TestCreatePoolFromCatalogURL(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	body := `{"name":"Бесплатные VLESS","raw":"https://vpnkeys.me/protocol/vless"}`
+	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels", body)
+	requireCode(t, resp, http.StatusCreated)
+
+	var got tunnelResponse
+	decodeJSONBody(t, resp, &got)
+	if got.Type != store.TunnelVLESS || got.Source != store.SourcePool {
+		t.Fatalf("создан туннель type=%q source=%q, ожидались vless и pool", got.Type, got.Source)
+	}
+	if got.Pool == nil {
+		t.Fatal("в ответе нет блока pool")
+	}
+	if got.Pool.CatalogURL != "https://vpnkeys.me/protocol/vless" {
+		t.Errorf("каталог %q", got.Pool.CatalogURL)
+	}
+	if got.Pool.ServersTotal != 0 || got.Pool.UpdatedAt != nil {
+		t.Error("у только что созданного пула уже есть серверы и время обхода")
+	}
+
+	// Пул обязан доехать до списка: правило навешивается на него как на туннель.
+	list := listTunnels(t, ts, cookie)
+	if len(list) != 1 || list[0].Pool == nil {
+		t.Fatalf("в списке %d туннелей, пула среди них нет", len(list))
+	}
+}
+
+// Превью показывает пул до сохранения и не жалуется на пустой конфиг.
+func TestParsePreviewShowsPool(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/parse",
+		`{"raw":"https://vpnkeys.me/protocol/vless"}`)
+	requireCode(t, resp, http.StatusOK)
+
+	var got parsePreview
+	decodeJSONBody(t, resp, &got)
+	if got.Source != store.SourcePool || got.Type != store.TunnelVLESS {
+		t.Fatalf("превью: type=%q source=%q", got.Type, got.Source)
+	}
+	if len(got.Warnings) != 0 {
+		t.Errorf("превью пула ругается: %v", got.Warnings)
+	}
+}
+
+// Битая ссылка на каталог — внятная ошибка, а не пустой пул.
+func TestCreatePoolRejectsBadCatalogURL(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	for _, raw := range []string{
+		"https://",
+		"http://user:pass@vpnkeys.me/protocol/vless",
+	} {
+		resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels",
+			`{"name":"Пул","raw":"`+raw+`"}`)
+		if resp.code != http.StatusBadRequest {
+			t.Errorf("%q: код %d, ожидался 400; тело %s", raw, resp.code, resp.body)
+		}
+	}
+}
