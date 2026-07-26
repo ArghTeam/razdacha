@@ -242,71 +242,211 @@ func TestBackupNamesSavedVersion(t *testing.T) {
 	}
 }
 
+// yes и no — сохранённое значение в тесте: nil означает «ключа в БД нет», и это
+// не то же самое, что записанный `false` (issue #81).
+var (
+	yes = true
+	no  = false
+)
+
+// testInstallerWithSite — установщик, у которого на диске лежит конфиг nginx от
+// предыдущей установки. Конфиг генерируется тем же кодом, что и в бою: писать
+// его текстом руками значило бы проверять миграцию против выдумки.
+func testInstallerWithSite(t *testing.T, site string) *packaging.Installer {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, packaging.DefaultNginxDir, "sites-available")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("подготовка каталога nginx: %v", err)
+	}
+
+	var content string
+	switch site {
+	case "":
+		return packaging.NewInstaller(root)
+	case "битый":
+		content = "чужой конфиг\n"
+	default:
+		c := packaging.DefaultSiteConfig()
+		if site == "публичный" {
+			c = packaging.PublicSiteConfig()
+		}
+		c.CertFile, c.KeyFile = "/etc/razdacha/tls/cert.pem", "/etc/razdacha/tls/key.pem"
+		out, err := c.Render()
+		if err != nil {
+			t.Fatalf("генерация конфига nginx: %v", err)
+		}
+		content = out
+	}
+	if err := os.WriteFile(filepath.Join(dir, packaging.SiteName), []byte(content), 0o644); err != nil {
+		t.Fatalf("запись конфига nginx: %v", err)
+	}
+	return packaging.NewInstaller(root)
+}
+
 // TestEnsurePanelMode — приоритет режима панели: флаг задаёт и запоминает, без
-// флага берётся сохранённое, первая установка без флага — приватный режим.
+// флага берётся сохранённое, а при отсутствующем ключе режим выводится из
+// конфига nginx, оставшегося от предыдущей установки (issue #81).
 func TestEnsurePanelMode(t *testing.T) {
 	ctx := context.Background()
 	log := slog.Default()
 
 	cases := []struct {
-		name        string
-		saved       bool
-		opts        setupOptions
-		wantPublic  bool
-		wantChanged bool
+		name string
+		// saved — что лежит в БД до запуска; nil означает, что ключа нет.
+		saved *bool
+		// site — конфиг nginx на диске: пусто, «приватный», «публичный», «битый».
+		site string
+		opts setupOptions
+		want panelMode
+		// stored — что должно оказаться в БД; nil означает, что ключа быть не
+		// должно вовсе: догадка и умолчание не решение и не записываются.
+		stored *bool
 	}{
 		{name: "первая установка без флага"},
 		{
-			name:        "первая установка с флагом",
-			opts:        setupOptions{public: true, publicSet: true},
-			wantPublic:  true,
-			wantChanged: true,
+			name:   "первая установка с флагом",
+			opts:   setupOptions{public: true, publicSet: true},
+			want:   panelMode{Public: true, Changed: true},
+			stored: &yes,
 		},
 		{
-			name:       "обновление без флага сохраняет режим",
-			saved:      true,
-			wantPublic: true,
+			name:   "первая установка с явным приватным флагом",
+			opts:   setupOptions{publicSet: true},
+			stored: &no,
 		},
 		{
-			name:       "обновление с тем же флагом ничего не меняет",
-			saved:      true,
-			opts:       setupOptions{public: true, publicSet: true},
-			wantPublic: true,
+			name:   "обновление без флага сохраняет режим",
+			saved:  &yes,
+			want:   panelMode{Public: true},
+			stored: &yes,
 		},
 		{
-			name:        "флаг выключает сохранённый режим",
-			saved:       true,
-			opts:        setupOptions{publicSet: true},
-			wantChanged: true,
+			name:   "обновление с тем же флагом ничего не меняет",
+			saved:  &yes,
+			opts:   setupOptions{public: true, publicSet: true},
+			want:   panelMode{Public: true},
+			stored: &yes,
+		},
+		{
+			name:   "флаг выключает сохранённый режим",
+			saved:  &yes,
+			opts:   setupOptions{publicSet: true},
+			want:   panelMode{Changed: true},
+			stored: &no,
+		},
+		{
+			name:   "сохранённый режим важнее конфига nginx",
+			saved:  &no,
+			site:   "публичный",
+			stored: &no,
+		},
+		{
+			name:   "ключа нет, конфиг публичный",
+			site:   "публичный",
+			want:   panelMode{Public: true, Inferred: true},
+			stored: &yes,
+		},
+		{
+			name:   "ключа нет, конфиг приватный",
+			site:   "приватный",
+			want:   panelMode{Inferred: true},
+			stored: &no,
+		},
+		{
+			name: "ключа нет, конфига нет",
+		},
+		{
+			name: "ключа нет, конфиг не разобран",
+			site: "битый",
+		},
+		{
+			name:   "флаг перебивает выведенный режим",
+			site:   "публичный",
+			opts:   setupOptions{publicSet: true},
+			want:   panelMode{Changed: true},
+			stored: &no,
+		},
+		{
+			name:   "флаг совпал с выведенным режимом",
+			site:   "публичный",
+			opts:   setupOptions{public: true, publicSet: true},
+			want:   panelMode{Public: true},
+			stored: &yes,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			st := testStore(t)
-			if c.saved {
-				if err := st.SetPanelPublic(ctx, true); err != nil {
+			if c.saved != nil {
+				if err := st.SetPanelPublic(ctx, *c.saved); err != nil {
 					t.Fatalf("подготовка режима: %v", err)
 				}
 			}
+			inst := testInstallerWithSite(t, c.site)
 
-			public, changed, err := ensurePanelMode(ctx, st, c.opts, log)
+			mode, err := ensurePanelMode(ctx, st, inst, c.opts, log)
 			if err != nil {
 				t.Fatalf("ensurePanelMode: %v", err)
 			}
-			if public != c.wantPublic || changed != c.wantChanged {
-				t.Fatalf("режим public=%v changed=%v, ожидались %v/%v",
-					public, changed, c.wantPublic, c.wantChanged)
+			// Причина сверяется по факту наличия: её текст — путь и ошибка
+			// разбора, привязываться к нему тест не должен.
+			if c.site == "битый" && mode.Undetermined == "" {
+				t.Fatal("неразобранный конфиг не назвал причину")
 			}
+			mode.Undetermined = ""
+			if mode != c.want {
+				t.Fatalf("режим %+v, ожидался %+v", mode, c.want)
+			}
+
 			// Решение обязано пережить перезапуск: ради этого оно и в БД.
-			saved, err := st.PanelPublic(ctx)
+			public, saved, err := st.PanelPublic(ctx)
 			if err != nil {
 				t.Fatalf("чтение режима: %v", err)
 			}
-			if saved != c.wantPublic {
-				t.Fatalf("в БД режим %v, ожидался %v", saved, c.wantPublic)
+			switch {
+			case c.stored == nil && saved:
+				t.Fatalf("в БД записан режим %v, а записывать было нечего", public)
+			case c.stored != nil && !saved:
+				t.Fatal("режим в БД не записан")
+			case c.stored != nil && public != *c.stored:
+				t.Fatalf("в БД режим %v, ожидался %v", public, *c.stored)
 			}
 		})
+	}
+}
+
+// TestEnsurePanelModeKeepsPublicOnUpgrade — тот самый провал со стенда: панель
+// стояла публичной под версией, которая ключа не писала, и обновление голым
+// однострочником уводило её из интернета молча. После миграции режим не только
+// сохраняется, но и попадает в БД, и второй запуск конфиг уже не читает.
+func TestEnsurePanelModeKeepsPublicOnUpgrade(t *testing.T) {
+	ctx := context.Background()
+	log := slog.Default()
+	st := testStore(t)
+	inst := testInstallerWithSite(t, "публичный")
+
+	mode, err := ensurePanelMode(ctx, st, inst, setupOptions{}, log)
+	if err != nil {
+		t.Fatalf("ensurePanelMode: %v", err)
+	}
+	if !mode.Public || !mode.Inferred || mode.Changed {
+		t.Fatalf("первое обновление дало %+v", mode)
+	}
+
+	// Конфиг убираем: если режим действительно записан, читать его больше не
+	// нужно, и результат от пропажи файла не меняется.
+	if err := os.Remove(filepath.Join(inst.Root, packaging.DefaultNginxDir,
+		"sites-available", packaging.SiteName)); err != nil {
+		t.Fatalf("удаление конфига: %v", err)
+	}
+	mode, err = ensurePanelMode(ctx, st, inst, setupOptions{}, log)
+	if err != nil {
+		t.Fatalf("повторный ensurePanelMode: %v", err)
+	}
+	if !mode.Public || mode.Inferred {
+		t.Fatalf("второе обновление дало %+v, ожидался сохранённый публичный", mode)
 	}
 }
 

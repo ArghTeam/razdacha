@@ -15,6 +15,14 @@ func validSite() SiteConfig {
 	return c
 }
 
+// publicValidSite — то же в публичном режиме.
+func publicValidSite() SiteConfig {
+	c := PublicSiteConfig()
+	c.CertFile = "/etc/razdacha/tls/cert.pem"
+	c.KeyFile = "/etc/razdacha/tls/key.pem"
+	return c
+}
+
 func TestRenderListen(t *testing.T) {
 	out, err := validSite().Render()
 	if err != nil {
@@ -247,5 +255,78 @@ func TestRenderIsDeterministic(t *testing.T) {
 	}
 	if !isOurs(first) {
 		t.Fatal("сгенерированный конфиг не начинается с маркера")
+	}
+}
+
+// Режим панели выводится из конфига, который сгенерировали мы сами: на
+// обновлении с версий до 0.2.1 это единственное место, где он ещё записан
+// (issue #81). Проверка идёт от Render, а не от текста руками: разъедься они —
+// миграция начнёт врать, а не падать.
+func TestPublicFromConfigRoundTrip(t *testing.T) {
+	cases := []struct {
+		name string
+		site SiteConfig
+		want bool
+	}{
+		{name: "приватный", site: validSite()},
+		{name: "публичный", site: publicValidSite(), want: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := c.site.Render()
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			public, err := PublicFromConfig(out)
+			if err != nil {
+				t.Fatalf("PublicFromConfig: %v", err)
+			}
+			if public != c.want {
+				t.Fatalf("режим %v, ожидался %v", public, c.want)
+			}
+		})
+	}
+}
+
+// Публичный адрес в listen — тоже публичный режим: правило то же, что в
+// Validate, иначе установка на выделенном адресе после обновления схлопнулась
+// бы в приватную.
+func TestPublicFromConfigExplicitAddr(t *testing.T) {
+	c := validSite()
+	c.ListenAddr, c.Public = "203.0.113.7", true
+	out, err := c.Render()
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	public, err := PublicFromConfig(out)
+	if err != nil || !public {
+		t.Fatalf("режим public=%v err=%v, ожидался публичный", public, err)
+	}
+}
+
+// Конфиг без нашего маркера — чужой файл: режим из него не выводится, потому что
+// он не про нашу панель.
+func TestPublicFromConfigForeign(t *testing.T) {
+	_, err := PublicFromConfig("server {\n    listen 443 ssl;\n}\n")
+	if !errors.Is(err, ErrForeignConfig) {
+		t.Fatalf("ошибка %v, ожидалась ErrForeignConfig", err)
+	}
+}
+
+// Наш маркер есть, а разбирать нечего: файл правили руками. Догадываться тут
+// не о чем — ошибка, и решать её тому, кто читает конфиг.
+func TestPublicFromConfigUnparsable(t *testing.T) {
+	cases := map[string]string{
+		"без listen":        marker + "\nserver {\n    server_name _;\n}\n",
+		"мусор в listen":    marker + "\nserver {\n    listen ерунда;\n}\n",
+		"разные режимы":     marker + "\nserver {\n    listen 80;\n}\nserver {\n    listen 10.8.0.1:443 ssl;\n}\n",
+		"адрес не разобран": marker + "\nserver {\n    listen 10.8.0.300:443 ssl;\n}\n",
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := PublicFromConfig(content); !errors.Is(err, ErrBadConfig) {
+				t.Fatalf("ошибка %v, ожидалась ErrBadConfig", err)
+			}
+		})
 	}
 }

@@ -365,3 +365,50 @@ func TestInstallStaysUnderRoot(t *testing.T) {
 		}
 	}
 }
+
+// SavedPanelMode читает режим по тому же пути, по которому конфиг пишется:
+// после установки он обязан сойтись с тем, в каком режиме она шла.
+func TestSavedPanelModeAfterInstall(t *testing.T) {
+	private := newTestInstaller(t)
+	if _, err := private.Install(); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if got := private.SavedPanelMode(); !got.Known || got.Public {
+		t.Fatalf("после приватной установки %+v", got)
+	}
+
+	public := publicInstaller(t, "203.0.113.7")
+	if _, err := public.Install(); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if got := public.SavedPanelMode(); !got.Known || !got.Public {
+		t.Fatalf("после публичной установки %+v", got)
+	}
+}
+
+// Конфига нет — это первая установка, а не сбой: ни режима, ни причины.
+func TestSavedPanelModeNoConfig(t *testing.T) {
+	got := newTestInstaller(t).SavedPanelMode()
+	if got.Known || got.Public || got.Reason != "" {
+		t.Fatalf("на чистой машине %+v, ожидалось пустое", got)
+	}
+}
+
+// Конфиг есть, но разобрать его нечем: режим неизвестен, и причина названа —
+// молча уходить в приватный режим нельзя (issue #81).
+func TestSavedPanelModeUnparsable(t *testing.T) {
+	i := newTestInstaller(t)
+	if err := os.WriteFile(i.sitePath(), []byte("чужой конфиг\n"), 0o644); err != nil {
+		t.Fatalf("подготовка конфига: %v", err)
+	}
+	got := i.SavedPanelMode()
+	if got.Known || got.Public {
+		t.Fatalf("чужой конфиг дал режим: %+v", got)
+	}
+	if got.Reason == "" {
+		t.Fatal("причина не названа")
+	}
+	if !strings.Contains(got.Reason, i.sitePath()) {
+		t.Fatalf("в причине %q нет пути к конфигу", got.Reason)
+	}
+}

@@ -116,6 +116,56 @@ func TestSummaryPanelMode(t *testing.T) {
 	}
 }
 
+// TestSummaryPanelModeInferred — режим, выведенный из конфига предыдущей
+// установки, обязан быть назван выведенным: пользователь должен видеть, что
+// панель осталась открытой по догадке, а не по его нынешнему решению (#81).
+func TestSummaryPanelModeInferred(t *testing.T) {
+	out, err := summary{
+		PanelURL:          "https://10.8.0.1",
+		WGPort:            51820,
+		PanelPublic:       true,
+		PanelModeInferred: true,
+	}.Render()
+	if err != nil {
+		t.Fatalf("сборка вывода: %v", err)
+	}
+	for _, want := range []string{
+		"Режим панели:  публичный, панель отвечает на всех интерфейсах.",
+		"Режим взят из существующего конфига nginx и записан в настройки;",
+		"сменить: RAZDACHA_PUBLIC=0",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("в выводе нет %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Режим изменён") {
+		t.Fatalf("режим не менялся, а вывод говорит обратное:\n%s", out)
+	}
+}
+
+// TestSummaryPanelModeUnknown — режим не определился: причина и способ вернуть
+// публичный режим печатаются, иначе панель уходит из интернета молча (#81).
+func TestSummaryPanelModeUnknown(t *testing.T) {
+	out, err := summary{
+		PanelURL:         "https://10.8.0.1",
+		WGPort:           51820,
+		PanelModeUnknown: "/etc/nginx/sites-available/razdacha: конфиг nginx писали не мы",
+	}.Render()
+	if err != nil {
+		t.Fatalf("сборка вывода: %v", err)
+	}
+	for _, want := range []string{
+		"Режим панели:  приватный, панель доступна только из VPN.",
+		"Прежний режим определить не удалось, поднят приватный:",
+		"конфиг nginx писали не мы",
+		"Если панель была открыта в интернет, верните: RAZDACHA_PUBLIC=1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("в выводе нет %q:\n%s", want, out)
+		}
+	}
+}
+
 // TestSummaryColor — на терминале QR раскрашивается, иначе его не прочитает
 // сканер в тёмной теме.
 func TestSummaryColor(t *testing.T) {

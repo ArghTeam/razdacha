@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -359,4 +360,68 @@ func (c SiteConfig) Render() (string, error) {
 // маркера, чужой — нет.
 func isOurs(content string) bool {
 	return strings.HasPrefix(content, marker)
+}
+
+// listenDirective выхватывает значение директивы `listen` — всё до первого
+// пробела или `;` после самого слова. Полноценный разбор конфига nginx здесь не
+// нужен и был бы враньём о своих возможностях: читаем мы только файл, который
+// сами же и сгенерировали по siteTemplate, и только одну его директиву.
+var listenDirective = regexp.MustCompile(`(?m)^\s*listen\s+([^;\s]+)`)
+
+// PublicFromConfig выводит режим панели из текста нашего конфига nginx.
+//
+// Нужно это ровно один раз за установку: версии до 0.2.1 режим в БД не писали,
+// и на обновлении с них единственное место, где режим ещё записан, — конфиг,
+// который прошлая установка оставила на диске (issue #81).
+//
+// Правило то же, что в [SiteConfig.Validate], и обратно к [SiteConfig.listenOn]:
+// отсутствие адреса (`listen 443`) — все интерфейсы, адрес вне приватного
+// диапазона — тоже публичный режим. Директив в файле две (80 и 443), и они
+// обязаны сходиться: разошлись — файл правили руками, и выводить из него нечего.
+func PublicFromConfig(content string) (bool, error) {
+	if !isOurs(content) {
+		return false, fmt.Errorf("%w: конфиг nginx писали не мы, режим панели из него не выводится",
+			ErrForeignConfig)
+	}
+	found := listenDirective.FindAllStringSubmatch(content, -1)
+	if len(found) == 0 {
+		return false, fmt.Errorf("%w: в конфиге nginx нет ни одной директивы listen", ErrBadConfig)
+	}
+	var public bool
+	for n, m := range found {
+		got, err := publicFromListen(m[1])
+		if err != nil {
+			return false, err
+		}
+		if n == 0 {
+			public = got
+			continue
+		}
+		if got != public {
+			return false, fmt.Errorf("%w: директивы listen в конфиге nginx описывают разные режимы",
+				ErrBadConfig)
+		}
+	}
+	return public, nil
+}
+
+// publicFromListen разбирает одно значение директивы listen.
+func publicFromListen(value string) (bool, error) {
+	host, _, err := net.SplitHostPort(value)
+	if err != nil {
+		// Форма без адреса — `listen 443`. Для nginx это все интерфейсы,
+		// то есть публичный режим.
+		if _, err := strconv.Atoi(value); err == nil {
+			return true, nil
+		}
+		return false, fmt.Errorf("%w: директива listen %q не разобрана", ErrBadConfig, value)
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return false, fmt.Errorf("%w: адрес %q в директиве listen не разобран", ErrBadConfig, host)
+	}
+	if addr.IsUnspecified() {
+		return true, nil
+	}
+	return !addr.IsPrivate() && !addr.IsLoopback() && !addr.IsLinkLocalUnicast(), nil
 }

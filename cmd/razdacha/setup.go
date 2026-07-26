@@ -180,14 +180,16 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		return summary{}, err
 	}
 
-	public, modeChanged, err := ensurePanelMode(ctx, st, opts, log)
+	// Установщик заводится до решения о режиме: у него же и спрашивается, что
+	// стоит в конфиге nginx, когда режим в БД не записан.
+	inst := packaging.NewInstaller(opts.root)
+	inst.Log = log
+
+	mode, err := ensurePanelMode(ctx, st, inst, opts, log)
 	if err != nil {
 		return summary{}, err
 	}
-
-	inst := packaging.NewInstaller(opts.root)
-	inst.Log = log
-	if public {
+	if mode.Public {
 		inst.Site = packaging.PublicSiteConfig()
 	}
 	if _, err := inst.Install(); err != nil {
@@ -220,14 +222,16 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 	}
 
 	out := summary{
-		Fresh:            fresh,
-		Version:          version,
-		Password:         password,
-		PanelURL:         panelURL(settings.WGServerAddress),
-		WGPort:           settings.WGListenPort,
-		PanelPublic:      public,
-		PanelModeChanged: modeChanged,
-		Color:            opts.color,
+		Fresh:             fresh,
+		Version:           version,
+		Password:          password,
+		PanelURL:          panelURL(settings.WGServerAddress),
+		WGPort:            settings.WGListenPort,
+		PanelPublic:       mode.Public,
+		PanelModeChanged:  mode.Changed,
+		PanelModeInferred: mode.Inferred,
+		PanelModeUnknown:  mode.Undetermined,
+		Color:             opts.color,
 	}
 	if created {
 		conf, err := netstack.ClientConfig(peer, settings, serverKey.PublicKey().String())
@@ -331,36 +335,98 @@ func ensureEndpoint(ctx context.Context, st *store.Store, log *slog.Logger) (sto
 	return settings, nil
 }
 
+// panelMode — чем кончилось решение о режиме панели: сам режим и то, откуда он
+// взялся. Происхождение печатается пользователю, поэтому оно и возвращается.
+type panelMode struct {
+	// Public — режим, в котором поднимется панель.
+	Public bool
+
+	// Changed — этот запуск режим изменил.
+	Changed bool
+
+	// Inferred — режим не был записан и выведен из лежащего конфига nginx.
+	Inferred bool
+
+	// Undetermined — причина, по которой режим вывести не удалось. Непустая
+	// означает, что взят приватный режим, а в БД не записано ничего.
+	Undetermined string
+}
+
 // ensurePanelMode решает, в каком режиме поднимается панель, и запоминает
-// решение. Второе значение — изменил ли режим этот запуск.
+// решение.
 //
 // Режим — свойство установки, а не аргумент запуска (ADR 0009 о самом режиме,
 // issue #81 о его потере). Обновление документированным однострочником не
 // передаёт никаких флагов, и пока режим жил только во флаге, панель молча
 // уходила из интернета. Отсюда порядок:
 //
-//   - `-public` (и `-public=false`) задаёт режим и запоминает его;
+//   - `-public` (и `-public=false`) задаёт режим и запоминает его — всегда, даже
+//     когда значение совпало с прежним: «выбрал приватный» и «не спрашивали» —
+//     разные состояния, и различать их надо до первого обновления;
 //   - без флага берётся сохранённое;
-//   - первая установка без флага — приватный режим, как было всегда.
+//   - сохранённого нет — режим выводится из конфига nginx, который оставила
+//     предыдущая установка, и записывается: версии до 0.2.1 ключ не писали, и
+//     читать на обновлении с них больше неоткуда;
+//   - конфига нет вовсе — первая установка, приватный режим, как было всегда;
+//   - конфиг есть, но не разобран — приватный режим, но в БД не пишется ничего
+//     и причина уходит в вывод: записать догадку хуже, чем спросить.
 //
 // Выключается режим тем же флагом, которым включался: `-public=false`, а через
 // установщик — `RAZDACHA_PUBLIC=0`. Отдельной команды для этого нет намеренно —
 // вторая точка входа в ту же работу расходилась бы с первой.
-func ensurePanelMode(ctx context.Context, st *store.Store, opts setupOptions, log *slog.Logger) (
-	public, changed bool, err error,
-) {
-	saved, err := st.PanelPublic(ctx)
+func ensurePanelMode(ctx context.Context, st *store.Store, inst *packaging.Installer,
+	opts setupOptions, log *slog.Logger,
+) (panelMode, error) {
+	saved, known, err := st.PanelPublic(ctx)
 	if err != nil {
-		return false, false, err
+		return panelMode{}, err
 	}
-	if !opts.publicSet || opts.public == saved {
-		return saved, false, nil
+
+	// Сохранённый режим закрывает вопрос: конфиг nginx в этой ветке не читается
+	// вовсе — он вторичен, а БД первична.
+	if known {
+		mode := panelMode{Public: saved}
+		if opts.publicSet {
+			mode.Public, mode.Changed = opts.public, opts.public != saved
+		}
+		if err := writePanelMode(ctx, st, mode.Public, opts.publicSet, log); err != nil {
+			return panelMode{}, err
+		}
+		return mode, nil
 	}
-	if err := st.SetPanelPublic(ctx, opts.public); err != nil {
-		return false, false, err
+
+	// Ключа нет: разовая миграция режима из конфига предыдущей установки.
+	from := inst.SavedPanelMode()
+	mode := panelMode{Public: from.Public, Inferred: from.Known, Undetermined: from.Reason}
+	switch {
+	case from.Known:
+		log.Info("режим панели выведен из конфига nginx", "публичный", from.Public)
+	case from.Reason != "":
+		log.Warn("режим панели не выведен, поднимаем приватный", "причина", from.Reason)
 	}
-	log.Info("режим панели изменён", "публичный", opts.public)
-	return opts.public, true, nil
+	if opts.publicSet {
+		// Явный флаг перебивает и сохранённое, и выведенное. Выведенное всё
+		// равно посчитано: без него нечем ответить, изменил ли запуск режим.
+		mode = panelMode{Public: opts.public, Changed: opts.public != from.Public}
+	}
+	// Пишется только то, что кто-то решил: явный флаг или разобранный конфиг.
+	// Приватный режим по умолчанию — не решение, и записывать его нечем.
+	if err := writePanelMode(ctx, st, mode.Public, opts.publicSet || from.Known, log); err != nil {
+		return panelMode{}, err
+	}
+	return mode, nil
+}
+
+// writePanelMode записывает режим, если его есть на чём основать.
+func writePanelMode(ctx context.Context, st *store.Store, public, write bool, log *slog.Logger) error {
+	if !write {
+		return nil
+	}
+	if err := st.SetPanelPublic(ctx, public); err != nil {
+		return err
+	}
+	log.Info("режим панели записан", "публичный", public)
+	return nil
 }
 
 // ensureSingbox ставит рантайм нужной версии.

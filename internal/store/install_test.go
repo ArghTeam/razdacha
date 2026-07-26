@@ -6,18 +6,37 @@ import (
 	"testing"
 )
 
-// TestPanelPublicDefaultsToPrivate — отсутствие ключа означает приватный режим:
-// так вела себя каждая установка до того, как режим начали хранить.
-func TestPanelPublicDefaultsToPrivate(t *testing.T) {
+// TestPanelPublicUnsaved — отсутствие ключа отдаётся как «не записан», а не как
+// приватный режим. Свёрнутые в одно, эти состояния уводили публичную установку
+// из интернета при обновлении с версий, которые ключа не писали (issue #81).
+func TestPanelPublicUnsaved(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 
-	public, err := s.PanelPublic(ctx)
+	public, saved, err := s.PanelPublic(ctx)
 	if err != nil {
 		t.Fatalf("PanelPublic: %v", err)
 	}
-	if public {
-		t.Fatal("пустая БД отдала публичный режим")
+	if public || saved {
+		t.Fatalf("пустая БД отдала public=%v saved=%v, ожидались false/false", public, saved)
+	}
+}
+
+// TestPanelPublicSavedFalse — записанный приватный режим отличается от
+// незаписанного: первый выбран сознательно, второй никто не выбирал.
+func TestPanelPublicSavedFalse(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	if err := s.SetPanelPublic(ctx, false); err != nil {
+		t.Fatalf("SetPanelPublic: %v", err)
+	}
+	public, saved, err := s.PanelPublic(ctx)
+	if err != nil {
+		t.Fatalf("PanelPublic: %v", err)
+	}
+	if public || !saved {
+		t.Fatalf("public=%v saved=%v, ожидались false/true", public, saved)
 	}
 }
 
@@ -41,16 +60,16 @@ func TestPanelPublicRoundTrip(t *testing.T) {
 	}
 	defer func() { _ = again.Close() }()
 
-	public, err := again.PanelPublic(ctx)
-	if err != nil || !public {
-		t.Fatalf("режим после переоткрытия: public=%v err=%v", public, err)
+	public, saved, err := again.PanelPublic(ctx)
+	if err != nil || !public || !saved {
+		t.Fatalf("режим после переоткрытия: public=%v saved=%v err=%v", public, saved, err)
 	}
 
 	if err := again.SetPanelPublic(ctx, false); err != nil {
 		t.Fatalf("выключение режима: %v", err)
 	}
-	if public, err = again.PanelPublic(ctx); err != nil || public {
-		t.Fatalf("режим не выключился: public=%v err=%v", public, err)
+	if public, saved, err = again.PanelPublic(ctx); err != nil || public || !saved {
+		t.Fatalf("режим не выключился: public=%v saved=%v err=%v", public, saved, err)
 	}
 }
 
@@ -67,9 +86,10 @@ func TestPanelPublicNotInSettings(t *testing.T) {
 	if err := s.SaveSettings(ctx, DefaultSettings()); err != nil {
 		t.Fatalf("SaveSettings: %v", err)
 	}
-	public, err := s.PanelPublic(ctx)
-	if err != nil || !public {
-		t.Fatalf("сохранение настроек сбросило режим панели: public=%v err=%v", public, err)
+	public, saved, err := s.PanelPublic(ctx)
+	if err != nil || !public || !saved {
+		t.Fatalf("сохранение настроек сбросило режим панели: public=%v saved=%v err=%v",
+			public, saved, err)
 	}
 }
 

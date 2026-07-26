@@ -39,6 +39,15 @@ type summary struct {
 	// молча уводить панель в интернет или из интернета нельзя (issue #81).
 	PanelModeChanged bool
 
+	// PanelModeInferred — режим не был записан и выведен из конфига nginx,
+	// оставшегося от предыдущей установки. Пользователь должен видеть, что
+	// режим угадан по конфигу, а не задан заново.
+	PanelModeInferred bool
+
+	// PanelModeUnknown — причина, по которой режим вывести не удалось. Непустая
+	// означает приватный режим, не записанный в настройки.
+	PanelModeUnknown string
+
 	// Password — сгенерированный пароль панели. Пустой означает, что пароль уже
 	// был задан и мы его не знаем.
 	Password string
@@ -108,9 +117,20 @@ func (s summary) Render() (string, error) {
 	// обновившийся однострочником из README, должен видеть, открыта его панель
 	// в интернет или нет, и не узнавать об этом от сканеров.
 	line("Режим панели:  %s.", s.panelMode())
-	if s.PanelModeChanged {
+	switch {
+	case s.PanelModeChanged:
 		line("  Режим изменён этим запуском; вернуть прежний: RAZDACHA_PUBLIC=%s",
 			s.previousPanelMode())
+	case s.PanelModeInferred:
+		// Установка от версии до 0.2.1: режим не был записан, и мы вычитали его
+		// из конфига nginx. Сказать об этом обязаны — догадка, пусть и
+		// обоснованная, должна быть видна тому, чью панель она открывает.
+		line("  Режим взят из существующего конфига nginx и записан в настройки;")
+		line("  сменить: RAZDACHA_PUBLIC=%s", s.previousPanelMode())
+	case s.PanelModeUnknown != "":
+		line("  Прежний режим определить не удалось, поднят приватный:")
+		line("  %s", s.PanelModeUnknown)
+		line("  Если панель была открыта в интернет, верните: RAZDACHA_PUBLIC=1")
 	}
 	nl()
 
