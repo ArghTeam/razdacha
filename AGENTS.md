@@ -134,7 +134,9 @@ make lint       golangci-lint run
 curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install.sh | sh
 ```
 
-`RAZDACHA_PUBLIC=1` — панель на всех интерфейсах, `--dry-run` — только фаза проверок.
+`RAZDACHA_PUBLIC=1` — панель на всех интерфейсах, `RAZDACHA_PUBLIC=0` — обратно только
+из VPN; без переменной режим остаётся прежним, он хранится в БД. `--dry-run` — только
+фаза проверок.
 Релиз собирается пушем тега `v*`.
 
 `golangci-lint` и `gofumpt` в системе не установлены — линт отрабатывает в CI.
