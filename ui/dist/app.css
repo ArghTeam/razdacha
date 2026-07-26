@@ -430,3 +430,83 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
   .row-actions { width: 100%; justify-content: flex-end; }
   .row .rule-order, .row .rule-num, .row .dot { order: -1; }
 }
+
+/* --- модалка правила (#47) -------------------------------------------------
+   Своя ширина и свои классы: `.modal` общий для всех окон, а правило — самое
+   плотное из них. Модификатор ловится по содержимому (`:has`), чтобы окно
+   собиралось одним экраном без вмешательства в оболочку. */
+.modal:has(.rule-form) { width: min(760px, 100%); }
+.rule-form { display: flex; flex-direction: column; gap: 14px; }
+
+/* Порядок проверки — единственная концепция, которую нельзя спрятать,
+   поэтому она стоит первой строкой формы, а не подписью где-то внизу. */
+.rule-order-note {
+  font-size: 12.5px; line-height: 1.5; color: var(--fg-dim);
+  padding: 8px 11px; border-radius: 8px;
+  background: var(--bg-sunken); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+}
+
+.rule-form .hint { line-height: 1.45; }
+.rule-form .hint code {
+  font-family: var(--mono); font-size: 11.5px;
+  padding: 0 3px; border-radius: 4px; background: var(--bg-sunken);
+}
+
+.rule-tunnel { width: auto; min-width: 160px; max-width: 100%; }
+
+/* Каталог сервисов: две-три колонки на десктопе, одна на телефоне. */
+.rule-search {
+  font: inherit; font-size: 14px; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: var(--bg-sunken);
+  color: var(--fg); width: 100%; -webkit-appearance: none; appearance: none;
+}
+.rule-search:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -1px; }
+
+.rule-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); max-height: 240px; gap: 2px 10px; }
+.rule-item {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: 13.5px; padding: 5px 6px; border-radius: 7px; min-width: 0;
+}
+.rule-item:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.rule-item:has(input:checked) { color: var(--fg); font-weight: 560; }
+.rule-item input { margin: 0; flex-shrink: 0; }
+/* Названия переносятся, а не обрезаются: «Meta (Facebook, Instagram)» без
+   хвоста не читается, а строка каталога — не таблица, ей можно расти. */
+.rule-item-name { min-width: 0; overflow-wrap: anywhere; }
+.rule-mini {
+  font-size: 10.5px; padding: 0 5px; border-radius: 5px; flex-shrink: 0;
+  color: var(--fg-faint); border: 1px solid var(--line); font-weight: 500;
+}
+.rule-none { font-size: 13px; color: var(--fg-faint); padding: 4px 6px; }
+
+/* Выбранное видно всегда — даже когда поиск увёл галочку за фильтр. */
+.rule-picked { display: flex; flex-wrap: wrap; gap: 5px; }
+.rule-chip {
+  appearance: none; font: inherit; font-size: 12px; cursor: pointer;
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-sunken));
+  color: var(--accent); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rule-chip:hover { background: color-mix(in srgb, var(--accent) 20%, var(--bg-sunken)); }
+
+/* Перекрытие показывается при редактировании, а не выясняется потом. */
+.rule-overlap {
+  font-size: 12.5px; line-height: 1.5;
+  padding: 9px 11px; border-radius: 8px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-sunken));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.rule-overlap strong { display: block; margin-bottom: 3px; }
+.rule-overlap-line { color: var(--fg-dim); }
+.rule-overlap-tail { color: var(--fg-faint); margin-top: 4px; }
+
+.line-errors .rule-overlap-tail { color: var(--fg-faint); }
+textarea.bad { border-color: color-mix(in srgb, var(--err) 55%, var(--line-strong)); }
+
+@media (max-width: 620px) {
+  .rule-grid { max-height: 190px; }
+  .rule-tunnel { width: 100%; }
+}
