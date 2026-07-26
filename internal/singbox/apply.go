@@ -34,6 +34,11 @@ const (
 )
 
 var (
+	// ErrGenerateFailed — конфиг не собрался из состояния БД. Причина в самом
+	// состоянии (например, правило ссылается на исчезнувший туннель), поэтому
+	// вызывающему это ошибка ввода, а не сбой окружения.
+	ErrGenerateFailed = errors.New("конфиг sing-box не собран из состояния")
+
 	// ErrCheckFailed — конфиг не прошёл `sing-box check`. Прежний конфиг
 	// остаётся в силе, текст ошибки рантайма доходит до UI как есть
 	// (docs/02-data-model.md, ADR по генерации конфига целиком).
@@ -142,11 +147,11 @@ func (a *Applier) Apply(ctx context.Context, snap store.Snapshot) (ApplyResult, 
 
 	opts, err := Generate(snap)
 	if err != nil {
-		return res, err
+		return res, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
 	}
 	data, err := Marshal(opts)
 	if err != nil {
-		return res, err
+		return res, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
 	}
 
 	same, err := sameOnDisk(res.Path, data)

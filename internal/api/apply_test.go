@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -149,7 +148,10 @@ func TestApplyReloadFailureIs500(t *testing.T) {
 }
 
 func TestApplyGenerateFailureIs422(t *testing.T) {
-	ap := &fakeApplier{err: errors.New("правило «YouTube» ссылается на несуществующий туннель")}
+	// Ошибка сборки несёт сентинел ErrGenerateFailed: по нему обработчик и
+	// отличает негодное состояние от сбоя окружения, который отдаётся как 500.
+	ap := &fakeApplier{err: fmt.Errorf("%w: правило «YouTube» ссылается на несуществующий туннель",
+		singbox.ErrGenerateFailed)}
 	ts := withApplier(newTestServer(t), ap)
 	cookie := ts.login(t)
 
