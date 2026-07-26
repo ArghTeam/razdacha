@@ -1,0 +1,95 @@
+name: Release
+
+# Релиз собирается по тегу и ничем больше: install.sh качает ассеты по
+# /releases/latest/download, и появление релиза — единственный способ выкатить
+# новую версию пользователям.
+on:
+  push:
+    tags: ['v*']
+
+# Статический бинарник — требование ADR 0006, то же значение, что в CI.
+env:
+  CGO_ENABLED: 0
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Проверить CGO_ENABLED=0
+        run: |
+          actual="$(go env CGO_ENABLED)"
+          if [ "$actual" != "0" ]; then
+            echo "CGO_ENABLED=$actual, ожидалось 0 (ADR 0006: статический бинарник)" >&2
+            exit 1
+          fi
+
+      # Версия приходит из тега и больше ниоткуда: `razdacha version` обязан
+      # совпадать с именем релиза, иначе по выводу не понять, что стоит.
+      - name: Версия из тега
+        id: version
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      # Имена ассетов без версии — условие работы /releases/latest/download:
+      # install.sh не должен ходить в API GitHub, чтобы узнать номер релиза.
+      - name: Сборка linux/amd64 и linux/arm64
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            out="build/linux-$arch"
+            mkdir -p "$out"
+            for cmd in razdachad razdacha; do
+              GOOS=linux GOARCH="$arch" go build \
+                -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+                -o "$out/$cmd" "./cmd/$cmd"
+            done
+            cp LICENSE README.md "$out/"
+            tar -czf "dist/razdacha-linux-$arch.tar.gz" -C "$out" .
+          done
+          cp packaging/install.sh dist/install.sh
+          (cd dist && sha256sum ./*.tar.gz install.sh > checksums.txt)
+          ls -l dist
+
+      # Проверка ровно того бинарника, который уедет пользователям: если версия
+      # не подставилась, релиз выкатывать нельзя.
+      - name: Сверить версию в бинарнике
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          actual="$(./build/linux-amd64/razdacha version)"
+          if [ "$actual" != "$VERSION" ]; then
+            echo "бинарник сообщает версию $actual, тег $VERSION" >&2
+            exit 1
+          fi
+
+      - name: Создать релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --generate-notes \
+            dist/razdacha-linux-amd64.tar.gz \
+            dist/razdacha-linux-arm64.tar.gz \
+            dist/install.sh \
+            dist/checksums.txt

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -111,37 +112,45 @@ func (s *Server) handleCreatePeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snap, err := s.store.Snapshot(r.Context())
-	if err != nil {
-		s.storeError(w, err, "Пир не найден")
-		return
-	}
-	addr, err := allocateAddress(snap.Settings, snap.Peers)
-	if err != nil {
+	created, err := CreatePeer(r.Context(), s.store, req.Name, s.now())
+	if errors.Is(err, ErrNoAddress) {
 		writeError(w, s.log, http.StatusConflict, codeConflict, err.Error())
 		return
 	}
-	keys, err := newPeerKeys()
-	if err != nil {
-		s.log.Error("генерация ключей пира", "ошибка", err)
-		writeError(w, s.log, http.StatusInternalServerError, codeInternal, "Внутренняя ошибка")
-		return
-	}
-
-	created, err := s.store.CreatePeer(r.Context(), store.Peer{
-		Name:         strings.TrimSpace(req.Name),
-		PublicKey:    keys.public,
-		PrivateKey:   keys.private,
-		PresharedKey: keys.preshared,
-		Address:      addr,
-		Enabled:      true,
-		CreatedAt:    s.now().UTC(),
-	})
 	if err != nil {
 		s.storeError(w, err, "Пир не найден")
 		return
 	}
 	writeJSON(w, s.log, http.StatusCreated, newPeerResponse(created))
+}
+
+// CreatePeer заводит пира: выдаёт ключи и первый свободный адрес пула.
+//
+// Экспортируется ради установщика: первого пира создаёт он, до того как
+// поднимется панель, и выдача ключей с адресом обязана быть той же самой —
+// иначе появился бы второй способ раздавать адреса, расходящийся с этим.
+func CreatePeer(ctx context.Context, st *store.Store, name string, now time.Time) (store.Peer, error) {
+	snap, err := st.Snapshot(ctx)
+	if err != nil {
+		return store.Peer{}, err
+	}
+	addr, err := allocateAddress(snap.Settings, snap.Peers)
+	if err != nil {
+		return store.Peer{}, err
+	}
+	keys, err := newPeerKeys()
+	if err != nil {
+		return store.Peer{}, err
+	}
+	return st.CreatePeer(ctx, store.Peer{
+		Name:         strings.TrimSpace(name),
+		PublicKey:    keys.public,
+		PrivateKey:   keys.private,
+		PresharedKey: keys.preshared,
+		Address:      addr,
+		Enabled:      true,
+		CreatedAt:    now.UTC(),
+	})
 }
 
 // updatePeerRequest — тело `PATCH /api/peers/{id}`. Меняются только имя и признак
