@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/ArghTeam/razdacha/internal/clash"
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
@@ -70,6 +71,11 @@ type Config struct {
 	// сборку из ui/dist; тесты подставляют свою.
 	UI fs.FS
 
+	// ClashAddr — адрес Clash API sing-box («хост:порт»). Пустой означает
+	// [clash.DefaultAddr] — тот же адрес, что ставит генератор конфига.
+	// Тесты подставляют адрес httptest вместо настоящего рантайма.
+	ClashAddr string
+
 	// Applier применяет конфиг sing-box по `POST /api/apply`. Пустой означает
 	// настоящий [singbox.NewApplier] — запись в /etc/sing-box/config.json,
 	// `sing-box check` и `systemctl reload`; тесты подставляют свой.
@@ -91,7 +97,11 @@ type Server struct {
 	peerStat  func(context.Context) (map[string]netstack.WGPeerStat, error)
 	ui        fs.FS
 	applier   Applier
-	handler   http.Handler
+	clash     *clash.Client
+	// checks — результаты проверок туннелей с момента запуска демона,
+	// источник производных полей в `GET /api/tunnels`.
+	checks  *checkCache
+	handler http.Handler
 }
 
 // New собирает сервер и проверяет условия запуска.
@@ -127,6 +137,8 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		peerStat:  cfg.PeerStats,
 		ui:        cfg.UI,
 		applier:   cfg.Applier,
+		clash:     clash.New(clash.Options{Addr: cfg.ClashAddr}),
+		checks:    newCheckCache(),
 		verify:    make(chan struct{}, maxVerifications),
 	}
 	if s.ui == nil {
