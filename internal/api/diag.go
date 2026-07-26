@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -43,9 +44,35 @@ type check struct {
 }
 
 // diagResponse — `GET /api/diag`.
+//
+// Overall — худший из вернувшихся статусов. При запуске одной проверки
+// (`POST /api/diag/run?check=…`) в ответе она одна, и сводка по ней же:
+// собрать общий статус из семи проверок в этом случае может только тот, кто
+// их все и запускал, — панель.
 type diagResponse struct {
-	Checks  []check `json:"checks"`
-	Overall string  `json:"overall"`
+	Checks []check `json:"checks"`
+	// CheckedAt — когда проверки отработали. Панель показывает время
+	// последней проверки, и брать его с часов браузера нельзя: свежим
+	// выглядел бы и снимок часовой давности.
+	CheckedAt time.Time `json:"checked_at"`
+	Overall   string    `json:"overall"`
+}
+
+// Идентификаторы проверок. Порядок фиксирован: в нём проверки идут в сводке и
+// в нём же панель прогоняет их по одной, показывая ход.
+const (
+	checkWG      = "wg"
+	checkSingbox = "singbox"
+	checkNft     = "nft"
+	checkTunnels = "tunnels"
+	checkLists   = "lists"
+	checkForward = "forward"
+	checkMTU     = "mtu"
+)
+
+// diagCheckIDs — полный набор проверок в порядке показа.
+var diagCheckIDs = []string{
+	checkWG, checkSingbox, checkNft, checkTunnels, checkLists, checkForward, checkMTU,
 }
 
 // DiagLists — свежесть кэша списков глазами диагностики. Заполняет
@@ -78,12 +105,26 @@ type DiagSources struct {
 	Lists func(context.Context) (DiagLists, error)
 }
 
-// handleDiag — `GET /api/diag`.
+// handleDiag — `GET /api/diag` и `POST /api/diag/run[?check=<id>]`.
 //
 // Каждая проверка читает свой источник и отвечает по существу. Источник
 // недоступен — проверка остаётся в сводке со статусом unknown и причиной в
 // detail: молчаливое «данных нет» скрывает и поломку, и неподключённый слой.
+//
+// `?check=<id>` прогоняет одну проверку. Панель пользуется этим, чтобы
+// показывать ход перезапуска построчно: пока проверка не ответила, строка
+// говорит «проверяется», а не выдаёт прошлый результат за новый.
 func (s *Server) handleDiag(w http.ResponseWriter, r *http.Request) {
+	ids := diagCheckIDs
+	if one := r.URL.Query().Get("check"); one != "" {
+		if !diagKnownCheck(one) {
+			writeError(w, s.log, http.StatusBadRequest, codeBadRequest,
+				fmt.Sprintf("Проверки %q нет. Доступны: %s", one, strings.Join(diagCheckIDs, ", ")))
+			return
+		}
+		ids = []string{one}
+	}
+
 	ctx := r.Context()
 	snap, err := s.store.Snapshot(ctx)
 	if err != nil {
@@ -91,26 +132,94 @@ func (s *Server) handleDiag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wg, wgErr := diagRead(ctx, s.diag.WG)
-	nft, nftErr := diagRead(ctx, s.diag.Nft)
-	forward, forwardErr := diagRead(ctx, s.diag.IPForward)
-	lists, listsErr := diagRead(ctx, s.diag.Lists)
-
-	checks := []check{
-		wgCheck(wg, wgErr, snap),
-		singboxCheck(snap),
-		nftCheck(nft, nftErr),
-		tunnelsCheck(snap.Tunnels, s.checks),
-		listsCheck(lists, listsErr, snap.Settings, s.now()),
-		forwardCheck(forward, forwardErr, nft, nftErr),
-		mtuCheck(wg, wgErr, snap.Settings),
+	in := s.diagRead(ctx, snap, ids)
+	checks := make([]check, 0, len(ids))
+	for _, id := range ids {
+		checks = append(checks, s.diagCheck(id, in))
 	}
 
-	writeJSON(w, s.log, http.StatusOK, diagResponse{Checks: checks, Overall: overall(checks)})
+	writeJSON(w, s.log, http.StatusOK, diagResponse{
+		Checks:    checks,
+		CheckedAt: s.now().UTC(),
+		Overall:   overall(checks),
+	})
 }
 
-// diagRead читает источник, подставляя [errDiagNoSource] вместо неподключённого.
-func diagRead[T any](ctx context.Context, src func(context.Context) (T, error)) (T, error) {
+// diagKnownCheck — есть ли такая проверка. Неизвестный идентификатор лучше
+// отвергнуть: пустая сводка в ответ на опечатку выглядит как «всё хорошо».
+func diagKnownCheck(id string) bool {
+	return slices.Contains(diagCheckIDs, id)
+}
+
+// diagInput — прочитанные источники. Отдельный тип, потому что источник
+// читается один раз на запрос: wg нужен и «WireGuard», и «Path MTU», nft —
+// и «Правилам nftables», и «IP forwarding».
+type diagInput struct {
+	snap store.Snapshot
+
+	wg    netstack.DiagWGState
+	wgErr error
+
+	nft    netstack.DiagNftState
+	nftErr error
+
+	forward    bool
+	forwardErr error
+
+	lists    DiagLists
+	listsErr error
+}
+
+// diagRead читает ровно те источники, которые нужны перечисленным проверкам:
+// прогон одной проверки не должен дёргать netlink за остальные шесть.
+func (s *Server) diagRead(ctx context.Context, snap store.Snapshot, ids []string) diagInput {
+	in := diagInput{snap: snap}
+	want := func(need ...string) bool {
+		return slices.ContainsFunc(ids, func(id string) bool {
+			return slices.Contains(need, id)
+		})
+	}
+
+	if want(checkWG, checkMTU) {
+		in.wg, in.wgErr = diagSource(ctx, s.diag.WG)
+	}
+	if want(checkNft, checkForward) {
+		in.nft, in.nftErr = diagSource(ctx, s.diag.Nft)
+	}
+	if want(checkForward) {
+		in.forward, in.forwardErr = diagSource(ctx, s.diag.IPForward)
+	}
+	if want(checkLists) {
+		in.lists, in.listsErr = diagSource(ctx, s.diag.Lists)
+	}
+	return in
+}
+
+// diagCheck собирает одну строку сводки из уже прочитанных источников.
+func (s *Server) diagCheck(id string, in diagInput) check {
+	switch id {
+	case checkWG:
+		return wgCheck(in.wg, in.wgErr, in.snap)
+	case checkSingbox:
+		return singboxCheck(in.snap)
+	case checkNft:
+		return nftCheck(in.nft, in.nftErr)
+	case checkTunnels:
+		return tunnelsCheck(in.snap.Tunnels, s.checks)
+	case checkLists:
+		return listsCheck(in.lists, in.listsErr, in.snap.Settings, s.now())
+	case checkForward:
+		return forwardCheck(in.forward, in.forwardErr, in.nft, in.nftErr)
+	case checkMTU:
+		return mtuCheck(in.wg, in.wgErr, in.snap.Settings)
+	}
+	// Недостижимо: идентификатор проверен в handleDiag. Молча пропускать
+	// строку нельзя — сводка недосчиталась бы проверки.
+	return check{ID: id, Title: id, Status: statusUnknown, Detail: "проверка не реализована"}
+}
+
+// diagSource читает источник, подставляя [errDiagNoSource] вместо неподключённого.
+func diagSource[T any](ctx context.Context, src func(context.Context) (T, error)) (T, error) {
 	var zero T
 	if src == nil {
 		return zero, errDiagNoSource
