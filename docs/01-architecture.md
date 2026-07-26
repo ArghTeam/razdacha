@@ -137,11 +137,16 @@
 /etc/razdacha/nginx-default-disabled.json   отметка: дефолтный сайт Debian снят нами
 /var/lib/razdacha/state.db       SQLite: пиры, туннели, правила
 /var/lib/razdacha/lists/         кэш скачанных списков
+/var/lib/razdacha/backups/       копии state.db перед обновлением
+/var/lib/razdacha/client-1.conf  конфиг первого пира, его печатает установщик
 /etc/sing-box/config.json        генерируется, править вручную бесполезно
 /etc/nginx/sites-available/razdacha   генерируется, помечен заголовком-маркером
 /etc/nginx/sites-enabled/razdacha     symlink на файл выше
 /etc/sysctl.d/99-razdacha.conf        ip_forward и ip_nonlocal_bind
 /etc/systemd/system/razdachad.service
+/etc/systemd/system/sing-box.service  только если рантайм не пришёл пакетом
+/usr/local/bin/razdachad              демон
+/usr/local/bin/razdacha               установка, обновление, удаление
 ```
 
 Приватные ключи пиров хранятся в БД. Файл БД — `0600 root:root`. Это осознанный

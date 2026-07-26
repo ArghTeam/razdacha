@@ -109,6 +109,17 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	if err != nil {
 		return err
 	}
+
+	// Готовность объявляется здесь, а не при старте процесса: wg0 поднят,
+	// правила залиты, панель сейчас начнёт слушать. Установщик печатает QR
+	// сразу после `systemctl start`, и на этот момент клиент обязан
+	// подключаться. Отказ сокета не останавливает демон — работать он может и
+	// без systemd, — но в лог попадает: юнит уйдёт в failed по таймауту, и
+	// причину придётся искать.
+	if err := notifyReady(); err != nil {
+		slog.Error("готовность systemd не отправлена", "ошибка", err)
+	}
+
 	return srv.Run(ctx)
 }
 
