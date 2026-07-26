@@ -198,63 +198,77 @@ function modalRule(id) {
     <label class="rule-item"><input type="checkbox" name="peer" value="${esc(p.id)}" ${(r.peer_ids || []).includes(p.id) ? 'checked' : ''}>
       <span class="rule-item-name">${esc(p.name)}</span></label>`).join('');
 
+  /* Две зоны, а не одна колонка: слева — чем правило является, справа — на что
+     оно распространяется. Каталог из двух десятков сервисов прокручивается
+     внутри своей зоны, поэтому высота окна от него не зависит. */
   openModal(modalShell(id ? r.name : 'Новое правило', `
     <div class="rule-form">
       <div class="rule-order-note">${esc(orderNote)}</div>
 
-      <div class="field">
-        <label for="r-name">Название</label>
-        <input type="text" id="r-name" value="${esc(r.name)}" placeholder="YouTube и Google" autocomplete="off">
-      </div>
+      <section class="rule-zone rule-zone-what">
+        <h3 class="rule-zone-head">Что за правило</h3>
+        <div class="rule-zone-body">
+          <div class="field">
+            <label for="r-name">Название</label>
+            <input type="text" id="r-name" value="${esc(r.name)}" placeholder="YouTube и Google" autocomplete="off">
+          </div>
 
-      <div class="field">
-        <label>Куда</label>
-        <div class="radios">
-          <label class="radio-pill"><input type="radio" name="action" value="direct" ${r.action === 'direct' ? 'checked' : ''}> напрямую</label>
-          <label class="radio-pill"><input type="radio" name="action" value="tunnel" ${r.action === 'tunnel' ? 'checked' : ''}> в туннель</label>
-          <label class="radio-pill"><input type="radio" name="action" value="block" ${r.action === 'block' ? 'checked' : ''}> блокировать</label>
-          <select id="r-tunnel" class="rule-tunnel" ${r.action === 'tunnel' ? '' : 'disabled'}>${tunnelOpts}</select>
-        </div>
-        <div class="hint" id="r-action-hint"></div>
-      </div>
+          <div class="field">
+            <label>Куда</label>
+            <div class="radios">
+              <label class="radio-pill"><input type="radio" name="action" value="direct" ${r.action === 'direct' ? 'checked' : ''}> напрямую</label>
+              <label class="radio-pill"><input type="radio" name="action" value="tunnel" ${r.action === 'tunnel' ? 'checked' : ''}> в туннель</label>
+              <label class="radio-pill"><input type="radio" name="action" value="block" ${r.action === 'block' ? 'checked' : ''}> блокировать</label>
+              <select id="r-tunnel" class="rule-tunnel" ${r.action === 'tunnel' ? '' : 'disabled'}>${tunnelOpts}</select>
+            </div>
+            <div class="hint" id="r-action-hint"></div>
+          </div>
 
-      <div class="field">
-        <label for="r-list-q">Готовые списки</label>
-        ${searchHtml}
-        <div class="rule-picked" id="r-picked" hidden></div>
-        <div class="list-grid rule-grid" id="r-lists">${listsHtml}
-          <span class="rule-none" id="r-lists-empty" hidden>Ничего не нашлось</span>
-        </div>
-        <div class="hint">Обновляются сами. Пометка «подсети» — у списка есть готовые диапазоны адресов, они ловятся даже без DNS.</div>
-      </div>
+          <div class="field">
+            <label for="r-domains">Свои домены</label>
+            <textarea id="r-domains" spellcheck="false" placeholder="example.com">${esc((r.domains || []).join('\n'))}</textarea>
+            <div class="line-errors" id="r-domains-err"></div>
+            <div class="hint">По одному в строке, совпадение по суффиксу: <code>example.com</code> ловит и <code>cdn.example.com</code>.
+              Работает через FakeIP — клиент спрашивает домен у DNS сервера и получает подставной адрес, привязанный к этому правилу.</div>
+          </div>
 
-      <div class="two-col">
-        <div class="field">
-          <label for="r-domains">Свои домены</label>
-          <textarea id="r-domains" spellcheck="false" placeholder="example.com">${esc((r.domains || []).join('\n'))}</textarea>
-          <div class="line-errors" id="r-domains-err"></div>
-          <div class="hint">По одному в строке, совпадение по суффиксу: <code>example.com</code> ловит и <code>cdn.example.com</code>.
-            Работает через FakeIP — клиент спрашивает домен у DNS сервера и получает подставной адрес, привязанный к этому правилу.</div>
+          <div class="field">
+            <label for="r-subnets">Свои подсети</label>
+            <textarea id="r-subnets" spellcheck="false" placeholder="203.0.113.0/24">${esc((r.subnets || []).join('\n'))}</textarea>
+            <div class="line-errors" id="r-subnets-err"></div>
+            <div class="hint">Тут FakeIP не участвует: клиент идёт сразу на настоящий адрес, спрашивать нечего.
+              Такой трафик метится по совпадению с nft-сетом — поэтому подсети ловят и приложения со своим DNS.</div>
+          </div>
         </div>
-        <div class="field">
-          <label for="r-subnets">Свои подсети</label>
-          <textarea id="r-subnets" spellcheck="false" placeholder="203.0.113.0/24">${esc((r.subnets || []).join('\n'))}</textarea>
-          <div class="line-errors" id="r-subnets-err"></div>
-          <div class="hint">Тут FakeIP не участвует: клиент идёт сразу на настоящий адрес, спрашивать нечего.
-            Такой трафик метится по совпадению с nft-сетом — поэтому подсети ловят и приложения со своим DNS.</div>
+      </section>
+
+      <section class="rule-zone rule-zone-scope">
+        <h3 class="rule-zone-head">На что распространяется</h3>
+        <div class="rule-zone-body">
+          <details class="rule-catalog" id="r-catalog" open>
+            <summary>Готовые списки<span class="rule-catalog-count" id="r-catalog-count"></span></summary>
+            <div class="rule-catalog-body">
+              <div class="hint">Обновляются сами. Пометка «подсети» — у списка есть готовые диапазоны адресов, они ловятся даже без DNS.</div>
+              ${searchHtml}
+              <div class="rule-picked" id="r-picked" hidden></div>
+              <div class="list-grid rule-grid" id="r-lists">${listsHtml}
+                <span class="rule-none" id="r-lists-empty" hidden>Ничего не нашлось</span>
+              </div>
+            </div>
+          </details>
+
+          <div class="field rule-peers-field">
+            <label>Для кого</label>
+            <div class="radios">
+              <label class="radio-pill"><input type="radio" name="scope" value="all" ${r.peer_scope === 'selected' ? '' : 'checked'}> все клиенты</label>
+              <label class="radio-pill"><input type="radio" name="scope" value="selected" ${r.peer_scope === 'selected' ? 'checked' : ''}> выбранные</label>
+            </div>
+            <div class="list-grid rule-grid rule-peers" id="r-peers" ${r.peer_scope === 'selected' ? '' : 'hidden'}>${peersHtml}</div>
+          </div>
         </div>
-      </div>
+      </section>
 
       <div class="rule-overlap" id="r-overlap" hidden></div>
-
-      <div class="field">
-        <label>Для кого</label>
-        <div class="radios">
-          <label class="radio-pill"><input type="radio" name="scope" value="all" ${r.peer_scope === 'selected' ? '' : 'checked'}> все клиенты</label>
-          <label class="radio-pill"><input type="radio" name="scope" value="selected" ${r.peer_scope === 'selected' ? 'checked' : ''}> выбранные</label>
-        </div>
-        <div class="list-grid rule-grid" id="r-peers" ${r.peer_scope === 'selected' ? '' : 'hidden'}>${peersHtml}</div>
-      </div>
     </div>`,
   `<button class="btn" data-act="close-modal">Отмена</button>
      <button class="btn btn-primary" data-act="save-rule" data-id="${esc(id || '')}">Сохранить</button>`),
@@ -274,6 +288,13 @@ function modalRule(id) {
         m.querySelector('input[name="scope"]:checked').value !== 'selected';
     }));
 
+    /* На узком экране каталог свёрнут: колонки схлопываются в одну, и два
+       десятка сервисов отодвинули бы всё остальное под низ окна. Счётчик в
+       заголовке говорит, сколько выбрано, не разворачивая список. */
+    const catalog = m.querySelector('#r-catalog');
+    const catalogCount = m.querySelector('#r-catalog-count');
+    if (window.matchMedia('(max-width: 760px)').matches) catalog.open = false;
+
     /* Выбранные списки повторяются строкой над каталогом: при поиске
        отмеченное уезжает за фильтр, и без этой строки не видно, что выбрано. */
     const picked = m.querySelector('#r-picked');
@@ -282,6 +303,7 @@ function modalRule(id) {
       picked.hidden = !keys.length;
       picked.innerHTML = keys.map((k) =>
         `<button type="button" class="rule-chip" data-key="${esc(k)}" title="Убрать">${esc(listTitle(k))} ✕</button>`).join('');
+      catalogCount.textContent = keys.length ? ` · выбрано ${keys.length}` : '';
     };
     picked.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-key]');
