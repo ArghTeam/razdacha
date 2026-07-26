@@ -40,14 +40,14 @@ type uninstallOptions struct {
 // остальные: незакрытая половина удаления хуже, чем ошибка в конце. Всё, что не
 // снялось, попадает в итоговую ошибку списком.
 func runUninstall(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("uninstall", flag.ContinueOnError)
+	flags := flag.NewFlagSet("uninstall", flag.ContinueOnError)
 	opts := uninstallOptions{}
-	fs.StringVar(&opts.root, "root", "", "корень файловой системы; пустой означает /")
-	fs.BoolVar(&opts.purge, "purge", false, "удалить /var/lib/razdacha вместе с ключами и пирами")
-	fs.BoolVar(&opts.keepData, "keep-data", false, "оставить /var/lib/razdacha, ни о чём не спрашивая")
-	fs.BoolVar(&opts.removeSingbox, "remove-singbox", false, "удалить sing-box, если его положили мы")
-	fs.BoolVar(&opts.assumeYes, "yes", false, "не задавать вопросов")
-	if err := fs.Parse(args); err != nil {
+	flags.StringVar(&opts.root, "root", "", "корень файловой системы; пустой означает /")
+	flags.BoolVar(&opts.purge, "purge", false, "удалить /var/lib/razdacha вместе с ключами и пирами")
+	flags.BoolVar(&opts.keepData, "keep-data", false, "оставить /var/lib/razdacha, ни о чём не спрашивая")
+	flags.BoolVar(&opts.removeSingbox, "remove-singbox", false, "удалить sing-box, если его положили мы")
+	flags.BoolVar(&opts.assumeYes, "yes", false, "не задавать вопросов")
+	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if opts.purge && opts.keepData {

@@ -67,16 +67,16 @@ type setupOptions struct {
 // задан зависимостями: сначала состояние и ключи, потом файлы, потом юниты, и
 // только затем запуск сервисов.
 func runSetup(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
+	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 	opts := setupOptions{}
-	fs.StringVar(&opts.root, "root", "", "корень файловой системы; пустой означает /")
-	fs.StringVar(&opts.dbPath, "db", defaultDBPath, "путь к файлу состояния")
-	fs.StringVar(&opts.daemon, "daemon", defaultDaemon, "путь к бинарнику демона для юнита systemd")
-	fs.StringVar(&opts.peerName, "peer", firstPeerName, "имя первого пира")
-	fs.BoolVar(&opts.public, "public", false,
+	flags.StringVar(&opts.root, "root", "", "корень файловой системы; пустой означает /")
+	flags.StringVar(&opts.dbPath, "db", defaultDBPath, "путь к файлу состояния")
+	flags.StringVar(&opts.daemon, "daemon", defaultDaemon, "путь к бинарнику демона для юнита systemd")
+	flags.StringVar(&opts.peerName, "peer", firstPeerName, "имя первого пира")
+	flags.BoolVar(&opts.public, "public", false,
 		"публичный режим панели: nginx слушает все интерфейсы (ADR 0009)")
-	fs.BoolVar(&opts.start, "start", true, "запускать сервисы через systemd")
-	if err := fs.Parse(args); err != nil {
+	flags.BoolVar(&opts.start, "start", true, "запускать сервисы через systemd")
+	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	opts.color = isTerminal(os.Stdout)

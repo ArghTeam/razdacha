@@ -24,7 +24,9 @@ set -eu
 
 REPO="${RAZDACHA_REPO:-ArghTeam/razdacha}"
 PREFIX="${RAZDACHA_PREFIX:-/usr/local/bin}"
-VERSION="${RAZDACHA_VERSION:-}"
+# Не VERSION: /etc/os-release определяет эту переменную сам, и после разбора
+# дистрибутива тег релиза превратился бы в «12 (bookworm)».
+RELEASE_TAG="${RAZDACHA_VERSION:-}"
 DRY_RUN="${RAZDACHA_DRY_RUN:-}"
 STATE_DB="/var/lib/razdacha/state.db"
 NGINX_SITE="/etc/nginx/sites-available/razdacha"
@@ -102,10 +104,13 @@ check_distro() {
 		warn "/etc/os-release не прочитан, дистрибутив не определён"
 		return
 	fi
+	# Файл читается в подоболочке: он определяет NAME, VERSION и ещё десяток
+	# имён, и хотя бы одно из них наверняка совпадёт с нашим.
 	# shellcheck disable=SC1091
-	. /etc/os-release
-	OS_NAME="${PRETTY_NAME:-${ID:-неизвестно}}"
-	case "${ID:-}:${VERSION_ID:-}" in
+	OS_NAME="$(. /etc/os-release && printf '%s' "${PRETTY_NAME:-${ID:-неизвестно}}")"
+	# shellcheck disable=SC1091
+	os_key="$(. /etc/os-release && printf '%s:%s' "${ID:-}" "${VERSION_ID:-}")"
+	case "$os_key" in
 	debian:12 | debian:13 | ubuntu:22.04 | ubuntu:24.04 | ubuntu:26.04) ;;
 	debian:* | ubuntu:*)
 		warn "$OS_NAME вне проверенной матрицы; ставим, но багрепорты приоритетными не будут"
@@ -288,8 +293,8 @@ download() {
 # только так работает /releases/latest/download, и скрипту не нужно ходить в
 # API GitHub, чтобы узнать номер последнего релиза.
 release_url() {
-	if [ -n "$VERSION" ]; then
-		printf 'https://github.com/%s/releases/download/%s/%s' "$REPO" "$VERSION" "$1"
+	if [ -n "$RELEASE_TAG" ]; then
+		printf 'https://github.com/%s/releases/download/%s/%s' "$REPO" "$RELEASE_TAG" "$1"
 	else
 		printf 'https://github.com/%s/releases/latest/download/%s' "$REPO" "$1"
 	fi
@@ -306,7 +311,7 @@ install_nginx() {
 }
 
 install_binaries() {
-	step "Загрузка razdacha (${VERSION:-последний релиз}, linux/$ARCH)"
+	step "Загрузка razdacha (${RELEASE_TAG:-последний релиз}, linux/$ARCH)"
 
 	tmp="$(mktemp -d)"
 	# Каталог убирается в любом исходе: сюда приезжает архив на десятки мегабайт.
@@ -323,7 +328,6 @@ install_binaries() {
 			die "контрольная сумма $asset не сошлась, установка прервана"
 		say "  Контрольная сумма сошлась."
 	else
-		warn "контрольные суммы не проверены"
 		say "  ! контрольные суммы не проверены"
 	fi
 
@@ -344,9 +348,16 @@ install_binaries() {
 # ошибками.
 run_setup() {
 	step "Настройка"
+	# Именно `if`, а не `[ … ] && set --`: при `set -eu` AND-список с ложным
+	# условием возвращает единицу, и скрипт молча обрывался бы на первом же
+	# незаданном необязательном параметре.
 	set -- setup --daemon "$PREFIX/razdachad"
-	[ -n "${RAZDACHA_PUBLIC:-}" ] && set -- "$@" --public
-	[ -n "${RAZDACHA_PEER:-}" ] && set -- "$@" --peer "$RAZDACHA_PEER"
+	if [ -n "${RAZDACHA_PUBLIC:-}" ]; then
+		set -- "$@" --public
+	fi
+	if [ -n "${RAZDACHA_PEER:-}" ]; then
+		set -- "$@" --peer "$RAZDACHA_PEER"
+	fi
 	"$PREFIX/razdacha" "$@"
 }
 
@@ -366,11 +377,30 @@ main() {
 
 # --dry-run как аргумент — то же, что RAZDACHA_DRY_RUN=1: через `curl | sh`
 # аргументы не передать, а на стенде так удобнее.
+# Справка печатается текстом, а не вырезается из шапки файла: при `curl … | sh`
+# скрипта на диске нет вовсе, и читать из «$0» нечего.
+show_help() {
+	cat <<'HELP'
+razdacha — установщик селективного VPN-шлюза.
+
+  --dry-run   прогнать только фазу проверок и выйти, ничего не изменив
+
+Переменные окружения:
+  RAZDACHA_DRY_RUN=1             то же, что --dry-run
+  RAZDACHA_VERSION=v1.2.3        поставить конкретный релиз вместо последнего
+  RAZDACHA_REPO=owner/name       откуда качать релиз
+  RAZDACHA_PREFIX=/usr/local/bin куда класть бинарники
+  RAZDACHA_PUBLIC=1              панель на всех интерфейсах
+  RAZDACHA_PEER=имя              имя первого пира вместо client-1
+  RAZDACHA_ALLOW_UNSUPPORTED=1   не отказываться на дистрибутиве вне матрицы
+HELP
+}
+
 for arg in "$@"; do
 	case "$arg" in
 	--dry-run) DRY_RUN=1 ;;
 	-h | --help)
-		sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+		show_help
 		exit 0
 		;;
 	*) die "неизвестный аргумент $arg" ;;

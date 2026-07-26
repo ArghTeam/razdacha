@@ -63,8 +63,13 @@ jobs:
             tar -czf "dist/razdacha-linux-$arch.tar.gz" -C "$out" .
           done
           cp packaging/install.sh dist/install.sh
-          (cd dist && sha256sum ./*.tar.gz install.sh > checksums.txt)
-          ls -l dist
+          # Имена без «./»: install.sh ищет свою строку как ` <имя>` в конце,
+          # и префикс каталога ломал бы поиск.
+          (cd dist && sha256sum \
+            razdacha-linux-amd64.tar.gz \
+            razdacha-linux-arm64.tar.gz \
+            install.sh > checksums.txt)
+          cat dist/checksums.txt
 
       # Проверка ровно того бинарника, который уедет пользователям: если версия
       # не подставилась, релиз выкатывать нельзя.
