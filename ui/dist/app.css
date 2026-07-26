@@ -679,3 +679,41 @@ textarea.bad { border-color: color-mix(in srgb, var(--err) 55%, var(--line-stron
 /* Выбранный сервер — единственная строка меты, которая меняется сама собой;
    она читается наравне с именем, а не как подпись. */
 .pool-now { color: var(--fg); }
+
+/* --- модалка «Детали пула» (#71) -------------------------------------------
+   Список серверов, а не форма: у пула нет своего конфига, зато есть состав,
+   который меняется сам. Ротация открыта, мёртвые и остаток каталога свёрнуты. */
+.pool-catalog-url { overflow-wrap: anywhere; }
+.pool-details { display: flex; flex-direction: column; gap: 12px; }
+
+.pool-sect-head, .pool-fold > summary {
+  font-size: 13px; font-weight: 600; color: var(--fg-dim);
+  display: flex; align-items: center; gap: 6px;
+}
+.pool-fold > summary { cursor: pointer; list-style: none; }
+.pool-fold > summary::-webkit-details-marker { display: none; }
+.pool-fold > summary::before { content: '▸'; color: var(--fg-faint); }
+.pool-fold[open] > summary::before { content: '▾'; }
+.pool-fold-count {
+  color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.pool-fold-body { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; }
+.pool-fold-body .hint { font-size: 12px; line-height: 1.45; color: var(--fg-faint); }
+.pool-fold-body .chips { margin-top: 0; }
+
+/* Высоту задаёт сам список, а не цепочка flex-родителей: цепочка рвётся молча
+   (та же грабля, что у каталога списков в модалке правила). */
+.pool-list {
+  display: flex; flex-direction: column;
+  max-height: 260px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg-sunken);
+}
+.pool-srv {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 10px; border-top: 1px solid var(--line); font-size: 13.5px;
+}
+.pool-srv:first-child { border-top: 0; }
+.pool-srv.current { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.pool-srv-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pool-srv-country { color: var(--fg-dim); }
+.pool-srv-name { font-family: var(--mono); font-size: 13px; }

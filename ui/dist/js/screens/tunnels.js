@@ -84,6 +84,142 @@ function poolSchedule(pool, off) {
   return ' · ' + parts.join(' · ');
 }
 
+/* --- модалка «Детали» -----------------------------------------------------
+   У пула нет формы конфига: править в нём нечего, кроме каталога, а встроенный
+   пул не правят и не удаляют вовсе — его выключают. Вместо формы показывается
+   то, что у пула меняется само: состав серверов.
+
+   Список приходит отдельным запросом (`GET /api/tunnels/{id}/pool`), а не в
+   ответе экрана: сотня с лишним серверов нужна только открытой модалке.
+
+   Живость осмысленна только для тех, кто попал в конфиг: в ротацию идут лучшие
+   по пингу карточки (ADR 0010), остальных никто не проверял — у них `alive` и
+   `latency_ms` приходят null, и вместо выдуманного «не отвечает» говорится
+   «не проверялся». */
+
+/** Один сервер строкой: страна · имя · задержка. */
+function poolServerRow(s, { current } = {}) {
+  const parts = [];
+  if (s.country) parts.push(`<span class="pool-srv-country">${esc(s.country)}</span>`);
+  parts.push(`<span class="pool-srv-name">${esc(s.title || '—')}</span>`);
+
+  let dot = 'off';
+  let badge = '';
+  if (s.alive === true) {
+    dot = 'on';
+    badge = s.latency_ms != null
+      ? `<span class="badge ok">${esc(s.latency_ms)} мс</span>`
+      : '<span class="badge ok">отвечает</span>';
+  } else if (s.alive === false) {
+    dot = 'bad';
+    badge = '<span class="badge err">нет ответа</span>';
+  } else if (s.in_rotation) {
+    badge = '<span class="badge">не проверялся</span>';
+  } else if (s.ping_ms) {
+    // Вне ротации своей задержки нет: показываем пинг карточки каталога и
+    // подписываем, откуда он, чтобы его не спутали с измеренным.
+    badge = `<span class="badge">${esc(s.ping_ms)} мс по каталогу</span>`;
+  }
+
+  return `<div class="pool-srv${current ? ' current' : ''}">
+      <span class="dot ${dot}"></span>
+      <div class="pool-srv-main">${parts.join(' · ')}</div>
+      ${badge}
+      ${current ? '<span class="badge accent">сейчас</span>' : ''}
+    </div>`;
+}
+
+/** Страны с количеством: флагов нет, в каталоге есть только название страны,
+    а угадывать эмодзи по названию — выдумывать данные. */
+function poolCountries(list) {
+  const byCountry = new Map();
+  for (const s of list) {
+    const key = s.country || 'без страны';
+    byCountry.set(key, (byCountry.get(key) || 0) + 1);
+  }
+  return [...byCountry.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'))
+    .map(([country, n]) => `<span class="chip">${esc(country)} — ${n}</span>`)
+    .join('');
+}
+
+/** Свёрнутый блок: раскрывается по клику, закрыт по умолчанию — мёртвые и
+    непопавшие в ротацию нужны редко, а места занимают больше всего. */
+function poolFold(title, n, body) {
+  if (!n) return '';
+  return `<details class="pool-fold">
+      <summary>${esc(title)} <span class="pool-fold-count">${n}</span></summary>
+      <div class="pool-fold-body">${body}</div>
+    </details>`;
+}
+
+function poolDetailsHTML(t, data) {
+  const servers = data.servers || [];
+  if (!servers.length) {
+    return '<div class="parse-result idle">Каталог ещё не обходился — серверов пока нет. '
+      + 'Нажмите «Обновить каталог».</div>';
+  }
+
+  const rotation = servers.filter((s) => s.in_rotation);
+  const dead = rotation.filter((s) => s.alive === false);
+  const live = rotation.filter((s) => s.alive !== false);
+  const rest = servers.filter((s) => !s.in_rotation);
+
+  const when = data.updated_at
+    ? `каталог обновлён ${stamp(data.updated_at)} (${since(data.updated_at)})`
+    : 'каталог ещё не обновлялся';
+  const off = t.enabled === false
+    ? '<div class="parse-result idle">Пул выключен: серверы не проверяются, '
+      + 'поэтому про живость каждого сказать нечего.</div>'
+    : '';
+
+  return `
+    <div class="row-meta">${esc(when)} · ${servers.length} ${
+      plural(servers.length, 'сервер', 'сервера', 'серверов')} в каталоге</div>
+    ${off}
+    <div class="pool-sect">
+      <div class="pool-sect-head">В ротации <span class="pool-fold-count">${live.length}</span></div>
+      <div class="pool-list">${live.map((s) => poolServerRow(s, { current: s.current })).join('')
+        || '<div class="rule-none">ни один сервер не отвечает</div>'}</div>
+    </div>
+    ${poolFold('Не отвечают', dead.length,
+    `<div class="pool-list">${dead.map((s) => poolServerRow(s)).join('')}</div>`)}
+    ${poolFold('Остальные в каталоге', rest.length,
+    `<div class="hint">Проверяются только серверы в ротации — в конфиг попадают лучшие
+       по пингу каталога. Об остальных известно лишь то, что было на карточке.</div>
+     <div class="chips">${poolCountries(rest)}</div>
+     <div class="pool-list">${rest.map((s) => poolServerRow(s)).join('')}</div>`)}`;
+}
+
+function modalPoolDetails(id) {
+  const t = tunnelById(id);
+  if (!t) return;
+  openModal(modalShell(`Пул «${t.name}»`, `
+    <div class="row-meta mono pool-catalog-url">${esc(tunnelEndpoint(t))}</div>
+    <div class="pool-details" id="pool-details">
+      <div class="parse-result idle">Загружаю список серверов…</div>
+    </div>`,
+  `<button class="btn" data-act="refresh-pool-details" data-id="${esc(id)}">Обновить каталог</button>
+     <div class="spacer" style="flex:1"></div>
+     <button class="btn btn-primary" data-act="close-modal">Закрыть</button>`),
+  () => loadPoolDetails(id));
+}
+
+async function loadPoolDetails(id) {
+  const box = $('#pool-details');
+  if (!box) return;
+  const t = tunnelById(id);
+  try {
+    const data = await api.tunnels.poolServers(id);
+    box.innerHTML = poolDetailsHTML(t, data);
+  } catch (err) {
+    box.innerHTML = `<div class="parse-result ${err.missing ? 'idle' : 'err'}"></div>`;
+    box.firstElementChild.textContent = err.missing
+      ? 'Список серверов появится позже: GET /api/tunnels/{id}/pool ещё не реализован'
+      : err.message;
+  }
+}
+
 export function view() {
   if (state.missing.has('tunnels')) {
     return head() + `<div class="card">${notImplemented('Туннели')}</div>`;
@@ -241,13 +377,42 @@ export const actions = {
   'edit-tunnel': (id) => modalTunnel(id),
   'save-tunnel': (id) => saveTunnel(id || null),
 
+  /* Меню строки. У пула есть «Детали» — состав серверов вместо формы конфига,
+     а у встроенного пула нет ни «Изменить» (править нечего), ни «Удалить»:
+     встроенное выключают, и API удалить его тоже не даёт. Пул, заведённый
+     руками, остаётся обычным туннелем со всеми пунктами. */
   'menu-tunnel': (id, btn) => {
     const t = tunnelById(id);
-    openMenu(btn, [
-      { act: 'edit-tunnel', id, label: 'Изменить' },
-      { act: 'toggle-tunnel', id, label: t.enabled === false ? 'Включить' : 'Выключить' },
-      { act: 'delete-tunnel', id, label: 'Удалить', danger: true },
-    ]);
+    const items = [];
+    if (tunnelPool(t)) items.push({ act: 'pool-details', id, label: 'Детали' });
+    if (!t.builtin) items.push({ act: 'edit-tunnel', id, label: 'Изменить' });
+    items.push({ act: 'toggle-tunnel', id, label: t.enabled === false ? 'Включить' : 'Выключить' });
+    if (!t.builtin) items.push({ act: 'delete-tunnel', id, label: 'Удалить', danger: true });
+    openMenu(btn, items);
+  },
+
+  'pool-details': (id) => modalPoolDetails(id),
+
+  /* Та же ручка, что у кнопки строки, но обновляется открытая модалка: закрывать
+     её ради перечитанного каталога незачем. */
+  'refresh-pool-details': async (id, btn) => {
+    const t = tunnelById(id);
+    btn.disabled = true;
+    btn.textContent = 'Обновляю…';
+    try {
+      const res = await api.tunnels.refresh(id);
+      if (res && res.pool) Object.assign(t, res);
+      refresh();
+      await loadPoolDetails(id);
+      toast(`${t.name}: каталог обновлён`);
+    } catch (err) {
+      if (err.missing) toast('Обновление каталога появится позже: '
+        + 'POST /api/tunnels/{id}/refresh ещё не реализован');
+      else toastError(err, 'Каталог не обновлён');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Обновить каталог';
+    }
   },
 
   'toggle-tunnel': async (id) => {
