@@ -369,8 +369,10 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 
 /* --- меню ⋮ --- */
 .menu-wrap { position: relative; }
+/* Меню лежит в body: внутри `.card` с overflow: hidden его обрезало.
+   Координаты проставляет placeMenu() в shell.js. */
 .menu {
-  position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+  position: fixed; z-index: 60;
   background: var(--bg-elev); border: 1px solid var(--line);
   border-radius: 9px; box-shadow: var(--shadow); min-width: 168px; padding: 4px;
 }
