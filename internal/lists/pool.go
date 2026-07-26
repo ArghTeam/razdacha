@@ -40,6 +40,19 @@ type PoolTunnel struct {
 	Servers []store.PoolServer
 }
 
+// PoolTunnelFrom переводит туннель из БД в то, что нужно расписанию. Отдельно от
+// [PoolTunnels]: обход по требованию идёт по одному туннелю, прочитанному ручкой API,
+// и снимка всего состояния ради него не берут.
+func PoolTunnelFrom(t store.Tunnel) PoolTunnel {
+	return PoolTunnel{
+		ID:         t.ID,
+		Name:       t.Name,
+		CatalogURL: t.Raw,
+		Enabled:    t.Enabled,
+		Servers:    t.Pool,
+	}
+}
+
 // PoolTunnels выбирает из снимка туннели-пулы. Выключенные попадают в список, но
 // расписание их пропускает: решение «обновлять или нет» принимается в одном месте.
 func PoolTunnels(snap store.Snapshot) []PoolTunnel {
@@ -48,13 +61,7 @@ func PoolTunnels(snap store.Snapshot) []PoolTunnel {
 		if t.Source != store.SourcePool {
 			continue
 		}
-		out = append(out, PoolTunnel{
-			ID:         t.ID,
-			Name:       t.Name,
-			CatalogURL: t.Raw,
-			Enabled:    t.Enabled,
-			Servers:    t.Pool,
-		})
+		out = append(out, PoolTunnelFrom(t))
 	}
 	return out
 }
@@ -239,32 +246,19 @@ func (m *PoolManager) Refresh(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// ErrPoolNotFound — обновить просили пул, которого менеджер не знает.
-var ErrPoolNotFound = errors.New("туннель-пул не найден")
-
-// RefreshTunnel обходит каталог одного пула по требованию — за кнопкой
-// «Обновить» в панели. Первое значение — изменился ли состав серверов.
+// RefreshPool обходит каталог одного пула по требованию — за кнопкой «Обновить» в
+// панели. Первое значение — изменился ли состав серверов.
+//
+// Пул передаётся целиком, а не идентификатором: набор пулов менеджер сверяет с БД раз
+// в полминуты, и поиск по этому набору отказывал на только что появившемся пуле, хотя
+// в БД он уже был (issue #74). Тот, кто нажал кнопку, пул из БД и прочитал — значит,
+// и состав серверов для слияния у него свежее, чем в наборе расписания.
 //
 // Выключенный пул обновляется и здесь: в отличие от расписания, за него попросил
 // человек, и отказ выглядел бы поломкой кнопки. В конфиг он всё равно не попадёт,
 // пока выключен.
-func (m *PoolManager) RefreshTunnel(ctx context.Context, id string) (bool, error) {
-	m.mu.RLock()
-	var found *PoolTunnel
-	for i := range m.tunnels {
-		if m.tunnels[i].ID == id {
-			t := m.tunnels[i]
-			found = &t
-			break
-		}
-	}
-	m.mu.RUnlock()
-
-	if found == nil {
-		return false, fmt.Errorf("%w: %s", ErrPoolNotFound, id)
-	}
-
-	changed, err := m.refreshOne(ctx, *found)
+func (m *PoolManager) RefreshPool(ctx context.Context, t PoolTunnel) (bool, error) {
+	changed, err := m.refreshOne(ctx, t)
 	if err != nil {
 		return false, err
 	}

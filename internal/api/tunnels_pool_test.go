@@ -29,15 +29,16 @@ func (f *fakeProxies) Proxies(context.Context) (map[string]clash.Proxy, error) {
 	return f.proxies, nil
 }
 
-// fakeRefresher подставляет расписание пулов.
+// fakeRefresher подставляет расписание пулов. Запоминает пул целиком: ручка обязана
+// передавать то, что прочитала из БД, а не идентификатор для поиска в чужом наборе.
 type fakeRefresher struct {
 	changed bool
 	err     error
-	ids     []string
+	got     []lists.PoolTunnel
 }
 
-func (f *fakeRefresher) RefreshTunnel(_ context.Context, id string) (bool, error) {
-	f.ids = append(f.ids, id)
+func (f *fakeRefresher) RefreshPool(_ context.Context, t lists.PoolTunnel) (bool, error) {
+	f.got = append(f.got, t)
 	return f.changed, f.err
 }
 
@@ -211,6 +212,10 @@ func TestPoolClashUnavailableKeepsList(t *testing.T) {
 }
 
 // Кнопка «Обновить» обходит каталог и отдаёт туннель одним ответом.
+//
+// Пул уходит расписанию целиком, прямо из БД: набор расписания сверяется с БД раз в
+// полминуты, и обход по требованию не должен ждать этого такта (issue #74). Своего
+// набора у fakeRefresher нет вовсе — на нём это и видно.
 func TestRefreshPool(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
@@ -221,13 +226,37 @@ func TestRefreshPool(t *testing.T) {
 
 	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+tun.ID+"/refresh", "")
 	requireCode(t, resp, http.StatusOK)
-	if len(fake.ids) != 1 || fake.ids[0] != tun.ID {
-		t.Fatalf("обновлены пулы %v, ожидался один %s", fake.ids, tun.ID)
+	if len(fake.got) != 1 || fake.got[0].ID != tun.ID {
+		t.Fatalf("обновлены пулы %v, ожидался один %s", fake.got, tun.ID)
+	}
+	// Состав и каталог передаются вместе с пулом: слияние идёт с тем, что лежит в БД
+	// сейчас, а не с копией, снятой расписанием когда-то раньше.
+	if fake.got[0].CatalogURL != tun.Raw || len(fake.got[0].Servers) != 20 {
+		t.Errorf("расписанию передан пул %+v без каталога или состава", fake.got[0])
 	}
 	var got tunnelResponse
 	decodeJSONBody(t, resp, &got)
 	if got.Pool == nil || got.Pool.CatalogURL != tun.Raw {
 		t.Error("ответ не содержит блока pool: карточке пришлось бы делать второй запрос")
+	}
+}
+
+// Обход по требованию работает на пуле, о котором расписание ещё не знает: тот же
+// случай, что «завели пул и сразу нажали Обновить каталог» (issue #74). Ответ «пула
+// нет» тем более не выдаётся за «туннель не найден».
+func TestRefreshPoolBeforeScheduleKnowsIt(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	// Расписание уже поднято и знает про другой пул — но не про этот.
+	fake := &fakeRefresher{}
+	ts.pools = fake
+	fresh := poolTunnel(t, ts.st, "Бесплатные VLESS", 4, false)
+
+	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+fresh.ID+"/refresh", "")
+	requireCode(t, resp, http.StatusOK)
+	if len(fake.got) != 1 || fake.got[0].ID != fresh.ID {
+		t.Fatalf("обновлены пулы %v, ожидался свежий %s", fake.got, fresh.ID)
 	}
 }
 
@@ -259,38 +288,26 @@ func TestRefreshPoolWithoutSchedule(t *testing.T) {
 	requireCode(t, resp, http.StatusServiceUnavailable)
 }
 
-// Пул создаётся через ручку, а не в обход неё.
+// Пул в системе один и его заводит демон: ссылка на каталог в `POST /api/tunnels` —
+// отказ, а не второй пул.
 //
-// Тест намеренно идёт полным путём «пользователь вставил URL каталога»: пулы,
-// заведённые прямо в store, скрыли от нас то, что Parse не узнавал http(s), и
-// создать пул было нечем при готовых store, singbox, lists и панели (issue #66).
-func TestCreatePoolFromCatalogURL(t *testing.T) {
+// Раньше этот тест закреплял обратное: пул создавался ровно этим путём (issue #66).
+// Уточнение объёма #71 отменило создание пулов руками, и от прежнего теста осталось
+// то, ради чего он писался — что разбор ссылки на каталог никуда не делся: ответ
+// говорит про уже существующий пул, а не «конфиг не разобран».
+func TestCreatePoolFromCatalogURLIsRejected(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
 
-	body := `{"name":"Бесплатные VLESS","raw":"https://vpnkeys.me/protocol/vless"}`
+	body := `{"name":"Свой пул","raw":"https://vpnkeys.me/protocol/vless"}`
 	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels", body)
-	requireCode(t, resp, http.StatusCreated)
-
-	var got tunnelResponse
-	decodeJSONBody(t, resp, &got)
-	if got.Type != store.TunnelVLESS || got.Source != store.SourcePool {
-		t.Fatalf("создан туннель type=%q source=%q, ожидались vless и pool", got.Type, got.Source)
-	}
-	if got.Pool == nil {
-		t.Fatal("в ответе нет блока pool")
-	}
-	if got.Pool.CatalogURL != "https://vpnkeys.me/protocol/vless" {
-		t.Errorf("каталог %q", got.Pool.CatalogURL)
-	}
-	if got.Pool.ServersTotal != 0 || got.Pool.UpdatedAt != nil {
-		t.Error("у только что созданного пула уже есть серверы и время обхода")
+	requireCode(t, resp, http.StatusConflict)
+	if !strings.Contains(resp.body, "включите его") {
+		t.Errorf("отказ не говорит, что делать вместо создания: %s", resp.body)
 	}
 
-	// Пул обязан доехать до списка: правило навешивается на него как на туннель.
-	list := listTunnels(t, ts, cookie)
-	if len(list) != 1 || list[0].Pool == nil {
-		t.Fatalf("в списке %d туннелей, пула среди них нет", len(list))
+	if list := listTunnels(t, ts, cookie); len(list) != 0 {
+		t.Fatalf("в БД появилось %d туннелей, ожидался отказ без создания", len(list))
 	}
 }
 
@@ -450,11 +467,12 @@ func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
 
-	pool, created, err := ts.st.EnsureBuiltinPool(context.Background(),
+	res, err := ts.st.EnsureBuiltinPool(context.Background(),
 		"Бесплатные VLESS", lists.DefaultPoolCatalogURL)
-	if err != nil || !created {
-		t.Fatalf("EnsureBuiltinPool: %v (created=%v)", err, created)
+	if err != nil || !res.Created {
+		t.Fatalf("EnsureBuiltinPool: %v (%+v)", err, res)
 	}
+	pool := res.Tunnel
 
 	resp := ts.auth(t, cookie, http.MethodDelete, "/api/tunnels/"+pool.ID, "")
 	requireCode(t, resp, http.StatusConflict)
@@ -478,17 +496,17 @@ func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
 	}
 }
 
-// Пул, заведённый пользователем, удаляется как обычный туннель: запрет касается
+// Пул, не помеченный встроенным, удаляется как обычный туннель: запрет касается
 // только встроенного.
+//
+// Через API такой пул больше не завести, но в БД он бывает — это второй пул на
+// установке, где их оказалось несколько, и встроенным стал не он. Удалить его должно
+// быть можно: иначе лишний пул останется навсегда.
 func TestDeleteUserPoolIsAllowed(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
 
-	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels",
-		`{"name":"Свой пул","raw":"https://example.org/keys"}`)
-	requireCode(t, resp, http.StatusCreated)
-	var created tunnelResponse
-	decodeJSONBody(t, resp, &created)
+	created := poolTunnel(t, ts.st, "Второй пул", 4, false)
 	if created.Builtin {
 		t.Error("пул пользователя помечен встроенным")
 	}

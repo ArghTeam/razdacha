@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"sort"
 	"time"
@@ -15,8 +14,11 @@ import (
 
 // poolRefresher обходит каталог одного пула по требованию. Интерфейс, а не
 // *lists.PoolManager: в тестах поднимать расписание и ходить в сеть незачем.
+//
+// Пул передаётся целиком: ручка уже прочитала его из БД, и обход по требованию не
+// должен зависеть от того, успело ли расписание сверить свой набор с БД (issue #74).
 type poolRefresher interface {
-	RefreshTunnel(ctx context.Context, id string) (bool, error)
+	RefreshPool(ctx context.Context, t lists.PoolTunnel) (bool, error)
 }
 
 // clashProxies — то, что этому файлу нужно от клиента Clash API.
@@ -301,11 +303,10 @@ func (s *Server) handleRefreshPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.pools.RefreshTunnel(r.Context(), id); err != nil {
-		if errors.Is(err, lists.ErrPoolNotFound) {
-			s.storeError(w, store.ErrNotFound, "Туннель не найден")
-			return
-		}
+	// Пул передаётся расписанию целиком: искать его в наборе, который сверяется с
+	// БД раз в полминуты, значит отвечать отказом на пуле, который только что
+	// появился, — и отказ этот выглядел бы как «туннеля нет» (issue #74).
+	if _, err := s.pools.RefreshPool(r.Context(), lists.PoolTunnelFrom(t)); err != nil {
 		writeError(w, s.log, http.StatusBadGateway, codeInternal,
 			"Не удалось обойти каталог: "+err.Error())
 		return

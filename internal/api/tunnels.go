@@ -99,6 +99,15 @@ func (s *Server) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
 		s.parseError(w, err)
 		return
 	}
+	// Пул в системе один, и его заводит демон ([store.Store.EnsureBuiltinPool]).
+	// Второй означал бы второй обход того же каталога и вторую группу urltest в
+	// конфиге, поэтому ссылка на каталог здесь — отказ, а не создание. Разбор при
+	// этом остаётся: битая ссылка получает свои 400 выше, а не общий отказ.
+	if res.Source == store.SourcePool {
+		writeError(w, s.log, http.StatusConflict, codeConflict,
+			"Пул бесплатных ключей уже есть — включите его в списке туннелей")
+		return
+	}
 
 	name := res.Name
 	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
