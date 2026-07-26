@@ -81,16 +81,19 @@ func runSetup(ctx context.Context, args []string) error {
 	}
 	opts.color = isTerminal(os.Stdout)
 
-	out, err := setup(ctx, opts)
-	if err != nil {
-		return err
+	// Вывод печатается и при неудаче запуска сервисов. Пароль панели
+	// сгенерирован и лежит в БД одним лишь хешем: не напечатав его здесь, мы
+	// потеряем его навсегда, и пользователю останется `razdachad -set-password`
+	// на машине, куда он ещё не может зайти.
+	out, setupErr := setup(ctx, opts)
+	if out.PanelURL != "" {
+		text, err := out.Render()
+		if err != nil {
+			return errors.Join(setupErr, err)
+		}
+		fmt.Print(text)
 	}
-	text, err := out.Render()
-	if err != nil {
-		return err
-	}
-	fmt.Print(text)
-	return nil
+	return setupErr
 }
 
 func setup(ctx context.Context, opts setupOptions) (summary, error) {
@@ -191,8 +194,10 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		return summary{}, err
 	}
 	if opts.start {
+		// Собранный вывод возвращается вместе с ошибкой: он уже содержит
+		// пароль и QR, и терять их из-за неподнявшегося сервиса нельзя.
 		if err := startServices(ctx, log); err != nil {
-			return summary{}, err
+			return out, err
 		}
 	}
 	return out, nil
