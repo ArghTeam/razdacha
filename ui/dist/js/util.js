@@ -73,8 +73,18 @@ export const TUNNEL_LABEL = {
 };
 
 /** Блок `pool` туннеля, если это пул. Иначе `null` — по нему экран и решает,
-    рисовать ли строку каталога и статистику серверов. */
-export const tunnelPool = (t) => (t && t.type === 'pool' ? (t.pool || {}) : null);
+    рисовать ли строку каталога и статистику серверов.
+
+    Пул узнаётся по `source`, а не по `type`: тип означает протокол, и пул из
+    vless-серверов — это vless (`store.Tunnel.validate` другого и не допускает).
+    Словом «Пул» подписан бейдж, потому что от одиночного туннеля пул отличается
+    поведением, а не шифром. */
+export const tunnelPool = (t) => (t && t.source === 'pool' ? (t.pool || {}) : null);
+
+/** Подпись типа на карточке. */
+export const tunnelLabel = (t) => (
+  tunnelPool(t) ? TUNNEL_LABEL.pool : (TUNNEL_LABEL[t.type] || t.type)
+);
 
 /** Адрес туннеля. Хранимый `parsed` пользуется server/server_port,
     ответ `POST /api/tunnels/parse` — host/port; принимаем оба.

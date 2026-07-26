@@ -237,6 +237,49 @@ func (m *PoolManager) Refresh(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
+// ErrPoolNotFound — обновить просили пул, которого менеджер не знает.
+var ErrPoolNotFound = errors.New("туннель-пул не найден")
+
+// RefreshTunnel обходит каталог одного пула по требованию — за кнопкой
+// «Обновить» в панели. Первое значение — изменился ли состав серверов.
+//
+// Выключенный пул обновляется и здесь: в отличие от расписания, за него попросил
+// человек, и отказ выглядел бы поломкой кнопки. В конфиг он всё равно не попадёт,
+// пока выключен.
+func (m *PoolManager) RefreshTunnel(ctx context.Context, id string) (bool, error) {
+	m.mu.RLock()
+	var found *PoolTunnel
+	for i := range m.tunnels {
+		if m.tunnels[i].ID == id {
+			t := m.tunnels[i]
+			found = &t
+			break
+		}
+	}
+	m.mu.RUnlock()
+
+	if found == nil {
+		return false, fmt.Errorf("%w: %s", ErrPoolNotFound, id)
+	}
+
+	changed, err := m.refreshOne(ctx, *found)
+	if err != nil {
+		return false, err
+	}
+
+	m.mu.Lock()
+	m.last = time.Now().UTC()
+	m.mu.Unlock()
+
+	if changed {
+		select {
+		case m.updates <- struct{}{}:
+		default:
+		}
+	}
+	return changed, nil
+}
+
 // refreshOne обновляет один пул. Первое значение — изменился ли состав.
 func (m *PoolManager) refreshOne(ctx context.Context, t PoolTunnel) (bool, error) {
 	servers, err := m.catalog.Servers(ctx, t.CatalogURL)

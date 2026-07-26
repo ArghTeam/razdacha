@@ -9,7 +9,7 @@ import {
   openMenu, notImplemented, refresh, markDirty,
 } from '../shell.js';
 import {
-  $, esc, plural, since, until, TUNNEL_LABEL, tunnelEndpoint, tunnelPool,
+  $, esc, plural, since, until, TUNNEL_LABEL, tunnelLabel, tunnelEndpoint, tunnelPool,
 } from '../util.js';
 
 export const title = 'Туннели';
@@ -96,7 +96,7 @@ export function view() {
         <span class="dot ${st.cls}"></span>
         <div class="row-main">
           <div class="row-title">${esc(t.name)}
-            <span class="badge${pool ? ' accent' : ''}">${esc(TUNNEL_LABEL[t.type] || t.type)}</span>
+            <span class="badge${pool ? ' accent' : ''}">${esc(tunnelLabel(t))}</span>
             ${pool ? poolServers(pool, off) : ''}
             ${st.badge}
           </div>

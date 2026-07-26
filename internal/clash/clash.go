@@ -153,6 +153,11 @@ type Proxy struct {
 	Type    string    `json:"type"`
 	UDP     bool      `json:"udp"`
 	History []History `json:"history"`
+	// Now — тег участника, выбранного группой (`urltest`, `selector`). У обычного
+	// outbound'а пусто: выбирать там нечего.
+	Now string `json:"now"`
+	// All — теги всех участников группы; у обычного outbound'а пусто.
+	All []string `json:"all"`
 }
 
 // History — запись журнала проверок Clash API.

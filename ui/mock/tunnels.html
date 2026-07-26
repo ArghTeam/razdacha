@@ -54,7 +54,7 @@ const hoursAgo = (h) => new Date(Date.now() - h * 3600_000).toISOString();
    нельзя, иначе стенд перестанет проверять то, что приедет с сервера. */
 state.tunnels = [
   {
-    id: 'pool-1', name: 'Бесплатные VLESS', type: 'pool',
+    id: 'pool-1', name: 'Бесплатные VLESS', type: 'vless', source: 'pool',
     enabled: true, status: 'up', latency_ms: 210,
     pool: {
       catalog_url: 'https://vpnkeys.me/protocol/vless',
@@ -66,7 +66,7 @@ state.tunnels = [
     },
   },
   {
-    id: 'pool-2', name: 'Пул про запас', type: 'pool',
+    id: 'pool-2', name: 'Пул про запас', type: 'vless', source: 'pool',
     enabled: false, status: 'up', latency_ms: 190,
     pool: {
       catalog_url: 'https://vpnkeys.me/protocol/vless',
@@ -78,7 +78,7 @@ state.tunnels = [
     },
   },
   {
-    id: 'pool-3', name: 'Пул без ответа', type: 'pool',
+    id: 'pool-3', name: 'Пул без ответа', type: 'vless', source: 'pool',
     enabled: true, status: 'down',
     pool: {
       catalog_url: 'https://vpnkeys.me/protocol/vless',
@@ -89,12 +89,12 @@ state.tunnels = [
     },
   },
   {
-    id: 'wg-1', name: 'Нидерланды', type: 'wireguard',
+    id: 'wg-1', name: 'Нидерланды', type: 'wireguard', source: 'wg_conf',
     enabled: true, status: 'up', latency_ms: 74,
     parsed: { server: '203.0.113.10', server_port: 51820 },
   },
   {
-    id: 'vless-1', name: 'Резерв', type: 'vless',
+    id: 'vless-1', name: 'Резерв', type: 'vless', source: 'url',
     enabled: false, status: 'not_applied',
     parsed: { server: '198.51.100.7', server_port: 443 },
   },

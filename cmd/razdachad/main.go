@@ -82,6 +82,7 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	// застать заливку правил готовой слушать обновления. Ошибки загрузки демон
 	// не останавливают — nil означает работу без списков.
 	listsMgr := startLists(ctx, st, dbPath, slog.Default())
+	poolsMgr := startPools(ctx, st, slog.Default())
 
 	nf, err := startNetfilter(ctx, st, listsMgr, slog.Default())
 	if err != nil {
@@ -102,6 +103,7 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 			IPForward: netstack.DiagIPForward,
 			Lists:     listsDiag(st, listsMgr),
 		},
+		Pools: poolsMgr,
 	})
 	if errors.Is(err, api.ErrNoPassword) {
 		return fmt.Errorf("%w; задайте его: razdachad -set-password", err)
