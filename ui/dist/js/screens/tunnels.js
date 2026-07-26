@@ -34,9 +34,15 @@ export function view() {
       ? { cls: 'off', badge: '', label: 'выключен' }
       : t.status === 'up'
         ? { cls: 'on', badge: `<span class="badge ok">${esc(t.latency_ms)} мс</span>`, label: '' }
-        : t.status === 'down'
-          ? { cls: 'bad', badge: '<span class="badge err">нет ответа</span>', label: '' }
-          : { cls: 'off', badge: '<span class="badge">не проверялся</span>', label: '' };
+        // Медленный туннель рабочий, но не годится для видео и звонков —
+        // показываем цифру и отличаем цветом, а не прячем среди зелёных.
+        : t.status === 'slow'
+          ? { cls: 'warn', badge: `<span class="badge warn">${esc(t.latency_ms)} мс, медленно</span>`, label: '' }
+          : t.status === 'down'
+            ? { cls: 'bad', badge: '<span class="badge err">нет ответа</span>', label: '' }
+            : t.status === 'not_applied'
+              ? { cls: 'off', badge: '<span class="badge">не применён</span>', label: '' }
+              : { cls: 'off', badge: '<span class="badge">не проверялся</span>', label: '' };
     return `
       <div class="row${t.enabled === false ? ' dim' : ''}">
         <span class="dot ${st.cls}"></span>
@@ -213,8 +219,9 @@ export const actions = {
         last_check: res?.last_check ?? new Date().toISOString(),
       });
       refresh();
-      toast(t.status === 'up' ? `${t.name}: ${t.latency_ms} мс` : `${t.name}: нет ответа`,
-        t.status === 'up' ? '' : 'err');
+      const ok = t.status === 'up' || t.status === 'slow';
+      toast(ok ? `${t.name}: ${t.latency_ms} мс${t.status === 'slow' ? ' — медленно' : ''}`
+        : `${t.name}: ${res?.detail || 'нет ответа'}`, ok ? '' : 'err');
     } catch (err) {
       btn.disabled = false;
       btn.textContent = 'Проверить';
