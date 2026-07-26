@@ -50,9 +50,17 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("sing-box не перезагружен", "ошибка", err)
 		writeError(w, s.log, http.StatusInternalServerError, codeInternal, err.Error())
 		return
-	case err != nil:
-		s.log.Error("применение конфигурации", "ошибка", err)
+	case errors.Is(err, singbox.ErrGenerateFailed):
+		s.log.Error("конфиг sing-box не собран", "ошибка", err)
 		writeError(w, s.log, http.StatusUnprocessableEntity, codeInvalidConfig, err.Error())
+		return
+	case err != nil:
+		// Всё прочее — окружение, а не конфиг: нет прав на каталог, диск
+		// заполнен, файл занят. На стенде такая ошибка приехала как
+		// «invalid_config», и по ответу выходило, будто пользователь ввёл
+		// что-то не то, хотя `ReadWritePaths` в юните не пускал в /etc/sing-box.
+		s.log.Error("применение конфигурации", "ошибка", err)
+		writeError(w, s.log, http.StatusInternalServerError, codeInternal, err.Error())
 		return
 	}
 

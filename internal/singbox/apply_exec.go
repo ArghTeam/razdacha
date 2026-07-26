@@ -45,13 +45,19 @@ type SystemctlReloader struct {
 	Service string
 }
 
-// Reload делает `systemctl reload <юнит>`.
+// Reload делает `systemctl reload-or-restart <юнит>`.
+//
+// Именно reload-or-restart, а не reload: на остановленном сервисе reload
+// отвечает «Unit cannot be reloaded because it is inactive» и применение падает.
+// Так и вышло на стенде при первой установке — sing-box ещё ни разу не
+// запускался, конфиг для него как раз и генерировался. Первое применение
+// обязано поднимать сервис, а не требовать, чтобы его подняли заранее.
 func (r SystemctlReloader) Reload(ctx context.Context) error {
 	unit := r.Service
 	if unit == "" {
 		unit = DefaultService
 	}
-	out, err := exec.CommandContext(ctx, "systemctl", "reload", unit).CombinedOutput()
+	out, err := exec.CommandContext(ctx, "systemctl", "reload-or-restart", unit).CombinedOutput()
 	if err == nil {
 		return nil
 	}
