@@ -225,7 +225,9 @@ func tunnelsCheck(tunnels []store.Tunnel, cache *checkCache) check {
 			continue
 		}
 		checked++
-		if res.Status != tunnelUp {
+		// Медленный туннель рабочий: в список проблемных он не идёт, иначе
+		// диагностика краснела бы на том, что пользователь и так видит цифрой.
+		if res.Status != tunnelUp && res.Status != tunnelSlow {
 			bad = append(bad, t.Name)
 		}
 	}

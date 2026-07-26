@@ -15,6 +15,7 @@ import (
 // про сам туннель.
 const (
 	tunnelUp         = "up"          // задержка измерена
+	tunnelSlow       = "slow"        // отвечает, но дольше clash.SlowThreshold
 	tunnelDown       = "down"        // sing-box проверил и не достучался
 	tunnelNotApplied = "not_applied" // тега нет в работающем конфиге
 )
@@ -126,8 +127,16 @@ func (s *Server) handleCheckTunnel(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case derr == nil:
 			ms := int(delay.Milliseconds())
-			res.Status, res.LatencyMS = tunnelUp, &ms
-			res.Detail = "Туннель отвечает"
+			res.LatencyMS = &ms
+			// «Работает, но еле-еле» — отдельный ответ: на таком туннеле видео
+			// не пойдёт, и увидеть это надо до того, как начнутся жалобы.
+			if delay >= clash.SlowThreshold {
+				res.Status = tunnelSlow
+				res.Detail = "Туннель отвечает медленно"
+			} else {
+				res.Status = tunnelUp
+				res.Detail = "Туннель отвечает"
+			}
 		case errors.Is(derr, clash.ErrNotFound):
 			res.Status = tunnelNotApplied
 			res.Detail = "Туннель не применён: его нет в работающем конфиге sing-box. " +
