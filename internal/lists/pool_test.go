@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -311,6 +312,97 @@ func TestPoolTunnels(t *testing.T) {
 	if got[0].ID != "b" || got[0].CatalogURL != DefaultPoolCatalogURL ||
 		got[0].Enabled || len(got[0].Servers) != 1 {
 		t.Errorf("пул выбран не целиком: %+v", got[0])
+	}
+}
+
+// Набор пулов сверяется по признакам пула, а не по составу серверов: состав меняется
+// после каждого обхода каталога, и сверка по нему объявляла набор изменившимся всегда —
+// каталог обходился каждые полминуты вместо двенадцати часов (issue #77).
+func TestSamePoolSet(t *testing.T) {
+	base := []PoolTunnel{{
+		ID: "pppp", Name: "пул", CatalogURL: DefaultPoolCatalogURL, Enabled: true,
+		Servers: []store.PoolServer{{URL: "vless://x@1.2.3.4:443", PingMS: 50}},
+	}}
+	// Копия набора, которой можно править одно поле, не задевая base.
+	with := func(f func(*PoolTunnel)) []PoolTunnel {
+		out := append([]PoolTunnel(nil), base...)
+		f(&out[0])
+		return out
+	}
+
+	cases := []struct {
+		name string
+		next []PoolTunnel
+		same bool
+	}{
+		{"тот же набор", with(func(*PoolTunnel) {}), true},
+		{"другой состав серверов", with(func(t *PoolTunnel) {
+			t.Servers = []store.PoolServer{
+				{URL: "vless://x@1.2.3.4:443", PingMS: 90, Misses: 2},
+				{URL: "vless://y@5.6.7.8:443"},
+			}
+		}), true},
+		{"состав опустел", with(func(t *PoolTunnel) { t.Servers = nil }), true},
+		{"переименован туннель", with(func(t *PoolTunnel) { t.Name = "другое имя" }), true},
+		{"сменился каталог", with(func(t *PoolTunnel) { t.CatalogURL += "?x=1" }), false},
+		{"пул выключен", with(func(t *PoolTunnel) { t.Enabled = false }), false},
+		{"другой пул", with(func(t *PoolTunnel) { t.ID = "qqqq" }), false},
+		{"пул исчез", nil, false},
+		{"пул появился", append(with(func(*PoolTunnel) {}),
+			PoolTunnel{ID: "qqqq", Name: "второй", CatalogURL: "https://example.org", Enabled: true}), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := SamePoolSet(base, c.next); got != c.same {
+				t.Errorf("SamePoolSet = %v, ожидалось %v", got, c.same)
+			}
+			// Сверка симметрична: исчезновение и появление — одно и то же различие.
+			if got := SamePoolSet(c.next, base); got != c.same {
+				t.Errorf("SamePoolSet в обратную сторону = %v, ожидалось %v", got, c.same)
+			}
+		})
+	}
+}
+
+// Сторож набора полей: [PoolIdentity] перечисляет поля явно, и новое поле [PoolTunnel]
+// в сверку само не попадёт — но и мимо внимания пройти не должно. Тест падает на любом
+// новом поле и требует решить, делает ли оно набор пулов другим набором.
+//
+// Стережёт именно тот способ ошибиться, которым дефект и был сделан: `reflect.DeepEqual`
+// молча учитывал `Servers`, потому что учитывал вообще всё (issue #77).
+func TestPoolTunnelFieldsGuard(t *testing.T) {
+	// Поля, про которые решение принято: входит в сверку или нет.
+	known := map[string]bool{
+		"ID":         true,
+		"Name":       false, // переименование каталога не меняет
+		"CatalogURL": true,
+		"Enabled":    true,
+		"Servers":    false, // меняется после каждого обхода, сверку не ведёт
+	}
+
+	typ := reflect.TypeOf(PoolTunnel{})
+	for i := range typ.NumField() {
+		name := typ.Field(i).Name
+		if _, ok := known[name]; !ok {
+			t.Errorf("в PoolTunnel появилось поле %s: решите, делает ли оно набор пулов "+
+				"другим набором, впишите его в PoolIdentity.Identity при необходимости "+
+				"и добавьте сюда", name)
+		}
+	}
+	if typ.NumField() != len(known) {
+		t.Errorf("полей в PoolTunnel %d, известных %d", typ.NumField(), len(known))
+	}
+
+	// Поля, входящие в сверку, обязаны быть в PoolIdentity — и наоборот.
+	idType := reflect.TypeOf(PoolIdentity{})
+	inIdentity := make(map[string]bool, idType.NumField())
+	for i := range idType.NumField() {
+		inIdentity[idType.Field(i).Name] = true
+	}
+	for name, want := range known {
+		if inIdentity[name] != want {
+			t.Errorf("поле %s: в PoolIdentity %v, ожидалось %v", name, inIdentity[name], want)
+		}
 	}
 }
 
