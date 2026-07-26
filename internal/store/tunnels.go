@@ -19,7 +19,7 @@ type querier interface {
 }
 
 const tunnelColumns = `id, name, type, source, raw, parsed, enabled, created_at,
-	pool, pool_updated_at`
+	pool, pool_updated_at, builtin`
 
 // CreateTunnel добавляет туннель. Пустые ID и CreatedAt заполняются здесь.
 func (s *Store) CreateTunnel(ctx context.Context, t Tunnel) (Tunnel, error) {
@@ -37,10 +37,7 @@ func (s *Store) CreateTunnel(ctx context.Context, t Tunnel) (Tunnel, error) {
 		return Tunnel{}, err
 	}
 
-	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO tunnels (`+tunnelColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ID, t.Name, string(t.Type), string(t.Source), t.Raw, string(t.Parsed),
-		t.Enabled, t.CreatedAt.Unix(), pool, unixOrZero(t.PoolUpdatedAt))
+	_, err = s.db.ExecContext(ctx, insertTunnelSQL, tunnelArgs(t, pool)...)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return Tunnel{}, fmt.Errorf("%w: туннель с именем %q уже есть", ErrInvalid, t.Name)
@@ -48,6 +45,18 @@ func (s *Store) CreateTunnel(ctx context.Context, t Tunnel) (Tunnel, error) {
 		return Tunnel{}, fmt.Errorf("добавление туннеля %q: %w", t.Name, err)
 	}
 	return t, nil
+}
+
+// insertTunnelSQL и tunnelArgs — одна вставка для [Store.CreateTunnel] и
+// [Store.EnsureBuiltinPool]: второй нужна та же запись, но внутри транзакции.
+const insertTunnelSQL = `INSERT INTO tunnels (` + tunnelColumns +
+	`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+func tunnelArgs(t Tunnel, pool string) []any {
+	return []any{
+		t.ID, t.Name, string(t.Type), string(t.Source), t.Raw, string(t.Parsed),
+		t.Enabled, t.CreatedAt.Unix(), pool, unixOrZero(t.PoolUpdatedAt), t.Builtin,
+	}
 }
 
 // Tunnel возвращает туннель по идентификатору.
@@ -90,7 +99,9 @@ func tunnels(ctx context.Context, q querier) ([]Tunnel, error) {
 	return out, nil
 }
 
-// UpdateTunnel перезаписывает туннель целиком. CreatedAt не меняется.
+// UpdateTunnel перезаписывает туннель целиком. CreatedAt и Builtin не меняются:
+// первое — история записи, второе — то, кем она заведена, и снимать флаг правкой
+// через панель означало бы обходить запрет на удаление встроенного.
 func (s *Store) UpdateTunnel(ctx context.Context, t Tunnel) error {
 	if err := t.validate(); err != nil {
 		return err
@@ -121,8 +132,24 @@ func (s *Store) UpdateTunnel(ctx context.Context, t Tunnel) error {
 // DeleteTunnel удаляет туннель. Если на него ссылается правило, удаление отклоняется:
 // иначе маршрутизация ломается молча (ON DELETE RESTRICT в схеме — та же защита уровнем
 // ниже, здесь она превращается во внятное сообщение).
+//
+// Встроенную запись удалить нельзя вовсе: её заводит демон, и на следующем старте она
+// появилась бы снова. Такую выключают.
 func (s *Store) DeleteTunnel(ctx context.Context, id string) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
+		var builtin bool
+		err := tx.QueryRowContext(ctx, `SELECT builtin FROM tunnels WHERE id = ?`, id).Scan(&builtin)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("туннель %s: %w", id, ErrNotFound)
+		}
+		if err != nil {
+			return fmt.Errorf("чтение туннеля %s: %w", id, err)
+		}
+		if builtin {
+			return fmt.Errorf("%w: встроенный пул бесплатных ключей не удаляется — его можно выключить",
+				ErrInUse)
+		}
+
 		names, err := ruleNamesByTunnel(ctx, tx, id)
 		if err != nil {
 			return err
@@ -138,6 +165,118 @@ func (s *Store) DeleteTunnel(ctx context.Context, id string) error {
 		}
 		return checkAffected(res, fmt.Sprintf("туннель %s", id))
 	})
+}
+
+// BuiltinPoolResult — чем закончилось [Store.EnsureBuiltinPool]. Три исхода вместо
+// одного флага: заведение, признание существующего пула встроенным и «и так был» —
+// это разные события, и в логе они читаются по-разному.
+type BuiltinPoolResult struct {
+	// Tunnel — встроенный пул, каким он лежит в БД после вызова.
+	Tunnel Tunnel
+	// Created — запись завели прямо сейчас.
+	Created bool
+	// Adopted — встроенным пометили пул, который уже был в БД.
+	Adopted bool
+	// OtherPools — сколько туннелей-пулов осталось в БД помимо встроенного.
+	// Штатно ноль: пул в системе один. Больше нуля — след ручной правки или
+	// старой установки, и это повод для записи в лог, а не для отказа.
+	OtherPools int
+}
+
+// EnsureBuiltinPool приводит БД к состоянию «встроенный пул есть, и он один».
+//
+// Пул в системе единственный и встроенный: через API его не создают, поэтому весь
+// разбор случаев живёт здесь.
+//
+//  1. Есть запись с `builtin = 1` — берётся она.
+//  2. Иначе есть туннель-пул — встроенным помечается он. Установка, где пул завели
+//     руками до этой версии, получает один пул, а не два: второй означал бы второй
+//     обход того же каталога и вторую группу urltest в конфиге.
+//  3. Иначе пул заводится — выключенным: включённый на свежей установке сразу пошёл
+//     бы на чужой сайт за ключами, о чём пользователь не просил. Включение — PATCH.
+//
+// Идемпотентность держится на признаке в колонке, а не на имени и не на каталоге:
+// имя пользователь может переименовать, каталог — сменить, и по ним повторный старт
+// завёл бы второй пул.
+func (s *Store) EnsureBuiltinPool(ctx context.Context, name, catalogURL string) (BuiltinPoolResult, error) {
+	var out BuiltinPoolResult
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		found, err := adoptBuiltinPool(ctx, tx, &out)
+		if err != nil {
+			return err
+		}
+		if !found {
+			t := Tunnel{
+				ID:        newID(),
+				Name:      name,
+				Type:      TunnelVLESS,
+				Source:    SourcePool,
+				Raw:       catalogURL,
+				Enabled:   false,
+				Builtin:   true,
+				CreatedAt: time.Now(),
+			}
+			if err := t.validate(); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, insertTunnelSQL, tunnelArgs(t, "[]")...); err != nil {
+				if isUniqueViolation(err) {
+					return fmt.Errorf("%w: имя %q занято другим туннелем — переименуйте его, "+
+						"чтобы получить пул бесплатных ключей", ErrInvalid, t.Name)
+				}
+				return fmt.Errorf("заведение встроенного пула %q: %w", t.Name, err)
+			}
+			out.Tunnel, out.Created = t, true
+		}
+
+		var others int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(1) FROM tunnels WHERE source = ? AND id <> ?`,
+			string(SourcePool), out.Tunnel.ID).Scan(&others); err != nil {
+			return fmt.Errorf("подсчёт туннелей-пулов: %w", err)
+		}
+		out.OtherPools = others
+		return nil
+	})
+	if err != nil {
+		return BuiltinPoolResult{}, err
+	}
+	return out, nil
+}
+
+// adoptBuiltinPool ищет в БД встроенный пул, а если его нет — самый старый обычный
+// пул, и помечает встроенным его. Отвечает, нашёлся ли пул вообще.
+//
+// Самый старый, а не любой: выбор обязан быть одинаковым на каждом старте, иначе
+// признак встроенного перескакивал бы с записи на запись.
+func adoptBuiltinPool(ctx context.Context, tx *sql.Tx, out *BuiltinPoolResult) (bool, error) {
+	existing, err := scanTunnel(tx.QueryRowContext(ctx,
+		`SELECT `+tunnelColumns+` FROM tunnels WHERE builtin = 1 ORDER BY created_at, id LIMIT 1`))
+	if err == nil {
+		out.Tunnel = existing
+		return true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("поиск встроенного пула: %w", err)
+	}
+
+	existing, err = scanTunnel(tx.QueryRowContext(ctx,
+		`SELECT `+tunnelColumns+` FROM tunnels WHERE source = ? ORDER BY created_at, id LIMIT 1`,
+		string(SourcePool)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("поиск туннеля-пула: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE tunnels SET builtin = 1 WHERE id = ?`, existing.ID); err != nil {
+		return false, fmt.Errorf("признание пула %q встроенным: %w", existing.Name, err)
+	}
+	existing.Builtin = true
+	out.Tunnel, out.Adopted = existing, true
+	return true, nil
 }
 
 // ruleNamesByTunnel отдаёт имена правил, ссылающихся на туннель.
@@ -178,7 +317,7 @@ func scanTunnel(sc scanner) (Tunnel, error) {
 		poolUpdate int64
 	)
 	if err := sc.Scan(&t.ID, &t.Name, &typ, &src, &t.Raw, &parsed, &t.Enabled, &createdAt,
-		&pool, &poolUpdate); err != nil {
+		&pool, &poolUpdate, &t.Builtin); err != nil {
 		return Tunnel{}, err
 	}
 	t.Type = TunnelType(typ)

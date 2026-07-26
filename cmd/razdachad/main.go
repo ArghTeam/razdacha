@@ -82,6 +82,9 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	// застать заливку правил готовой слушать обновления. Ошибки загрузки демон
 	// не останавливают — nil означает работу без списков.
 	listsMgr := startLists(ctx, st, dbPath, slog.Default())
+	// Встроенный пул заводится до расписания: иначе первый обход его каталога
+	// пришёлся бы только на следующий такт сверки набора пулов.
+	ensureBuiltinPool(ctx, st, slog.Default())
 	poolsMgr := startPools(ctx, st, slog.Default())
 
 	nf, err := startNetfilter(ctx, st, listsMgr, slog.Default())

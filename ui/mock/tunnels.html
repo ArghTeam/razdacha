@@ -25,9 +25,9 @@
       python3 -m http.server 8123 --directory ui
       # открыть http://localhost:8123/mock/tunnels.html
 
-  Кнопки живые: «Обновить» дёргает `POST /api/tunnels/{id}/refresh`, которого на
-  статическом сервере нет, — и показывает ровно тот текст, который увидит
-  пользователь до готовности ручки.
+  Сетевые ручки подменены здесь же (`api.tunnels.*`): статический сервер их не
+  отдаёт, а модалка «Детали» без списка серверов не проверяется. Подмена — только
+  в этом файле, `ui/dist` о ней не знает.
 -->
 
 <div id="app">
@@ -45,20 +45,31 @@
 
 <script type="module">
 import { state, closeMenu, closeModal, toastError } from '../dist/js/shell.js';
+import * as api from '../dist/js/api.js';
 import * as tunnels from '../dist/js/screens/tunnels.js';
 
 const hoursFromNow = (h) => new Date(Date.now() + h * 3600_000).toISOString();
 const hoursAgo = (h) => new Date(Date.now() - h * 3600_000).toISOString();
 
 /* Форма ответа зафиксирована в tasks/63-pool-tunnel-card.md — менять её здесь
-   нельзя, иначе стенд перестанет проверять то, что приедет с сервера. */
+   нельзя, иначе стенд перестанет проверять то, что приедет с сервера.
+
+   Пул в системе один и он встроенный (#71) — пула, заведённого руками, в наборе
+   нет вовсе. Четыре строки пула — это не четыре пула, а четыре состояния одного:
+   работающий, выключенный, без единого живого сервера и только что заведённый.
+   Стенд рисует их рядом, потому что иначе каждое пришлось бы смотреть отдельным
+   прогоном; в жизни строка одна. */
 state.tunnels = [
   {
     id: 'pool-1', name: 'Бесплатные VLESS', type: 'vless', source: 'pool',
+    // builtin: пул завёл демон. Меню у пула без «Изменить» и «Удалить» (#71).
+    builtin: true,
     enabled: true, status: 'up', latency_ms: 210,
     pool: {
       catalog_url: 'https://vpnkeys.me/protocol/vless',
-      servers_total: 127,
+      // Больше, чем каталог отдаёт за раз: список копит известные серверы (#68),
+      // поэтому подпись «известно N», а не «N в каталоге».
+      servers_total: 137,
       servers_alive: 14,
       current: { name: 'VLESS (Germany) 11293', country: 'Germany', latency_ms: 36 },
       updated_at: hoursAgo(2),
@@ -66,7 +77,8 @@ state.tunnels = [
     },
   },
   {
-    id: 'pool-2', name: 'Пул про запас', type: 'vless', source: 'pool',
+    id: 'pool-2', name: 'Бесплатные VLESS — выключен', type: 'vless', source: 'pool',
+    builtin: true,
     enabled: false, status: 'up', latency_ms: 190,
     pool: {
       catalog_url: 'https://vpnkeys.me/protocol/vless',
@@ -78,7 +90,8 @@ state.tunnels = [
     },
   },
   {
-    id: 'pool-3', name: 'Пул без ответа', type: 'vless', source: 'pool',
+    id: 'pool-3', name: 'Бесплатные VLESS — никто не отвечает', type: 'vless', source: 'pool',
+    builtin: true,
     enabled: true, status: 'down',
     pool: {
       catalog_url: 'https://vpnkeys.me/protocol/vless',
@@ -86,6 +99,19 @@ state.tunnels = [
       servers_alive: 0,
       updated_at: null,
       next_update_at: hoursFromNow(1),
+    },
+  },
+  {
+    /* Каталог ещё не обходился, серверов нет — «Детали» обязаны сказать это
+       словами, а не показать пустой список. Так выглядит пул сразу после
+       установки: демон заводит его выключенным. */
+    id: 'pool-4', name: 'Бесплатные VLESS — каталог не обходился', type: 'vless', source: 'pool',
+    builtin: true,
+    enabled: false, status: null,
+    pool: {
+      catalog_url: 'https://vpnkeys.me/protocol/vless',
+      servers_total: 0, servers_alive: null, current: null,
+      updated_at: null, next_update_at: null,
     },
   },
   {
@@ -105,6 +131,54 @@ state.rules = [
   { id: 'r2', tunnel_id: 'pool-1' },
   { id: 'r3', tunnel_id: 'wg-1' },
 ];
+
+/* Ответ `GET /api/tunnels/{id}/pool`. Форма зафиксирована в docs/05-api.md:
+   в ротации живость известна, у остальных `alive` и `latency_ms` строго null —
+   их никто не проверял, и false был бы утверждением о непроверенном сервере. */
+const COUNTRIES = ['Germany', 'Netherlands', 'Finland', 'France', 'Canada', 'Japan',
+  'United States', 'Poland', 'Sweden', 'Singapore'];
+
+function mockPoolServers(id) {
+  const t = state.tunnels.find((x) => x.id === id) || {};
+  const total = (t.pool || {}).servers_total || 0;
+  const rotation = Math.min(16, total);
+  const servers = [];
+  for (let i = 0; i < total; i++) {
+    const country = COUNTRIES[i % COUNTRIES.length];
+    const inRotation = i < rotation;
+    // Живость: пул выключен — про неё сказать нечего вовсе.
+    const known = inRotation && t.enabled !== false;
+    const alive = known ? i % 5 !== 3 : null;
+    servers.push({
+      title: `VLESS (${country}) ${11000 + i * 7}`,
+      country,
+      ping_ms: i % 9 === 0 ? 0 : 30 + i * 3,
+      in_rotation: inRotation,
+      alive,
+      latency_ms: alive ? 30 + i * 4 : null,
+      current: known && i === 1,
+    });
+  }
+  // Порядок задаёт сервер: ротация впереди, живые в начале.
+  servers.sort((a, b) => (Number(b.in_rotation) - Number(a.in_rotation))
+    || ((a.latency_ms ?? 1e6) - (b.latency_ms ?? 1e6))
+    || a.country.localeCompare(b.country));
+  return {
+    catalog_url: (t.pool || {}).catalog_url || '',
+    updated_at: (t.pool || {}).updated_at || null,
+    servers,
+  };
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+api.tunnels.poolServers = async (id) => { await wait(120); return mockPoolServers(id); };
+api.tunnels.refresh = async (id) => {
+  await wait(200);
+  const t = state.tunnels.find((x) => x.id === id);
+  t.pool = { ...t.pool, updated_at: new Date().toISOString(), next_update_at: hoursFromNow(12) };
+  return t;
+};
 
 const render = () => { document.querySelector('#screen').innerHTML = tunnels.view(); };
 document.addEventListener('razdacha:render', render);

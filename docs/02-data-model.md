@@ -25,6 +25,7 @@ Settings   │      │
 | `parsed` | json | результат разбора, готовый к вклейке в конфиг sing-box; при `pool` пуст |
 | `pool` | json | серверы пула, снятые с каталога; пуст у остальных форм |
 | `pool_updated_at` | ts | когда каталог обходили в последний раз; ноль — ни разу |
+| `builtin` | bool | запись завёл демон, а не пользователь; удалению не подлежит |
 | `enabled` | bool | |
 | `created_at` | ts | |
 
@@ -33,6 +34,28 @@ Settings   │      │
 туннель разворачивается в N vless-outbound'ов плюс `urltest` под тегом туннеля; ротацию и
 health-check ведёт sing-box ([ADR 0010](decisions/0010-tunnel-pool-urltest.md)). Выключение
 пула — штатный `enabled`.
+
+**`builtin = 1`** — запись, которую демон заводит сам. Сейчас такая одна: пул бесплатных
+ключей по каталогу из `lists.DefaultPoolCatalogURL`. Пул в системе **единственный** — своих
+пулов пользователь не создаёт, `POST /api/tunnels` со ссылкой на каталог отвечает отказом.
+
+Заведение идемпотентно и при старте идёт так:
+
+1. есть туннель с `builtin = 1` — берётся он, больше ничего не делается;
+2. иначе есть туннель с `source = pool` — встроенным помечается **он**. Так установка,
+   где пул был заведён руками до этой версии, получает один пул, а не два;
+3. иначе пул создаётся — **выключенным**, иначе свежая установка сразу пошла бы на чужой
+   сайт за ключами, о чём никто не просил.
+
+Пулов в БД оказалось несколько (ручная правка, старая установка) — встроенным становится
+самый старый по `created_at`, остальные остаются обычными туннелями-пулами и работают как
+работали — конфиг они не ломают, — а выбор уходит в лог.
+
+Признак хранится колонкой, а не выводится из совпадения `raw` с каталогом по умолчанию:
+пользователь может завести свой пул по тому же адресу, а адрес каталога по умолчанию
+может поменяться в релизе — и оба случая перепутали бы «своё» с «встроенным».
+Встроенная запись не удаляется (`DELETE` отвечает `409`) — её выключают; остальное
+(имя, `enabled`, каталог) правится как у любого туннеля.
 
 Производные поля (не хранятся, отдаются API): `status` (up/down/unknown), `latency_ms`,
 `last_check`.
@@ -161,7 +184,8 @@ CREATE TABLE tunnels (
   id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, type TEXT NOT NULL,
   source TEXT NOT NULL, raw TEXT NOT NULL, parsed TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL,
-  pool TEXT NOT NULL DEFAULT '[]', pool_updated_at INTEGER NOT NULL DEFAULT 0);
+  pool TEXT NOT NULL DEFAULT '[]', pool_updated_at INTEGER NOT NULL DEFAULT 0,
+  builtin INTEGER NOT NULL DEFAULT 0);
 
 CREATE TABLE rules (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, action TEXT NOT NULL,

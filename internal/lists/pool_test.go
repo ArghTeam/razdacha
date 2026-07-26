@@ -314,6 +314,39 @@ func TestPoolTunnels(t *testing.T) {
 	}
 }
 
+// Обход по требованию не зависит от набора расписания: пул приходит целиком от того,
+// кто прочитал его из БД. Раньше менеджер искал пул у себя и на только что заведённом
+// отвечал отказом до ближайшей сверки с БД, то есть до полуминуты (issue #74).
+//
+// Выключенный пул обходится и здесь: за него попросил человек, а в конфиг он всё равно
+// не попадёт, пока выключен.
+func TestRefreshPoolWithoutSetTunnels(t *testing.T) {
+	srv, requests := catalogServer(t)
+	w := &poolWriter{}
+	m := poolManager(t, srv, w)
+
+	changed, err := m.RefreshPool(context.Background(), PoolTunnel{
+		ID: "свежий", Name: "пул", CatalogURL: srv.URL + "/protocol/vless", Enabled: false,
+	})
+	if err != nil {
+		t.Fatalf("RefreshPool: %v", err)
+	}
+	if !changed {
+		t.Error("состав пустого пула не изменился после первого обхода")
+	}
+	if *requests == 0 {
+		t.Error("в каталог не сходили вовсе")
+	}
+	if got := w.written(); len(got) != 1 || got[0] != "свежий" {
+		t.Fatalf("состав записан для %v, ожидался свежий пул", got)
+	}
+	select {
+	case <-m.Updates():
+	default:
+		t.Error("об изменении состава никто не узнал")
+	}
+}
+
 // poolCards изображает выдачу каталога: n карточек, пинг убывает с номером, так что
 // лучшие по пингу — последние.
 func poolCards(n int) []store.PoolServer {

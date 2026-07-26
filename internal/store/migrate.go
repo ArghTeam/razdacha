@@ -62,6 +62,16 @@ ALTER TABLE tunnels ADD COLUMN pool TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE tunnels ADD COLUMN pool_updated_at INTEGER NOT NULL DEFAULT 0;
 `,
 	},
+	{
+		// Встроенная запись: её заводит демон, а не пользователь, поэтому её
+		// не удаляют, а выключают. Колонка, а не вывод признака из совпадения
+		// raw с каталогом по умолчанию: свой пул по тому же адресу — законный
+		// случай, а адрес по умолчанию ещё и меняется между релизами.
+		version: 4,
+		stmts: `
+ALTER TABLE tunnels ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0;
+`,
+	},
 }
 
 // schemaVersion — версия схемы, которую ожидает этот код.

@@ -26,6 +26,12 @@ type tunnelResponse struct {
 	Enabled   bool               `json:"enabled"`
 	CreatedAt time.Time          `json:"created_at"`
 
+	// Builtin — запись завёл демон, а не пользователь. Панель собирает такой
+	// своё меню: встроенное выключают, а не удаляют, и `DELETE` на нём отвечает
+	// отказом — прятать кнопку, оставляя разрешение в API, значит расходиться
+	// с самим собой.
+	Builtin bool `json:"builtin"`
+
 	Status    *string    `json:"status"`
 	LatencyMS *int       `json:"latency_ms"`
 	LastCheck *time.Time `json:"last_check"`
@@ -44,6 +50,7 @@ func newTunnelResponse(t store.Tunnel, poolEvery time.Duration) tunnelResponse {
 		Source:    t.Source,
 		Raw:       t.Raw,
 		Enabled:   t.Enabled,
+		Builtin:   t.Builtin,
 		CreatedAt: t.CreatedAt.UTC(),
 	}
 }
@@ -90,6 +97,15 @@ func (s *Server) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
 	res, err := singbox.Parse(*req.Raw)
 	if err != nil {
 		s.parseError(w, err)
+		return
+	}
+	// Пул в системе один, и его заводит демон ([store.Store.EnsureBuiltinPool]).
+	// Второй означал бы второй обход того же каталога и вторую группу urltest в
+	// конфиге, поэтому ссылка на каталог здесь — отказ, а не создание. Разбор при
+	// этом остаётся: битая ссылка получает свои 400 выше, а не общий отказ.
+	if res.Source == store.SourcePool {
+		writeError(w, s.log, http.StatusConflict, codeConflict,
+			"Пул бесплатных ключей уже есть — включите его в списке туннелей")
 		return
 	}
 
