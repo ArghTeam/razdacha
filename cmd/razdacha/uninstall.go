@@ -183,6 +183,20 @@ func maybeRemoveState(opts uninstallOptions, in *os.File, log *slog.Logger) erro
 		return fmt.Errorf("удаление %s: %w", dir, err)
 	}
 	log.Info("состояние удалено", "каталог", dir)
+
+	// Вместе с состоянием уходит и /etc/razdacha: там лежит приватный ключ
+	// сертификата панели. Оставлять секрет на диске после полного удаления
+	// нельзя — «система возвращена в исходное состояние» тогда неправда.
+	// Каталог снимается целиком: конфиг nginx и отметку о штатном сайте к
+	// этому моменту уже убрал packaging.Uninstall.
+	conf := filepath.Join(opts.root, packaging.DefaultConfDir)
+	if _, err := os.Stat(conf); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err := os.RemoveAll(conf); err != nil {
+		return fmt.Errorf("удаление %s: %w", conf, err)
+	}
+	log.Info("сертификат и настройки удалены", "каталог", conf)
 	return nil
 }
 

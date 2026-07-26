@@ -58,6 +58,28 @@ func TestRemoveStatePurge(t *testing.T) {
 	}
 }
 
+// TestRemoveStatePurgeTakesCertificate — на живой машине после `-purge`
+// оставался /etc/razdacha/tls с приватным ключом панели: «система возвращена в
+// исходное состояние» с секретом на диске — неправда.
+func TestRemoveStatePurgeTakesCertificate(t *testing.T) {
+	root, _ := stateDir(t)
+	tls := filepath.Join(root, packaging.DefaultTLSDir)
+	if err := os.MkdirAll(tls, 0o700); err != nil {
+		t.Fatalf("подготовка каталога: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tls, "key.pem"), []byte("секрет"), 0o600); err != nil {
+		t.Fatalf("подготовка ключа: %v", err)
+	}
+
+	opts := uninstallOptions{root: root, purge: true}
+	if err := maybeRemoveState(opts, notATerminal(t), slog.Default()); err != nil {
+		t.Fatalf("удаление состояния: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, packaging.DefaultConfDir)); err == nil {
+		t.Fatal("каталог с сертификатом пережил -purge")
+	}
+}
+
 // TestRemoveStateKeepData — с флагом каталог остаётся, вопрос не задаётся.
 func TestRemoveStateKeepData(t *testing.T) {
 	root, dir := stateDir(t)
