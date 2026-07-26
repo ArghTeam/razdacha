@@ -332,9 +332,15 @@ install_binaries() {
 	fi
 
 	tar -xzf "$tmp/$asset" -C "$tmp"
+	mkdir -p "$PREFIX"
 	for binary in razdachad razdacha; do
 		[ -f "$tmp/$binary" ] || die "в архиве нет файла $binary"
-		install -m 0755 "$tmp/$binary" "$PREFIX/$binary"
+		# Через временное имя и mv, а не записью поверх: на обновлении
+		# razdachad работает, и открыть его файл на запись ядро не даст
+		# (ETXTBSY). Переименование в том же каталоге атомарно, а запущенный
+		# процесс продолжает жить со старым inode до перезапуска.
+		install -m 0755 "$tmp/$binary" "$PREFIX/.$binary.new"
+		mv -f "$PREFIX/.$binary.new" "$PREFIX/$binary"
 		say "  $PREFIX/$binary"
 	done
 
@@ -375,8 +381,6 @@ main() {
 	run_setup
 }
 
-# --dry-run как аргумент — то же, что RAZDACHA_DRY_RUN=1: через `curl | sh`
-# аргументы не передать, а на стенде так удобнее.
 # Справка печатается текстом, а не вырезается из шапки файла: при `curl … | sh`
 # скрипта на диске нет вовсе, и читать из «$0» нечего.
 show_help() {
@@ -396,6 +400,9 @@ razdacha — установщик селективного VPN-шлюза.
 HELP
 }
 
+# `--dry-run` аргументом — то же, что RAZDACHA_DRY_RUN=1: через `curl | sh`
+# аргументы передаются только как `sh -s -- --dry-run`, а на стенде скрипт
+# запускают файлом, и там так короче.
 for arg in "$@"; do
 	case "$arg" in
 	--dry-run) DRY_RUN=1 ;;
