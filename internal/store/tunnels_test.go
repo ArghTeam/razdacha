@@ -260,36 +260,44 @@ func TestDeleteUnknownTunnel(t *testing.T) {
 	}
 }
 
+// catalogURL — каталог ключей, с которым заводится встроенный пул. Туннель-пул в
+// обход [Store.EnsureBuiltinPool] заводит samplePool: так выглядит установка, где пул
+// завели руками, пока это было можно.
+const catalogURL = "https://vpnkeys.me/protocol/vless"
+
 // Встроенный пул заводится один раз: повторный вызов (то есть повторный старт
 // демона) отдаёт ту же запись, а не заводит вторую.
 func TestEnsureBuiltinPoolIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 
-	first, created, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	first, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", catalogURL)
 	if err != nil {
 		t.Fatalf("EnsureBuiltinPool: %v", err)
 	}
-	if !created {
+	if !first.Created {
 		t.Fatal("первый вызов не создал встроенный пул")
 	}
-	if !first.Builtin || first.Source != SourcePool || first.Type != TunnelVLESS {
-		t.Errorf("встроенный пул заведён как %+v", first)
+	if !first.Tunnel.Builtin || first.Tunnel.Source != SourcePool || first.Tunnel.Type != TunnelVLESS {
+		t.Errorf("встроенный пул заведён как %+v", first.Tunnel)
 	}
 	// Выключенным: свежая установка не должна сама пойти на чужой сайт за ключами.
-	if first.Enabled {
+	if first.Tunnel.Enabled {
 		t.Error("встроенный пул заведён включённым")
 	}
 
-	second, created, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	second, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", catalogURL)
 	if err != nil {
 		t.Fatalf("повторный EnsureBuiltinPool: %v", err)
 	}
-	if created {
-		t.Error("повторный вызов завёл вторую запись")
+	if second.Created || second.Adopted {
+		t.Errorf("повторный вызов завёл вторую запись: %+v", second)
 	}
-	if second.ID != first.ID {
-		t.Errorf("повторный вызов отдал другой пул: %s вместо %s", second.ID, first.ID)
+	if second.Tunnel.ID != first.Tunnel.ID {
+		t.Errorf("повторный вызов отдал другой пул: %s вместо %s", second.Tunnel.ID, first.Tunnel.ID)
+	}
+	if second.OtherPools != 0 {
+		t.Errorf("помимо встроенного насчитано %d пулов", second.OtherPools)
 	}
 
 	list, err := s.Tunnels(ctx)
@@ -307,19 +315,20 @@ func TestEnsureBuiltinPoolSurvivesRename(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 
-	first, _, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	first, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", catalogURL)
 	if err != nil {
 		t.Fatalf("EnsureBuiltinPool: %v", err)
 	}
 
-	first.Name = "Мой пул"
-	first.Raw = "https://example.org/keys"
-	first.Enabled = true
-	if err := s.UpdateTunnel(ctx, first); err != nil {
+	tun := first.Tunnel
+	tun.Name = "Мой пул"
+	tun.Raw = "https://example.org/keys"
+	tun.Enabled = true
+	if err := s.UpdateTunnel(ctx, tun); err != nil {
 		t.Fatalf("UpdateTunnel: %v", err)
 	}
 
-	got, err := s.Tunnel(ctx, first.ID)
+	got, err := s.Tunnel(ctx, tun.ID)
 	if err != nil {
 		t.Fatalf("Tunnel: %v", err)
 	}
@@ -327,17 +336,112 @@ func TestEnsureBuiltinPoolSurvivesRename(t *testing.T) {
 		t.Error("правка сняла признак встроенного — запрет на удаление обходится через PATCH")
 	}
 
-	same, created, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	same, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", catalogURL)
 	if err != nil {
 		t.Fatalf("повторный EnsureBuiltinPool: %v", err)
 	}
-	if created || same.ID != first.ID {
-		t.Errorf("после переименования завёлся второй пул: created=%v id=%s", created, same.ID)
+	if same.Created || same.Tunnel.ID != tun.ID {
+		t.Errorf("после переименования завёлся второй пул: %+v", same)
 	}
 }
 
-// Занятое пользователем имя не должно оставить установку без встроенного пула.
-func TestEnsureBuiltinPoolWorksAroundTakenName(t *testing.T) {
+// Пул, заведённый руками до того, как пулы стали встроенными, признаётся встроенным,
+// а не дублируется вторым: пул в системе один.
+func TestEnsureBuiltinPoolAdoptsExisting(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	existing, err := s.CreateTunnel(ctx, samplePool("Бесплатные VLESS (встроенный)"))
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+
+	res, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", catalogURL)
+	if err != nil {
+		t.Fatalf("EnsureBuiltinPool: %v", err)
+	}
+	if res.Created {
+		t.Fatal("рядом с существующим пулом заведён второй")
+	}
+	if !res.Adopted || res.Tunnel.ID != existing.ID || !res.Tunnel.Builtin {
+		t.Fatalf("существующий пул не признан встроенным: %+v", res)
+	}
+	// Имя не трогается: на работающей установке пул уже называется как называется.
+	if res.Tunnel.Name != existing.Name {
+		t.Errorf("пул переименован в %q", res.Tunnel.Name)
+	}
+	// Включённость тоже: выключать работающий пул при обновлении незачем.
+	if !res.Tunnel.Enabled {
+		t.Error("работающий пул выключен при признании встроенным")
+	}
+
+	list, err := s.Tunnels(ctx)
+	if err != nil {
+		t.Fatalf("Tunnels: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("туннелей в БД %d, ожидался один", len(list))
+	}
+}
+
+// Пулов в БД несколько (ручная правка, старая установка): встроенным становится один
+// и тот же — самый старый, — а остальные остаются обычными туннелями. Их число
+// возвращается наружу, чтобы демону было о чём написать в лог.
+func TestEnsureBuiltinPoolPicksOneOfMany(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	older := samplePool("Первый пул")
+	older.CreatedAt = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	first, err := s.CreateTunnel(ctx, older)
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+	newer := samplePool("Второй пул")
+	newer.CreatedAt = time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := s.CreateTunnel(ctx, newer); err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+
+	res, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", catalogURL)
+	if err != nil {
+		t.Fatalf("EnsureBuiltinPool: %v", err)
+	}
+	if !res.Adopted || res.Tunnel.ID != first.ID {
+		t.Fatalf("встроенным стал не самый старый пул: %+v", res)
+	}
+	if res.OtherPools != 1 {
+		t.Errorf("остальных пулов насчитано %d, ожидался один", res.OtherPools)
+	}
+
+	// Выбор одинаков на каждом старте: иначе признак перескакивал бы с записи на запись.
+	again, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", catalogURL)
+	if err != nil {
+		t.Fatalf("повторный EnsureBuiltinPool: %v", err)
+	}
+	if again.Tunnel.ID != first.ID || again.Created || again.Adopted {
+		t.Errorf("повторный вызов выбрал другой пул: %+v", again)
+	}
+
+	// Остальные не тронуты: они работают как работали.
+	list, err := s.Tunnels(ctx)
+	if err != nil {
+		t.Fatalf("Tunnels: %v", err)
+	}
+	builtin := 0
+	for _, tun := range list {
+		if tun.Builtin {
+			builtin++
+		}
+	}
+	if len(list) != 2 || builtin != 1 {
+		t.Fatalf("туннелей %d, встроенных среди них %d", len(list), builtin)
+	}
+}
+
+// Имя занято туннелем пользователя, и это не пул: пул не заводится, но отказ внятный —
+// демон пишет его в лог, а установка остаётся работать без пула.
+func TestEnsureBuiltinPoolReportsTakenName(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 
@@ -345,15 +449,12 @@ func TestEnsureBuiltinPoolWorksAroundTakenName(t *testing.T) {
 		t.Fatalf("CreateTunnel: %v", err)
 	}
 
-	got, created, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
-	if err != nil {
-		t.Fatalf("EnsureBuiltinPool: %v", err)
+	_, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", catalogURL)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
 	}
-	if !created {
-		t.Fatal("встроенный пул не заведён из-за занятого имени")
-	}
-	if got.Name != "Бесплатные VLESS"+builtinNameSuffix {
-		t.Errorf("имя встроенного пула %q", got.Name)
+	if !strings.Contains(err.Error(), "Бесплатные VLESS") {
+		t.Errorf("ошибка не называет занятое имя: %v", err)
 	}
 }
 
@@ -363,10 +464,11 @@ func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 
-	pool, _, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", "https://vpnkeys.me/protocol/vless")
+	res, err := s.EnsureBuiltinPool(ctx, "Бесплатные VLESS", catalogURL)
 	if err != nil {
 		t.Fatalf("EnsureBuiltinPool: %v", err)
 	}
+	pool := res.Tunnel
 
 	err = s.DeleteTunnel(ctx, pool.ID)
 	if !errors.Is(err, ErrInUse) {

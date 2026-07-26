@@ -167,81 +167,116 @@ func (s *Store) DeleteTunnel(ctx context.Context, id string) error {
 	})
 }
 
-// builtinNameSuffix дописывается к имени встроенного пула, если такое имя уже
-// занято туннелем пользователя: имена уникальны, и вставка иначе не прошла бы.
-const builtinNameSuffix = " (встроенный)"
+// BuiltinPoolResult — чем закончилось [Store.EnsureBuiltinPool]. Три исхода вместо
+// одного флага: заведение, признание существующего пула встроенным и «и так был» —
+// это разные события, и в логе они читаются по-разному.
+type BuiltinPoolResult struct {
+	// Tunnel — встроенный пул, каким он лежит в БД после вызова.
+	Tunnel Tunnel
+	// Created — запись завели прямо сейчас.
+	Created bool
+	// Adopted — встроенным пометили пул, который уже был в БД.
+	Adopted bool
+	// OtherPools — сколько туннелей-пулов осталось в БД помимо встроенного.
+	// Штатно ноль: пул в системе один. Больше нуля — след ручной правки или
+	// старой установки, и это повод для записи в лог, а не для отказа.
+	OtherPools int
+}
 
-// EnsureBuiltinPool заводит встроенный туннель-пул, если его ещё нет, и отдаёт его.
-// Второе значение — создавали ли запись прямо сейчас.
+// EnsureBuiltinPool приводит БД к состоянию «встроенный пул есть, и он один».
+//
+// Пул в системе единственный и встроенный: через API его не создают, поэтому весь
+// разбор случаев живёт здесь.
+//
+//  1. Есть запись с `builtin = 1` — берётся она.
+//  2. Иначе есть туннель-пул — встроенным помечается он. Установка, где пул завели
+//     руками до этой версии, получает один пул, а не два: второй означал бы второй
+//     обход того же каталога и вторую группу urltest в конфиге.
+//  3. Иначе пул заводится — выключенным: включённый на свежей установке сразу пошёл
+//     бы на чужой сайт за ключами, о чём пользователь не просил. Включение — PATCH.
 //
 // Идемпотентность держится на признаке в колонке, а не на имени и не на каталоге:
 // имя пользователь может переименовать, каталог — сменить, и по ним повторный старт
 // завёл бы второй пул.
-//
-// Заводится выключенным: включённый пул на свежей установке сразу пошёл бы на чужой
-// сайт за ключами, о чём пользователь не просил. Включение — один PATCH.
-func (s *Store) EnsureBuiltinPool(ctx context.Context, name, catalogURL string) (Tunnel, bool, error) {
-	var (
-		out     Tunnel
-		created bool
-	)
+func (s *Store) EnsureBuiltinPool(ctx context.Context, name, catalogURL string) (BuiltinPoolResult, error) {
+	var out BuiltinPoolResult
 	err := s.tx(ctx, func(tx *sql.Tx) error {
-		existing, err := scanTunnel(tx.QueryRowContext(ctx,
-			`SELECT `+tunnelColumns+` FROM tunnels WHERE builtin = 1 ORDER BY created_at, id LIMIT 1`))
-		if err == nil {
-			out = existing
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("поиск встроенного пула: %w", err)
-		}
-
-		t := Tunnel{
-			ID:        newID(),
-			Name:      name,
-			Type:      TunnelVLESS,
-			Source:    SourcePool,
-			Raw:       catalogURL,
-			Enabled:   false,
-			Builtin:   true,
-			CreatedAt: time.Now(),
-		}
-		if err := t.validate(); err != nil {
-			return err
-		}
-		free, err := freeTunnelName(ctx, tx, t.Name)
+		found, err := adoptBuiltinPool(ctx, tx, &out)
 		if err != nil {
 			return err
 		}
-		t.Name = free
-
-		if _, err := tx.ExecContext(ctx, insertTunnelSQL, tunnelArgs(t, "[]")...); err != nil {
-			return fmt.Errorf("заведение встроенного пула %q: %w", t.Name, err)
+		if !found {
+			t := Tunnel{
+				ID:        newID(),
+				Name:      name,
+				Type:      TunnelVLESS,
+				Source:    SourcePool,
+				Raw:       catalogURL,
+				Enabled:   false,
+				Builtin:   true,
+				CreatedAt: time.Now(),
+			}
+			if err := t.validate(); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, insertTunnelSQL, tunnelArgs(t, "[]")...); err != nil {
+				if isUniqueViolation(err) {
+					return fmt.Errorf("%w: имя %q занято другим туннелем — переименуйте его, "+
+						"чтобы получить пул бесплатных ключей", ErrInvalid, t.Name)
+				}
+				return fmt.Errorf("заведение встроенного пула %q: %w", t.Name, err)
+			}
+			out.Tunnel, out.Created = t, true
 		}
-		out, created = t, true
+
+		var others int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(1) FROM tunnels WHERE source = ? AND id <> ?`,
+			string(SourcePool), out.Tunnel.ID).Scan(&others); err != nil {
+			return fmt.Errorf("подсчёт туннелей-пулов: %w", err)
+		}
+		out.OtherPools = others
 		return nil
 	})
 	if err != nil {
-		return Tunnel{}, false, err
+		return BuiltinPoolResult{}, err
 	}
-	return out, created, nil
+	return out, nil
 }
 
-// freeTunnelName подбирает свободное имя: занятое пользователем имя не должно
-// оставлять установку вовсе без встроенного пула.
-func freeTunnelName(ctx context.Context, q querier, name string) (string, error) {
-	for _, candidate := range []string{name, name + builtinNameSuffix} {
-		var taken int
-		err := q.QueryRowContext(ctx, `SELECT COUNT(1) FROM tunnels WHERE name = ?`, candidate).Scan(&taken)
-		if err != nil {
-			return "", fmt.Errorf("проверка имени туннеля %q: %w", candidate, err)
-		}
-		if taken == 0 {
-			return candidate, nil
-		}
+// adoptBuiltinPool ищет в БД встроенный пул, а если его нет — самый старый обычный
+// пул, и помечает встроенным его. Отвечает, нашёлся ли пул вообще.
+//
+// Самый старый, а не любой: выбор обязан быть одинаковым на каждом старте, иначе
+// признак встроенного перескакивал бы с записи на запись.
+func adoptBuiltinPool(ctx context.Context, tx *sql.Tx, out *BuiltinPoolResult) (bool, error) {
+	existing, err := scanTunnel(tx.QueryRowContext(ctx,
+		`SELECT `+tunnelColumns+` FROM tunnels WHERE builtin = 1 ORDER BY created_at, id LIMIT 1`))
+	if err == nil {
+		out.Tunnel = existing
+		return true, nil
 	}
-	return "", fmt.Errorf("%w: имена %q и %q заняты — переименуйте свой туннель",
-		ErrInvalid, name, name+builtinNameSuffix)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("поиск встроенного пула: %w", err)
+	}
+
+	existing, err = scanTunnel(tx.QueryRowContext(ctx,
+		`SELECT `+tunnelColumns+` FROM tunnels WHERE source = ? ORDER BY created_at, id LIMIT 1`,
+		string(SourcePool)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("поиск туннеля-пула: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE tunnels SET builtin = 1 WHERE id = ?`, existing.ID); err != nil {
+		return false, fmt.Errorf("признание пула %q встроенным: %w", existing.Name, err)
+	}
+	existing.Builtin = true
+	out.Tunnel, out.Adopted = existing, true
+	return true, nil
 }
 
 // ruleNamesByTunnel отдаёт имена правил, ссылающихся на туннель.
