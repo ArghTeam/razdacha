@@ -37,6 +37,8 @@ func (s *Server) routes() http.Handler {
 	s.protect(mux, "PATCH /api/rules/{id}", s.handleUpdateRule)
 	s.protect(mux, "DELETE /api/rules/{id}", s.handleDeleteRule)
 
+	s.protect(mux, "GET /api/lists/community", s.handleCommunityLists)
+
 	s.protect(mux, "GET /api/settings", s.handleSettings)
 	s.protect(mux, "PATCH /api/settings", s.handleUpdateSettings)
 
