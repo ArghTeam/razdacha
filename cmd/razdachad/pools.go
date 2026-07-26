@@ -16,6 +16,29 @@ import (
 // и то же значение, что у listSourcesInterval.
 const poolTunnelsInterval = 30 * time.Second
 
+// builtinPoolName — имя встроенного пула. Видно пользователю, поэтому по-русски и
+// без слова «встроенный»: то, что запись заведена демоном, панель показывает сама.
+const builtinPoolName = "Бесплатные VLESS"
+
+// ensureBuiltinPool заводит встроенный пул бесплатных ключей, если его ещё нет.
+//
+// Выключенным: свежая установка не должна сама начинать ходить на чужой сайт за
+// ключами. Неудача демон не останавливает — без пула панель работает, а сообщение в
+// логе объясняет, почему его нет (например, имя занято туннелем пользователя).
+func ensureBuiltinPool(ctx context.Context, st *store.Store, log *slog.Logger) {
+	t, created, err := st.EnsureBuiltinPool(ctx, builtinPoolName, lists.DefaultPoolCatalogURL)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Warn("встроенный пул не заведён", "ошибка", err)
+		}
+		return
+	}
+	if created {
+		log.Info("заведён встроенный пул бесплатных ключей",
+			"туннель", t.Name, "каталог", t.Raw, "включён", t.Enabled)
+	}
+}
+
 // startPools поднимает расписание обновления туннелей-пулов.
 //
 // Каталоги ключей живут на чужих сайтах, поэтому неудача здесь демон не
