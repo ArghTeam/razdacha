@@ -3,6 +3,20 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-26
+
+### #52 — install.sh, юниты и релизы
+
+**Changed:** `packaging/install.sh` (фаза проверок в shell, изменения в Go через `razdacha setup`), юниты systemd, `release.yml` на пуш тега, `internal/qr` для QR в терминале.
+**New surface:** `razdacha setup`, `razdacha uninstall`, переменные `RAZDACHA_PUBLIC`, `RAZDACHA_DRY_RUN`, `RAZDACHA_VERSION`.
+**Beware:** ассеты релиза без версии в имени — иначе не работает `/releases/latest/download`. Скачивание анонимное, то есть репозиторий обязан быть публичным.
+
+### установка на чистой машине — три находки
+
+**Changed:** nginx перезапускается вместо перечитывания; `-purge` снимает и `/etc/razdacha` с ключом панели.
+**Beware:** на обжитой машине эти баги не воспроизводились — nginx там уже слушал наши адреса, а каталог с сертификатом существовал до установки.
+
+
 ## 2026-07-25
 
 ### #16 — проверка nginx на стенде
