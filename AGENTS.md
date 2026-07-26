@@ -6,36 +6,38 @@
 трафик приходит на `wg0`, выбранные списки уходят в настроенные туннели, остальное —
 напрямую. Клиенты используют штатный WireGuard без дополнительного ПО.
 
-**Статус: кода нет, только документация.** Проект в стадии проектирования.
+**Статус: работает.** Селективная маршрутизация проверена на живом сервере: клиент
+подключается штатным WireGuard, домены из правил уходят в туннель, остальное — напрямую
+с адреса сервера. Установка одной командой, релизы по тегу (`v0.1.1`).
+
+Чего нет: настоящего сертификата (самоподписанный), обфускации входящего канала,
+пакетов `.deb`.
 
 ## Stack
 
 - Go ≥ 1.23 (зависимость `sing-box/option`), в системе 1.26.5; `CGO_ENABLED=0`
 - `modernc.org/sqlite`, `google/nftables`, `vishvananda/netlink`, `wgctrl`, `sing-box/option`
-- SvelteKit + Tailwind в `ui/`, сборка в `ui/build`, встраивание через `go:embed`
+- Интерфейс — статика без сборщика (HTML + CSS + ES-модули) в `ui/dist`, встраивается
+  через `go:embed`. SvelteKit отвергнут: node в цепочке сборки демона нет, а панель
+  обязана собираться одной командой `go build` (`tasks/done/22-ui.md`)
 - Модуль `github.com/ArghTeam/razdacha`, remote `git@github.com:ArghTeam/razdacha.git`
 
-Планируемая раскладка:
+Раскладка:
 
 ```
-cmd/razdachad/          точка входа демона
-cmd/razdacha/           CLI (update, uninstall, --reset-network)
-internal/store/         SQLite, миграции
-internal/wg/            wg0 через wgctrl
-internal/nft/           правила через google/nftables
-internal/route/         ip rule + таблица 105
-internal/singbox/       генерация option.Options, управление процессом
-internal/lists/         загрузка .srs и plain-списков
+cmd/razdachad/          демон
+cmd/razdacha/           CLI: setup, uninstall
+internal/store/         SQLite, миграции, ключи
+internal/netstack/      wg0 (wgctrl), nft-правила, маршрутизация — всё через netlink
+internal/singbox/       генерация option.Options, парсеры proxy-URL, применение конфига
+internal/lists/         загрузка .srs и plain-списков, кэш, расписание
 internal/clash/         клиент Clash API sing-box
-internal/diag/          проверки
-internal/api/           REST + WS + go:embed для SPA
-ui/                     SvelteKit, собирается в ui/build
-packaging/              nfpm, systemd-юнит, install.sh
+internal/api/           REST, авторизация, диагностика, отдача статики
+internal/packaging/     nginx, TLS, sysctl, юниты, установка sing-box
+internal/qr/            QR в терминал, без внешнего qrencode
+ui/dist/                статика панели, уезжает в бинарник
+packaging/install.sh    установщик
 ```
-
-**Первое, что стоит писать — `internal/singbox`.** Генератор конфига есть чистая функция
-«состояние → `option.Options`»: тестируется без сети и root, и это то место, где Podkop
-слабее всего (1508 строк конструирования JSON через `jq`).
 
 Соглашения: ошибки оборачиваются `fmt.Errorf("...: %w", err)`; текст ошибок, доходящих
 до UI, — на русском, он показывается пользователю как есть; логи — `log/slog`.
@@ -46,13 +48,12 @@ packaging/              nfpm, systemd-юнит, install.sh
 
 - **store** — SQLite: схема четырёх сущностей, миграции, хранение ключей пиров
 - **singbox** — генерация `option.Options` из состояния БД, парсеры proxy-URL, check и reload
-- **netstack** — `wg0`, nft-правила и маршрутизация через netlink; обратимость изменений системы
-  (`internal/wg`, `internal/nft`, `internal/route` — меняются всегда вместе)
+- **netstack** — `wg0`, nft-правила и маршрутизация через netlink; обратимость изменений
 - **lists** — загрузка и кэш `.srs`/plain-списков, расписание, дублирование подсетей в nft-сет
 - **api** — REST + WS, встроенная SPA, диагностика и клиент Clash API (`internal/api`,
   `internal/diag`, `internal/clash`)
-- **ui** — SvelteKit-интерфейс: четыре экрана, дефолты вместо опций
-- **packaging** — systemd-юнит, nfpm, install/uninstall, матрица поддерживаемых ОС
+- **ui** — интерфейс: вход и четыре экрана, дефолты вместо опций
+- **packaging** — nginx, TLS, юниты systemd, install.sh, релизы, матрица ОС
 
 ## Цикл задачи
 
@@ -79,7 +80,7 @@ packaging/              nfpm, systemd-юнит, install.sh
 
 ## Порядок работы
 
-1. **Перед любым архитектурным предложением читай `docs/decisions/`.** Семь решений уже
+1. **Перед любым архитектурным предложением читай `docs/decisions/`.** Девять решений уже
    приняты с обоснованием. Если предложение противоречит принятому решению — это не
    ошибка сама по себе, но нужно явно сказать, какое решение оно заменяет, и почему.
 2. Решения не переписываются. Меняется — заводится новое ADR со статусом
@@ -123,11 +124,20 @@ packaging/              nfpm, systemd-юнит, install.sh
 make build      сборка демона
 make test       go test ./...
 make lint       golangci-lint run
-make ui         сборка SPA
 ```
 
-`golangci-lint`, `gofumpt` и `nfpm` в системе не установлены. `node` через nvm не
-поднимается в неинтерактивном shell — для сборки UI понадобится починить окружение.
+Интерфейс не собирается: `ui/dist` — готовая статика в репозитории.
+
+Установка на сервер:
+
+```
+curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install.sh | sh
+```
+
+`RAZDACHA_PUBLIC=1` — панель на всех интерфейсах, `--dry-run` — только фаза проверок.
+Релиз собирается пушем тега `v*`.
+
+`golangci-lint` и `gofumpt` в системе не установлены — линт отрабатывает в CI.
 
 ## Brand
 
