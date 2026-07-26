@@ -9,7 +9,7 @@ import {
   openMenu, notImplemented, refresh, markDirty,
 } from '../shell.js';
 import {
-  $, esc, plural, since, until, TUNNEL_LABEL, tunnelLabel, tunnelEndpoint, tunnelPool,
+  $, esc, plural, since, until, stamp, TUNNEL_LABEL, tunnelLabel, tunnelEndpoint, tunnelPool,
 } from '../util.js';
 
 export const title = 'Туннели';
@@ -47,22 +47,37 @@ function poolServers(pool, off) {
   return `<span class="badge ${alive ? 'ok' : 'err'}">живых ${alive} из ${total}</span>`;
 }
 
-/** Сервер, через который пул идёт прямо сейчас. */
+/** Сервер, через который пул идёт прямо сейчас.
+    Страна показывается всегда, даже если каталог уже вписал её в имя: по названию
+    вроде «VLESS (Germany) 11293» это угадывается, а по «11293» — нет. */
 function poolCurrent(pool, off) {
   const cur = pool.current || {};
   if (off || !cur.name) return '';
-  const parts = [String(cur.name)];
-  // Страна часто уже вписана в имя сервера каталогом — второй раз не повторяем.
-  if (cur.country && !parts[0].includes(cur.country)) parts.push(String(cur.country));
+  const parts = [];
+  if (cur.country) parts.push(String(cur.country));
+  parts.push(String(cur.name));
   if (cur.latency_ms != null) parts.push(`${cur.latency_ms} мс`);
   return `<div class="row-meta pool-now">Сейчас: ${esc(parts.join(' · '))}</div>`;
 }
 
 /** Расписание каталога. Следующего обновления у выключенного пула не будет —
-    обещать его нечем. */
+    обещать его нечем.
+
+    Время обхода показывается точно, а относительное «2 часа назад» идёт рядом
+    в скобках: на вопрос «когда именно обходили» относительная подпись не отвечает. */
 function poolSchedule(pool, off) {
-  const parts = [pool.updated_at ? `каталог обновлён ${since(pool.updated_at)}` : 'каталог ещё не загружался'];
+  const parts = [];
+  if (pool.updated_at) {
+    const abs = stamp(pool.updated_at);
+    parts.push(abs
+      ? `каталог обновлён ${abs} (${since(pool.updated_at)})`
+      : `каталог обновлён ${since(pool.updated_at)}`);
+  } else {
+    parts.push('каталог ещё не загружался');
+  }
   if (!off) {
+    // У следующего обхода абсолютной даты нет намеренно: точное «когда обходили»
+    // нужно, а точное «когда обойдёт» — нет, и строка меты и без него длинная.
     const next = until(pool.next_update_at);
     if (next) parts.push(`дальше ${next}`);
   }
@@ -127,7 +142,9 @@ export function view() {
 
 /* --- форма туннеля -------------------------------------------------------- */
 
-const IDLE_HINT = 'Вставьте ссылку vless://, ss://, trojan://, hysteria2://, socks5://, конфиг WireGuard или JSON outbound.';
+const IDLE_HINT = 'Вставьте ссылку vless://, ss://, trojan://, hysteria2://, socks5://, '
+  + 'конфиг WireGuard, JSON outbound — или ссылку https:// на каталог ключей, '
+  + 'тогда получится пул с ротацией.';
 
 function modalTunnel(id) {
   const t = id ? tunnelById(id) : null;

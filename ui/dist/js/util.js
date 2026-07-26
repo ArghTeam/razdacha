@@ -47,6 +47,18 @@ export function isOnline(peer) {
   return (Date.now() - new Date(peer.last_handshake).getTime()) < 180_000;
 }
 
+/** Точная дата и время в местном часовом поясе: «26.07.2026, 16:37».
+    Относительное «2 часа назад» удобно на глаз, но не отвечает на вопрос «когда
+    именно» — у обхода каталога это как раз нужно. */
+export function stamp(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}, `
+    + `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /** Через сколько наступит момент в будущем — зеркало `since()`.
     Нужно расписанию обновления каталога у пула. */
 export function until(iso) {
