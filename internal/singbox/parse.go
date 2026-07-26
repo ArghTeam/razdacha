@@ -22,10 +22,14 @@ var ErrParse = errors.New("не удалось разобрать конфиг �
 // ParseResult — итог разбора одной пользовательской строки. Ложится в поля туннеля
 // (см. docs/02-data-model.md): Type, Source и Parsed.
 //
-// Заполнено ровно одно из Outbound и Endpoint: WireGuard по [ADR 0002] живёт в секции
-// endpoints (userspace), все остальные протоколы — обычные outbound'ы.
+// У одиночного туннеля заполнено ровно одно из Outbound и Endpoint: WireGuard по
+// [ADR 0002] живёт в секции endpoints (userspace), все остальные протоколы — обычные
+// outbound'ы. У туннеля-пула (Source = pool) пусты оба: конкретных серверов на момент
+// разбора ещё нет, каталог обходится позже расписанием, и группу собирает генератор
+// из состава в БД ([ADR 0010]).
 //
 // [ADR 0002]: docs/decisions/0002-userspace-wireguard-outbound.md
+// [ADR 0010]: docs/decisions/0010-tunnel-pool-urltest.md
 type ParseResult struct {
 	// Type — протокол туннеля, как он записывается в БД.
 	Type store.TunnelType
@@ -43,8 +47,9 @@ type ParseResult struct {
 
 // Parse определяет форму пользовательского ввода и разбирает его.
 //
-// Распознаются три формы: URL с известной схемой, INI-файл WireGuard с секцией
-// [Interface] и произвольный JSON-объект.
+// Распознаются четыре формы: URL с известной схемой прокси, ссылка http(s) на каталог
+// ключей (туннель-пул), INI-файл WireGuard с секцией [Interface] и произвольный
+// JSON-объект.
 func Parse(raw string) (ParseResult, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -56,6 +61,8 @@ func Parse(raw string) (ParseResult, error) {
 		return parseJSON(s)
 	case hasInterfaceSection(s):
 		return parseWireGuardConf(s)
+	case isCatalogURL(s):
+		return parseCatalogURL(s)
 	case schemeOf(s) != "":
 		return parseProxyURL(s)
 	default:
