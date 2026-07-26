@@ -49,15 +49,26 @@ const (
 	passwordAlphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 )
 
+// unknownVersion — имя версии в резервной копии, снятой с БД, которая свою
+// версию не записывала. Так выглядит любое обновление с версий до 0.2.1:
+// придумать версию задним числом нечем, а соврать в имени файла отката нельзя.
+const unknownVersion = "unknown"
+
 // setupOptions — параметры `razdacha setup`.
 type setupOptions struct {
 	root     string
 	dbPath   string
 	daemon   string
 	peerName string
-	public   bool
-	start    bool
-	color    bool
+
+	// public и publicSet — режим панели и то, задавали ли его этим запуском.
+	// Различать обязательно: режим хранится в БД, и обновление без флага
+	// оставляет прежний, а не приватный по умолчанию флага (issue #81).
+	public    bool
+	publicSet bool
+
+	start bool
+	color bool
 }
 
 // runSetup — фаза изменений и фаза вывода из docs/08-install-upgrade.md.
@@ -67,16 +78,8 @@ type setupOptions struct {
 // задан зависимостями: сначала состояние и ключи, потом файлы, потом юниты, и
 // только затем запуск сервисов.
 func runSetup(ctx context.Context, args []string) error {
-	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
-	opts := setupOptions{}
-	flags.StringVar(&opts.root, "root", "", "корень файловой системы; пустой означает /")
-	flags.StringVar(&opts.dbPath, "db", defaultDBPath, "путь к файлу состояния")
-	flags.StringVar(&opts.daemon, "daemon", defaultDaemon, "путь к бинарнику демона для юнита systemd")
-	flags.StringVar(&opts.peerName, "peer", firstPeerName, "имя первого пира")
-	flags.BoolVar(&opts.public, "public", false,
-		"публичный режим панели: nginx слушает все интерфейсы (ADR 0009)")
-	flags.BoolVar(&opts.start, "start", true, "запускать сервисы через systemd")
-	if err := flags.Parse(args); err != nil {
+	opts, err := parseSetupFlags(args)
+	if err != nil {
 		return err
 	}
 	opts.color = isTerminal(os.Stdout)
@@ -96,6 +99,32 @@ func runSetup(ctx context.Context, args []string) error {
 	return setupErr
 }
 
+// parseSetupFlags разбирает аргументы команды.
+func parseSetupFlags(args []string) (setupOptions, error) {
+	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
+	opts := setupOptions{}
+	flags.StringVar(&opts.root, "root", "", "корень файловой системы; пустой означает /")
+	flags.StringVar(&opts.dbPath, "db", defaultDBPath, "путь к файлу состояния")
+	flags.StringVar(&opts.daemon, "daemon", defaultDaemon, "путь к бинарнику демона для юнита systemd")
+	flags.StringVar(&opts.peerName, "peer", firstPeerName, "имя первого пира")
+	flags.BoolVar(&opts.public, "public", false,
+		"публичный режим панели: nginx слушает все интерфейсы (ADR 0009); "+
+			"-public=false выключает режим обратно")
+	flags.BoolVar(&opts.start, "start", true, "запускать сервисы через systemd")
+	if err := flags.Parse(args); err != nil {
+		return setupOptions{}, err
+	}
+	// Заданный флаг отличается от незаданного только так: у `flag` значение по
+	// умолчанию и явное `-public=false` неразличимы, а решают они разное —
+	// «оставь как было» против «выключи».
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "public" {
+			opts.publicSet = true
+		}
+	})
+	return opts, nil
+}
+
 func setup(ctx context.Context, opts setupOptions) (summary, error) {
 	log := slog.Default()
 
@@ -110,12 +139,20 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 
 	// Резервная копия снимается до открытия БД: миграции накатываются в
 	// store.Open, и откатывать их нечем — восстановление это возврат файла.
+	//
+	// Называется копия версией, состояние которой в ней лежит, а не той, на
+	// которую обновляемся: копия и есть путь отката. Версия читается из самой
+	// БД отдельным чтением — после store.Open файл был бы уже мигрирован.
 	if !fresh {
-		backup, err := backupDB(dbPath, version)
+		prev, err := store.InstalledVersionAt(ctx, dbPath)
 		if err != nil {
 			return summary{}, err
 		}
-		log.Info("резервная копия состояния", "путь", backup)
+		backup, err := backupDB(dbPath, prev)
+		if err != nil {
+			return summary{}, err
+		}
+		log.Info("резервная копия состояния", "путь", backup, "версия", backupVersion(prev))
 	}
 
 	st, err := store.Open(ctx, dbPath)
@@ -143,9 +180,14 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		return summary{}, err
 	}
 
+	public, modeChanged, err := ensurePanelMode(ctx, st, opts, log)
+	if err != nil {
+		return summary{}, err
+	}
+
 	inst := packaging.NewInstaller(opts.root)
 	inst.Log = log
-	if opts.public {
+	if public {
 		inst.Site = packaging.PublicSiteConfig()
 	}
 	if _, err := inst.Install(); err != nil {
@@ -170,13 +212,22 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		return summary{}, err
 	}
 
+	// Версия записывается последней из того, что трогает БД: по ней назовётся
+	// резервная копия при следующем обновлении, и записать её раньше, чем
+	// установка сложилась, значило бы пообещать откат к тому, чего не было.
+	if err := st.SetInstalledVersion(ctx, version); err != nil {
+		return summary{}, err
+	}
+
 	out := summary{
-		Fresh:    fresh,
-		Version:  version,
-		Password: password,
-		PanelURL: panelURL(settings.WGServerAddress),
-		WGPort:   settings.WGListenPort,
-		Color:    opts.color,
+		Fresh:            fresh,
+		Version:          version,
+		Password:         password,
+		PanelURL:         panelURL(settings.WGServerAddress),
+		WGPort:           settings.WGListenPort,
+		PanelPublic:      public,
+		PanelModeChanged: modeChanged,
+		Color:            opts.color,
 	}
 	if created {
 		conf, err := netstack.ClientConfig(peer, settings, serverKey.PublicKey().String())
@@ -196,7 +247,7 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 	if opts.start {
 		// Собранный вывод возвращается вместе с ошибкой: он уже содержит
 		// пароль и QR, и терять их из-за неподнявшегося сервиса нельзя.
-		if err := startServices(ctx, log); err != nil {
+		if err := startServices(ctx, systemctl, log); err != nil {
 			return out, err
 		}
 	}
@@ -215,12 +266,25 @@ func isFresh(dbPath string) (bool, error) {
 	}
 }
 
+// backupVersion — как копия называет сохранённую версию. Пустая версия
+// означает БД от сборки, которая свою версию не записывала.
+func backupVersion(ver string) string {
+	if ver == "" {
+		return unknownVersion
+	}
+	return ver
+}
+
 // backupDB копирует состояние перед обновлением.
 //
 // Миграции накатываются при открытии БД и назад не откатываются: единственный
 // способ вернуться на предыдущую версию демона — вернуть файл. Копия называется
 // по версии и времени, потому что обновлений на одну версию бывает несколько
 // (переустановка того же релиза), и затирать прошлую копию нечем оправдать.
+//
+// ver — версия, состояние которой сохраняется, то есть та, что стояла до этого
+// запуска. Не та, на которую обновляемся: имя файла отката обязано называть то,
+// к чему откатываешься (issue #82).
 func backupDB(dbPath, ver string) (string, error) {
 	dir := filepath.Join(filepath.Dir(dbPath), backupDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -230,7 +294,7 @@ func backupDB(dbPath, ver string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("чтение состояния %s: %w", dbPath, err)
 	}
-	name := fmt.Sprintf("state-%s-%s.db", ver, time.Now().UTC().Format("20060102-150405"))
+	name := fmt.Sprintf("state-%s-%s.db", backupVersion(ver), time.Now().UTC().Format("20060102-150405"))
 	path := filepath.Join(dir, name)
 	// 0600 — там приватные ключи пиров, ровно как в оригинале.
 	if err := os.WriteFile(path, data, 0o600); err != nil {
@@ -265,6 +329,38 @@ func ensureEndpoint(ctx context.Context, st *store.Store, log *slog.Logger) (sto
 	}
 	log.Info("адрес подключения определён", "адрес", settings.EndpointHost)
 	return settings, nil
+}
+
+// ensurePanelMode решает, в каком режиме поднимается панель, и запоминает
+// решение. Второе значение — изменил ли режим этот запуск.
+//
+// Режим — свойство установки, а не аргумент запуска (ADR 0009 о самом режиме,
+// issue #81 о его потере). Обновление документированным однострочником не
+// передаёт никаких флагов, и пока режим жил только во флаге, панель молча
+// уходила из интернета. Отсюда порядок:
+//
+//   - `-public` (и `-public=false`) задаёт режим и запоминает его;
+//   - без флага берётся сохранённое;
+//   - первая установка без флага — приватный режим, как было всегда.
+//
+// Выключается режим тем же флагом, которым включался: `-public=false`, а через
+// установщик — `RAZDACHA_PUBLIC=0`. Отдельной команды для этого нет намеренно —
+// вторая точка входа в ту же работу расходилась бы с первой.
+func ensurePanelMode(ctx context.Context, st *store.Store, opts setupOptions, log *slog.Logger) (
+	public, changed bool, err error,
+) {
+	saved, err := st.PanelPublic(ctx)
+	if err != nil {
+		return false, false, err
+	}
+	if !opts.publicSet || opts.public == saved {
+		return saved, false, nil
+	}
+	if err := st.SetPanelPublic(ctx, opts.public); err != nil {
+		return false, false, err
+	}
+	log.Info("режим панели изменён", "публичный", opts.public)
+	return opts.public, true, nil
 }
 
 // ensureSingbox ставит рантайм нужной версии.
@@ -438,31 +534,39 @@ func panelURL(addr string) string {
 // зависят: сначала рантайм с уже записанным конфигом, затем демон (он поднимет
 // wg0 и зальёт правила), в конце nginx — ему нужен адрес wg0, точнее
 // разрешение слушать его заранее (ip_nonlocal_bind).
-func startServices(ctx context.Context, log *slog.Logger) error {
-	if err := systemctl(ctx, "daemon-reload"); err != nil {
+//
+// Каждый юнит получает `enable` и `restart` — не `enable --now`.
+//
+// `--now` запускает остановленный юнит и ничего не делает с работающим. На
+// обновлении это означало новый бинарник на диске и старый процесс в памяти
+// (`/proc/<pid>/exe` с пометкой `(deleted)`), то есть ни одно изменение демона
+// до пользователя не доезжало вовсе — при том, что установщик печатал «сервисы
+// запущены» (issue #80). На первой установке разницы нет: `restart` запускает и
+// остановленный юнит.
+//
+// Рантайм перезапускается по той же причине и ещё одной: конфиг генерируется
+// целиком, и кэш FakeIP обязан обнулиться вместе с ним.
+//
+// nginx — отдельная история, и она про `restart` вместо `reload`: установка
+// снимает штатный сайт Debian, слушающий `0.0.0.0:80`, и добавляет свой на
+// адресе wg0. При перечитывании конфига nginx оставляет прежние сокеты жить до
+// конца работы старых воркеров: на свежепоставленной машине это давало открытый
+// наружу 80-й порт и панель, не слушающую вовсе. Проверено на чистом Debian 13 —
+// после reload `ss -tlpn` показывал `0.0.0.0:80`, после restart появлялись
+// `10.8.0.1:80` и `:443`.
+func startServices(ctx context.Context, run systemctlRunner, log *slog.Logger) error {
+	if err := run(ctx, "daemon-reload"); err != nil {
 		return err
 	}
-	if err := systemctl(ctx, "enable", "--now", "sing-box.service"); err != nil {
-		return err
+	for _, unit := range []string{packaging.SingboxUnit, packaging.DaemonUnit, nginxUnit} {
+		if err := run(ctx, "enable", unit); err != nil {
+			return err
+		}
+		if err := run(ctx, "restart", unit); err != nil {
+			return err
+		}
 	}
-	if err := systemctl(ctx, "enable", "--now", "razdachad.service"); err != nil {
-		return err
-	}
-	// Именно restart, а не reload-or-restart.
-	//
-	// Установка снимает штатный сайт Debian, слушающий `0.0.0.0:80`, и добавляет
-	// свой на адресе wg0. При перечитывании конфига nginx оставляет прежние
-	// сокеты жить до конца работы старых воркеров: на свежепоставленной машине
-	// это давало открытый наружу 80-й порт и панель, не слушающую вовсе.
-	// Проверено на чистом Debian 13 — после reload `ss -tlpn` показывал
-	// `0.0.0.0:80`, после restart появлялись `10.8.0.1:80` и `:443`.
-	if err := systemctl(ctx, "enable", "nginx.service"); err != nil {
-		return err
-	}
-	if err := systemctl(ctx, "restart", "nginx.service"); err != nil {
-		return err
-	}
-	log.Info("сервисы запущены")
+	log.Info("сервисы запущены и перезапущены на новую версию")
 	return nil
 }
 

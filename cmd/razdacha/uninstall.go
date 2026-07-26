@@ -90,7 +90,7 @@ func uninstall(ctx context.Context, opts uninstallOptions, in *os.File) error {
 	}
 	// Параметры ядра снимаются и в работающем ядре: файл удалён, но значение
 	// осталось бы до перезагрузки, а `ip_nonlocal_bind` нужен только нам.
-	restoreSysctl(opts.root, log)
+	notes := restoreSysctl(opts.root, log)
 
 	// 6. Юниты. После них daemon-reload, иначе systemd помнит удалённые файлы.
 	units := &packaging.UnitInstaller{Root: opts.root}
@@ -125,6 +125,11 @@ func uninstall(ctx context.Context, opts uninstallOptions, in *os.File) error {
 		return fmt.Errorf("удаление прошло не полностью: %w", errors.Join(errs...))
 	}
 	fmt.Println("razdacha удалена, система возвращена в исходное состояние.")
+	// Всё, что мы намеренно оставили включённым, называется здесь: иначе строка
+	// выше была бы неправдой, а асимметрия — молчаливой (issue #82).
+	for _, note := range notes {
+		fmt.Println(note)
+	}
 	// Бинарники остаются: из одного из них эта команда сейчас и работает,
 	// удалять их из-под себя — лишний способ оборвать удаление на середине.
 	fmt.Printf("Снять сами бинарники:  rm -f %s %s\n",
@@ -133,12 +138,20 @@ func uninstall(ctx context.Context, opts uninstallOptions, in *os.File) error {
 	return nil
 }
 
-// restoreSysctl возвращает параметры ядра к состоянию до установки.
+// restoreSysctl возвращает параметры ядра к состоянию до установки и отдаёт
+// строки для вывода о том, что осталось включённым.
 //
 // Ошибки только логируются: /proc/sys может быть недоступен (контейнер,
 // тесты), и это не повод объявлять удаление неудавшимся — drop-in уже снят, и
 // после перезагрузки значения вернутся сами.
-func restoreSysctl(root string, log *slog.Logger) {
+//
+// Сбрасывается один параметр из двух. `ip_nonlocal_bind` экзотический и нужен
+// исключительно нам, а `ip_forward` включают все подряд — docker, другой VPN,
+// проброс, настроенный руками задолго до нас; узнать, кто включил его первым,
+// нечем, истории в /proc/sys нет. Выключить его значит с равной вероятностью
+// оборвать чужую маршрутизацию, поэтому мы его не трогаем — но и молчать об
+// этом нельзя, раз команда обещает исходное состояние (issue #82).
+func restoreSysctl(root string, log *slog.Logger) []string {
 	for key, value := range map[string]string{
 		"net/ipv4/ip_nonlocal_bind": "0",
 	} {
@@ -152,8 +165,19 @@ func restoreSysctl(root string, log *slog.Logger) {
 		}
 		log.Info("параметр ядра сброшен", "параметр", key, "значение", value)
 	}
-	// ip_forward намеренно не сбрасывается: его включают не только мы, и
-	// выключить его — значит оборвать чужую маршрутизацию на той же машине.
+
+	forward := filepath.Join(root, "/proc/sys/net/ipv4/ip_forward")
+	value, err := os.ReadFile(forward)
+	if err != nil || strings.TrimSpace(string(value)) != "1" {
+		return nil
+	}
+	log.Info("параметр ядра оставлен включённым", "параметр", "net.ipv4.ip_forward")
+	return []string{
+		"Параметр ядра net.ipv4.ip_forward остался включённым: маршрутизацию включает не\n" +
+			"только razdacha (docker, другой VPN, ручная настройка), и выключить её значит\n" +
+			"оборвать чужую работу на этой машине.",
+		"Выключить вручную:     sysctl -w net.ipv4.ip_forward=0",
+	}
 }
 
 // maybeRemoveState решает судьбу /var/lib/razdacha — там ключи сервера и пиры.

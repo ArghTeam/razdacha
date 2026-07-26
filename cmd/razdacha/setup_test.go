@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ArghTeam/razdacha/internal/api"
+	"github.com/ArghTeam/razdacha/internal/packaging"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -188,6 +190,204 @@ func TestBackupDB(t *testing.T) {
 	info, err := os.Stat(path)
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("права копии %v: там приватные ключи", info.Mode().Perm())
+	}
+}
+
+// TestBackupDBUnknownVersion — БД от сборки, которая свою версию не писала,
+// копируется под именем `unknown`: соврать в имени файла отката нельзя.
+func TestBackupDBUnknownVersion(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "state.db")
+	if err := os.WriteFile(dbPath, []byte("состояние"), 0o600); err != nil {
+		t.Fatalf("подготовка БД: %v", err)
+	}
+
+	path, err := backupDB(dbPath, "")
+	if err != nil {
+		t.Fatalf("резервная копия: %v", err)
+	}
+	if !strings.HasPrefix(filepath.Base(path), "state-"+unknownVersion+"-") {
+		t.Fatalf("имя копии %q", filepath.Base(path))
+	}
+}
+
+// TestBackupNamesSavedVersion — копия называется версией, состояние которой в
+// ней лежит, а не той, на которую обновляемся: она и есть путь отката (#82).
+func TestBackupNamesSavedVersion(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "state.db")
+
+	st, err := store.Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("открытие БД: %v", err)
+	}
+	if err := st.SetInstalledVersion(ctx, "0.1.1"); err != nil {
+		t.Fatalf("запись версии: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("закрытие БД: %v", err)
+	}
+
+	prev, err := store.InstalledVersionAt(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("чтение версии установки: %v", err)
+	}
+	path, err := backupDB(dbPath, prev)
+	if err != nil {
+		t.Fatalf("резервная копия: %v", err)
+	}
+	if !strings.HasPrefix(filepath.Base(path), "state-0.1.1-") {
+		t.Fatalf("имя копии %q: ожидалась версия, сохранённая в копии", filepath.Base(path))
+	}
+}
+
+// TestEnsurePanelMode — приоритет режима панели: флаг задаёт и запоминает, без
+// флага берётся сохранённое, первая установка без флага — приватный режим.
+func TestEnsurePanelMode(t *testing.T) {
+	ctx := context.Background()
+	log := slog.Default()
+
+	cases := []struct {
+		name        string
+		saved       bool
+		opts        setupOptions
+		wantPublic  bool
+		wantChanged bool
+	}{
+		{name: "первая установка без флага"},
+		{
+			name:        "первая установка с флагом",
+			opts:        setupOptions{public: true, publicSet: true},
+			wantPublic:  true,
+			wantChanged: true,
+		},
+		{
+			name:       "обновление без флага сохраняет режим",
+			saved:      true,
+			wantPublic: true,
+		},
+		{
+			name:       "обновление с тем же флагом ничего не меняет",
+			saved:      true,
+			opts:       setupOptions{public: true, publicSet: true},
+			wantPublic: true,
+		},
+		{
+			name:        "флаг выключает сохранённый режим",
+			saved:       true,
+			opts:        setupOptions{publicSet: true},
+			wantChanged: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			st := testStore(t)
+			if c.saved {
+				if err := st.SetPanelPublic(ctx, true); err != nil {
+					t.Fatalf("подготовка режима: %v", err)
+				}
+			}
+
+			public, changed, err := ensurePanelMode(ctx, st, c.opts, log)
+			if err != nil {
+				t.Fatalf("ensurePanelMode: %v", err)
+			}
+			if public != c.wantPublic || changed != c.wantChanged {
+				t.Fatalf("режим public=%v changed=%v, ожидались %v/%v",
+					public, changed, c.wantPublic, c.wantChanged)
+			}
+			// Решение обязано пережить перезапуск: ради этого оно и в БД.
+			saved, err := st.PanelPublic(ctx)
+			if err != nil {
+				t.Fatalf("чтение режима: %v", err)
+			}
+			if saved != c.wantPublic {
+				t.Fatalf("в БД режим %v, ожидался %v", saved, c.wantPublic)
+			}
+		})
+	}
+}
+
+// TestParseSetupFlagsPublic — незаданный флаг и явный `-public=false` решают
+// разное: «оставь как было» против «выключи».
+func TestParseSetupFlagsPublic(t *testing.T) {
+	cases := []struct {
+		args      []string
+		public    bool
+		publicSet bool
+	}{
+		{args: nil},
+		{args: []string{"-public"}, public: true, publicSet: true},
+		{args: []string{"-public=true"}, public: true, publicSet: true},
+		{args: []string{"-public=false"}, publicSet: true},
+	}
+	for _, c := range cases {
+		opts, err := parseSetupFlags(c.args)
+		if err != nil {
+			t.Fatalf("разбор %v: %v", c.args, err)
+		}
+		if opts.public != c.public || opts.publicSet != c.publicSet {
+			t.Fatalf("%v дало public=%v publicSet=%v, ожидались %v/%v",
+				c.args, opts.public, opts.publicSet, c.public, c.publicSet)
+		}
+	}
+}
+
+// TestStartServicesRestartsUnits — обновление обязано перезапускать юниты.
+// `enable --now` на работающем юните не делает ничего, и после обновления в
+// памяти оставался старый процесс, а установщик печатал «сервисы запущены» (#80).
+func TestStartServicesRestartsUnits(t *testing.T) {
+	var calls [][]string
+	run := func(_ context.Context, args ...string) error {
+		calls = append(calls, args)
+		return nil
+	}
+	if err := startServices(context.Background(), run, slog.Default()); err != nil {
+		t.Fatalf("startServices: %v", err)
+	}
+
+	var got []string
+	for _, call := range calls {
+		got = append(got, strings.Join(call, " "))
+		for _, arg := range call {
+			if arg == "--now" {
+				t.Fatalf("вызов %q: --now не перезапускает уже работающий юнит", got[len(got)-1])
+			}
+		}
+	}
+	want := []string{
+		"daemon-reload",
+		"enable " + packaging.SingboxUnit,
+		"restart " + packaging.SingboxUnit,
+		"enable " + packaging.DaemonUnit,
+		"restart " + packaging.DaemonUnit,
+		"enable " + nginxUnit,
+		"restart " + nginxUnit,
+	}
+	if strings.Join(got, "; ") != strings.Join(want, "; ") {
+		t.Fatalf("вызовы systemctl:\n%v\nожидались:\n%v", got, want)
+	}
+}
+
+// TestStartServicesStopsOnError — неудача одного юнита не должна тянуть за собой
+// остальные: следом идёт nginx, а поднимать его поверх неподнявшегося демона
+// незачем.
+func TestStartServicesStopsOnError(t *testing.T) {
+	calls := 0
+	run := func(_ context.Context, args ...string) error {
+		calls++
+		if args[0] == "restart" && args[1] == packaging.SingboxUnit {
+			return errors.New("юнит не поднялся")
+		}
+		return nil
+	}
+	if err := startServices(context.Background(), run, slog.Default()); err == nil {
+		t.Fatal("ошибка запуска не вернулась")
+	}
+	if calls != 3 {
+		t.Fatalf("вызовов %d, ожидалось 3: остановиться надо на первой ошибке", calls)
 	}
 }
 
