@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-26
+
+### трафик — селективность проверена вживую
+
+**Changed:** на стенде прошла полная цепочка: FakeIP → метка nft → tproxy → sing-box → WireGuard-туннель. Прямой трафик уходит через masquerade с адресом сервера.
+**Beware:** `systemctl reload` не годится для первого применения — sing-box тогда ещё не запущен; нужен `reload-or-restart`. Ошибку окружения нельзя отдавать как `invalid_config`: на стенде отказ по правам выглядел как ошибка пользователя.
+
+
 ## 2026-07-25
 
 ### #3 — генератор конфига из состояния БД
