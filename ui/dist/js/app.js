@@ -1,5 +1,5 @@
-/* Точка входа панели: вход, маршрутизация между четырьмя экранами, загрузка
-   данных и живой канал.
+/* Точка входа панели: вход, маршрутизация между четырьмя экранами и загрузка
+   данных.
 
    Вход — гейт, а не пятый раздел: пока сессия не подтверждена, панели не видно
    вовсе. Любой 401 от любого запроса возвращает сюда же, а адрес экрана остаётся
@@ -37,7 +37,6 @@ const ACTIONS = Object.assign(
   { 'close-modal': closeModal },
 );
 
-let live = null;
 let pollTimer = null;
 
 /* ==========================================================================
@@ -45,7 +44,7 @@ let pollTimer = null;
    ========================================================================== */
 
 function showGate(message) {
-  stopLive();
+  stopPolling();
   closeModal();
   $('#app').hidden = true;
   $('#gate').hidden = false;
@@ -210,8 +209,8 @@ function fromHash() {
 async function navigate() {
   fromHash();
   render();
-  // Данные экрана перечитываются при заходе на него: живой канал обновляет
-  // только пиров и диагностику.
+  // Данные экрана перечитываются при заходе на него, а дальше — по такту
+  // опроса: тот зовёт ту же navigate().
   const screen = SCREENS[state.screen];
   const key = state.screen;
   try {
@@ -251,45 +250,22 @@ function setOffline(on) {
 }
 
 /* ==========================================================================
-   Живой канал и опрос
+   Опрос
    ========================================================================== */
 
-function startLive() {
-  stopLive();
-  live = api.openLive({
-    onMessage: (type, data) => {
-      switch (type) {
-        case 'peers':
-          state.peers = Array.isArray(data) ? data : (data?.peers || state.peers);
-          if (state.screen === 'peers' && !modalOpen()) render();
-          break;
-        case 'diag':
-          state.diag = data;
-          if (state.screen === 'diag' && !modalOpen()) render();
-          break;
-        case 'apply':
-          refreshApplyStatus();
-          break;
-        case 'log':
-          if (data && data.line) toast(String(data.line), 'err');
-          break;
-        default:
-          break;
-      }
-    },
-  });
-
-  // Запасной опрос: WS может быть не написан или не проброшен через nginx —
-  // в обоих случаях интерфейс обязан продолжать показывать свежие числа.
-  clearInterval(pollTimer);
+/* Единственный источник свежих чисел: живого канала нет (docs/05-api.md).
+   Такт пропускается, пока вкладка скрыта — панель, забытая в фоне, не должна
+   держать демон занятым, — и пока открыта модалка: перерисовка снесла бы
+   наполовину заполненную форму. */
+function startPolling() {
+  stopPolling();
   pollTimer = setInterval(() => {
-    if (live?.connected || document.visibilityState === 'hidden' || modalOpen()) return;
+    if (document.visibilityState === 'hidden' || modalOpen()) return;
     navigate();
   }, 15000);
 }
 
-function stopLive() {
-  if (live) { live.close(); live = null; }
+function stopPolling() {
   clearInterval(pollTimer);
   pollTimer = null;
 }
@@ -307,7 +283,7 @@ async function start() {
     toastError(err);
   }
   await navigate();
-  startLive();
+  startPolling();
 }
 
 async function boot() {

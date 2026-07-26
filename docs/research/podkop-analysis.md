@@ -161,7 +161,7 @@ VPS стабильно проваливается. Повторяем.
 | UCI (`/etc/config/podkop`, `config_foreach`) | только OpenWrt → YAML + SQLite |
 | procd (`init.d`, `service_triggers`, netdev-триггеры) | → systemd + netlink-мониторинг |
 | Перехват dnsmasq (`:350`, `:381`) | не нужен, см. выше |
-| LuCI (CBI-формы, `fs.exec`, rpcd ACL, `baseclass.extend`) | → REST/WS + SPA |
+| LuCI (CBI-формы, `fs.exec`, rpcd ACL, `baseclass.extend`) | → REST + SPA |
 | `sing_box_config_manager.sh` (1508 строк jq) | → типизированные структуры |
 | `store.service.ts`, `tab.service.ts` | костыли под LuCI, во фреймворке не нужны |
 | Kernel-интерфейсы для исходящих туннелей (`:722`, `manager:914`) | → userspace ([ADR 0002](../decisions/0002-userspace-wireguard-outbound.md)) |

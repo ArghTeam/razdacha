@@ -5,7 +5,7 @@
     { "name": "singbox", "description": "генерация option.Options из состояния БД, парсеры proxy-URL, check и reload" },
     { "name": "netstack", "description": "wg0, nft-правила и маршрутизация через netlink; обратимость изменений системы" },
     { "name": "lists", "description": "загрузка и кэш .srs/plain-списков, расписание, дублирование подсетей в nft-сет" },
-    { "name": "api", "description": "REST + WS, встроенная SPA, диагностика и клиент Clash API" },
+    { "name": "api", "description": "REST, встроенная SPA, диагностика и клиент Clash API" },
     { "name": "ui", "description": "SvelteKit-интерфейс: четыре экрана, дефолты вместо опций" },
     { "name": "packaging", "description": "systemd-юнит, nfpm, install/uninstall, матрица поддерживаемых ОС" }
   ],
