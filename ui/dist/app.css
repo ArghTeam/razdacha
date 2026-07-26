@@ -533,7 +533,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
    место: он и есть содержимое правой зоны. На узком экране сворачивается,
    и тогда высоту не занимает вовсе. */
 .rule-catalog { display: flex; flex-direction: column; min-height: 0; }
-.rule-catalog[open] { flex: 1 1 auto; min-height: 260px; overflow: hidden; }
+.rule-catalog[open] { flex: 1 1 auto; min-height: 0; }
 .rule-catalog > summary {
   cursor: pointer; font-size: 13px; font-weight: 560; color: var(--fg-dim);
   padding: 2px 0; user-select: none;
@@ -543,10 +543,15 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
   flex: 1; min-height: 0; padding-top: 8px;
   display: flex; flex-direction: column; gap: 8px;
 }
-/* Список отдаёт место первым — он прокручивается сам, а подсказка и поиск над
-   ним нет. Ниже 260px каталог не сжимается: там уже нечего листать, и вместо
-   него прокручивается вся правая зона. */
-.rule-catalog-body .rule-grid { flex: 1 1 auto; min-height: 0; max-height: none; }
+/* Список прокручивается сам, подсказка и поиск над ним — нет.
+   Потолок задан явной величиной, а не через цепочку flex-родителей: каталог
+   свёрстан как <details>, и его содержимое ведёт себя как flex-элемент не во
+   всех браузерах. Там, где не ведёт, список просто растёт, и прокрутка не
+   появляется нигде — ровно это и наблюдалось. */
+.rule-catalog-body .rule-grid {
+  flex: 1 1 auto; min-height: 0;
+  max-height: min(42vh, 330px); overflow-y: auto;
+}
 .rule-catalog-body > .hint { flex: 0 0 auto; }
 /* Список клиентов не отжимает каталог: у него свой потолок и своя прокрутка. */
 .rule-peers-field { flex: 0 0 auto; }
@@ -643,7 +648,7 @@ textarea.bad { border-color: color-mix(in srgb, var(--err) 55%, var(--line-stron
   .rule-zone-body { flex: 0 0 auto; min-height: auto; overflow: visible; padding-right: 0; }
   .rule-catalog[open] { flex: 0 0 auto; overflow: visible; }
   .rule-catalog-body { flex: 0 0 auto; min-height: auto; }
-  .rule-catalog-body .rule-grid { flex: 0 0 auto; min-height: 0; max-height: 190px; }
+  .rule-catalog-body .rule-grid { flex: 0 0 auto; min-height: 0; max-height: 190px; overflow-y: auto; }
   .rule-picked { max-height: none; }
   .rule-form > .rule-overlap { max-height: none; overflow: visible; }
   .rule-tunnel { width: 100%; }
