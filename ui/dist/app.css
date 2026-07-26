@@ -478,12 +478,80 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
   /* На телефоне время съедает строку у заголовка сводки — переносим его вниз. */
   .overall { flex-wrap: wrap; }
   .overall-time { margin-left: 28px; width: 100%; text-align: left; }
-/* --- модалка правила (#47) -------------------------------------------------
-   Своя ширина и свои классы: `.modal` общий для всех окон, а правило — самое
+}
+
+/* --- модалка правила (#47, раскладка #50) ----------------------------------
+   Свои классы и своя геометрия: `.modal` общий для всех окон, а правило — самое
    плотное из них. Модификатор ловится по содержимому (`:has`), чтобы окно
-   собиралось одним экраном без вмешательства в оболочку. */
-.modal:has(.rule-form) { width: min(760px, 100%); }
-.rule-form { display: flex; flex-direction: column; gap: 14px; }
+   собиралось одним экраном без вмешательства в оболочку.
+
+   Габариты окна заданы, а не набраны содержимым: каталог из двух десятков
+   сервисов иначе растит окно вниз и выталкивает кнопки за край экрана. Всё,
+   что может вырасти — каталог, чипы выбранного, список клиентов, — прокручи-
+   вается внутри своей зоны. */
+.modal:has(.rule-form) {
+  width: min(960px, 100%);
+  height: min(88vh, 760px);
+  max-height: 100%;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal:has(.rule-form) .modal-body {
+  flex: 1; min-height: 0; overflow: hidden; padding: 14px 16px;
+}
+
+/* Две зоны: слева — что за правило, справа — на что оно распространяется.
+   Перекрытие лежит внизу во всю ширину: оно про правило целиком, а не про
+   отдельное поле. */
+.rule-form {
+  display: grid; gap: 12px 18px; height: 100%; min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "note note"
+    "what scope"
+    "over over";
+}
+.rule-form > .rule-order-note { grid-area: note; }
+.rule-zone-what { grid-area: what; }
+.rule-zone-scope { grid-area: scope; }
+.rule-form > .rule-overlap { grid-area: over; max-height: 112px; overflow-y: auto; }
+
+.rule-zone { display: flex; flex-direction: column; min-height: 0; gap: 8px; }
+.rule-zone-head {
+  font-size: 11.5px; font-weight: 640; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--fg-faint);
+}
+/* Прокрутка живёт в зоне, а не у окна. Слева она обычно не нужна и появляется
+   только на низком экране; справа её забирает сам каталог. */
+.rule-zone-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.rule-zone-what .rule-zone-body { padding-right: 4px; }
+
+/* Каталог — единственный блок, которому разрешено занять всё оставшееся
+   место: он и есть содержимое правой зоны. На узком экране сворачивается,
+   и тогда высоту не занимает вовсе. */
+.rule-catalog { display: flex; flex-direction: column; min-height: 0; }
+.rule-catalog[open] { flex: 1 1 auto; min-height: 260px; overflow: hidden; }
+.rule-catalog > summary {
+  cursor: pointer; font-size: 13px; font-weight: 560; color: var(--fg-dim);
+  padding: 2px 0; user-select: none;
+}
+.rule-catalog-count { color: var(--accent); font-weight: 600; }
+.rule-catalog-body {
+  flex: 1; min-height: 0; padding-top: 8px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+/* Список отдаёт место первым — он прокручивается сам, а подсказка и поиск над
+   ним нет. Ниже 260px каталог не сжимается: там уже нечего листать, и вместо
+   него прокручивается вся правая зона. */
+.rule-catalog-body .rule-grid { flex: 1 1 auto; min-height: 0; max-height: none; }
+.rule-catalog-body > .hint { flex: 0 0 auto; }
+/* Список клиентов не отжимает каталог: у него свой потолок и своя прокрутка. */
+.rule-peers-field { flex: 0 0 auto; }
+.rule-peers { max-height: 104px; }
+.rule-form textarea { min-height: 64px; }
 
 /* Порядок проверки — единственная концепция, которую нельзя спрятать,
    поэтому она стоит первой строкой формы, а не подписью где-то внизу. */
@@ -494,7 +562,9 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
   border-left: 3px solid var(--accent);
 }
 
-.rule-form .hint { line-height: 1.45; }
+/* Подсказка каталога лежит не в `.field`, а прямо в зоне: размер и цвет ей
+   нужно задать здесь, иначе она набирается основным кеглем. */
+.rule-form .hint { line-height: 1.45; font-size: 12px; color: var(--fg-faint); }
 .rule-form .hint code {
   font-family: var(--mono); font-size: 11.5px;
   padding: 0 3px; border-radius: 4px; background: var(--bg-sunken);
@@ -527,8 +597,13 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 }
 .rule-none { font-size: 13px; color: var(--fg-faint); padding: 4px 6px; }
 
-/* Выбранное видно всегда — даже когда поиск увёл галочку за фильтр. */
-.rule-picked { display: flex; flex-wrap: wrap; gap: 5px; }
+/* Выбранное видно всегда — даже когда поиск увёл галочку за фильтр. Полоса
+   чипов не растёт бесконечно: два десятка выбранных сервисов иначе съедают
+   каталог под собой. */
+.rule-picked {
+  display: flex; flex-wrap: wrap; gap: 5px;
+  flex: 0 0 auto; max-height: 54px; overflow-y: auto;
+}
 .rule-chip {
   appearance: none; font: inherit; font-size: 12px; cursor: pointer;
   padding: 2px 8px; border-radius: 999px;
@@ -553,7 +628,23 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 .line-errors .rule-overlap-tail { color: var(--fg-faint); }
 textarea.bad { border-color: color-mix(in srgb, var(--err) 55%, var(--line-strong)); }
 
-@media (max-width: 620px) {
-  .rule-grid { max-height: 190px; }
+/* Узкий экран: зоны схлопываются в одну колонку и прокручивается всё окно
+   целиком — двум внутренним прокруткам на телефоне не разойтись. Каталог
+   свёрнут (`open` снимает rules.js), поэтому колонка остаётся короткой. */
+@media (max-width: 760px) {
+  .modal:has(.rule-form) { height: min(92vh, 760px); }
+  .modal:has(.rule-form) .modal-body { overflow-y: auto; }
+  .rule-form {
+    display: flex; flex-direction: column; gap: 12px; height: auto; min-height: 0;
+  }
+  /* Ничто не сжимается: колонка растёт вниз, а прокручивает её окно. */
+  .rule-form > * { flex: 0 0 auto; }
+  .rule-zone { min-height: auto; }
+  .rule-zone-body { flex: 0 0 auto; min-height: auto; overflow: visible; padding-right: 0; }
+  .rule-catalog[open] { flex: 0 0 auto; overflow: visible; }
+  .rule-catalog-body { flex: 0 0 auto; min-height: auto; }
+  .rule-catalog-body .rule-grid { flex: 0 0 auto; min-height: 0; max-height: 190px; }
+  .rule-picked { max-height: none; }
+  .rule-form > .rule-overlap { max-height: none; overflow: visible; }
   .rule-tunnel { width: 100%; }
 }
