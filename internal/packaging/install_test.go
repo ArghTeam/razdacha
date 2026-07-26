@@ -373,8 +373,7 @@ func TestSavedPanelModeAfterInstall(t *testing.T) {
 	if _, err := private.Install(); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	switch got := private.SavedPanelMode(); {
-	case !got.Known || got.Public:
+	if got := private.SavedPanelMode(); !got.Known || got.Public {
 		t.Fatalf("после приватной установки %+v", got)
 	}
 
@@ -382,8 +381,7 @@ func TestSavedPanelModeAfterInstall(t *testing.T) {
 	if _, err := public.Install(); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	switch got := public.SavedPanelMode(); {
-	case !got.Known || !got.Public:
+	if got := public.SavedPanelMode(); !got.Known || !got.Public {
 		t.Fatalf("после публичной установки %+v", got)
 	}
 }
