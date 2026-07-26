@@ -26,19 +26,28 @@ const (
 	keyInstalledVersion = "installed_version"
 )
 
-// PanelPublic отвечает, стоит ли панель в публичном режиме. Отсутствие ключа —
-// приватный режим: так вела себя каждая установка до появления этой настройки.
-func (s *Store) PanelPublic(ctx context.Context) (bool, error) {
+// PanelPublic отвечает, стоит ли панель в публичном режиме, и записан ли режим
+// вообще.
+//
+// Второе значение обязано быть отдельным. Версии до 0.2.1 ключа не писали, и
+// свернув «ключа нет» в «приватный режим», мы уводили публичную установку из
+// интернета на первом же обновлении — молча, потому что менять было нечего
+// (issue #81). Кто решает, чем считать отсутствие ключа, тот и знает контекст:
+// здесь это `razdacha setup`, который умеет посмотреть в конфиг nginx.
+func (s *Store) PanelPublic(ctx context.Context) (public, saved bool, err error) {
 	value, err := s.settingValue(ctx, keyPanelPublic)
-	if err != nil || value == "" {
-		return false, err
-	}
-	public, err := strconv.ParseBool(value)
 	if err != nil {
-		return false, fmt.Errorf("%w: настройка %s = %q не булево",
+		return false, false, err
+	}
+	if value == "" {
+		return false, false, nil
+	}
+	public, err = strconv.ParseBool(value)
+	if err != nil {
+		return false, false, fmt.Errorf("%w: настройка %s = %q не булево",
 			ErrInvalid, keyPanelPublic, value)
 	}
-	return public, nil
+	return public, true, nil
 }
 
 // SetPanelPublic запоминает режим панели.

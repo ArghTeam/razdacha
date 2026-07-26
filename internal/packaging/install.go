@@ -111,6 +111,43 @@ func (i *Installer) now() time.Time {
 	return i.Now()
 }
 
+// SavedMode — что удалось узнать о режиме панели из уже лежащего конфига nginx.
+//
+// Ошибки здесь нет намеренно: чтение конфига ради догадки о режиме — не повод
+// останавливать установку. Но и молчать нельзя, иначе повторится то, ради чего
+// всё это написано: панель, тихо ушедшая из интернета (issue #81). Поэтому
+// причина неудачи возвращается текстом и доезжает до вывода установщика.
+type SavedMode struct {
+	// Public — выведенный режим; значим только при Known.
+	Public bool
+
+	// Known — режим выведен. Ложь означает либо что конфига нет вовсе (первая
+	// установка, Reason пуст), либо что его не удалось прочитать или разобрать.
+	Known bool
+
+	// Reason — почему режим вывести не удалось. Пусто, если конфига просто нет:
+	// это не сбой, а установка на чистую машину.
+	Reason string
+}
+
+// SavedPanelMode читает режим панели из конфига nginx, который оставила
+// предыдущая установка. Путь берётся тот же, по которому конфиг пишется.
+func (i *Installer) SavedPanelMode() SavedMode {
+	path := i.sitePath()
+	content, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return SavedMode{}
+	case err != nil:
+		return SavedMode{Reason: fmt.Sprintf("конфиг nginx %s не прочитан: %v", path, err)}
+	}
+	public, err := PublicFromConfig(string(content))
+	if err != nil {
+		return SavedMode{Reason: fmt.Sprintf("%s: %v", path, err)}
+	}
+	return SavedMode{Public: public, Known: true}
+}
+
 // Install выпускает сертификат при необходимости, пишет конфиг nginx и
 // включает сайт. Повторный запуск на настроенной системе ничего не меняет.
 //
