@@ -50,7 +50,7 @@ packaging/install.sh    установщик
 - **singbox** — генерация `option.Options` из состояния БД, парсеры proxy-URL, check и reload
 - **netstack** — `wg0`, nft-правила и маршрутизация через netlink; обратимость изменений
 - **lists** — загрузка и кэш `.srs`/plain-списков, расписание, дублирование подсетей в nft-сет
-- **api** — REST + WS, встроенная SPA, диагностика и клиент Clash API (`internal/api`,
+- **api** — REST, встроенная SPA, диагностика и клиент Clash API (`internal/api`,
   `internal/diag`, `internal/clash`)
 - **ui** — интерфейс: вход и четыре экрана, дефолты вместо опций
 - **packaging** — nginx, TLS, юниты systemd, install.sh, релизы, матрица ОС
