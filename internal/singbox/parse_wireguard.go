@@ -279,7 +279,7 @@ func parseReservedBase64(orig, body string) ([]uint8, error) {
 			return nil, fmt.Errorf("%w: неверный Reserved %q: client ID — три байта, а не %d",
 				ErrParse, orig, len(raw))
 		}
-		return []uint8(raw), nil
+		return raw, nil
 	}
 	return nil, fmt.Errorf(
 		"%w: неверный Reserved %q: ожидались три числа 0–255 через запятую или client ID в base64",
