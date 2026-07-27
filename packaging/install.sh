@@ -16,6 +16,8 @@
 #   RAZDACHA_VERSION=v1.2.3       поставить конкретный релиз вместо своего
 #   RAZDACHA_REPO=owner/name      откуда качать релиз
 #   RAZDACHA_PREFIX=/usr/local/bin куда класть бинарники
+#   RAZDACHA_TELEGRAM_TOKEN=…     токен бота для оповещений; пустой — выключить;
+#   RAZDACHA_TELEGRAM_CHAT=…      идентификатор чата или канала для оповещений;
 #   RAZDACHA_PUBLIC=1             панель на всех интерфейсах (ADR 0009);
 #                                 0 выключает публичный режим обратно,
 #                                 не задана — режим остаётся прежним
@@ -416,6 +418,8 @@ razdacha — установщик селективного VPN-шлюза.
   RAZDACHA_VERSION=v1.2.3        поставить конкретный релиз вместо своего
   RAZDACHA_REPO=owner/name       откуда качать релиз
   RAZDACHA_PREFIX=/usr/local/bin куда класть бинарники
+  RAZDACHA_TELEGRAM_TOKEN=…      токен бота @BotFather; пустой выключает оповещения
+  RAZDACHA_TELEGRAM_CHAT=…       чат или канал для оповещений, например -1001234567890
   RAZDACHA_PUBLIC=1              панель на всех интерфейсах; 0 — обратно в VPN;
                                  не задана — режим остаётся прежним
   RAZDACHA_PEER=имя              имя первого пира вместо client-1

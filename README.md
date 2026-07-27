@@ -44,6 +44,7 @@ curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install
 | [Экраны UI](docs/06-ui-screens.md) | четыре экрана, не больше |
 | [Поддерживаемые ОС](docs/07-platform-support.md) | матрица и требования |
 | [Установка](docs/08-install-upgrade.md) | установка, обновление, удаление |
+| [Оповещения](docs/09-notifications.md) | как подключить телеграм |
 | [Решения (ADR)](docs/decisions/) | принятые решения с обоснованием |
 | [Разбор Podkop](docs/research/podkop-analysis.md) | источник архитектуры |
 

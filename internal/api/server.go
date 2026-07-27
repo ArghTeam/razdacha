@@ -124,6 +124,15 @@ type Server struct {
 	pools       poolRefresher
 	poolEvery   time.Duration
 	poolProxies clashProxies
+
+	// notify подменяет отправителя оповещений в тестах: настоящий
+	// api.telegram.org в них не участвует. Пустой означает настоящий транспорт.
+	notify func(store.NotifyConfig) notifySender
+}
+
+// notifySender — то, что слою api нужно от отправителя оповещений.
+type notifySender interface {
+	Send(ctx context.Context, text string) error
 }
 
 // New собирает сервер и проверяет условия запуска.
