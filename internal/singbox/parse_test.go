@@ -234,8 +234,8 @@ func TestParseWireGuardConfDefaults(t *testing.T) {
 }
 
 // TestParseWireGuardConfReserved проверяет расширение под WARP: client ID из секции
-// [Peer] доходит до option.WireGuardPeer.Reserved. Без него Cloudflare отбрасывает
-// пакеты — туннель поднят, трафик не идёт.
+// [Peer] доходит до option.WireGuardPeer.Reserved. Поле разбирается ради
+// совместимости с конфигами, которые его несут: без него WARP тоже работает.
 func TestParseWireGuardConfReserved(t *testing.T) {
 	res, err := Parse(readFixture(t, "testdata/wireguard-warp.conf"))
 	if err != nil {

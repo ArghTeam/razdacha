@@ -115,10 +115,38 @@ func parseWireGuardConf(text string) (ParseResult, error) {
 	}
 	return ParseResult{
 		Type:     store.TunnelWireGuard,
-		Source:   store.SourceWGConf,
+		Source:   wireguardSource(opts),
 		Endpoint: endpoint,
 		Parsed:   parsed,
 	}, nil
+}
+
+// wireguardSource отличает WARP от чужого WireGuard-сервера по хосту endpoint.
+//
+// Признак нужен цепочкам (ADR 0012): вторым звеном годится только WARP, и туннель,
+// вставленный конфигом, обязан попадать во вторую выпадашку без второй кнопки. Из
+// содержимого выводится ровно одно — доменное имя, которое Cloudflare раздаёт сама;
+// ключи, диапазоны адресов и `reserved` признаком не считаются: WARP работает и без
+// последнего, а вывод по остальным отсекал бы валидные конфиги.
+//
+// Конфиг с endpoint по голому адресу (162.159.192.x) так не узнаётся — это принятая
+// цена решения: source хранится, и его всегда можно поправить пересохранением.
+func wireguardSource(opts *option.WireGuardEndpointOptions) store.TunnelSource {
+	for _, p := range opts.Peers {
+		if isWARPHost(p.Address) {
+			return store.SourceWARP
+		}
+	}
+	return store.SourceWGConf
+}
+
+// warpEndpointDomain — домен, в котором живут эндпоинты WARP.
+const warpEndpointDomain = "cloudflareclient.com"
+
+// isWARPHost проверяет, принадлежит ли хост домену эндпоинтов WARP.
+func isWARPHost(host string) bool {
+	h := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+	return h == warpEndpointDomain || strings.HasSuffix(h, "."+warpEndpointDomain)
 }
 
 // fillInterface переносит секцию [Interface] в опции endpoint'а. DNS, Table и хуки
@@ -219,10 +247,10 @@ const reservedLen = 3
 
 // parseReserved разбирает поле Reserved секции [Peer].
 //
-// В wg-quick такого поля нет: это расширение под Cloudflare WARP, где эндпоинт молча
-// отбрасывает пакеты без трёхбайтового client ID. Обычному WireGuard-серверу поле не
-// нужно, поэтому его отсутствие остаётся законным, а вот заданное неверно — ошибка:
-// туннель с битым client ID поднимется и не пропустит ни байта.
+// В wg-quick такого поля нет: это расширение под Cloudflare WARP, конфиги которого
+// его несут. Обычному WireGuard-серверу поле не нужно, поэтому его отсутствие остаётся
+// законным — стенд показал, что и сам WARP без client ID работает, — а вот заданное
+// неверно это ошибка: три чужих байта в заголовке пакета WARP не разберёт.
 //
 // Принимаются обе записи, в которых client ID ходит по свету: три числа через запятую
 // («0, 0, 0», квадратные скобки необязательны) и base64 из четырёх символов, как его
