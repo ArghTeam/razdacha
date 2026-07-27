@@ -72,6 +72,10 @@ func TestSendExplainsFailures(t *testing.T) {
 		{"неверный токен", 401, `{"ok":false,"error_code":401,"description":"Unauthorized"}`, "токен бота неверен"},
 		{"бот не в чате", 403, `{"ok":false,"error_code":403,"description":"bot was blocked"}`, "бот заблокирован"},
 		{"чат не найден", 400, `{"ok":false,"error_code":400,"description":"chat not found"}`, "чат не найден"},
+		// Испорченный токен подставляется в путь URL, поэтому телеграм отвечает
+		// 404, а не 401. Найдено прогоном на живом боте: пользователь получал
+		// английское «Not Found» и не понимал, что чинить.
+		{"битый токен", 404, `{"ok":false,"error_code":404,"description":"Not Found"}`, "токен бота неверен"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -90,6 +94,27 @@ func TestSendExplainsFailures(t *testing.T) {
 				t.Errorf("ошибка = %q, ожидалось упоминание %q", err, c.expect)
 			}
 		})
+	}
+}
+
+// Незнакомый код не теряет описание телеграма, но и не выдаёт его за
+// объяснение: без пометки английская строка выглядит как наш текст.
+func TestSendKeepsUnknownFailureRecognisable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(429)
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":429,"description":"Too Many Requests"}`))
+	}))
+	defer srv.Close()
+
+	tg := NewTelegram(Options{Token: "123:ABC", ChatID: "-1001", Base: srv.URL})
+	err := tg.Send(context.Background(), "текст")
+	if err == nil {
+		t.Fatal("ожидалась ошибка")
+	}
+	for _, want := range []string{"неожиданный отказ", "429", "Too Many Requests"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("ошибка = %q, ожидалось упоминание %q", err, want)
+		}
 	}
 }
 

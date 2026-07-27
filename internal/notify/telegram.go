@@ -120,6 +120,12 @@ func explain(r telegramResponse) string {
 	switch r.ErrorCode {
 	case http.StatusUnauthorized:
 		return "токен бота неверен или отозван"
+	case http.StatusNotFound:
+		// Токен подставляется прямо в путь URL, поэтому испорченный даёт не 401,
+		// а 404: телеграм не находит метод, а не отказывает в доступе. Без этой
+		// ветки пользователь получал английское «Not Found» и не понимал, что
+		// чинить — проверено на живом боте.
+		return "токен бота неверен: телеграм не знает такого бота"
 	case http.StatusForbidden:
 		return "бот заблокирован в этом чате или не добавлен в него"
 	case http.StatusBadRequest:
@@ -128,8 +134,10 @@ func explain(r telegramResponse) string {
 		}
 		return "чат не найден или запрос отвергнут (" + r.Description + ")"
 	}
+	// Английское описание от телеграма пользователю панели ничего не говорит,
+	// но и терять его нельзя: без него непонятная ошибка станет безымянной.
 	if r.Description != "" {
-		return r.Description
+		return fmt.Sprintf("неожиданный отказ (код %d, %s)", r.ErrorCode, r.Description)
 	}
-	return fmt.Sprintf("код %d", r.ErrorCode)
+	return fmt.Sprintf("неожиданный отказ (код %d)", r.ErrorCode)
 }
