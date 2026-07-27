@@ -33,9 +33,11 @@ func (s *Server) handleAddWARP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Второй WARP не нужен: ключи те же, а правил на него навешивается сколько
-	// угодно. Проверка до запроса наружу — повторное нажатие не должно заводить
-	// у Cloudflare лишнее устройство.
+	// Кнопка второй раз не срабатывает. Это ограничение кнопки, а не модели:
+	// несколько туннелей с `source = warp` законны и заводятся вставкой `.conf`
+	// через `POST /api/tunnels`, цепочкам ADR 0012 они не мешают. Бережём мы
+	// Cloudflare: каждая регистрация — реальное устройство на их стороне, и
+	// повторное нажатие оставляло бы лишние. Отсюда и проверка до запроса наружу.
 	list, err := s.store.Tunnels(r.Context())
 	if err != nil {
 		s.storeError(w, err, "Туннель не найден")
@@ -44,7 +46,9 @@ func (s *Server) handleAddWARP(w http.ResponseWriter, r *http.Request) {
 	for _, t := range list {
 		if t.Source == store.SourceWARP {
 			writeError(w, s.log, http.StatusConflict, codeConflict,
-				"WARP уже добавлен — туннель «"+t.Name+"»")
+				"WARP уже заведён — туннель «"+t.Name+"». Кнопка второй раз не "+
+					"регистрирует устройство у Cloudflare; ещё один WARP можно "+
+					"добавить, вставив его .conf вручную")
 			return
 		}
 	}
