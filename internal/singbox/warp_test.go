@@ -189,6 +189,109 @@ func TestWARPRegisterErrors(t *testing.T) {
 	})
 }
 
+// Пара «идентификатор + токен» доезжает из ответа: без неё устройство у
+// Cloudflare не снять, а других способов узнать её потом нет.
+func TestWARPRegisterKeepsCredentials(t *testing.T) {
+	reg := warpServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, warpRegBody)
+	})
+
+	dev, err := reg.Register(context.Background())
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if dev.DeviceID != "t.00000000-0000-4000-8000-000000000000" {
+		t.Errorf("идентификатор устройства %q", dev.DeviceID)
+	}
+	if dev.AccessToken != "00000000-0000-4000-8000-000000000000" {
+		t.Errorf("токен устройства %q", dev.AccessToken)
+	}
+	// Токен — секрет: в конфиге туннеля, который панель показывает как есть,
+	// ему делать нечего.
+	if strings.Contains(dev.Conf, dev.AccessToken) {
+		t.Errorf("токен устройства попал в конфиг:\n%s", dev.Conf)
+	}
+}
+
+// Снятие устройства идёт по своему пути и со своим заголовком: без Bearer'а
+// Cloudflare не понимает, о чьём устройстве речь.
+func TestWARPUnregister(t *testing.T) {
+	var got struct {
+		method  string
+		path    string
+		auth    string
+		agent   string
+		version string
+	}
+	reg := warpServer(t, func(w http.ResponseWriter, r *http.Request) {
+		got.method, got.path = r.Method, r.URL.Path
+		got.auth = r.Header.Get("Authorization")
+		got.agent = r.Header.Get("User-Agent")
+		got.version = r.Header.Get("CF-Client-Version")
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	if err := reg.Unregister(context.Background(), "t.42", "секрет"); err != nil {
+		t.Fatalf("Unregister: %v", err)
+	}
+	if got.method != http.MethodDelete || got.path != "/reg/t.42" {
+		t.Errorf("запрос %s %q, ожидался DELETE /reg/t.42", got.method, got.path)
+	}
+	if got.auth != "Bearer секрет" {
+		t.Errorf("заголовок авторизации %q", got.auth)
+	}
+	if got.agent != warpUserAgent || got.version != warpClientVersion {
+		t.Errorf("заголовки клиента: %q, %q", got.agent, got.version)
+	}
+}
+
+// Отказы снятия разведены теми же сентинелами, что и отказы регистрации, а
+// «устройства уже нет» — успех: именно этого мы и добивались.
+func TestWARPUnregisterErrors(t *testing.T) {
+	t.Run("устройства уже нет", func(t *testing.T) {
+		reg := warpServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		})
+		if err := reg.Unregister(context.Background(), "t.42", "секрет"); err != nil {
+			t.Fatalf("404 обязан считаться успехом, получено: %v", err)
+		}
+	})
+
+	t.Run("отказ", func(t *testing.T) {
+		reg := warpServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+		})
+		err := reg.Unregister(context.Background(), "t.42", "секрет")
+		if !errors.Is(err, ErrWARPRejected) {
+			t.Fatalf("ожидалась ErrWARPRejected, получено: %v", err)
+		}
+	})
+
+	t.Run("сеть", func(t *testing.T) {
+		srv := httptest.NewServer(http.NotFoundHandler())
+		client := srv.Client()
+		srv.Close()
+		reg := NewWARPRegistrar(WARPOptions{Base: srv.URL, HTTPClient: client})
+
+		err := reg.Unregister(context.Background(), "t.42", "секрет")
+		if !errors.Is(err, ErrWARPUnreachable) {
+			t.Fatalf("ожидалась ErrWARPUnreachable, получено: %v", err)
+		}
+	})
+
+	t.Run("нечем снимать", func(t *testing.T) {
+		var called bool
+		reg := warpServer(t, func(http.ResponseWriter, *http.Request) { called = true })
+		err := reg.Unregister(context.Background(), "", "")
+		if !errors.Is(err, ErrWARPRejected) {
+			t.Fatalf("ожидалась ErrWARPRejected, получено: %v", err)
+		}
+		if called {
+			t.Error("запрос ушёл наружу без идентификатора устройства")
+		}
+	})
+}
+
 // Вставленный руками конфиг WARP узнаётся сам — без кнопки регистрации. Это
 // второй путь, которым проставляется source (ADR 0012).
 func TestParseWireGuardConfWARPSource(t *testing.T) {
