@@ -98,6 +98,7 @@ WARP» (`POST /api/tunnels/warp`) либо пользователь вставл
 | `name` | string | «YouTube и Google», «Соцсети» |
 | `action` | enum | `tunnel` \| `direct` \| `block` |
 | `tunnel_id` | uuid? | обязателен при `action = tunnel` |
+| `via_tunnel_id` | uuid? | второе звено цепи — туннель WARP; пусто, если цепи нет |
 | `priority` | int | порядок проверки, меньше = раньше |
 | `enabled` | bool | |
 | `community_lists` | []string | ключи сервисов из `allow-domains` |
@@ -107,6 +108,14 @@ WARP» (`POST /api/tunnels/warp`) либо пользователь вставл
 | `peer_scope` | enum | `all` \| `selected` |
 | `peer_ids` | []uuid | при `peer_scope = selected` |
 | `resolve_real_ip` | bool | резолвить настоящий IP вместо FakeIP (редкие случаи) |
+
+**`via_tunnel_id` — второе звено цепи** ([ADR 0012](decisions/0012-tunnel-chain-detour.md)):
+трафик уходит в `tunnel_id`, а наружу выходит через него. Звеньев ровно два, и второе —
+только туннель с `source = warp`; проверяет это слой api, отказ на русском приходит до
+`sing-box check`. Поле необязательное: правило без него работает ровно как раньше, и
+`detour` в конфиге не появляется вовсе. Первым звеном годится любой туннель, включая пул;
+обратное направление «WARP → обычный туннель» запрещено по смыслу. Ссылка держит туннель
+так же, как первое звено: удаление такого туннеля отклоняется и называет правила.
 
 **`action = direct`** нужен для исключений: правило с высоким приоритетом, которое
 выводит подсеть из-под более общего правила ниже. **`action = block`** — просто отбросить
@@ -168,6 +177,7 @@ WARP» (`POST /api/tunnels/warp`) либо пользователь вставл
 | `Tunnel` (wireguard) | `endpoints[]`, tag = `tun-<id>` |
 | `Tunnel` (прочее) | `outbounds[]`, tag = `tun-<id>` |
 | `Rule` (tunnel) | `route.rules[]` → `outbound: tun-<id>` + `dns.rules[]` для FakeIP |
+| `Rule.via_tunnel_id` | клон WARP-эндпоинта с `detour: tun-<id первого>`, tag = `chain-<id второго>-via-<id первого>`; правило ссылается на него |
 | `Rule` (direct) | `route.rules[]` → `outbound: direct-out` |
 | `Rule` (block) | `route.rules[]` → `action: reject` |
 | `Rule.community_lists` | `route.rule_set[]` типа `remote`, URL `.srs` из allow-domains |
@@ -210,6 +220,7 @@ CREATE TABLE tunnels (
 CREATE TABLE rules (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, action TEXT NOT NULL,
   tunnel_id TEXT REFERENCES tunnels(id) ON DELETE RESTRICT,
+  via_tunnel_id TEXT REFERENCES tunnels(id) ON DELETE RESTRICT,
   priority INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
   community_lists TEXT NOT NULL DEFAULT '[]', domains TEXT NOT NULL DEFAULT '[]',
   subnets TEXT NOT NULL DEFAULT '[]', remote_lists TEXT NOT NULL DEFAULT '[]',
