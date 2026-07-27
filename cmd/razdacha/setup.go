@@ -189,6 +189,9 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 	if err != nil {
 		return summary{}, err
 	}
+	if err := ensureNotify(ctx, st, log); err != nil {
+		return summary{}, err
+	}
 	if mode.Public {
 		inst.Site = packaging.PublicSiteConfig()
 	}

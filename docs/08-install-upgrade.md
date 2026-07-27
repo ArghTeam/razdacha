@@ -176,6 +176,11 @@ VPN ([модель привилегий](01-architecture.md#модель-при�
 | обновление с `RAZDACHA_PUBLIC=0` | приватный, запоминается |
 
 Флаг бинарника — `razdacha setup --public` и `razdacha setup --public=false`;
+`RAZDACHA_TELEGRAM_TOKEN` и `RAZDACHA_TELEGRAM_CHAT` работают по той же логике трёх
+состояний: переменных нет — настроенные оповещения остаются, обе заданы — записываются
+и включаются, пустой токен — выключает. Подробности и как добыть `chat_id` —
+[Оповещения](09-notifications.md).
+
 `install.sh` переводит в них `RAZDACHA_PUBLIC`. **Выключается тот же режим тем же
 способом, которым включался** — `RAZDACHA_PUBLIC=0` (или `no`, `false`, пустая
 строка). Отдельной команды `razdacha panel private` нет намеренно: второй вход в ту
