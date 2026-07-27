@@ -103,7 +103,21 @@ func TestMigrationMarksPastedWARP(t *testing.T) {
 	}
 
 	// Откат версии схемы к предыдущему шагу: так БД выглядит до этого релиза.
-	if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 6"); err != nil {
+	// Вместе с версией откатывается и таблица правил: шаг 8 добавляет колонку
+	// via_tunnel_id, и на таблице, где она уже есть, повторный ALTER упал бы.
+	// Правил в этом тесте нет, поэтому таблица пересоздаётся пустой.
+	if _, err := s.db.ExecContext(ctx, `
+DROP TABLE rules;
+CREATE TABLE rules (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, action TEXT NOT NULL,
+  tunnel_id TEXT REFERENCES tunnels(id) ON DELETE RESTRICT,
+  priority INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+  community_lists TEXT NOT NULL DEFAULT '[]', domains TEXT NOT NULL DEFAULT '[]',
+  subnets TEXT NOT NULL DEFAULT '[]', remote_lists TEXT NOT NULL DEFAULT '[]',
+  peer_scope TEXT NOT NULL DEFAULT 'all', peer_ids TEXT NOT NULL DEFAULT '[]',
+  resolve_real_ip INTEGER NOT NULL DEFAULT 0);
+CREATE UNIQUE INDEX rules_priority ON rules(priority);
+PRAGMA user_version = 6;`); err != nil {
 		t.Fatalf("подмена версии схемы: %v", err)
 	}
 	if _, err := s.db.ExecContext(ctx,

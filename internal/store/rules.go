@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-const ruleColumns = `id, name, action, tunnel_id, priority, enabled, community_lists,
-	domains, subnets, remote_lists, peer_scope, peer_ids, resolve_real_ip`
+const ruleColumns = `id, name, action, tunnel_id, via_tunnel_id, priority, enabled,
+	community_lists, domains, subnets, remote_lists, peer_scope, peer_ids, resolve_real_ip`
 
 // CreateRule добавляет правило в конец списка: приоритет назначает слой хранения,
 // иначе уникальный индекс rules_priority ловил бы пользовательский ввод.
@@ -36,7 +36,7 @@ func (s *Store) CreateRule(ctx context.Context, r Rule) (Rule, error) {
 			return err
 		}
 		_, err = tx.ExecContext(ctx,
-			`INSERT INTO rules (`+ruleColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO rules (`+ruleColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			append([]any{r.ID}, args...)...)
 		if err != nil {
 			return wrapRuleWriteErr(err, r, "добавление")
@@ -102,12 +102,12 @@ func (s *Store) UpdateRule(ctx context.Context, r Rule) error {
 		return err
 	}
 	// Приоритет из аргументов выкидываем — колонка не обновляется.
-	set := `name = ?, action = ?, tunnel_id = ?, enabled = ?, community_lists = ?,
-		domains = ?, subnets = ?, remote_lists = ?, peer_scope = ?, peer_ids = ?,
-		resolve_real_ip = ?`
+	set := `name = ?, action = ?, tunnel_id = ?, via_tunnel_id = ?, enabled = ?,
+		community_lists = ?, domains = ?, subnets = ?, remote_lists = ?, peer_scope = ?,
+		peer_ids = ?, resolve_real_ip = ?`
 	values := make([]any, 0, len(args))
-	values = append(values, args[:3]...) // name, action, tunnel_id
-	values = append(values, args[4:]...) // всё после priority
+	values = append(values, args[:4]...) // name, action, tunnel_id, via_tunnel_id
+	values = append(values, args[5:]...) // всё после priority
 	values = append(values, r.ID)
 
 	res, err := s.db.ExecContext(ctx, `UPDATE rules SET `+set+` WHERE id = ?`, values...)
@@ -230,8 +230,9 @@ func ruleArgs(r Rule) ([]any, error) {
 	}
 
 	tunnelID := sql.NullString{String: r.TunnelID, Valid: r.TunnelID != ""}
+	viaTunnelID := sql.NullString{String: r.ViaTunnelID, Valid: r.ViaTunnelID != ""}
 	return []any{
-		r.Name, string(r.Action), tunnelID, r.Priority, r.Enabled,
+		r.Name, string(r.Action), tunnelID, viaTunnelID, r.Priority, r.Enabled,
 		encoded[0], encoded[1], encoded[2], encoded[3],
 		string(r.PeerScope), encoded[4], r.ResolveRealIP,
 	}, nil
@@ -241,10 +242,10 @@ func scanRule(sc scanner) (Rule, error) {
 	var (
 		r                                        Rule
 		action, scope                            string
-		tunnelID                                 sql.NullString
+		tunnelID, viaTunnelID                    sql.NullString
 		lists, domains, subnets, remote, peerIDs string
 	)
-	err := sc.Scan(&r.ID, &r.Name, &action, &tunnelID, &r.Priority, &r.Enabled,
+	err := sc.Scan(&r.ID, &r.Name, &action, &tunnelID, &viaTunnelID, &r.Priority, &r.Enabled,
 		&lists, &domains, &subnets, &remote, &scope, &peerIDs, &r.ResolveRealIP)
 	if err != nil {
 		return Rule{}, err
@@ -253,6 +254,7 @@ func scanRule(sc scanner) (Rule, error) {
 	r.Action = RuleAction(action)
 	r.PeerScope = PeerScope(scope)
 	r.TunnelID = tunnelID.String
+	r.ViaTunnelID = viaTunnelID.String
 	for _, f := range []struct {
 		raw string
 		dst *[]string
@@ -271,10 +273,15 @@ func scanRule(sc scanner) (Rule, error) {
 }
 
 // wrapRuleWriteErr превращает ошибки внешнего ключа в сообщение про туннель:
-// «FOREIGN KEY constraint failed» пользователю ничего не говорит.
+// «FOREIGN KEY constraint failed» пользователю ничего не говорит. Какое из двух
+// звеньев не нашлось, SQLite не сообщает, поэтому называются оба заданных.
 func wrapRuleWriteErr(err error, r Rule, what string) error {
 	if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
-		return fmt.Errorf("правило %q ссылается на туннель %s: %w", r.Name, r.TunnelID, ErrNotFound)
+		ids := r.TunnelID
+		if r.ViaTunnelID != "" {
+			ids += ", " + r.ViaTunnelID
+		}
+		return fmt.Errorf("правило %q ссылается на туннель %s: %w", r.Name, ids, ErrNotFound)
 	}
 	return fmt.Errorf("%s правила %q: %w", what, r.Name, err)
 }
