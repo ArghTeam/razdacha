@@ -547,6 +547,11 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 
 .rule-tunnel { width: auto; min-width: 160px; max-width: 100%; }
 
+/* Второе звено цепи (#99) стоит под выбором туннеля, а не отдельной строкой
+   формы: это продолжение того же вопроса «куда», и между ними ничего не должно
+   вклиниваться. */
+.rule-via { margin-top: 12px; }
+
 .rule-search {
   font: inherit; font-size: 14px; padding: 7px 10px; border-radius: 8px;
   border: 1px solid var(--line-strong); background: var(--bg-sunken);
