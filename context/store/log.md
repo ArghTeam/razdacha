@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-27
+
+### #89 — таблица `tunnel_checks`
+
+**Changed:** миграция 5, `SaveTunnelCheck`/`TunnelChecks`, настройка `tunnel_check_interval` с нижней границей 30 секунд.
+**Beware:** отдельная таблица, а не колонки в `tunnels`: состояние проверки — наблюдение о туннеле, и в `Snapshot` ему делать нечего, оттуда генерируется конфиг sing-box. Задержка не хранится: она живёт минуты (ADR 0011).
+
+
 ## 2026-07-26
 
 ### #81 — режим панели и версия установки в настройках
