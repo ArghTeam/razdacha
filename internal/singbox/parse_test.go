@@ -1,12 +1,15 @@
 package singbox
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
 	"strings"
 	"testing"
 	"unicode"
+
+	"github.com/sagernet/sing-box/option"
 
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -230,6 +233,90 @@ func TestParseWireGuardConfDefaults(t *testing.T) {
 		          "allowed_ips":["0.0.0.0/0","::/0"]}]}`)
 }
 
+// TestParseWireGuardConfReserved проверяет расширение под WARP: client ID из секции
+// [Peer] доходит до option.WireGuardPeer.Reserved. Без него Cloudflare отбрасывает
+// пакеты — туннель поднят, трафик не идёт.
+func TestParseWireGuardConfReserved(t *testing.T) {
+	res, err := Parse(readFixture(t, "testdata/wireguard-warp.conf"))
+	if err != nil {
+		t.Fatalf("Parse вернул ошибку: %v", err)
+	}
+	if res.Endpoint == nil {
+		t.Fatal("Endpoint не заполнен")
+	}
+	opts, ok := res.Endpoint.Options.(*option.WireGuardEndpointOptions)
+	if !ok {
+		t.Fatalf("Options имеют тип %T, ожидались опции WireGuard", res.Endpoint.Options)
+	}
+	if len(opts.Peers) != 1 {
+		t.Fatalf("пиров %d, ожидался один", len(opts.Peers))
+	}
+	if got := opts.Peers[0].Reserved; !bytes.Equal(got, []uint8{1, 2, 3}) {
+		t.Errorf("Reserved = %v, ожидалось [1 2 3]", got)
+	}
+	// В конфиг sing-box client ID уезжает тем же base64, каким читает его сам sing-box.
+	if !strings.Contains(string(res.Parsed), `"reserved":"AQID"`) {
+		t.Errorf("в JSON пира нет reserved: %s", res.Parsed)
+	}
+}
+
+// TestParseWireGuardConfReservedForms — формы записи client ID, которые встречаются
+// у генераторов конфигов WARP.
+func TestParseWireGuardConfReservedForms(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  []uint8
+	}{
+		{"три числа через запятую", "1, 2, 3", []uint8{1, 2, 3}},
+		{"три числа без пробелов", "0,0,0", []uint8{0, 0, 0}},
+		{"числа в квадратных скобках", "[10, 20, 255]", []uint8{10, 20, 255}},
+		{"base64 с набивкой", "AQID", []uint8{1, 2, 3}},
+		{"base64 URL-safe", "-_-_", []uint8{251, 255, 191}},
+		{"base64 из одних цифр", "1234", []uint8{215, 109, 248}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := Parse(wireguardConfWithReserved(tt.value))
+			if err != nil {
+				t.Fatalf("Parse вернул ошибку: %v", err)
+			}
+			opts := res.Endpoint.Options.(*option.WireGuardEndpointOptions)
+			if got := opts.Peers[0].Reserved; !bytes.Equal(got, tt.want) {
+				t.Errorf("Reserved = %v, ожидалось %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestParseWireGuardConfWithoutReserved — конфиг без Reserved разбирается как раньше,
+// поле остаётся пустым: обычному WireGuard-серверу client ID не нужен.
+func TestParseWireGuardConfWithoutReserved(t *testing.T) {
+	res, err := Parse(readFixture(t, "testdata/wireguard.conf"))
+	if err != nil {
+		t.Fatalf("Parse вернул ошибку: %v", err)
+	}
+	opts := res.Endpoint.Options.(*option.WireGuardEndpointOptions)
+	if got := opts.Peers[0].Reserved; got != nil {
+		t.Errorf("Reserved = %v, ожидалось пустое поле", got)
+	}
+	if strings.Contains(string(res.Parsed), "reserved") {
+		t.Errorf("в JSON пира появилось reserved: %s", res.Parsed)
+	}
+}
+
+// wireguardConfWithReserved собирает минимальный .conf с заданным значением Reserved.
+func wireguardConfWithReserved(value string) string {
+	return "[Interface]\n" +
+		"PrivateKey = uHl8sTKvHZmqSN0dhBDl0kNmRvGaxNCEIYyNSGDPmVo=\n" +
+		"Address = 172.16.0.2/32\n\n" +
+		"[Peer]\n" +
+		"PublicKey = bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=\n" +
+		"Endpoint = engage.cloudflareclient.com:2408\n" +
+		"Reserved = " + value + "\n"
+}
+
 // TestParseJSON проверяет запасной путь: готовый фрагмент конфига вставляется как есть.
 func TestParseJSON(t *testing.T) {
 	tests := []struct {
@@ -305,6 +392,13 @@ func TestParseInvalid(t *testing.T) {
 		{"wg со строкой без знака равенства", "[Interface]\nPrivateKey\n"},
 		{"wg с незакрытой секцией", "[Interface]\nPrivateKey = k\n[Peer\n"},
 		{"wg с неизвестной секцией", "[Interface]\nPrivateKey = k\nAddress = 10.0.0.2/32\n\n[Proxy]\n"},
+		{"wg с Reserved из двух чисел", wireguardConfWithReserved("1, 2")},
+		{"wg с Reserved из четырёх чисел", wireguardConfWithReserved("1, 2, 3, 4")},
+		{"wg с Reserved вне диапазона байта", wireguardConfWithReserved("1, 2, 300")},
+		{"wg с нечисловым Reserved в списке", wireguardConfWithReserved("1, 2, три")},
+		{"wg с незакрытой скобкой в Reserved", wireguardConfWithReserved("[1, 2, 3")},
+		{"wg с Reserved не в base64", wireguardConfWithReserved("не-base64!")},
+		{"wg с base64 Reserved не в три байта", wireguardConfWithReserved("AQIDBA==")},
 	}
 
 	for _, tt := range tests {
