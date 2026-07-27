@@ -15,7 +15,12 @@ const INTERVALS = [
   [604800, 'раз в неделю'],
 ];
 
-export function modalSettings() {
+/* Оповещения живут в общей модалке настроек, а не отдельным экраном: их
+   четыре, и вход — гейт, а не пятый раздел. Токен приходит признаком
+   `token_set`, само значение сервер не отдаёт. */
+let notifyCfg = null;
+
+export async function modalSettings() {
   const s = state.settings;
   if (!s) {
     openModal(modalShell('Настройки',
@@ -43,10 +48,66 @@ export function modalSettings() {
     </div>
     <div class="field"><label for="s-int">Обновление списков</label>
       <select id="s-int">${opts}</select></div>
+    <div class="field"><label for="s-ntf-chat">Оповещения в телеграм</label>
+      <div class="hint" style="margin-bottom:6px">Бота заводите в @BotFather, затем
+        добавьте его в чат и укажите идентификатор чата.</div>
+      <input type="text" id="s-ntf-chat" placeholder="Идентификатор чата, например -1001234567890">
+      <input type="password" id="s-ntf-token" placeholder="Токен бота" style="margin-top:6px">
+      <label style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <input type="checkbox" id="s-ntf-on"> Присылать оповещения</label>
+      <button class="btn" data-act="test-notify" style="margin-top:8px">Отправить тестовое</button></div>
     <div class="parse-result idle">Остальное живёт в config.yaml: пул адресов, тип DNS,
       WAN-интерфейс, уровень логов.</div>`,
   `<button class="btn" data-act="close-modal">Отмена</button>
-     <button class="btn btn-primary" data-act="save-settings">Сохранить</button>`));
+     <button class="btn btn-primary" data-act="save-settings">Сохранить</button>`,
+  ), fillNotify);
+}
+
+/* Настройки оповещений приезжают отдельным запросом: они лежат вне
+   `GET /api/settings`, чтобы токен не уезжал вместе с остальными полями. */
+async function fillNotify() {
+  try {
+    notifyCfg = await api.notify.get();
+  } catch (err) {
+    if (!err.missing) toastError(err);
+    return;
+  }
+  const chat = $('#s-ntf-chat');
+  const token = $('#s-ntf-token');
+  const on = $('#s-ntf-on');
+  if (!chat || !token || !on) return;
+  chat.value = notifyCfg.chat_id || '';
+  on.checked = !!notifyCfg.enabled;
+  // Пустое поле с подсказкой «сохранён» честнее звёздочек: значения у нас нет.
+  token.placeholder = notifyCfg.token_set ? 'Токен сохранён — оставьте пустым' : 'Токен бота';
+}
+
+/* Сохранение оповещений отделено от сохранения настроек: у них разные ручки, и
+   отказ одной не должен молча съедать другую. */
+async function saveNotify() {
+  const chat = $('#s-ntf-chat');
+  const token = $('#s-ntf-token');
+  const on = $('#s-ntf-on');
+  if (!chat || !token || !on) return;
+  const body = { enabled: on.checked, chat_id: chat.value.trim() };
+  // Пустой токен не шлём вовсе: на сервере «не прислали» означает «оставить».
+  if (token.value.trim()) body.token = token.value.trim();
+  notifyCfg = await api.notify.save(body);
+}
+
+async function testNotify() {
+  const btn = $('#modal [data-act="test-notify"]');
+  btn.disabled = true;
+  try {
+    // Сначала сохраняем: тестировать то, чего сервер ещё не видел, бессмысленно.
+    await saveNotify();
+    await api.notify.test();
+    toast('Тестовое сообщение отправлено');
+  } catch (err) {
+    toastError(err);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function saveSettings() {
@@ -61,6 +122,9 @@ async function saveSettings() {
   const btn = $('#modal [data-act="save-settings"]');
   btn.disabled = true;
   try {
+    // Оповещения лежат за своей ручкой, но кнопка «Сохранить» одна: не
+    // сохранить их отсюда значило бы соврать пользователю.
+    await saveNotify();
     const res = await api.settings.update(body);
     state.settings = res && res.wg_listen_port ? res : { ...s, ...body };
     closeModal();
@@ -80,4 +144,5 @@ async function saveSettings() {
 
 export const actions = {
   'save-settings': saveSettings,
+  'test-notify': testNotify,
 };

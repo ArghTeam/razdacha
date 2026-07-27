@@ -145,6 +145,17 @@ export const peers = {
   config: (id) => get(`/api/peers/${encodeURIComponent(id)}/config`, { expect: 'file' }),
 };
 
+/* --- Оповещения -----------------------------------------------------------
+   Токен бота наружу не отдаётся: в ответе только `token_set`. Пустой `token`
+   в запросе означает «оставить прежний» — иначе сохранение галочки стирало бы
+   секрет, которого в форме и не было. */
+
+export const notify = {
+  get: () => get('/api/notify'),
+  save: (body) => put('/api/notify', body),
+  test: () => post('/api/notify/test'),
+};
+
 /* --- Туннели ------------------------------------------------------------- */
 
 export const tunnels = {
