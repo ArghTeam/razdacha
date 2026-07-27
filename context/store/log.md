@@ -30,15 +30,15 @@
 
 ### #81 — режим панели и версия установки в настройках
 
-**Changed:** `internal/store/install.go` — ключи `panel_public` и `installed_version` в `settings`, **вне `store.Settings`**: `SaveSettings` их не переписывает, в `GET /api/settings` они не попадают.
+**Changed:** `internal/store/install.go` — ключи `panel_public` и `installed_version` в `settings`, **вне `store.Settings`**.
 **New surface:** `PanelPublic` → `(public, saved, err)`, `SetPanelPublic`, `InstalledVersionAt`.
-**Beware:** «ключа нет» нельзя сворачивать в «значение по умолчанию»: `false == false` читалось как «ничего не изменилось», и панель молча уходила из интернета.
+**Beware:** «ключа нет» ≠ «значение по умолчанию» — панель молча уходила из интернета; правило в инвариантах слоя.
 
 ### #62, #71 — туннель-пул как форма туннеля и встроенная запись
 
-**Changed:** `internal/store/{model,migrate,tunnels}.go` — `source = pool`, состав серверов и время обхода в `Tunnel`; миграция 3 (состав) и 4 (колонка `builtin`). Порядок серверов в `Pool` стал значимым: это приоритет отбора в конфиг.
-**New surface:** `UpdateTunnelPool`, `EnsureBuiltinPool` (возвращает, завела она пул или признала существующий), `PoolServer` с полем `Misses`.
-**Beware:** миграция 4 — `ALTER TABLE ADD COLUMN`, таблица не пересобирается, внешние ключи целы; проверено на стенде на БД с живыми туннелями, пиром и правилом. Правка `pool` в обход слоя lists переназначает теги участников группы и перезапускает sing-box.
+**Changed:** `internal/store/{model,migrate,tunnels}.go` — `source = pool`, состав серверов в `Tunnel`; миграции 3 и 4 (колонка `builtin`).
+**New surface:** `UpdateTunnelPool`, `EnsureBuiltinPool`, `PoolServer` с полем `Misses`.
+**Beware:** миграция 4 — `ALTER TABLE ADD COLUMN`: таблица не пересобирается, внешние ключи целы, проверено на стенде. Значимость порядка в `Pool` — в инвариантах слоя.
 
 ## 2026-07-25
 
