@@ -221,7 +221,8 @@ function report() {
     '',
     '## Правила',
     ...state.rules.map((r, i) =>
-      `${i + 1}. ${r.name} → ${r.action}${r.tunnel_id ? ' (' + ((tunnelById(r.tunnel_id) || {}).name || '?') + ')' : ''}${r.enabled ? '' : ' [выкл]'}`),
+      `${i + 1}. ${r.name} → ${r.action}${r.tunnel_id ? ' (' + ((tunnelById(r.tunnel_id) || {}).name || '?')
+        + (r.via_tunnel_id ? ' → ' + ((tunnelById(r.via_tunnel_id) || {}).name || '?') : '') + ')' : ''}${r.enabled ? '' : ' [выкл]'}`),
     '',
   ].join('\n');
   download('razdacha-diag.txt', out);
