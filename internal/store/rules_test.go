@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -294,5 +295,88 @@ func TestUpdateRuleKeepsPriority(t *testing.T) {
 	}
 	if after := ruleIDs(t, s); after[0] != ids[0] || after[1] != ids[1] {
 		t.Errorf("UpdateRule изменил порядок: %v, ожидался %v", after, ids)
+	}
+}
+
+// Второе звено цепи (ADR 0012) переживает запись и чтение, а очистка поля
+// возвращает правило к работе одним туннелем.
+func TestRuleChainRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	first, err := s.CreateTunnel(ctx, sampleTunnel("основной"))
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+	warp, err := s.CreateTunnel(ctx, warpTunnel("WARP"))
+	if err != nil {
+		t.Fatalf("CreateTunnel WARP: %v", err)
+	}
+
+	r := sampleRule("YouTube", first.ID)
+	r.ViaTunnelID = warp.ID
+	created, err := s.CreateRule(ctx, r)
+	if err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+	got, err := s.Rule(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Rule: %v", err)
+	}
+	if got.ViaTunnelID != warp.ID {
+		t.Fatalf("via_tunnel_id = %q, ожидался %q", got.ViaTunnelID, warp.ID)
+	}
+
+	got.ViaTunnelID = ""
+	if err := s.UpdateRule(ctx, got); err != nil {
+		t.Fatalf("UpdateRule: %v", err)
+	}
+	again, err := s.Rule(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("Rule: %v", err)
+	}
+	if again.ViaTunnelID != "" {
+		t.Errorf("второе звено не снялось: %q", again.ViaTunnelID)
+	}
+}
+
+// Туннель, стоящий вторым звеном, держится так же крепко, как первым: удаление
+// отклоняется и называет правило.
+func TestDeleteTunnelUsedAsSecondHop(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	first, err := s.CreateTunnel(ctx, sampleTunnel("основной"))
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+	warp, err := s.CreateTunnel(ctx, warpTunnel("WARP"))
+	if err != nil {
+		t.Fatalf("CreateTunnel WARP: %v", err)
+	}
+	r := sampleRule("YouTube", first.ID)
+	r.ViaTunnelID = warp.ID
+	if _, err := s.CreateRule(ctx, r); err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+
+	err = s.DeleteTunnel(ctx, warp.ID)
+	if !errors.Is(err, ErrInUse) {
+		t.Fatalf("ожидалась ErrInUse, получено: %v", err)
+	}
+	if !strings.Contains(err.Error(), "YouTube") {
+		t.Errorf("в сообщении нет имени правила: %v", err)
+	}
+}
+
+// Второе звено бывает только у правила в туннель: «напрямую» и «блокировать»
+// наружу не выходят, и цепи там взяться неоткуда.
+func TestRuleChainRejectedForNonTunnelAction(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	r := Rule{Name: "X", Action: ActionDirect, PeerScope: ScopeAll, ViaTunnelID: "t"}
+	if _, err := s.CreateRule(ctx, r); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
 	}
 }

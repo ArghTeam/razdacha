@@ -110,19 +110,24 @@ type Tunnel struct {
 // Priority выставляет сам слой хранения, вручную его не задают: порядок меняется
 // через [Store.ReorderRules].
 type Rule struct {
-	ID             string     `json:"id"`
-	Name           string     `json:"name"`
-	Action         RuleAction `json:"action"`
-	TunnelID       string     `json:"tunnel_id,omitempty"`
-	Priority       int        `json:"priority"`
-	Enabled        bool       `json:"enabled"`
-	CommunityLists []string   `json:"community_lists"`
-	Domains        []string   `json:"domains"`
-	Subnets        []string   `json:"subnets"`
-	RemoteLists    []string   `json:"remote_lists"`
-	PeerScope      PeerScope  `json:"peer_scope"`
-	PeerIDs        []string   `json:"peer_ids"`
-	ResolveRealIP  bool       `json:"resolve_real_ip"`
+	ID       string     `json:"id"`
+	Name     string     `json:"name"`
+	Action   RuleAction `json:"action"`
+	TunnelID string     `json:"tunnel_id,omitempty"`
+	// ViaTunnelID — второе звено цепи: туннель, которым трафик выходит наружу
+	// после первого (ADR 0012). Пусто — цепи нет, и правило работает ровно как
+	// раньше, одним туннелем. Годится только туннель с Source = SourceWARP, но
+	// проверяет это слой api: правилу одному туннели не видны.
+	ViaTunnelID    string    `json:"via_tunnel_id,omitempty"`
+	Priority       int       `json:"priority"`
+	Enabled        bool      `json:"enabled"`
+	CommunityLists []string  `json:"community_lists"`
+	Domains        []string  `json:"domains"`
+	Subnets        []string  `json:"subnets"`
+	RemoteLists    []string  `json:"remote_lists"`
+	PeerScope      PeerScope `json:"peer_scope"`
+	PeerIDs        []string  `json:"peer_ids"`
+	ResolveRealIP  bool      `json:"resolve_real_ip"`
 }
 
 // Peer — клиентское устройство. Приватный и pre-shared ключи хранятся, чтобы конфиг
@@ -226,6 +231,10 @@ func (r *Rule) validate() error {
 		}
 	default:
 		return fmt.Errorf("%w: неизвестное действие правила %q", ErrInvalid, r.Action)
+	}
+	if r.ViaTunnelID != "" && r.Action != ActionTunnel {
+		return fmt.Errorf("%w: правило %q с действием %q не выходит в туннель, второму звену цепи взяться неоткуда",
+			ErrInvalid, r.Name, r.Action)
 	}
 	switch r.PeerScope {
 	case ScopeAll:

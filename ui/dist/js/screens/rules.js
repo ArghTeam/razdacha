@@ -79,11 +79,16 @@ export function view() {
   const rows = state.rules.map((r, i) => {
     const shadow = shadowedBy(i);
     const shadowed = new Set(shadow.flatMap((h) => h.shared));
+    /* Цепь показывается целиком: из имени одного туннеля не видно, сколько за
+       правилом прыжков, а второе звено меняет адрес, который увидит ресурс. */
+    const via = r.via_tunnel_id
+      ? ` → ${esc((tunnelById(r.via_tunnel_id) || {}).name || 'туннель удалён')}`
+      : '';
     const dest = r.action === 'direct'
       ? '<span class="badge">напрямую</span>'
       : r.action === 'block'
         ? '<span class="badge err">блокировать</span>'
-        : `<span class="badge accent">→ ${esc((tunnelById(r.tunnel_id) || {}).name || 'туннель удалён')}</span>`;
+        : `<span class="badge accent">→ ${esc((tunnelById(r.tunnel_id) || {}).name || 'туннель удалён')}${via}</span>`;
 
     const chip = (text, key) =>
       `<span class="chip${shadowed.has(key) ? ' shadowed' : ''}">${esc(text)}</span>`;
@@ -164,7 +169,8 @@ function rulesAbove(id) {
 function modalRule(id) {
   const r = id ? state.rules.find((x) => x.id === id) : {
     id: null, name: '', action: 'tunnel', tunnel_id: (state.tunnels[0] || {}).id || null,
-    enabled: true, community_lists: [], domains: [], subnets: [], remote_lists: [],
+    via_tunnel_id: '', enabled: true,
+    community_lists: [], domains: [], subnets: [], remote_lists: [],
     peer_scope: 'all', peer_ids: [], resolve_real_ip: false,
   };
 
@@ -194,6 +200,21 @@ function modalRule(id) {
   const tunnelOpts = state.tunnels.map((t) =>
     `<option value="${esc(t.id)}" ${r.tunnel_id === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
 
+  /* Второе звено цепи — только WARP (ADR 0012), поэтому в выпадашке лежат
+     туннели с source = warp, а не весь инвентарь: выбирать нечего из того,
+     что всё равно будет отклонено. Нет WARP — нет и поля. */
+  const warps = state.tunnels.filter((t) => t.source === 'warp');
+  const viaOpts = ['<option value="">не нужно</option>'].concat(warps.map((t) =>
+    `<option value="${esc(t.id)}" ${r.via_tunnel_id === t.id ? 'selected' : ''}>${esc(t.name)}</option>`)).join('');
+  const viaHtml = warps.length ? `
+          <div class="field rule-via" id="r-via-field">
+            <label for="r-via">И дальше через</label>
+            <select id="r-via" class="rule-tunnel">${viaOpts}</select>
+            <div class="hint">Второе звено: трафик уходит в выбранный туннель, а наружу выходит
+              через WARP — ресурс видит адрес Cloudflare, а не адрес туннеля. Дальше цепь не
+              продолжается: WARP всегда последний.</div>
+          </div>` : '';
+
   const peersHtml = state.peers.map((p) => `
     <label class="rule-item"><input type="checkbox" name="peer" value="${esc(p.id)}" ${(r.peer_ids || []).includes(p.id) ? 'checked' : ''}>
       <span class="rule-item-name">${esc(p.name)}</span></label>`).join('');
@@ -222,6 +243,7 @@ function modalRule(id) {
               <select id="r-tunnel" class="rule-tunnel" ${r.action === 'tunnel' ? '' : 'disabled'}>${tunnelOpts}</select>
             </div>
             <div class="hint" id="r-action-hint"></div>
+${viaHtml}
           </div>
         </div>
 
@@ -278,10 +300,17 @@ function modalRule(id) {
   (m) => {
     /* Куда: подсказка меняется вместе с выбором — она объясняет именно то
        действие, которое пользователь только что нажал. */
+    const viaSel = m.querySelector('#r-via');
     const syncAction = () => {
       const act = m.querySelector('input[name="action"]:checked').value;
       m.querySelector('#r-tunnel').disabled = act !== 'tunnel';
       m.querySelector('#r-action-hint').textContent = ACTION_HINT[act] || '';
+      /* «Напрямую» и «блокировать» наружу не выходят — второму звену цепи
+         взяться неоткуда, и сервер такое правило отклонит. */
+      if (viaSel) {
+        m.querySelector('#r-via-field').hidden = act !== 'tunnel';
+        viaSel.disabled = act !== 'tunnel';
+      }
     };
     $$('input[name="action"]', m).forEach((el) => el.addEventListener('change', syncAction));
     syncAction();
@@ -416,10 +445,13 @@ async function saveRule(id) {
     return;
   }
 
+  const via = m.querySelector('#r-via');
   const body = {
     name,
     action,
     tunnel_id: action === 'tunnel' ? m.querySelector('#r-tunnel').value : '',
+    // Пустая строка снимает второе звено: правило возвращается к одному туннелю.
+    via_tunnel_id: action === 'tunnel' && via ? via.value : '',
     community_lists: listsSel,
     domains,
     subnets,

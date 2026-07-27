@@ -32,6 +32,9 @@ func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 	rule.ID = ""
 	rule.Priority = 0
 	rule.Name = strings.TrimSpace(rule.Name)
+	if !s.checkChain(w, r, rule) {
+		return
+	}
 
 	created, err := s.store.CreateRule(r.Context(), rule)
 	if err != nil {
@@ -64,6 +67,9 @@ func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request) {
 	rule.ID = id
 	rule.Priority = priority
 	rule.Name = strings.TrimSpace(rule.Name)
+	if !s.checkChain(w, r, rule) {
+		return
+	}
 
 	if err := s.store.UpdateRule(r.Context(), rule); err != nil {
 		s.storeError(w, err, "Правило не найдено")
@@ -83,6 +89,39 @@ func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, s.log, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// checkChain проверяет второе звено цепи: им бывает только туннель WARP
+// (ADR 0012). Второе значение false означает, что ответ уже отправлен.
+//
+// Проверка здесь, а не в store и не в генераторе: слою хранения одного правила
+// не хватает — нужен туннель, — а `sing-box check` увидел бы только «конфиг не
+// собрался». Пользователю нужна причина, и на русском.
+func (s *Server) checkChain(w http.ResponseWriter, r *http.Request, rule store.Rule) bool {
+	if rule.ViaTunnelID == "" {
+		return true
+	}
+	via, err := s.store.Tunnel(r.Context(), rule.ViaTunnelID)
+	if err != nil {
+		s.storeError(w, err, "Второе звено цепи — туннель не найден")
+		return false
+	}
+	if via.Source != store.SourceWARP {
+		writeError(w, s.log, http.StatusBadRequest, codeBadRequest,
+			"Вторым звеном цепи бывает только WARP, а туннель «"+via.Name+"» заведён иначе. "+
+				"Добавьте WARP кнопкой на экране туннелей или вставьте его .conf.")
+		return false
+	}
+	// Повтор возможен именно потому, что первым звеном годится любой туннель,
+	// включая сам WARP: «WARP → тот же WARP» — это detour на самого себя, то
+	// есть цепь из одного звена, записанная дважды.
+	if rule.ViaTunnelID == rule.TunnelID {
+		writeError(w, s.log, http.StatusBadRequest, codeBadRequest,
+			"Туннель «"+via.Name+"» уже стоит первым звеном — вторым звеном нужен другой, "+
+				"иначе трафик выходил бы через него же.")
+		return false
+	}
+	return true
 }
 
 // reorderRequest — тело `PUT /api/rules/order`: полный список идентификаторов.

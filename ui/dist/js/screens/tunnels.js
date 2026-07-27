@@ -241,7 +241,9 @@ export function view() {
   }
 
   const rows = state.tunnels.map((t) => {
-    const used = state.rules.filter((r) => r.tunnel_id === t.id).length;
+    // Правило считается использующим туннель обоими звеньями цепи: вторым
+    // звеном туннель держится так же, и удалить его сервер не даст (ADR 0012).
+    const used = state.rules.filter((r) => r.tunnel_id === t.id || r.via_tunnel_id === t.id).length;
     const pool = tunnelPool(t);
     const off = t.enabled === false;
     const st = t.enabled === false

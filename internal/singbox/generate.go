@@ -30,6 +30,14 @@ import (
 // (иначе оно поймало бы весь трафик), или если все выбранные им пиры выключены.
 // Ссылка на несуществующий туннель — ошибка: состояние повреждено, и молчаливый
 // пропуск правила увёл бы трафик мимо туннеля.
+// chainPair — цепь из двух звеньев: firstID принимает трафик с сервера, viaID
+// выпускает его наружу. Пара, а не правило: тег клона зависит только от неё, и
+// одинаковые пары из разных правил дают один outbound (ADR 0012).
+type chainPair struct {
+	viaID   string
+	firstID string
+}
+
 func Generate(snap store.Snapshot) (option.Options, error) {
 	tunnels := make(map[string]store.Tunnel, len(snap.Tunnels))
 	for _, t := range snap.Tunnels {
@@ -75,6 +83,11 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 	// Один community-список могут использовать несколько правил, а тег набора в
 	// конфиге обязан быть уникальным.
 	seenSets := make(map[string]bool)
+	// Пары «первое звено + второе» из правил с цепью: на каждую различную пару
+	// приходится один клон второго звена, сколько бы правил на неё ни ссылалось
+	// (ADR 0012). Порядок задаётся первым правилом пары и потому воспроизводим.
+	var chains []chainPair
+	seenChains := make(map[string]bool)
 	for _, r := range sortedRules(snap.Rules) {
 		tunnelTag := ""
 		if r.Action == store.ActionTunnel {
@@ -93,6 +106,31 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 				continue
 			}
 			tunnelTag = TunnelTag(t.ID)
+
+			if r.ViaTunnelID != "" {
+				via, ok := tunnels[r.ViaTunnelID]
+				if !ok {
+					return option.Options{}, fmt.Errorf(
+						"второе звено правила %q — несуществующий туннель %s", r.Name, r.ViaTunnelID)
+				}
+				if via.Source != store.SourceWARP {
+					return option.Options{}, fmt.Errorf(
+						"второе звено правила %q — туннель %q, а им бывает только WARP", r.Name, via.Name)
+				}
+				// Выключенное второе звено обрывает цепь целиком. Отправить
+				// трафик одним первым звеном было бы тихой подменой маршрута:
+				// ресурс увидел бы не тот адрес, ради которого цепь и заводили.
+				if !via.Enabled {
+					log.Warn("правило пропущено: второе звено цепи выключено",
+						"правило", r.Name, "туннель", via.Name)
+					continue
+				}
+				tunnelTag = ChainTag(via.ID, t.ID)
+				if !seenChains[tunnelTag] {
+					seenChains[tunnelTag] = true
+					chains = append(chains, chainPair{viaID: via.ID, firstID: t.ID})
+				}
+			}
 		}
 
 		sets, tags, err := buildRuleSets(r, snap.Settings)
@@ -119,6 +157,14 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 		if dnsRule, ok := dnsRuleFor(r, tags, sources); ok {
 			dns.Rules = append(dns.Rules, dnsRule)
 		}
+	}
+
+	for _, c := range chains {
+		ep, err := chainEndpoint(tunnels[c.viaID], ChainTag(c.viaID, c.firstID), TunnelTag(c.firstID))
+		if err != nil {
+			return option.Options{}, err
+		}
+		endpoints = append(endpoints, ep)
 	}
 
 	return option.Options{

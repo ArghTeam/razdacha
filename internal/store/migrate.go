@@ -121,6 +121,18 @@ UPDATE tunnels SET source = 'warp'
    AND lower(raw) LIKE '%cloudflareclient.com%';
 `,
 	},
+	{
+		// Второе звено цепи у правила (ADR 0012): куда трафик уходит после
+		// первого туннеля. NULL — цепи нет, и правило работает ровно как до
+		// этой версии, поэтому шаг ничего не переписывает.
+		//
+		// Тот же ON DELETE RESTRICT, что и у первого звена: ссылка на туннель
+		// вторым звеном держит его так же крепко, как ссылка первым.
+		version: 8,
+		stmts: `
+ALTER TABLE rules ADD COLUMN via_tunnel_id TEXT REFERENCES tunnels(id) ON DELETE RESTRICT;
+`,
+	},
 }
 
 // schemaVersion — версия схемы, которую ожидает этот код.

@@ -45,6 +45,14 @@ const communityListURL = "https://github.com/itdoginfo/allow-domains/releases/la
 // TunnelTag — тег outbound либо endpoint туннеля.
 func TunnelTag(id string) string { return "tun-" + id }
 
+// ChainTag — тег второго звена цепи: клона туннеля viaID с detour на первое
+// звено firstID (ADR 0012).
+//
+// Тег выводится только из пары идентификаторов — ни счётчиков, ни номеров правил:
+// десять правил с одной парой обязаны дать один outbound и одинаковый конфиг байт
+// в байт, иначе sameOnDisk перезапускал бы sing-box на ровном месте.
+func ChainTag(viaID, firstID string) string { return "chain-" + viaID + "-via-" + firstID }
+
 // ruleSetTag — тег набора со своими доменами и подсетями правила.
 func ruleSetTag(id string) string { return "rule-" + id }
 

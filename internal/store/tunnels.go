@@ -279,10 +279,12 @@ func adoptBuiltinPool(ctx context.Context, tx *sql.Tx, out *BuiltinPoolResult) (
 	return true, nil
 }
 
-// ruleNamesByTunnel отдаёт имена правил, ссылающихся на туннель.
+// ruleNamesByTunnel отдаёт имена правил, ссылающихся на туннель — любым из двух
+// звеньев цепи (ADR 0012): вторым звеном туннель держится так же, как первым.
 func ruleNamesByTunnel(ctx context.Context, q querier, tunnelID string) ([]string, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT name FROM rules WHERE tunnel_id = ? ORDER BY priority`, tunnelID)
+		`SELECT name FROM rules WHERE tunnel_id = ? OR via_tunnel_id = ? ORDER BY priority`,
+		tunnelID, tunnelID)
 	if err != nil {
 		return nil, fmt.Errorf("поиск правил туннеля %s: %w", tunnelID, err)
 	}
