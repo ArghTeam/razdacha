@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -105,8 +106,10 @@ func TestMigrationMarksPastedWARP(t *testing.T) {
 	// Откат версии схемы к предыдущему шагу: так БД выглядит до этого релиза.
 	// Вместе с версией откатывается и таблица правил: шаг 8 добавляет колонку
 	// via_tunnel_id, и на таблице, где она уже есть, повторный ALTER упал бы.
-	// Правил в этом тесте нет, поэтому таблица пересоздаётся пустой.
+	// Правил в этом тесте нет, поэтому таблица пересоздаётся пустой. По той же
+	// причине убирается таблица регистраций WARP — её создаёт шаг 9.
 	if _, err := s.db.ExecContext(ctx, `
+DROP TABLE warp_registrations;
 DROP TABLE rules;
 CREATE TABLE rules (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, action TEXT NOT NULL,
@@ -144,5 +147,135 @@ PRAGMA user_version = 6;`); err != nil {
 	}
 	if other.Source != SourceWGConf {
 		t.Errorf("форма конфига обычного WireGuard = %q, ожидалась wg_conf", other.Source)
+	}
+}
+
+// Регистрация кладётся вместе с туннелем и читается обратно: без неё устройство
+// у Cloudflare не снять, а перевыпустить пару неоткуда (issue #107).
+func TestCreateWARPTunnelKeepsRegistration(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	created, err := s.CreateWARPTunnel(ctx, warpTunnel("WARP"),
+		WARPRegistration{DeviceID: "t.42", AccessToken: "секрет"})
+	if err != nil {
+		t.Fatalf("CreateWARPTunnel: %v", err)
+	}
+
+	reg, ok, err := s.WARPRegistration(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("WARPRegistration: %v", err)
+	}
+	if !ok {
+		t.Fatal("регистрация не сохранилась")
+	}
+	if reg.DeviceID != "t.42" || reg.AccessToken != "секрет" {
+		t.Errorf("регистрация = %q / %q", reg.DeviceID, reg.AccessToken)
+	}
+	if reg.CreatedAt.IsZero() {
+		t.Error("время регистрации не записано")
+	}
+}
+
+// Туннель и регистрация пишутся одной транзакцией: занятое имя не должно
+// оставлять в БД ни строки.
+func TestCreateWARPTunnelAtomic(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	if _, err := s.CreateTunnel(ctx, warpTunnel("WARP")); err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+	_, err := s.CreateWARPTunnel(ctx, warpTunnel("WARP"),
+		WARPRegistration{DeviceID: "t.42", AccessToken: "секрет"})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ожидалась ErrInvalid на занятое имя, получено: %v", err)
+	}
+
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(1) FROM warp_registrations`).Scan(&count); err != nil {
+		t.Fatalf("подсчёт регистраций: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("регистраций %d — упавшая вставка оставила строку", count)
+	}
+}
+
+// Пустая пара — не регистрация: такой туннель заводится обычным CreateTunnel, а
+// молча записанная пустая строка выглядела бы как «снять есть чем».
+func TestCreateWARPTunnelRejectsEmptyRegistration(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	_, err := s.CreateWARPTunnel(ctx, warpTunnel("WARP"), WARPRegistration{})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
+	}
+
+	other := warpTunnel("Свой VLESS")
+	other.Source = SourceWGConf
+	if _, err := s.CreateWARPTunnel(ctx, other,
+		WARPRegistration{DeviceID: "t.42", AccessToken: "секрет"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ожидалась ErrInvalid для не-WARP, получено: %v", err)
+	}
+}
+
+// У WARP, вставленного руками, и у заведённого до появления таблицы регистрации
+// нет — и это не ошибка, а «снимать у Cloudflare нечего».
+func TestWARPRegistrationMissing(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	created, err := s.CreateTunnel(ctx, warpTunnel("WARP руками"))
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+	if _, ok, err := s.WARPRegistration(ctx, created.ID); err != nil || ok {
+		t.Fatalf("WARPRegistration = %v, %v; ожидалось «нет регистрации»", ok, err)
+	}
+	if _, ok, err := s.WARPRegistration(ctx, "нет-такого"); err != nil || ok {
+		t.Fatalf("WARPRegistration = %v, %v; ожидалось «нет регистрации»", ok, err)
+	}
+}
+
+// Удалённый туннель не держит за собой регистрацию: читать её нужно до удаления.
+func TestWARPRegistrationCascade(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	created, err := s.CreateWARPTunnel(ctx, warpTunnel("WARP"),
+		WARPRegistration{DeviceID: "t.42", AccessToken: "секрет"})
+	if err != nil {
+		t.Fatalf("CreateWARPTunnel: %v", err)
+	}
+	if err := s.DeleteTunnel(ctx, created.ID); err != nil {
+		t.Fatalf("DeleteTunnel: %v", err)
+	}
+	if _, ok, err := s.WARPRegistration(ctx, created.ID); err != nil || ok {
+		t.Fatalf("WARPRegistration = %v, %v; ожидалось «нет регистрации»", ok, err)
+	}
+}
+
+// Токен — секрет: в снимке состояния, из которого генерируется конфиг и который
+// уходит в API, его быть не должно.
+func TestWARPRegistrationOutOfSnapshot(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	if _, err := s.CreateWARPTunnel(ctx, warpTunnel("WARP"),
+		WARPRegistration{DeviceID: "t.42", AccessToken: "секрет"}); err != nil {
+		t.Fatalf("CreateWARPTunnel: %v", err)
+	}
+	snap, err := s.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	raw, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatalf("сериализация снимка: %v", err)
+	}
+	if strings.Contains(string(raw), "секрет") || strings.Contains(string(raw), "t.42") {
+		t.Errorf("регистрация WARP уехала в снимок состояния: %s", raw)
 	}
 }
