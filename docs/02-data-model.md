@@ -135,11 +135,13 @@ health-check ведёт sing-box ([ADR 0010](decisions/0010-tunnel-pool-urltest.
 | `dns_type` | `udp` | `udp` \| `dot` \| `doh` |
 | `wan_interface` | автодетект | для masquerade |
 | `list_update_interval` | `1d` | |
+| `tunnel_check_interval` | `2m` | как часто снимается состояние туннелей ([ADR 0011](decisions/0011-tunnel-check-schedule.md)); меньше 30 секунд не принимается |
 | `log_level` | `warn` | |
 
 Всё, что можно вывести автоматически — выводится. В UI показываются только
 `wg_listen_port`, `endpoint_host`, `client_mtu`, `dns_upstream`,
-`list_update_interval`; остальное — в `config.yaml` для тех, кому надо.
+`list_update_interval`, `tunnel_check_interval`; остальное — в `config.yaml` для тех,
+кому надо.
 
 ## Отображение в конфиг sing-box
 
@@ -209,12 +211,25 @@ CREATE TABLE sessions (
   token_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL);
 CREATE INDEX sessions_expires_at ON sessions(expires_at);
+
+CREATE TABLE tunnel_checks (
+  tunnel_id TEXT PRIMARY KEY REFERENCES tunnels(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  checked_at INTEGER NOT NULL);
 ```
 
 `ON DELETE RESTRICT` для `tunnel_id` намеренно: удаление туннеля, на который ссылается
 правило, должно быть отклонено с внятным сообщением, а не тихо сломать маршрутизацию.
 Внешние ключи в SQLite выключены по умолчанию — `PRAGMA foreign_keys = ON` ставится на
 каждом соединении, иначе `RESTRICT` не действует.
+
+**`tunnel_checks` — наблюдение о туннеле, а не его часть.** Отдельная таблица, а не
+колонки в `tunnels`: состояние проверки не должно попадать в `Snapshot`, откуда целиком
+генерируется конфиг sing-box. Задержки в таблице нет намеренно — она живёт минуты и
+после перезапуска sing-box не значит ничего, тогда как статус со своей отметкой времени
+остаётся фактом ([ADR 0011](decisions/0011-tunnel-check-schedule.md)). `ON DELETE
+CASCADE`: удалённый туннель не держит за собой запись, иначе она всплыла бы на новом
+туннеле с тем же идентификатором.
 
 **Приоритет назначает слой хранения, а не вызывающий.** Правило добавляется в конец
 списка, удаление сжимает приоритеты оставшихся, порядок меняется отдельной операцией

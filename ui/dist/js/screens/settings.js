@@ -1,5 +1,5 @@
 /* Настройки — не раздел навигации, а шестерёнка в шапке: «четыре экрана, не
-   больше». Пять полей, всё прочее живёт в config.yaml. */
+   больше». Шесть полей, всё прочее живёт в config.yaml. */
 
 import * as api from '../api.js';
 import {
@@ -13,6 +13,16 @@ const INTERVALS = [
   [21600, 'каждые 6 часов'],
   [86400, 'раз в сутки'],
   [604800, 'раз в неделю'],
+];
+
+/* Проверка туннелей — не то же самое, что обновление списков: тут единицы —
+   минуты, а нижняя граница в 30 секунд стоит в демоне, потому что каждый прогон
+   пробивает обычные туннели настоящим запросом (ADR 0011). */
+const CHECK_INTERVALS = [
+  [60, 'каждую минуту'],
+  [120, 'каждые 2 минуты'],
+  [300, 'каждые 5 минут'],
+  [900, 'каждые 15 минут'],
 ];
 
 export function modalSettings() {
@@ -29,6 +39,10 @@ export function modalSettings() {
   const opts = INTERVALS.map(([v, label]) =>
     `<option value="${v}" ${interval === v ? 'selected' : ''}>${label}</option>`).join('');
 
+  const checkEvery = Number(s.tunnel_check_interval) || 120;
+  const checkOpts = CHECK_INTERVALS.map(([v, label]) =>
+    `<option value="${v}" ${checkEvery === v ? 'selected' : ''}>${label}</option>`).join('');
+
   openModal(modalShell('Настройки', `
     <div class="two-col">
       <div class="field"><label for="s-port">Порт WireGuard</label>
@@ -43,6 +57,9 @@ export function modalSettings() {
     </div>
     <div class="field"><label for="s-int">Обновление списков</label>
       <select id="s-int">${opts}</select></div>
+    <div class="field"><label for="s-check">Проверка туннелей</label>
+      <select id="s-check">${checkOpts}</select>
+      <div class="hint">Как часто демон сам опрашивает состояние туннелей.</div></div>
     <div class="parse-result idle">Остальное живёт в config.yaml: пул адресов, тип DNS,
       WAN-интерфейс, уровень логов.</div>`,
   `<button class="btn" data-act="close-modal">Отмена</button>
@@ -57,6 +74,7 @@ async function saveSettings() {
     client_mtu: Number($('#s-mtu').value) || s.client_mtu,
     dns_upstream: $('#s-dns').value.trim() || s.dns_upstream,
     list_update_interval: Number($('#s-int').value),
+    tunnel_check_interval: Number($('#s-check').value),
   };
   const btn = $('#modal [data-act="save-settings"]');
   btn.disabled = true;
