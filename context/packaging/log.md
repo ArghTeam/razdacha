@@ -3,6 +3,15 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-27
+
+### #90 — оповещения из окружения
+
+**Changed:** `cmd/razdacha/notify.go` — засев оповещений при `setup`; `install.sh` и `docs/09-notifications.md`.
+**New surface:** `RAZDACHA_TELEGRAM_TOKEN` и `RAZDACHA_TELEGRAM_CHAT`, три состояния как у `RAZDACHA_PUBLIC`.
+**Beware:** токен читается прямо из окружения, а не флагом — аргументы процесса видны в `ps`. Переменные засевают БД, а не подменяют её.
+
+
 ## 2026-07-26
 
 ### #80, #81, #82 — путь обновления починен

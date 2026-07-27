@@ -5,6 +5,11 @@
 
 ## 2026-07-27
 
+### #90 — настройки оповещений
+
+**Changed:** `NotifyConfig`/`SaveNotifyConfig`, ключи `notify_*` в таблице `settings`.
+**Beware:** токен лежит вне структуры `Settings`, как хеш пароля: внутри он переписывался бы из `PATCH /api/settings` и уезжал бы в `GET`. Включение без токена или чата отвергается — иначе настройка выглядит рабочей и молчит.
+
 ### #89 — таблица `tunnel_checks`
 
 **Changed:** миграция 5, `SaveTunnelCheck`/`TunnelChecks`, настройка `tunnel_check_interval` с нижней границей 30 секунд.
