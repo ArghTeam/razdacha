@@ -6,7 +6,7 @@ import {
   state, peerById, toast, toastError, openModal, modalShell,
   openMenu, notImplemented, notice, refresh, markDirty,
 } from '../shell.js';
-import { $, esc, bytes, since, isOnline, download, slug } from '../util.js';
+import { $, esc, bytes, since, isOnline, download } from '../util.js';
 
 export const title = 'Клиенты';
 
@@ -118,11 +118,13 @@ async function modalPeerConfig(id) {
     '<div class="loading">Готовлю конфиг…</div>',
     '<button class="btn" data-act="close-modal">Закрыть</button>'));
 
-  let conf;
+  let conf, filename;
   try {
     // Конфиг собирает демон: публичного ключа сервера нет ни в одной сущности
-    // API, и построить .conf на клиенте нечем.
-    conf = await api.peers.config(id);
+    // API, и построить .conf на клиенте нечем. Имя файла тоже его: из него
+    // WireGuard берёт имя туннеля, и правила длины и алфавита знает только
+    // демон.
+    ({ text: conf, filename } = await api.peers.config(id));
   } catch (err) {
     const text = err.missing
       ? 'Демон ещё не отдаёт клиентский конфиг — эндпоинт GET /api/peers/{id}/config не реализован.'
@@ -152,6 +154,7 @@ async function modalPeerConfig(id) {
      <button class="btn btn-primary" data-act="download-conf" data-id="${esc(id)}">Скачать .conf</button>`),
   (m) => {
     m.dataset.conf = conf;
+    m.dataset.confName = filename;
     try {
       qr.draw(m.querySelector('#qr'), conf);
     } catch (e) {
@@ -166,10 +169,12 @@ export const actions = {
   'create-peer': createPeer,
   'peer-config': (id) => modalPeerConfig(id),
 
-  'download-conf': (id) => {
-    const peer = peerById(id) || { name: 'peer' };
-    const conf = $('#modal').dataset.conf || '';
-    download(`razdacha-${slug(peer.name)}.conf`, conf);
+  'download-conf': () => {
+    const m = $('#modal');
+    // Имя строит демон и присылает в Content-Disposition: из имени файла
+    // WireGuard берёт имя туннеля, и второе имя на клиенте расходилось бы с
+    // тем, что отдаёт эндпоинт.
+    download(m.dataset.confName || 'peer.conf', m.dataset.conf || '');
     toast('Файл конфига скачан');
   },
 

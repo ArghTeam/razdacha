@@ -90,7 +90,16 @@ async function request(method, path, opts = {}) {
     );
   }
 
+  if (expect === 'file') return { text, filename: filenameFrom(res) };
   return expect === 'text' ? text : json;
+}
+
+/** Имя файла из `Content-Disposition`. Демон — единственный, кто его строит:
+    имя туннеля в WireGuard берётся из имени файла и обязано укладываться в его
+    ограничения, и второй слагификатор на клиенте давал бы другое имя. */
+function filenameFrom(res) {
+  const m = /filename="([^"]*)"/.exec(res.headers.get('Content-Disposition') || '');
+  return m && m[1] ? m[1] : '';
 }
 
 function defaultMessage(status) {
@@ -130,8 +139,10 @@ export const peers = {
   update: (id, patchBody) => patch(`/api/peers/${encodeURIComponent(id)}`, patchBody),
   remove: (id) => del(`/api/peers/${encodeURIComponent(id)}`),
   /** Клиентский .conf — text/plain. Собирает его демон: публичного ключа
-      сервера в JSON-сущностях нет, и собрать конфиг на клиенте нечем. */
-  config: (id) => get(`/api/peers/${encodeURIComponent(id)}/config`, { expect: 'text' }),
+      сервера в JSON-сущностях нет, и собрать конфиг на клиенте нечем. Имя
+      файла приходит оттуда же, в `Content-Disposition`. Возвращает
+      `{ text, filename }`. */
+  config: (id) => get(`/api/peers/${encodeURIComponent(id)}/config`, { expect: 'file' }),
 };
 
 /* --- Туннели ------------------------------------------------------------- */

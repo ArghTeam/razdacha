@@ -151,6 +151,3 @@ export function download(name, text, type = 'text/plain;charset=utf-8') {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-
-/** Имя файла из имени устройства: кириллица остаётся, остальное схлопывается. */
-export const slug = (s) => String(s).replace(/[^\w\dА-Яа-яЁё-]+/g, '-').toLowerCase();
