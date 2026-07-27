@@ -33,6 +33,15 @@ const (
 	// SourcePool — туннель-пул: в Raw лежит URL каталога ключей, а серверы
 	// снимаются с него по расписанию (ADR 0010).
 	SourcePool TunnelSource = "pool"
+	// SourceWARP — WireGuard-туннель Cloudflare WARP. Протокол тот же, что у
+	// SourceWGConf, меняется только происхождение ключей: их выдал Cloudflare
+	// по запросу демона либо пользователь вставил готовый .conf, у которого
+	// endpoint на cloudflareclient.com.
+	//
+	// Признак хранится, а не выводится из содержимого конфига: он решает, годится
+	// ли туннель вторым звеном цепи (ADR 0012), и вывод по ключам, диапазонам или
+	// MTU был бы угадыванием чужого формата.
+	SourceWARP TunnelSource = "warp"
 )
 
 // RuleAction — что делать с трафиком, попавшим под правило.
@@ -165,6 +174,17 @@ func (t *Tunnel) validate() error {
 			if s.URL == "" {
 				return fmt.Errorf("%w: у сервера пула %q пустая ссылка", ErrInvalid, t.Name)
 			}
+		}
+	case SourceWARP:
+		// WARP — это происхождение ключей, а не протокол: наружу он всё тот же
+		// WireGuard-endpoint в userspace (ADR 0002, ADR 0012).
+		if t.Type != TunnelWireGuard {
+			return fmt.Errorf("%w: туннель WARP %q бывает только типа wireguard, а не %q",
+				ErrInvalid, t.Name, t.Type)
+		}
+		if len(t.Pool) > 0 {
+			return fmt.Errorf("%w: у туннеля %q задан список серверов, но он не пул",
+				ErrInvalid, t.Name)
 		}
 	case SourceURL, SourceWGConf, SourceJSON:
 		if len(t.Pool) > 0 {
