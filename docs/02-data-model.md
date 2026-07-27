@@ -20,7 +20,7 @@ Settings   │      │
 | `id` | uuid | |
 | `name` | string | отображаемое имя, уникально |
 | `type` | enum | `wireguard` \| `vless` \| `shadowsocks` \| `trojan` \| `hysteria2` \| `socks` \| `raw` |
-| `source` | enum | `url` \| `wg_conf` \| `json` \| `pool` — в каком виде пользователь ввёл конфиг |
+| `source` | enum | `url` \| `wg_conf` \| `json` \| `pool` \| `warp` — в каком виде пользователь ввёл конфиг |
 | `raw` | text | то, что вставил пользователь (URL, `.conf`, JSON или URL каталога при `pool`) |
 | `parsed` | json | результат разбора, готовый к вклейке в конфиг sing-box; при `pool` пуст |
 | `pool` | json | серверы пула, снятые с каталога; пуст у остальных форм |
@@ -34,6 +34,17 @@ Settings   │      │
 туннель разворачивается в N vless-outbound'ов плюс `urltest` под тегом туннеля; ротацию и
 health-check ведёт sing-box ([ADR 0010](decisions/0010-tunnel-pool-urltest.md)). Выключение
 пула — штатный `enabled`.
+
+**`source = warp`** — WireGuard-туннель Cloudflare WARP. Тип остаётся `wireguard`, в
+`raw` лежит обычный `.conf`, в `parsed` — тот же endpoint sing-box, что у любого другого
+WireGuard: меняется только происхождение ключей. Их выдаёт Cloudflare по кнопке «Добавить
+WARP» (`POST /api/tunnels/warp`) либо пользователь вставляет готовый `.conf` руками — тогда
+признак ставит разбор по хосту endpoint в домене `cloudflareclient.com`. Признак **хранится,
+а не вычисляется**: по нему выбирается второе звено цепи туннелей
+([ADR 0012](decisions/0012-tunnel-chain-detour.md)), а вывод из содержимого (`reserved`,
+диапазоны адресов, MTU) отсекал бы валидные конфиги. Туннели, заведённые вставленным `.conf`
+до появления признака, получают его шагом миграции 7 — сравнением строки, которая уже лежит
+в БД; наружу миграция не ходит.
 
 **`builtin = 1`** — запись, которую демон заводит сам. Сейчас такая одна: пул бесплатных
 ключей по каталогу из `lists.DefaultPoolCatalogURL`. Пул в системе **единственный** — своих
@@ -66,8 +77,10 @@ health-check ведёт sing-box ([ADR 0010](decisions/0010-tunnel-pool-urltest.
 - `[Interface] … [Peer]` (INI WireGuard) → `endpoints[].type = wireguard` sing-box,
   userspace-режим ([ADR 0002](decisions/0002-userspace-wireguard-outbound.md)).
   В секции `[Peer]` дополнительно читается `Reserved` — трёхбайтовый client ID, которого
-  в wg-quick нет: без него Cloudflare WARP отбрасывает пакеты, туннель поднимается и
-  молчит. Формы записи — три числа 0–255 через запятую (`Reserved = 1, 2, 3`, скобки
+  в wg-quick нет: его несут конфиги Cloudflare WARP. Стенд показал, что WARP работает и
+  без него — тот же внешний адрес и та же задержка, — поэтому поле разбирается ради
+  совместимости с конфигами, которые его несут, а не потому, что без него пакеты
+  отбрасываются ([ADR 0012](decisions/0012-tunnel-chain-detour.md)). Формы записи — три числа 0–255 через запятую (`Reserved = 1, 2, 3`, скобки
   необязательны) и client ID в base64 (`Reserved = AQID`). Поля может не быть, обычному
   WireGuard-серверу оно не нужно; заданное неверно — ошибка разбора
 - произвольный JSON → вставляется как есть, для протоколов без парсера

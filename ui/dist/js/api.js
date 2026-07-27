@@ -164,6 +164,11 @@ export const tunnels = {
   update: (id, patchBody) => patch(`/api/tunnels/${encodeURIComponent(id)}`, patchBody),
   remove: (id) => del(`/api/tunnels/${encodeURIComponent(id)}`),
   parse: (raw) => post('/api/tunnels/parse', { raw }),
+  /** WARP: демон сам регистрирует бесплатное устройство у Cloudflare и заводит
+      из его ключей обычный wireguard-туннель. Единственный запрос панели, за
+      которым сервер идёт в Cloudflare, — и только по нажатию. Второй WARP
+      сервер заводить не даёт: приходит 409 с именем уже заведённого. */
+  addWarp: (name) => post('/api/tunnels/warp', name ? { name } : undefined),
   check: (id) => post(`/api/tunnels/${encodeURIComponent(id)}/check`),
   /** Пул: перечитать каталог и пересобрать список серверов. Пока ручки нет,
       404 приходит как `err.missing` — экран говорит это словами. */

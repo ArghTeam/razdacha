@@ -104,6 +104,23 @@ CREATE TABLE tunnel_checks (
 ALTER TABLE tunnel_checks ADD COLUMN notified_status TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		// WARP получает свой source (ADR 0012). Схема не меняется — колонка
+		// source и так текстовая, — но туннели, заведённые вставленным .conf до
+		// этой версии, обязаны получить признак: по нему выбирается второе звено
+		// цепи, и без шага миграции пользователю пришлось бы пересохранять
+		// туннель руками, чтобы его WARP снова стал WARP'ом.
+		//
+		// Признак берётся из хоста endpoint — того же, по которому его узнаёт
+		// разбор вставленного конфига. Наружу здесь никто не ходит: сравнение
+		// идёт по строке, которая уже лежит в БД.
+		version: 7,
+		stmts: `
+UPDATE tunnels SET source = 'warp'
+ WHERE source = 'wg_conf' AND type = 'wireguard'
+   AND lower(raw) LIKE '%cloudflareclient.com%';
+`,
+	},
 }
 
 // schemaVersion — версия схемы, которую ожидает этот код.

@@ -10,6 +10,7 @@ import {
 } from '../shell.js';
 import {
   $, esc, plural, since, until, stamp, TUNNEL_LABEL, tunnelLabel, tunnelEndpoint, tunnelPool,
+  isWarp,
 } from '../util.js';
 
 export const title = 'Туннели';
@@ -18,10 +19,18 @@ export async function load() {
   state.tunnels = await api.tunnels.list();
 }
 
+/* Кнопка «+ WARP» показывается, пока WARP не заведён: второго сервер не создаёт
+   (409), а кнопка, которая только отказывает, — обещание несуществующего. Здесь
+   это не расходится с API, как было бы с удалением встроенного пула: там кнопку
+   прятали бы при живом разрешении, здесь и панель, и демон говорят одно и то же.
+
+   Признак — `source`, а не имя: WARP, вставленный руками, узнаётся разбором
+   конфига и занимает то же место (ADR 0012). */
 const head = () => `
   <div class="screen-head">
     <h1>Туннели</h1>
     <div class="spacer"></div>
+    ${state.tunnels.some(isWarp) ? '' : '<button class="btn" data-act="add-warp">+ WARP</button>'}
     <button class="btn btn-primary" data-act="add-tunnel">+ Добавить</button>
   </div>`;
 
@@ -381,6 +390,36 @@ async function saveTunnel(id) {
 
 export const actions = {
   'add-tunnel': () => modalTunnel(null),
+
+  /* Добавить WARP. Ключи демон берёт у Cloudflare сам — это единственное
+     действие панели, за которым сервер идёт наружу, и происходит оно только по
+     этому нажатию.
+
+     Кнопка блокируется на время запроса: регистрация занимает секунды, и второе
+     нажатие означало бы второе устройство у Cloudflare. Сервер от этого защищён
+     и сам (409), но ждать отказа, чтобы узнать о собственном двойном клике, —
+     плохой способ об этом сообщить. */
+  'add-warp': async (_id, btn) => {
+    btn.disabled = true;
+    btn.textContent = 'Регистрирую…';
+    try {
+      const created = await api.tunnels.addWarp();
+      markDirty();
+      state.tunnels = await api.tunnels.list();
+      refresh();
+      toast(`Туннель «${created?.name || 'WARP'}» добавлен`);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '+ WARP';
+      if (err.missing) {
+        toast('Добавление WARP появится позже: POST /api/tunnels/warp ещё не реализован');
+        return;
+      }
+      // Текст приходит с сервера: «не удалось связаться с Cloudflare» и
+      // «Cloudflare отказал» — разные причины с разными действиями.
+      toastError(err, 'WARP не добавлен');
+    }
+  },
   'edit-tunnel': (id) => modalTunnel(id),
   'save-tunnel': (id) => saveTunnel(id || null),
 
