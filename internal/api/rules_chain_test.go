@@ -129,3 +129,20 @@ func TestRuleChainCheckedOnUpdate(t *testing.T) {
 		t.Errorf("второе звено не сохранилось: %s", good.body)
 	}
 }
+
+// Тот же туннель обоими звеньями — detour на самого себя. Повтор выразим
+// именно потому, что первым звеном годится любой туннель, включая WARP.
+func TestRuleChainRejectsSameTunnelTwice(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	_, warp := chainTunnels(t, ts)
+
+	res := createRule(t, ts, cookie, `{"name":"YouTube","action":"tunnel","tunnel_id":"`+
+		warp.ID+`","via_tunnel_id":"`+warp.ID+`","domains":["youtube.com"],"peer_scope":"all"}`)
+	if res.code != http.StatusBadRequest {
+		t.Fatalf("код %d, ожидался 400; тело %s", res.code, res.body)
+	}
+	if !strings.Contains(res.body, "первым звеном") {
+		t.Errorf("в отказе нет причины: %s", res.body)
+	}
+}

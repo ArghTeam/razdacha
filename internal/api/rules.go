@@ -112,6 +112,15 @@ func (s *Server) checkChain(w http.ResponseWriter, r *http.Request, rule store.R
 				"Добавьте WARP кнопкой на экране туннелей или вставьте его .conf.")
 		return false
 	}
+	// Повтор возможен именно потому, что первым звеном годится любой туннель,
+	// включая сам WARP: «WARP → тот же WARP» — это detour на самого себя, то
+	// есть цепь из одного звена, записанная дважды.
+	if rule.ViaTunnelID == rule.TunnelID {
+		writeError(w, s.log, http.StatusBadRequest, codeBadRequest,
+			"Туннель «"+via.Name+"» уже стоит первым звеном — вторым звеном нужен другой, "+
+				"иначе трафик выходил бы через него же.")
+		return false
+	}
 	return true
 }
 
