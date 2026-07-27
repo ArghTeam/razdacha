@@ -72,6 +72,25 @@ ALTER TABLE tunnels ADD COLUMN pool_updated_at INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE tunnels ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0;
 `,
 	},
+	{
+		// Отдельная таблица, а не колонки в tunnels: состояние проверки не
+		// часть туннеля, а наблюдение о нём, и в Snapshot оно попадать не
+		// должно — оттуда генерируется конфиг sing-box.
+		//
+		// Задержки здесь нет намеренно: она живёт минуты и после перезапуска
+		// sing-box уже ничего не значит, тогда как «был down в 06:40» рядом с
+		// временем остаётся фактом (ADR 0011).
+		//
+		// ON DELETE CASCADE: удалённый туннель не должен держать за собой
+		// запись о проверке.
+		version: 5,
+		stmts: `
+CREATE TABLE tunnel_checks (
+  tunnel_id TEXT PRIMARY KEY REFERENCES tunnels(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  checked_at INTEGER NOT NULL);
+`,
+	},
 }
 
 // schemaVersion — версия схемы, которую ожидает этот код.

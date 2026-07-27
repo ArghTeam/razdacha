@@ -20,7 +20,9 @@ type Settings struct {
 	DNSType            string        `json:"dns_type"`
 	WANInterface       string        `json:"wan_interface"`
 	ListUpdateInterval time.Duration `json:"list_update_interval"`
-	LogLevel           string        `json:"log_level"`
+	// TunnelCheckInterval — как часто расписание опрашивает состояние туннелей.
+	TunnelCheckInterval time.Duration `json:"tunnel_check_interval"`
+	LogLevel            string        `json:"log_level"`
 }
 
 // DefaultSettings — дефолты из docs/02-data-model.md. MTU 1280 — не «по умолчанию
@@ -37,22 +39,27 @@ func DefaultSettings() Settings {
 		DNSType:            "udp",
 		WANInterface:       "",
 		ListUpdateInterval: 24 * time.Hour,
-		LogLevel:           "warn",
+		// Две минуты — компромисс: чаще означает лишние пробы через каждый
+		// обычный туннель, реже — что падение замечается слишком поздно, а
+		// подтверждение перехода тремя проверками растягивается на полчаса.
+		TunnelCheckInterval: 2 * time.Minute,
+		LogLevel:            "warn",
 	}
 }
 
 // Ключи в таблице settings. Переименование ключа — миграция, а не правка константы.
 const (
-	keyWGListenPort       = "wg_listen_port"
-	keyWGPool             = "wg_pool"
-	keyWGServerAddress    = "wg_server_address"
-	keyEndpointHost       = "endpoint_host"
-	keyClientMTU          = "client_mtu"
-	keyDNSUpstream        = "dns_upstream"
-	keyDNSType            = "dns_type"
-	keyWANInterface       = "wan_interface"
-	keyListUpdateInterval = "list_update_interval"
-	keyLogLevel           = "log_level"
+	keyWGListenPort        = "wg_listen_port"
+	keyWGPool              = "wg_pool"
+	keyWGServerAddress     = "wg_server_address"
+	keyEndpointHost        = "endpoint_host"
+	keyClientMTU           = "client_mtu"
+	keyDNSUpstream         = "dns_upstream"
+	keyDNSType             = "dns_type"
+	keyWANInterface        = "wan_interface"
+	keyListUpdateInterval  = "list_update_interval"
+	keyTunnelCheckInterval = "tunnel_check_interval"
+	keyLogLevel            = "log_level"
 )
 
 // Settings читает настройки, подставляя дефолты вместо отсутствующих ключей.
@@ -113,7 +120,9 @@ func (v Settings) values() map[string]string {
 		keyDNSType:            v.DNSType,
 		keyWANInterface:       v.WANInterface,
 		keyListUpdateInterval: strconv.FormatInt(int64(v.ListUpdateInterval/time.Second), 10),
-		keyLogLevel:           v.LogLevel,
+		keyTunnelCheckInterval: strconv.FormatInt(
+			int64(v.TunnelCheckInterval/time.Second), 10),
+		keyLogLevel: v.LogLevel,
 	}
 }
 
@@ -140,6 +149,12 @@ func (v *Settings) set(key, value string) error {
 			return err
 		}
 		v.ListUpdateInterval = time.Duration(seconds) * time.Second
+	case keyTunnelCheckInterval:
+		var seconds int
+		if err := number(&seconds); err != nil {
+			return err
+		}
+		v.TunnelCheckInterval = time.Duration(seconds) * time.Second
 	case keyWGPool:
 		v.WGPool = value
 	case keyWGServerAddress:
@@ -184,6 +199,11 @@ func (v Settings) validate() error {
 	}
 	if v.ListUpdateInterval <= 0 {
 		return fmt.Errorf("%w: интервал обновления списков должен быть положительным", ErrInvalid)
+	}
+	// Нижняя граница не вкусовая: каждый прогон пробивает обычные туннели
+	// настоящим запросом, и секундный интервал превратил бы проверку в нагрузку.
+	if v.TunnelCheckInterval < 30*time.Second {
+		return fmt.Errorf("%w: интервал проверки туннелей меньше 30 секунд", ErrInvalid)
 	}
 	return nil
 }

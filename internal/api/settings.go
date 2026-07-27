@@ -16,17 +16,18 @@ import (
 // изменению не подлежит, но клиентскому конфигу необходим, а больше его взять
 // неоткуда; поле только на чтение и `null`, пока интерфейс не поднят.
 type settingsResponse struct {
-	WGListenPort       int     `json:"wg_listen_port"`
-	WGPool             string  `json:"wg_pool"`
-	WGServerAddress    string  `json:"wg_server_address"`
-	EndpointHost       string  `json:"endpoint_host"`
-	ClientMTU          int     `json:"client_mtu"`
-	DNSUpstream        string  `json:"dns_upstream"`
-	DNSType            string  `json:"dns_type"`
-	WANInterface       string  `json:"wan_interface"`
-	ListUpdateInterval int     `json:"list_update_interval"`
-	LogLevel           string  `json:"log_level"`
-	ServerPublicKey    *string `json:"server_public_key"`
+	WGListenPort        int     `json:"wg_listen_port"`
+	WGPool              string  `json:"wg_pool"`
+	WGServerAddress     string  `json:"wg_server_address"`
+	EndpointHost        string  `json:"endpoint_host"`
+	ClientMTU           int     `json:"client_mtu"`
+	DNSUpstream         string  `json:"dns_upstream"`
+	DNSType             string  `json:"dns_type"`
+	WANInterface        string  `json:"wan_interface"`
+	ListUpdateInterval  int     `json:"list_update_interval"`
+	TunnelCheckInterval int     `json:"tunnel_check_interval"`
+	LogLevel            string  `json:"log_level"`
+	ServerPublicKey     *string `json:"server_public_key"`
 
 	// RequiresClientReconfig ставится только в ответе на изменение и означает,
 	// что клиентам нужно перевыдать конфиги.
@@ -35,16 +36,17 @@ type settingsResponse struct {
 
 func newSettingsResponse(v store.Settings, serverKey string) settingsResponse {
 	out := settingsResponse{
-		WGListenPort:       v.WGListenPort,
-		WGPool:             v.WGPool,
-		WGServerAddress:    v.WGServerAddress,
-		EndpointHost:       v.EndpointHost,
-		ClientMTU:          v.ClientMTU,
-		DNSUpstream:        v.DNSUpstream,
-		DNSType:            v.DNSType,
-		WANInterface:       v.WANInterface,
-		ListUpdateInterval: int(v.ListUpdateInterval / time.Second),
-		LogLevel:           v.LogLevel,
+		WGListenPort:        v.WGListenPort,
+		WGPool:              v.WGPool,
+		WGServerAddress:     v.WGServerAddress,
+		EndpointHost:        v.EndpointHost,
+		ClientMTU:           v.ClientMTU,
+		DNSUpstream:         v.DNSUpstream,
+		DNSType:             v.DNSType,
+		WANInterface:        v.WANInterface,
+		ListUpdateInterval:  int(v.ListUpdateInterval / time.Second),
+		TunnelCheckInterval: int(v.TunnelCheckInterval / time.Second),
+		LogLevel:            v.LogLevel,
 	}
 	if serverKey != "" {
 		out.ServerPublicKey = &serverKey
@@ -55,16 +57,17 @@ func newSettingsResponse(v store.Settings, serverKey string) settingsResponse {
 // settingsRequest — тело `PATCH /api/settings`. Указатели отличают «не прислали»
 // от «прислали пустое»: обнулять MTU молчанием нельзя.
 type settingsRequest struct {
-	WGListenPort       *int    `json:"wg_listen_port"`
-	WGPool             *string `json:"wg_pool"`
-	WGServerAddress    *string `json:"wg_server_address"`
-	EndpointHost       *string `json:"endpoint_host"`
-	ClientMTU          *int    `json:"client_mtu"`
-	DNSUpstream        *string `json:"dns_upstream"`
-	DNSType            *string `json:"dns_type"`
-	WANInterface       *string `json:"wan_interface"`
-	ListUpdateInterval *int    `json:"list_update_interval"`
-	LogLevel           *string `json:"log_level"`
+	WGListenPort        *int    `json:"wg_listen_port"`
+	WGPool              *string `json:"wg_pool"`
+	WGServerAddress     *string `json:"wg_server_address"`
+	EndpointHost        *string `json:"endpoint_host"`
+	ClientMTU           *int    `json:"client_mtu"`
+	DNSUpstream         *string `json:"dns_upstream"`
+	DNSType             *string `json:"dns_type"`
+	WANInterface        *string `json:"wan_interface"`
+	ListUpdateInterval  *int    `json:"list_update_interval"`
+	TunnelCheckInterval *int    `json:"tunnel_check_interval"`
+	LogLevel            *string `json:"log_level"`
 }
 
 // apply накладывает присланные поля на текущие настройки.
@@ -95,6 +98,9 @@ func (req settingsRequest) apply(v store.Settings) store.Settings {
 	}
 	if req.ListUpdateInterval != nil {
 		v.ListUpdateInterval = time.Duration(*req.ListUpdateInterval) * time.Second
+	}
+	if req.TunnelCheckInterval != nil {
+		v.TunnelCheckInterval = time.Duration(*req.TunnelCheckInterval) * time.Second
 	}
 	if req.LogLevel != nil {
 		v.LogLevel = *req.LogLevel

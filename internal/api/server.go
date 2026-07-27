@@ -220,6 +220,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.log.Info("панель слушает", "адрес", ln.Addr().String())
 
 	go s.sweep(ctx)
+	go s.watchTunnels(ctx)
 
 	errc := make(chan error, 1)
 	go func() {
