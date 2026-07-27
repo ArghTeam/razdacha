@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-28
+
+### #99 — цепь «туннель → WARP» через detour
+
+**Changed:** `singbox.go` — `ChainTag`; `tunnel.go` — `chainEndpoint`, клон с `detour`; `generate.go` — сбор и дедупликация пар. Эталон `testdata/chain.json` гоняется настоящим `sing-box check` в CI.
+**Beware:** устройство цепи — в инвариантах слоя. На стенде цепь «пул → WARP» дала адрес Cloudflare, тот же пул без цепи — адрес своего сервера.
+
 ## 2026-07-27
 
 ### #100 — регистрация WARP у Cloudflare

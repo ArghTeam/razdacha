@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-28
+
+### #99 — второе звено цепи у правила
+
+**Changed:** миграция 8 — колонка `via_tunnel_id` в `rules`, `ON DELETE RESTRICT`; `Rule.ViaTunnelID` и валидация «второе звено бывает только у правила в туннель».
+**Beware:** цепь висит на правиле, а не на туннеле — один WARP обслуживает и «просто WARP», и «туннель → WARP», без дублей в инвентаре (ADR 0012).
+
 ## 2026-07-27
 
 ### #100 — WARP как source туннеля
