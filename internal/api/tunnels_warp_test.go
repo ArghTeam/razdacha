@@ -14,17 +14,36 @@ import (
 
 // fakeWARP подставляет регистрацию: наружу тесты не ходят вовсе.
 type fakeWARP struct {
-	conf  string
-	err   error
+	conf string
+	err  error
+	// unregErr — чем отвечает Cloudflare на снятие устройства.
+	unregErr error
+
 	calls int
+	// unregistered — пары, с которыми звали снятие, по одной на вызов.
+	unregistered [][2]string
 }
+
+// warpFakeDeviceID и warpFakeToken — то, что «выдал Cloudflare» подставному
+// клиенту. Токен — секрет, и тесты проверяют, что он не уезжает в ответы API.
+const (
+	warpFakeDeviceID = "t.00000000"
+	warpFakeToken    = "токен-устройства"
+)
 
 func (f *fakeWARP) Register(context.Context) (singbox.WARPDevice, error) {
 	f.calls++
 	if f.err != nil {
 		return singbox.WARPDevice{}, f.err
 	}
-	return singbox.WARPDevice{Conf: f.conf, DeviceID: "t.00000000"}, nil
+	return singbox.WARPDevice{
+		Conf: f.conf, DeviceID: warpFakeDeviceID, AccessToken: warpFakeToken,
+	}, nil
+}
+
+func (f *fakeWARP) Unregister(_ context.Context, deviceID, accessToken string) error {
+	f.unregistered = append(f.unregistered, [2]string{deviceID, accessToken})
+	return f.unregErr
 }
 
 // warpDeviceConf — то, что регистратор собирает из ответа Cloudflare.
@@ -229,5 +248,133 @@ func TestAddWARPRequiresSession(t *testing.T) {
 	}
 	if reg.calls != 0 {
 		t.Errorf("регистраций %d — запрос без сессии сходил в Cloudflare", reg.calls)
+	}
+}
+
+// deleteTunnel — `DELETE /api/tunnels/{id}` от имени владельца панели.
+func deleteTunnel(t *testing.T, ts *testServer, cookie *http.Cookie, id string) response {
+	t.Helper()
+	return ts.do(t, request{
+		method: http.MethodDelete, path: "/api/tunnels/" + id,
+		cookies: []*http.Cookie{cookie},
+	})
+}
+
+// Удаление туннеля снимает устройство у Cloudflare: иначе оно остаётся у них
+// навсегда, и перечитать регистрацию тоже нечем (issue #107).
+func TestDeleteWARPUnregistersDevice(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	reg := withWARP(ts, &fakeWARP{conf: warpDeviceConf})
+
+	resp := addWARP(t, ts, cookie, "")
+	if resp.code != http.StatusCreated {
+		t.Fatalf("POST /api/tunnels/warp = %d: %s", resp.code, resp.body)
+	}
+	var created tunnelResponse
+	if err := json.Unmarshal([]byte(resp.body), &created); err != nil {
+		t.Fatalf("разбор ответа: %v", err)
+	}
+
+	if got := deleteTunnel(t, ts, cookie, created.ID); got.code != http.StatusOK {
+		t.Fatalf("DELETE = %d: %s", got.code, got.body)
+	}
+	if len(reg.unregistered) != 1 {
+		t.Fatalf("снятий устройства %d, ожидалось одно", len(reg.unregistered))
+	}
+	if reg.unregistered[0] != [2]string{warpFakeDeviceID, warpFakeToken} {
+		t.Errorf("снятие звали с парой %v", reg.unregistered[0])
+	}
+}
+
+// Отказ Cloudflare не мешает удалить туннель локально: пользователь не обязан
+// застревать из-за чужого сервиса. Событие при этом обязано попасть в лог.
+func TestDeleteWARPSurvivesCloudflareFailure(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	reg := withWARP(ts, &fakeWARP{
+		conf:     warpDeviceConf,
+		unregErr: fmt.Errorf("%w: код 500", singbox.ErrWARPRejected),
+	})
+
+	resp := addWARP(t, ts, cookie, "")
+	if resp.code != http.StatusCreated {
+		t.Fatalf("POST /api/tunnels/warp = %d: %s", resp.code, resp.body)
+	}
+	var created tunnelResponse
+	if err := json.Unmarshal([]byte(resp.body), &created); err != nil {
+		t.Fatalf("разбор ответа: %v", err)
+	}
+
+	if got := deleteTunnel(t, ts, cookie, created.ID); got.code != http.StatusOK {
+		t.Fatalf("DELETE = %d, ожидался 200: %s", got.code, got.body)
+	}
+	if len(reg.unregistered) != 1 {
+		t.Errorf("снятий устройства %d, ожидалось одно", len(reg.unregistered))
+	}
+	list, err := ts.st.Tunnels(context.Background())
+	if err != nil {
+		t.Fatalf("Tunnels: %v", err)
+	}
+	if len(list) != 0 {
+		t.Errorf("туннелей %d — отказ Cloudflare помешал удалить локально", len(list))
+	}
+	if !strings.Contains(ts.logs.String(), "устройство WARP осталось у Cloudflare") {
+		t.Errorf("отказ снятия не попал в лог:\n%s", ts.logs.String())
+	}
+}
+
+// Туннель, заведённый вставкой .conf, устройства у Cloudflare не имеет — его
+// удаление наружу не ходит вовсе.
+func TestDeletePastedWARPDoesNotCallCloudflare(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	reg := withWARP(ts, &fakeWARP{conf: warpDeviceConf})
+
+	body, err := json.Marshal(map[string]string{"name": "Свой WARP", "raw": warpDeviceConf})
+	if err != nil {
+		t.Fatalf("сборка тела: %v", err)
+	}
+	resp := ts.do(t, request{
+		method: http.MethodPost, path: "/api/tunnels", body: string(body),
+		cookies: []*http.Cookie{cookie},
+	})
+	if resp.code != http.StatusCreated {
+		t.Fatalf("POST /api/tunnels = %d: %s", resp.code, resp.body)
+	}
+	var pasted tunnelResponse
+	if err := json.Unmarshal([]byte(resp.body), &pasted); err != nil {
+		t.Fatalf("разбор ответа: %v", err)
+	}
+
+	if got := deleteTunnel(t, ts, cookie, pasted.ID); got.code != http.StatusOK {
+		t.Fatalf("DELETE = %d: %s", got.code, got.body)
+	}
+	if len(reg.unregistered) != 0 {
+		t.Errorf("снятий устройства %d — сходили в Cloudflare за чужим устройством", len(reg.unregistered))
+	}
+}
+
+// Токен устройства — секрет: ни в ответе о создании, ни в списке туннелей его
+// быть не должно. Панель показывает `raw` как есть, и туда он тоже не попадает.
+func TestWARPTokenNotExposed(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	withWARP(ts, &fakeWARP{conf: warpDeviceConf})
+
+	created := addWARP(t, ts, cookie, "")
+	if created.code != http.StatusCreated {
+		t.Fatalf("POST /api/tunnels/warp = %d: %s", created.code, created.body)
+	}
+	list := ts.do(t, request{
+		method: http.MethodGet, path: "/api/tunnels", cookies: []*http.Cookie{cookie},
+	})
+	if list.code != http.StatusOK {
+		t.Fatalf("GET /api/tunnels = %d: %s", list.code, list.body)
+	}
+	for _, body := range []string{created.body, list.body} {
+		if strings.Contains(body, warpFakeToken) {
+			t.Errorf("токен устройства уехал в ответ API: %s", body)
+		}
 	}
 }
