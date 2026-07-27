@@ -3,6 +3,15 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-27
+
+### #87 — имя `.conf` по правилам клиента WireGuard
+
+**Changed:** `confFileName()` транслитерирует кириллицу, схлопывает остальное в дефис, режет по 15 символам; префикс `razdacha-` убран.
+**New surface:** имя файла отдаёт только `Content-Disposition` — UI своё не строит.
+**Beware:** клиент WireGuard берёт имя туннеля из имени файла и валидирует как `[a-zA-Z0-9_=+.-]{1,15}`. Префикс не возвращать: бюджет и так 15 символов.
+
+
 ## 2026-07-26
 
 ### #63, #71, #74, #75 — блок pool в ответе, ручка деталей, WebSocket убран

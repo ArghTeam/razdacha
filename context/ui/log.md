@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-27
+
+### #87 — имя `.conf` приходит от демона
+
+**Changed:** `peers.config()` возвращает `{ text, filename }`, имя читается из `Content-Disposition`; `slug()` из `util.js` удалён.
+**Beware:** имя файла клиентского конфига панель не строит — из него WireGuard берёт имя туннеля, и правила длины и алфавита знает только демон. Второй слагификатор давал разные имена для одного пира.
+
+
 ## 2026-07-26
 
 ### #63, #69, #71, #75 — пул как айтем списка и модалка «Детали»
