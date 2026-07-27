@@ -5,6 +5,11 @@
 
 ## 2026-07-27
 
+### #100 — WARP как source туннеля
+
+**Changed:** миграция 7 — значение `source = "warp"` рядом с `wg_conf`, `url`, `pool`; тип туннеля остаётся `wireguard`.
+**Beware:** это признак второго звена цепи по ADR 0012 — по нему решается, годится ли туннель для «туннель → WARP». Свойство хранится, а не выводится из содержимого конфига.
+
 ### #91 — что уже сообщили наружу
 
 **Changed:** миграция 6 — колонка `notified_status` в `tunnel_checks`, метод `SetNotifiedStatus`.
@@ -25,9 +30,9 @@
 
 ### #81 — режим панели и версия установки в настройках
 
-**Changed:** `internal/store/install.go` — ключи `panel_public` и `installed_version` в `settings`, **вне `store.Settings`**, как хеш пароля: `SaveSettings` их не переписывает, в `GET /api/settings` они не попадают.
-**New surface:** `PanelPublic` возвращает `(public, saved, err)`, `SetPanelPublic`, `InstalledVersionAt` — чтение версии из файла БД без миграций, потому что резервная копия снимается до `store.Open`.
-**Beware:** «ключа нет» нельзя сворачивать в «значение по умолчанию» — ровно на этом дефект и держался: `false == false` считалось «ничего не изменилось», и панель молча уходила из интернета. Отличать «не спрашивали» от «выбрали» надо до первого обновления, а не после.
+**Changed:** `internal/store/install.go` — ключи `panel_public` и `installed_version` в `settings`, **вне `store.Settings`**: `SaveSettings` их не переписывает, в `GET /api/settings` они не попадают.
+**New surface:** `PanelPublic` → `(public, saved, err)`, `SetPanelPublic`, `InstalledVersionAt`.
+**Beware:** «ключа нет» нельзя сворачивать в «значение по умолчанию»: `false == false` читалось как «ничего не изменилось», и панель молча уходила из интернета.
 
 ### #62, #71 — туннель-пул как форма туннеля и встроенная запись
 

@@ -5,6 +5,11 @@
 
 ## 2026-07-27
 
+### #100 — регистрация WARP у Cloudflare
+
+**Changed:** `internal/singbox/warp.go` — устройство регистрируется запросом к `api.cloudflareclient.com`, ответ собирается в обычный `.conf` и идёт через тот же `Parse`; хост в домене `cloudflareclient.com` метится как `source = warp`.
+**Beware:** `wgcf` в цепочку демона не тянем — та же причина, что у `wg` и `nft`. Путь сборки endpoint один: кнопка и ручная вставка разойтись не могут.
+
 ### #98 — WireGuard Reserved разбирается из `[Peer]`
 
 **Changed:** `buildPeer` в `parse_wireguard.go` читает `Reserved` из `[Peer]` (числа через запятую или base64) в `option.WireGuardPeer.Reserved`; отсутствие поля законно.
