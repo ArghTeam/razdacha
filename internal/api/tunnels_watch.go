@@ -94,6 +94,18 @@ func (s *Server) refreshChecks(ctx context.Context) error {
 		return err
 	}
 
+	// Сохранённые проверки нужны целиком: в них лежит и то, о чём уже сообщили.
+	saved, err := s.store.TunnelChecks(ctx)
+	if err != nil {
+		return err
+	}
+	// Настройки оповещений читаются раз на прогон: дёргать их на каждый туннель
+	// незачем, а меняются они руками.
+	notifyCfg, err := s.store.NotifyConfig(ctx)
+	if err != nil {
+		return err
+	}
+
 	proxies, err := s.proxies().Proxies(ctx)
 	if err != nil {
 		// sing-box не отвечает — о туннелях мы не знаем ничего. Прежние
@@ -116,9 +128,23 @@ func (s *Server) refreshChecks(ctx context.Context) error {
 		s.checks.put(t.ID, res)
 		if err := s.store.SaveTunnelCheck(ctx, t.ID, res.Status, res.At); err != nil {
 			s.log.Error("запись проверки туннеля", "туннель", t.ID, "ошибка", err)
+			// Без записи проверки некуда писать и сообщённый статус: пропускаем
+			// круг по этому туннелю, чтобы не разъехаться с БД.
+			continue
 		}
+
+		v := s.events.observe(t.ID, t.Name, res.Status, saved[t.ID].Notified, res.At)
+		if v.Confirmed == "" || v.Confirmed == saved[t.ID].Notified {
+			continue
+		}
+		if err := s.store.SetNotifiedStatus(ctx, t.ID, v.Confirmed); err != nil {
+			s.log.Error("запись сообщённого статуса", "туннель", t.ID, "ошибка", err)
+			continue
+		}
+		s.announce(ctx, notifyCfg, v.Message)
 	}
 	s.checks.keep(alive)
+	s.events.forget(alive)
 	return nil
 }
 
