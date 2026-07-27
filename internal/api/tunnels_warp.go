@@ -89,19 +89,20 @@ func (s *Server) handleAddWARP(w http.ResponseWriter, r *http.Request) {
 // warpError переводит отказ регистрации в ответ панели.
 //
 // Сеть и отказ Cloudflare — разные события с разными действиями пользователя,
-// поэтому и тексты разные; оба приходят с сентинелом и показываются как есть.
+// поэтому и тексты разные. Фраза для человека собирается здесь, а не приезжает
+// из слоя singbox: там лежит причина ошибки Go, и подробность из неё
+// подставляется в готовое предложение ([userMessage] снимает префикс сентинела).
 func (s *Server) warpError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, singbox.ErrWARPUnreachable):
 		s.log.Warn("регистрация WARP: сеть", "ошибка", err)
 		writeError(w, s.log, http.StatusBadGateway, codeInternal,
-			"Не удалось связаться с Cloudflare — "+strings.TrimPrefix(
-				err.Error(), singbox.ErrWARPUnreachable.Error()+": "))
+			"Не удалось связаться с Cloudflare — "+userMessage(err, singbox.ErrWARPUnreachable))
 	case errors.Is(err, singbox.ErrWARPRejected):
 		s.log.Warn("регистрация WARP: отказ", "ошибка", err)
 		writeError(w, s.log, http.StatusBadGateway, codeInternal,
-			"Cloudflare отказал в регистрации ("+strings.TrimPrefix(
-				err.Error(), singbox.ErrWARPRejected.Error()+": ")+"). Попробуйте позже.")
+			"Cloudflare отказал в регистрации ("+userMessage(err, singbox.ErrWARPRejected)+
+				"). Попробуйте позже.")
 	default:
 		s.log.Error("регистрация WARP", "ошибка", err)
 		writeError(w, s.log, http.StatusInternalServerError, codeInternal, "Внутренняя ошибка")

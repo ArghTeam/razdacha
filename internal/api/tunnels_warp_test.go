@@ -41,7 +41,7 @@ Reserved = Zo9x
 `
 
 func withWARP(ts *testServer, f *fakeWARP) *fakeWARP {
-	ts.Server.warp = f
+	ts.warp = f
 	return f
 }
 
