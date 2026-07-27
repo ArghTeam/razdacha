@@ -215,7 +215,8 @@ CREATE INDEX sessions_expires_at ON sessions(expires_at);
 CREATE TABLE tunnel_checks (
   tunnel_id TEXT PRIMARY KEY REFERENCES tunnels(id) ON DELETE CASCADE,
   status TEXT NOT NULL,
-  checked_at INTEGER NOT NULL);
+  checked_at INTEGER NOT NULL,
+  notified_status TEXT NOT NULL DEFAULT '');
 ```
 
 `ON DELETE RESTRICT` для `tunnel_id` намеренно: удаление туннеля, на который ссылается
@@ -230,6 +231,11 @@ CREATE TABLE tunnel_checks (
 остаётся фактом ([ADR 0011](decisions/0011-tunnel-check-schedule.md)). `ON DELETE
 CASCADE`: удалённый туннель не держит за собой запись, иначе она всплыла бы на новом
 туннеле с тем же идентификатором.
+
+**`notified_status` — о чём уже сообщили наружу.** В памяти это держать нельзя: после
+перезапуска демона переход объявлялся бы заново, и владелец получал бы «туннель не
+отвечает» о туннеле, про который ему уже написали. Счётчики подтверждения, наоборот,
+живут в памяти — после перезапуска туннель обязан снова набрать три проверки.
 
 **Приоритет назначает слой хранения, а не вызывающий.** Правило добавляется в конец
 списка, удаление сжимает приоритеты оставшихся, порядок меняется отдельной операцией

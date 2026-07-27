@@ -118,7 +118,10 @@ type Server struct {
 	clash     *clash.Client
 	// checks — результаты проверок туннелей с момента запуска демона,
 	// источник производных полей в `GET /api/tunnels`.
-	checks  *checkCache
+	checks *checkCache
+	// events — подтверждение переходов туннеля для оповещений. В памяти
+	// намеренно: после перезапуска подтверждение набирается заново.
+	events  *tunnelEvents
 	handler http.Handler
 
 	pools       poolRefresher
@@ -171,6 +174,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		applier:     cfg.Applier,
 		clash:       clash.New(clash.Options{Addr: cfg.ClashAddr}),
 		checks:      newCheckCache(),
+		events:      newTunnelEvents(),
 		pools:       cfg.Pools,
 		poolEvery:   cfg.PoolEvery,
 		poolProxies: cfg.PoolProxies,
