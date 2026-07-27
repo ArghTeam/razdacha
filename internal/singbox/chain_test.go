@@ -189,3 +189,14 @@ func TestChainSkippedWhenSecondHopDisabled(t *testing.T) {
 		}
 	}
 }
+
+// Эталон с цепью: его же проверяет настоящий sing-box в CI — golden-тесты
+// сравнивают вывод с нашими ожиданиями, а не с тем, что примет рантайм.
+// Два правила ссылаются на одну пару, и в эталоне видно, что клон один.
+func TestChainGolden(t *testing.T) {
+	snap := chainFixture()
+	snap.Rules[0].ViaTunnelID = "wwww"
+	snap.Rules[1].TunnelID = "aaaa"
+	snap.Rules[1].ViaTunnelID = "wwww"
+	golden(t, "chain.json", generate(t, snap))
+}

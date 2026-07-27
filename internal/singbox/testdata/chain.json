@@ -1,0 +1,242 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "udp",
+        "tag": "upstream",
+        "server": "1.1.1.1"
+      },
+      {
+        "type": "udp",
+        "tag": "bootstrap",
+        "server": "1.1.1.1"
+      },
+      {
+        "type": "fakeip",
+        "tag": "fakeip",
+        "inet4_range": "198.18.0.0/15"
+      }
+    ],
+    "rules": [
+      {
+        "query_type": "HTTPS",
+        "action": "reject"
+      },
+      {
+        "domain_suffix": "use-application-dns.net",
+        "action": "reject"
+      },
+      {
+        "rule_set": [
+          "list-youtube",
+          "list-google",
+          "rule-r1"
+        ],
+        "server": "fakeip",
+        "rewrite_ttl": 60
+      },
+      {
+        "source_ip_cidr": "10.8.0.2/32",
+        "rule_set": [
+          "list-youtube",
+          "rule-r2",
+          "rule-r2-remote-0"
+        ],
+        "server": "fakeip",
+        "rewrite_ttl": 60
+      },
+      {
+        "rule_set": "rule-r4",
+        "action": "reject"
+      }
+    ],
+    "final": "upstream",
+    "strategy": "ipv4_only",
+    "independent_cache": true
+  },
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "tun-aaaa",
+      "address": [
+        "10.2.0.2/32"
+      ],
+      "peers": [
+        {
+          "address": "1.2.3.4",
+          "port": 51820,
+          "public_key": "cHVibGlj",
+          "allowed_ips": [
+            "0.0.0.0/0"
+          ]
+        }
+      ],
+      "private_key": "cHJpdmF0ZQ=="
+    },
+    {
+      "type": "wireguard",
+      "tag": "tun-wwww",
+      "address": [
+        "172.16.0.2/32"
+      ],
+      "peers": [
+        {
+          "address": "162.159.192.1",
+          "port": 2408,
+          "public_key": "cHVibGlj",
+          "allowed_ips": [
+            "0.0.0.0/0"
+          ]
+        }
+      ],
+      "private_key": "cHJpdmF0ZQ=="
+    },
+    {
+      "type": "wireguard",
+      "tag": "chain-wwww-via-aaaa",
+      "address": [
+        "172.16.0.2/32"
+      ],
+      "detour": "tun-aaaa",
+      "peers": [
+        {
+          "address": "162.159.192.1",
+          "port": 2408,
+          "public_key": "cHVibGlj",
+          "allowed_ips": [
+            "0.0.0.0/0"
+          ]
+        }
+      ],
+      "private_key": "cHJpdmF0ZQ=="
+    }
+  ],
+  "inbounds": [
+    {
+      "type": "direct",
+      "tag": "dns-in",
+      "listen": "10.8.0.1",
+      "listen_port": 53
+    },
+    {
+      "type": "tproxy",
+      "tag": "tproxy-in",
+      "listen": "127.0.0.1",
+      "listen_port": 1602
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct-out"
+    },
+    {
+      "type": "vless",
+      "tag": "tun-bbbb",
+      "flow": "xtls-rprx-vision",
+      "server": "5.6.7.8",
+      "server_port": 443,
+      "uuid": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "inbound": "dns-in",
+        "action": "hijack-dns"
+      },
+      {
+        "rule_set": [
+          "list-youtube",
+          "list-google",
+          "rule-r1"
+        ],
+        "outbound": "chain-wwww-via-aaaa"
+      },
+      {
+        "source_ip_cidr": "10.8.0.2/32",
+        "rule_set": [
+          "list-youtube",
+          "rule-r2",
+          "rule-r2-remote-0"
+        ],
+        "outbound": "chain-wwww-via-aaaa"
+      },
+      {
+        "rule_set": "rule-r3",
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "rule-r4",
+        "action": "reject"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "list-youtube",
+        "url": "https://github.com/itdoginfo/allow-domains/releases/latest/download/youtube.srs",
+        "update_interval": "24h0m0s"
+      },
+      {
+        "type": "remote",
+        "tag": "list-google",
+        "url": "https://github.com/itdoginfo/allow-domains/releases/latest/download/google.srs",
+        "update_interval": "24h0m0s"
+      },
+      {
+        "tag": "rule-r1",
+        "rules": [
+          {
+            "domain_suffix": "rutracker.org"
+          }
+        ]
+      },
+      {
+        "tag": "rule-r2",
+        "rules": [
+          {
+            "ip_cidr": "104.16.0.0/13"
+          }
+        ]
+      },
+      {
+        "type": "remote",
+        "tag": "rule-r2-remote-0",
+        "url": "https://example.org/my.srs",
+        "update_interval": "24h0m0s"
+      },
+      {
+        "tag": "rule-r3",
+        "rules": [
+          {
+            "domain_suffix": "sberbank.ru"
+          }
+        ]
+      },
+      {
+        "tag": "rule-r4",
+        "rules": [
+          {
+            "domain_suffix": "doubleclick.net"
+          }
+        ]
+      }
+    ],
+    "final": "direct-out",
+    "default_domain_resolver": "upstream"
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "/var/lib/sing-box/cache.db",
+      "store_fakeip": true
+    },
+    "clash_api": {
+      "external_controller": "127.0.0.1:9090"
+    }
+  }
+}
