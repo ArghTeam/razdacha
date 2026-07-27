@@ -3,18 +3,26 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-27
+
+### #98 — WireGuard Reserved разбирается из `[Peer]`
+
+**Changed:** `buildPeer` в `parse_wireguard.go` читает `Reserved` из `[Peer]` (числа через запятую или base64) в `option.WireGuardPeer.Reserved`; отсутствие поля законно.
+**Beware:** на стенде WARP работает и **без** `reserved` — тот же адрес и задержка, а контроль с битым ключом даёт `down`. Поле разбирается ради совместимости, не потому что без него пакеты отбрасываются.
+
+
 ## 2026-07-26
 
 ### #62, #66, #68 — пул разворачивается в группу urltest
 
-**Changed:** `internal/singbox/{pool,tunnel,generate,parse}.go` — включённый пул даёт N vless-outbound'ов плюс `urltest` под тегом туннеля (ADR 0010); `Parse` узнаёт ссылку `http(s)` на каталог как форму `source = pool`.
-**New surface:** `PoolMembers(store.Tunnel)` — соответствие тега участника и сервера, нужно слою api для перевода выбора Clash в имя и страну. `PoolTestInterval` = 3 минуты.
-**Beware:** отбор серверов идёт **по порядку списка в БД**, а не пересортировкой по пингу — пересортировка и была дефектом #68: она пускала шум чужого сайта прямо в байты конфига, а перезагрузка через `reload-or-restart` рвёт соединения во всех туннелях. Потолок — 16 участников. У пула не заполнен ни `Outbound`, ни `Endpoint`: серверов на момент разбора ещё нет.
+**Changed:** `internal/singbox/{pool,tunnel,generate,parse}.go` — включённый пул даёт N vless-outbound'ов плюс `urltest` под тегом туннеля (ADR 0010).
+**New surface:** `PoolMembers(store.Tunnel)` — тег участника → сервер. `PoolTestInterval` = 3 минуты.
+**Beware:** порядок отбора и потолок участников — в инвариантах слоя; пересортировка по пингу была дефектом #68.
 
 ### трафик — селективность проверена вживую
 
-**Changed:** на стенде прошла полная цепочка: FakeIP → метка nft → tproxy → sing-box → WireGuard-туннель. Прямой трафик уходит через masquerade с адресом сервера.
-**Beware:** `systemctl reload` не годится для первого применения — sing-box тогда ещё не запущен; нужен `reload-or-restart`. Ошибку окружения нельзя отдавать как `invalid_config`: на стенде отказ по правам выглядел как ошибка пользователя.
+**Changed:** на стенде прошла полная цепочка: FakeIP → метка nft → tproxy → sing-box → туннель; прямой трафик уходит masquerade с адресом сервера.
+**Beware:** для первого применения нужен `reload-or-restart` — sing-box ещё не запущен. Ошибку окружения нельзя отдавать как `invalid_config`.
 
 
 ## 2026-07-25
