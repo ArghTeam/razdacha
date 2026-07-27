@@ -71,6 +71,41 @@ func buildTunnels(list []store.Tunnel, log *slog.Logger) (
 	return endpoints, outbounds, skipped, nil
 }
 
+// chainEndpoint собирает второе звено цепи: клон туннеля via со своим тегом и
+// detour на тег первого звена (ADR 0012).
+//
+// Клон, а не правка исходного endpoint'а: тот же WARP обязан одновременно
+// обслуживать правила без цепи, а detour на нём увёл бы в чужой канал и их.
+// detour кладётся в тело конфига, потому что у sing-box он часть DialerOptions
+// самого outbound'а, а не действия маршрутизации.
+func chainEndpoint(via store.Tunnel, tag, detour string) (option.Endpoint, error) {
+	typ, body, err := tunnelOptions(via)
+	if err != nil {
+		return option.Endpoint{}, err
+	}
+	if typ != C.TypeWireGuard {
+		return option.Endpoint{}, fmt.Errorf(
+			"второе звено цепи — туннель %q типа %q, а им бывает только WireGuard-туннель WARP",
+			via.Name, typ)
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return option.Endpoint{}, fmt.Errorf("разбор конфига туннеля %q: %w", via.Name, err)
+	}
+	raw, err := json.Marshal(detour)
+	if err != nil {
+		return option.Endpoint{}, fmt.Errorf("тег первого звена цепи %q: %w", detour, err)
+	}
+	fields["detour"] = raw
+
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return option.Endpoint{}, fmt.Errorf("сборка второго звена цепи %q: %w", via.Name, err)
+	}
+	return option.Endpoint{Type: typ, Tag: tag, Options: json.RawMessage(out)}, nil
+}
+
 // tunnelOptions отдаёт протокол sing-box и тело конфига туннеля.
 //
 // Поля type и tag выбрасываются: их выставляет генератор, а совпадение ключей при
