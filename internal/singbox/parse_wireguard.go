@@ -1,6 +1,7 @@
 package singbox
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/netip"
 	"strconv"
@@ -202,7 +203,87 @@ func buildPeer(sec iniSection) (option.WireGuardPeer, error) {
 		}
 		peer.PersistentKeepaliveInterval = uint16(k)
 	}
+
+	if v := sec.get("Reserved"); v != "" {
+		reserved, err := parseReserved(v)
+		if err != nil {
+			return option.WireGuardPeer{}, err
+		}
+		peer.Reserved = reserved
+	}
 	return peer, nil
+}
+
+// reservedLen — длина client ID: три байта, которые Cloudflare ждёт в заголовке пакета.
+const reservedLen = 3
+
+// parseReserved разбирает поле Reserved секции [Peer].
+//
+// В wg-quick такого поля нет: это расширение под Cloudflare WARP, где эндпоинт молча
+// отбрасывает пакеты без трёхбайтового client ID. Обычному WireGuard-серверу поле не
+// нужно, поэтому его отсутствие остаётся законным, а вот заданное неверно — ошибка:
+// туннель с битым client ID поднимется и не пропустит ни байта.
+//
+// Принимаются обе записи, в которых client ID ходит по свету: три числа через запятую
+// («0, 0, 0», квадратные скобки необязательны) и base64 из четырёх символов, как его
+// отдают генераторы конфигов WARP.
+func parseReserved(v string) ([]uint8, error) {
+	body := strings.TrimSpace(v)
+	if b, ok := strings.CutPrefix(body, "["); ok {
+		rest, closed := strings.CutSuffix(strings.TrimSpace(b), "]")
+		if !closed {
+			return nil, fmt.Errorf("%w: неверный Reserved %q: незакрытая скобка", ErrParse, v)
+		}
+		body = strings.TrimSpace(rest)
+	}
+
+	// Запятая — единственный надёжный признак списка: client ID из одних цифр («1234»)
+	// разбирать как число нельзя, он тоже законный base64.
+	if strings.Contains(body, ",") {
+		return parseReservedNumbers(v, body)
+	}
+	return parseReservedBase64(v, body)
+}
+
+// parseReservedNumbers разбирает запись списком: три числа 0–255 через запятую.
+func parseReservedNumbers(orig, body string) ([]uint8, error) {
+	parts := strings.Split(body, ",")
+	if len(parts) != reservedLen {
+		return nil, fmt.Errorf("%w: неверный Reserved %q: нужно ровно три числа 0–255",
+			ErrParse, orig)
+	}
+	out := make([]uint8, 0, reservedLen)
+	for _, part := range parts {
+		n, err := strconv.ParseUint(strings.TrimSpace(part), 10, 8)
+		if err != nil {
+			return nil, fmt.Errorf("%w: неверный Reserved %q: %q — не число 0–255",
+				ErrParse, orig, strings.TrimSpace(part))
+		}
+		out = append(out, uint8(n))
+	}
+	return out, nil
+}
+
+// parseReservedBase64 разбирает запись client ID в base64 — с набивкой и без, в обычном
+// алфавите и в URL-safe: генераторы конфигов WARP расходятся во всех трёх мелочах.
+func parseReservedBase64(orig, body string) ([]uint8, error) {
+	for _, enc := range []*base64.Encoding{
+		base64.StdEncoding, base64.RawStdEncoding,
+		base64.URLEncoding, base64.RawURLEncoding,
+	} {
+		raw, err := enc.DecodeString(body)
+		if err != nil {
+			continue
+		}
+		if len(raw) != reservedLen {
+			return nil, fmt.Errorf("%w: неверный Reserved %q: client ID — три байта, а не %d",
+				ErrParse, orig, len(raw))
+		}
+		return raw, nil
+	}
+	return nil, fmt.Errorf(
+		"%w: неверный Reserved %q: ожидались три числа 0–255 через запятую или client ID в base64",
+		ErrParse, orig)
 }
 
 // parsePrefixList разбирает список подсетей через запятую. Голый адрес без маски

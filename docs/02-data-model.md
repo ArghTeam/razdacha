@@ -64,7 +64,12 @@ health-check ведёт sing-box ([ADR 0010](decisions/0010-tunnel-pool-urltest.
 - `vless://`, `ss://`, `trojan://`, `hysteria2://`, `hy2://`, `socks5://` → парсер
   proxy-URL, портируется из Podkop `sing_box_config_facade.sh`
 - `[Interface] … [Peer]` (INI WireGuard) → `endpoints[].type = wireguard` sing-box,
-  userspace-режим ([ADR 0002](decisions/0002-userspace-wireguard-outbound.md))
+  userspace-режим ([ADR 0002](decisions/0002-userspace-wireguard-outbound.md)).
+  В секции `[Peer]` дополнительно читается `Reserved` — трёхбайтовый client ID, которого
+  в wg-quick нет: без него Cloudflare WARP отбрасывает пакеты, туннель поднимается и
+  молчит. Формы записи — три числа 0–255 через запятую (`Reserved = 1, 2, 3`, скобки
+  необязательны) и client ID в base64 (`Reserved = AQID`). Поля может не быть, обычному
+  WireGuard-серверу оно не нужно; заданное неверно — ошибка разбора
 - произвольный JSON → вставляется как есть, для протоколов без парсера
 
 **Тестовый корпус для парсера:** `podkop/String-example.md` — 118 строк примеров URI всех
