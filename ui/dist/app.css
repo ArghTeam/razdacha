@@ -480,18 +480,19 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
   .overall-time { margin-left: 28px; width: 100%; text-align: left; }
 }
 
-/* --- модалка правила (#47, раскладка #50) ----------------------------------
-   Свои классы и своя геометрия: `.modal` общий для всех окон, а правило — самое
-   плотное из них. Модификатор ловится по содержимому (`:has`), чтобы окно
-   собиралось одним экраном без вмешательства в оболочку.
+/* Окно правила — самое плотное из всех, поэтому у него своя геометрия.
+   Модификатор ловится по содержимому (`:has`), чтобы не трогать оболочку.
 
-   Габариты окна заданы, а не набраны содержимым: каталог из двух десятков
-   сервисов иначе растит окно вниз и выталкивает кнопки за край экрана. Всё,
-   что может вырасти — каталог, чипы выбранного, список клиентов, — прокручи-
-   вается внутри своей зоны. */
+   Форма идёт потоком сверху вниз: что за правило → готовые списки → свои
+   домены и подсети → для кого. Каталог из двух десятков сервисов — самый
+   широкий блок, и в половине окна ему доставались две колонки по 200 px, куда
+   не влезает даже среднее название. Во всю ширину их четыре (issue #95).
+
+   Прокрутка одна и живёт в `.rule-scroll`: две прокручиваемые области в одном
+   окне путают сильнее, чем длинная форма. */
 .modal:has(.rule-form) {
-  width: min(960px, 100%);
-  height: min(88vh, 760px);
+  width: min(1040px, 100%);
+  height: min(88vh, 780px);
   max-height: 100%;
   display: flex; flex-direction: column; overflow: hidden;
 }
@@ -499,76 +500,45 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
   flex: 1; min-height: 0; overflow: hidden; padding: 14px 16px;
 }
 
-/* Две зоны: слева — что за правило, справа — на что оно распространяется.
-   Перекрытие лежит внизу во всю ширину: оно про правило целиком, а не про
-   отдельное поле. */
-.rule-form {
-  display: grid; gap: 12px 18px; height: 100%; min-height: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  grid-template-areas:
-    "note note"
-    "what scope"
-    "over over";
+.rule-form { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
+.rule-scroll {
+  flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px;
+  display: flex; flex-direction: column; gap: 16px;
 }
-.rule-form > .rule-order-note { grid-area: note; }
-.rule-zone-what { grid-area: what; }
-.rule-zone-scope { grid-area: scope; }
-.rule-form > .rule-overlap { grid-area: over; max-height: 112px; overflow-y: auto; }
 
-.rule-zone { display: flex; flex-direction: column; min-height: 0; gap: 8px; }
+/* Две колонки только там, где поля правда парные. Каталог, «для кого» и
+   перекрытие идут во всю ширину: им нужна вся она. */
+.rule-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+@media (max-width: 760px) { .rule-pair { grid-template-columns: 1fr; } }
+
 .rule-zone-head {
   font-size: 11.5px; font-weight: 640; letter-spacing: .05em; text-transform: uppercase;
   color: var(--fg-faint);
 }
-/* Прокрутка живёт в зоне, а не у окна. Слева она обычно не нужна и появляется
-   только на низком экране; справа её забирает сам каталог. */
-.rule-zone-body {
-  flex: 1; min-height: 0; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 12px;
-}
-.rule-zone-what .rule-zone-body { padding-right: 4px; }
 
-/* Каталог — единственный блок, которому разрешено занять всё оставшееся
-   место: он и есть содержимое правой зоны. На узком экране сворачивается,
-   и тогда высоту не занимает вовсе. */
-.rule-catalog { display: flex; flex-direction: column; min-height: 0; }
-.rule-catalog[open] { flex: 1 1 auto; min-height: 0; }
-.rule-catalog > summary {
-  cursor: pointer; font-size: 13px; font-weight: 560; color: var(--fg-dim);
-  padding: 2px 0; user-select: none;
+.rule-catalog { display: flex; flex-direction: column; gap: 8px; }
+.rule-catalog-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.rule-catalog-count { font-size: 12.5px; color: var(--accent); font-weight: 600; }
+.rule-catalog-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+@media (max-width: 760px) {
+  .rule-catalog-bar { grid-template-columns: 1fr; }
+  .rule-catalog-bar > .hint { display: none; }
 }
-.rule-catalog-count { color: var(--accent); font-weight: 600; }
-.rule-catalog-body {
-  flex: 1; min-height: 0; padding-top: 8px;
-  display: flex; flex-direction: column; gap: 8px;
-}
-/* Список прокручивается сам, подсказка и поиск над ним — нет.
-   Потолок задан явной величиной, а не через цепочку flex-родителей: каталог
-   свёрстан как <details>, и его содержимое ведёт себя как flex-элемент не во
-   всех браузерах. Там, где не ведёт, список просто растёт, и прокрутка не
-   появляется нигде — ровно это и наблюдалось. */
-.rule-catalog-body .rule-grid {
-  flex: 1 1 auto; min-height: 0;
-  max-height: min(42vh, 330px); overflow-y: auto;
-}
-.rule-catalog-body > .hint { flex: 0 0 auto; }
+
 /* Список клиентов не отжимает каталог: у него свой потолок и своя прокрутка. */
-.rule-peers-field { flex: 0 0 auto; }
-.rule-peers { max-height: 104px; }
-.rule-form textarea { min-height: 64px; }
+.rule-peers { max-height: 120px; }
+.rule-form textarea { min-height: 76px; }
 
 /* Порядок проверки — единственная концепция, которую нельзя спрятать,
-   поэтому она стоит первой строкой формы, а не подписью где-то внизу. */
+   поэтому она стоит первой строкой формы и не уезжает с прокруткой. */
 .rule-order-note {
+  flex: 0 0 auto;
   font-size: 12.5px; line-height: 1.5; color: var(--fg-dim);
   padding: 8px 11px; border-radius: 8px;
   background: var(--bg-sunken); border: 1px solid var(--line);
   border-left: 3px solid var(--accent);
 }
 
-/* Подсказка каталога лежит не в `.field`, а прямо в зоне: размер и цвет ей
-   нужно задать здесь, иначе она набирается основным кеглем. */
 .rule-form .hint { line-height: 1.45; font-size: 12px; color: var(--fg-faint); }
 .rule-form .hint code {
   font-family: var(--mono); font-size: 11.5px;
@@ -577,7 +547,6 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 
 .rule-tunnel { width: auto; min-width: 160px; max-width: 100%; }
 
-/* Каталог сервисов: две-три колонки на десктопе, одна на телефоне. */
 .rule-search {
   font: inherit; font-size: 14px; padding: 7px 10px; border-radius: 8px;
   border: 1px solid var(--line-strong); background: var(--bg-sunken);
@@ -585,17 +554,29 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 }
 .rule-search:focus { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -1px; }
 
-.rule-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); max-height: 240px; gap: 2px 10px; }
+/* Колонка в 255 px вмещает самое длинное название каталога («Украина —
+   внутренние сервисы», 28 символов) вместе с чекбоксом и значком «подсети».
+   При 200 px оно переносилось, и строки каталога были разной высоты. */
+.rule-grid {
+  grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+  max-height: min(38vh, 300px); gap: 2px 10px;
+}
 .rule-item {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
   font-size: 13.5px; padding: 5px 6px; border-radius: 7px; min-width: 0;
 }
 .rule-item:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
-.rule-item:has(input:checked) { color: var(--fg); font-weight: 560; }
+/* Отметка меняет фон, а не насыщенность шрифта. `font-weight` делал текст
+   шире, строка начинала переноситься, высота ячейки росла — и сетка
+   пересобиралась прямо под курсором (issue #95). */
+.rule-item:has(input:checked) {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--fg);
+}
 .rule-item input { margin: 0; flex-shrink: 0; }
-/* Названия переносятся, а не обрезаются: «Meta (Facebook, Instagram)» без
-   хвоста не читается, а строка каталога — не таблица, ей можно расти. */
-.rule-item-name { min-width: 0; overflow-wrap: anywhere; }
+/* Обрезка, а не перенос: все строки одной высоты. Полное название остаётся в
+   `title`, но при колонке в 255 px обрезка почти не срабатывает. */
+.rule-item-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rule-mini {
   font-size: 10.5px; padding: 0 5px; border-radius: 5px; flex-shrink: 0;
   color: var(--fg-faint); border: 1px solid var(--line); font-weight: 500;
@@ -605,9 +586,19 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 /* Выбранное видно всегда — даже когда поиск увёл галочку за фильтр. Полоса
    чипов не растёт бесконечно: два десятка выбранных сервисов иначе съедают
    каталог под собой. */
+/* Выбранное видно всегда — даже когда поиск увёл галочку за фильтр. Лежит в
+   потоке каталога со своей подложкой: раньше полоса росла над сеткой и тем
+   сильнее, чем активнее ей пользовались (issue #95). */
 .rule-picked {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 7px 9px; border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.rule-picked-label { font-size: 12px; color: var(--fg-dim); flex-shrink: 0; padding-top: 2px; }
+.rule-picked-chips {
   display: flex; flex-wrap: wrap; gap: 5px;
-  flex: 0 0 auto; max-height: 54px; overflow-y: auto;
+  min-width: 0; max-height: 52px; overflow-y: auto;
 }
 .rule-chip {
   appearance: none; font: inherit; font-size: 12px; cursor: pointer;
@@ -633,24 +624,17 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 .line-errors .rule-overlap-tail { color: var(--fg-faint); }
 textarea.bad { border-color: color-mix(in srgb, var(--err) 55%, var(--line-strong)); }
 
-/* Узкий экран: зоны схлопываются в одну колонку и прокручивается всё окно
-   целиком — двум внутренним прокруткам на телефоне не разойтись. Каталог
-   свёрнут (`open` снимает rules.js), поэтому колонка остаётся короткой. */
+/* Узкий экран: прокручивается всё окно целиком, а не форма внутри него —
+   двум прокруткам на телефоне не разойтись. Каталогу оставляем свою: два
+   десятка сервисов иначе отодвинули бы домены и кнопки далеко вниз. */
 @media (max-width: 760px) {
-  .modal:has(.rule-form) { height: min(92vh, 760px); }
+  .modal:has(.rule-form) { height: min(92vh, 780px); }
   .modal:has(.rule-form) .modal-body { overflow-y: auto; }
-  .rule-form {
-    display: flex; flex-direction: column; gap: 12px; height: auto; min-height: 0;
-  }
-  /* Ничто не сжимается: колонка растёт вниз, а прокручивает её окно. */
+  .rule-form { height: auto; min-height: 0; }
   .rule-form > * { flex: 0 0 auto; }
-  .rule-zone { min-height: auto; }
-  .rule-zone-body { flex: 0 0 auto; min-height: auto; overflow: visible; padding-right: 0; }
-  .rule-catalog[open] { flex: 0 0 auto; overflow: visible; }
-  .rule-catalog-body { flex: 0 0 auto; min-height: auto; }
-  .rule-catalog-body .rule-grid { flex: 0 0 auto; min-height: 0; max-height: 190px; overflow-y: auto; }
-  .rule-picked { max-height: none; }
-  .rule-form > .rule-overlap { max-height: none; overflow: visible; }
+  .rule-scroll { flex: 0 0 auto; min-height: 0; overflow: visible; padding-right: 0; }
+  .rule-grid { max-height: 190px; }
+  .rule-picked-chips { max-height: none; }
   .rule-tunnel { width: 100%; }
 }
 

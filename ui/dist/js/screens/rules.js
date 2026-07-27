@@ -198,16 +198,16 @@ function modalRule(id) {
     <label class="rule-item"><input type="checkbox" name="peer" value="${esc(p.id)}" ${(r.peer_ids || []).includes(p.id) ? 'checked' : ''}>
       <span class="rule-item-name">${esc(p.name)}</span></label>`).join('');
 
-  /* Две зоны, а не одна колонка: слева — чем правило является, справа — на что
-     оно распространяется. Каталог из двух десятков сервисов прокручивается
-     внутри своей зоны, поэтому высота окна от него не зависит. */
+  /* Поток сверху вниз, а не две зоны: каталог из двух десятков сервисов —
+     самый широкий блок формы, и в половине окна ему доставались две колонки по
+     200 px, в которые не влезает даже среднее название. Во всю ширину их
+     четыре. Две колонки остаются только там, где поля правда парные (issue #95). */
   openModal(modalShell(id ? r.name : 'Новое правило', `
     <div class="rule-form">
       <div class="rule-order-note">${esc(orderNote)}</div>
 
-      <section class="rule-zone rule-zone-what">
-        <h3 class="rule-zone-head">Что за правило</h3>
-        <div class="rule-zone-body">
+      <div class="rule-scroll">
+        <div class="rule-pair">
           <div class="field">
             <label for="r-name">Название</label>
             <input type="text" id="r-name" value="${esc(r.name)}" placeholder="YouTube и Google" autocomplete="off">
@@ -223,7 +223,27 @@ function modalRule(id) {
             </div>
             <div class="hint" id="r-action-hint"></div>
           </div>
+        </div>
 
+        <section class="rule-catalog" id="r-catalog">
+          <div class="rule-catalog-head">
+            <h3 class="rule-zone-head">Готовые списки</h3>
+            <span class="rule-catalog-count" id="r-catalog-count"></span>
+          </div>
+          <div class="rule-picked" id="r-picked" hidden>
+            <span class="rule-picked-label">Выбрано:</span>
+            <div class="rule-picked-chips" id="r-picked-chips"></div>
+          </div>
+          <div class="rule-catalog-bar">
+            ${searchHtml}
+            <span class="hint">Обновляются сами. Пометка «подсети» — есть готовые диапазоны адресов, они ловятся даже без DNS.</span>
+          </div>
+          <div class="list-grid rule-grid" id="r-lists">${listsHtml}
+            <span class="rule-none" id="r-lists-empty" hidden>Ничего не нашлось</span>
+          </div>
+        </section>
+
+        <div class="rule-pair">
           <div class="field">
             <label for="r-domains">Свои домены</label>
             <textarea id="r-domains" spellcheck="false" placeholder="example.com">${esc((r.domains || []).join('\n'))}</textarea>
@@ -240,35 +260,18 @@ function modalRule(id) {
               Такой трафик метится по совпадению с nft-сетом — поэтому подсети ловят и приложения со своим DNS.</div>
           </div>
         </div>
-      </section>
 
-      <section class="rule-zone rule-zone-scope">
-        <h3 class="rule-zone-head">На что распространяется</h3>
-        <div class="rule-zone-body">
-          <details class="rule-catalog" id="r-catalog" open>
-            <summary>Готовые списки<span class="rule-catalog-count" id="r-catalog-count"></span></summary>
-            <div class="rule-catalog-body">
-              <div class="hint">Обновляются сами. Пометка «подсети» — у списка есть готовые диапазоны адресов, они ловятся даже без DNS.</div>
-              ${searchHtml}
-              <div class="rule-picked" id="r-picked" hidden></div>
-              <div class="list-grid rule-grid" id="r-lists">${listsHtml}
-                <span class="rule-none" id="r-lists-empty" hidden>Ничего не нашлось</span>
-              </div>
-            </div>
-          </details>
-
-          <div class="field rule-peers-field">
-            <label>Для кого</label>
-            <div class="radios">
-              <label class="radio-pill"><input type="radio" name="scope" value="all" ${r.peer_scope === 'selected' ? '' : 'checked'}> все клиенты</label>
-              <label class="radio-pill"><input type="radio" name="scope" value="selected" ${r.peer_scope === 'selected' ? 'checked' : ''}> выбранные</label>
-            </div>
-            <div class="list-grid rule-grid rule-peers" id="r-peers" ${r.peer_scope === 'selected' ? '' : 'hidden'}>${peersHtml}</div>
+        <div class="field rule-peers-field">
+          <label>Для кого</label>
+          <div class="radios">
+            <label class="radio-pill"><input type="radio" name="scope" value="all" ${r.peer_scope === 'selected' ? '' : 'checked'}> все клиенты</label>
+            <label class="radio-pill"><input type="radio" name="scope" value="selected" ${r.peer_scope === 'selected' ? 'checked' : ''}> выбранные</label>
           </div>
+          <div class="list-grid rule-grid rule-peers" id="r-peers" ${r.peer_scope === 'selected' ? '' : 'hidden'}>${peersHtml}</div>
         </div>
-      </section>
 
-      <div class="rule-overlap" id="r-overlap" hidden></div>
+        <div class="rule-overlap" id="r-overlap" hidden></div>
+      </div>
     </div>`,
   `<button class="btn" data-act="close-modal">Отмена</button>
      <button class="btn btn-primary" data-act="save-rule" data-id="${esc(id || '')}">Сохранить</button>`),
@@ -288,22 +291,22 @@ function modalRule(id) {
         m.querySelector('input[name="scope"]:checked').value !== 'selected';
     }));
 
-    /* На узком экране каталог свёрнут: колонки схлопываются в одну, и два
-       десятка сервисов отодвинули бы всё остальное под низ окна. Счётчик в
-       заголовке говорит, сколько выбрано, не разворачивая список. */
-    const catalog = m.querySelector('#r-catalog');
     const catalogCount = m.querySelector('#r-catalog-count');
-    if (window.matchMedia('(max-width: 760px)').matches) catalog.open = false;
 
     /* Выбранные списки повторяются строкой над каталогом: при поиске
-       отмеченное уезжает за фильтр, и без этой строки не видно, что выбрано. */
+       отмеченное уезжает за фильтр, и без этой строки не видно, что выбрано.
+       Строка лежит в потоке каталога и не отжимает сетку: раньше она росла над
+       ней и тем сильнее, чем активнее пользовались (issue #95). */
     const picked = m.querySelector('#r-picked');
+    const pickedChips = m.querySelector('#r-picked-chips');
     const renderPicked = () => {
       const keys = $$('input[name="list"]:checked', m).map((e) => e.value);
       picked.hidden = !keys.length;
-      picked.innerHTML = keys.map((k) =>
+      pickedChips.innerHTML = keys.map((k) =>
         `<button type="button" class="rule-chip" data-key="${esc(k)}" title="Убрать">${esc(listTitle(k))} ✕</button>`).join('');
-      catalogCount.textContent = keys.length ? ` · выбрано ${keys.length}` : '';
+      catalogCount.textContent = keys.length
+        ? `выбрано ${keys.length} из ${state.communityLists.length}`
+        : '';
     };
     picked.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-key]');
