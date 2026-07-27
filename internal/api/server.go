@@ -97,6 +97,10 @@ type Config struct {
 	// PoolProxies — источник живого состояния пулов. Пустой означает настоящий
 	// клиент Clash API; тесты подставляют свой.
 	PoolProxies clashProxies
+
+	// WARP регистрирует устройство по `POST /api/tunnels/warp`. Пустой означает
+	// настоящий API Cloudflare; тесты подставляют свой — наружу они не ходят.
+	WARP warpRegistrar
 }
 
 // Server — HTTP-сервер панели.
@@ -127,6 +131,10 @@ type Server struct {
 	pools       poolRefresher
 	poolEvery   time.Duration
 	poolProxies clashProxies
+
+	// warp регистрирует устройство WARP. Пустой означает настоящий API
+	// Cloudflare — до нажатия кнопки к нему никто не обращается.
+	warp warpRegistrar
 
 	// notify подменяет отправителя оповещений в тестах: настоящий
 	// api.telegram.org в них не участвует. Пустой означает настоящий транспорт.
@@ -178,6 +186,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		pools:       cfg.Pools,
 		poolEvery:   cfg.PoolEvery,
 		poolProxies: cfg.PoolProxies,
+		warp:        cfg.WARP,
 		verify:      make(chan struct{}, maxVerifications),
 	}
 	if s.ui == nil {
