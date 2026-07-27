@@ -82,7 +82,15 @@ export const TUNNEL_LABEL = {
   // Пул — не протокол, а набор серверов из каталога: тип показывается словом,
   // потому что от одиночного туннеля он отличается поведением, а не шифром.
   pool: 'Пул',
+  // WARP — тот же WireGuard, но с ключами Cloudflare. Подпись своя, потому что
+  // от неё зависит, что пользователь ждёт от туннеля: чужой адрес, а не свой
+  // сервер.
+  warp: 'WARP',
 };
+
+/** Туннель ли это WARP. Как и у пула, признак — `source`, а не `type`: протокол
+    у WARP обычный wireguard, меняется происхождение ключей (ADR 0012). */
+export const isWarp = (t) => Boolean(t) && t.source === 'warp';
 
 /** Блок `pool` туннеля, если это пул. Иначе `null` — по нему экран и решает,
     рисовать ли строку каталога и статистику серверов.
@@ -94,9 +102,11 @@ export const TUNNEL_LABEL = {
 export const tunnelPool = (t) => (t && t.source === 'pool' ? (t.pool || {}) : null);
 
 /** Подпись типа на карточке. */
-export const tunnelLabel = (t) => (
-  tunnelPool(t) ? TUNNEL_LABEL.pool : (TUNNEL_LABEL[t.type] || t.type)
-);
+export const tunnelLabel = (t) => {
+  if (tunnelPool(t)) return TUNNEL_LABEL.pool;
+  if (isWarp(t)) return TUNNEL_LABEL.warp;
+  return TUNNEL_LABEL[t.type] || t.type;
+};
 
 /** Адрес туннеля. Хранимый `parsed` пользуется server/server_port,
     ответ `POST /api/tunnels/parse` — host/port; принимаем оба.
