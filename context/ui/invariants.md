@@ -1,7 +1,7 @@
 ---
 type: invariants
 title: Ui
-description: SvelteKit-интерфейс: четыре экрана, дефолты вместо опций
+description: "статика без сборщика: вход и четыре экрана, дефолты вместо опций"
 ---
 
 ## Invariants
