@@ -114,6 +114,59 @@ func (r *Route) Apply() error {
 	return nil
 }
 
+// DiagRouteState — маршрутизация помеченного трафика глазами диагностики.
+//
+// Два признака, а не один: правило и local-маршрут заводятся порознь и порознь
+// же пропадают (чужой `ip rule flush`, `ip route flush table 105`), а диагнозы
+// у них разные — и оба нужны, чтобы tproxy работал.
+type DiagRouteState struct {
+	// Table — номер таблицы, состояние которой прочитано.
+	Table int
+	// Mark — метка, по которой ищется правило.
+	Mark uint32
+	// Rule — правило «помеченное идёт в таблицу» на месте.
+	Rule bool
+	// RulePriority — приоритет найденного правила. Осмыслен только при Rule.
+	RulePriority int
+	// LocalRoute — маршрут `local 0.0.0.0/0 dev lo` в таблице на месте.
+	LocalRoute bool
+	// Routes — сколько всего маршрутов лежит в таблице.
+	Routes int
+}
+
+// DiagState читает состояние правила и таблицы 105, ничего не меняя.
+//
+// Логика на общем [routeHandle], а не на netlink напрямую: чтение проверяется
+// тем же подменённым набором, что и заливка, — без root и не под Linux.
+func (r *Route) DiagState() (DiagRouteState, error) {
+	out := DiagRouteState{Table: RouteTable, Mark: FwMark}
+
+	rules, err := r.h.Rules()
+	if err != nil {
+		return DiagRouteState{}, fmt.Errorf("список правил маршрутизации: %w", err)
+	}
+	for _, rule := range rules {
+		if !isMarkRule(rule) {
+			continue
+		}
+		out.Rule = true
+		out.RulePriority = rule.Priority
+		break
+	}
+
+	loIndex, err := r.h.LinkIndex(LoopbackName)
+	if err != nil {
+		return DiagRouteState{}, fmt.Errorf("%w: %w", ErrRouteNoLoopback, err)
+	}
+	routes, err := r.h.RoutesInTable(RouteTable)
+	if err != nil {
+		return DiagRouteState{}, fmt.Errorf("список маршрутов таблицы %d: %w", RouteTable, err)
+	}
+	out.Routes = len(routes)
+	out.LocalRoute = hasLocalRoute(routes, loIndex)
+	return out, nil
+}
+
 // Clear снимает правило и всё содержимое таблицы 105. Отсутствие того и
 // другого ошибкой не считается: снятие вызывается и при остановке демона,
 // и по --reset-network на системе, где демон уже не работал.

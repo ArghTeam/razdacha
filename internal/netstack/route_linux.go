@@ -3,6 +3,7 @@
 package netstack
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/vishvananda/netlink"
@@ -10,6 +11,15 @@ import (
 
 // NewRoute открывает работу с маршрутизацией через netlink.
 func NewRoute() *Route { return &Route{h: netlinkRoutes{}} }
+
+// DiagRoute читает состояние правила по метке и таблицы 105 для диагностики.
+//
+// Своего соединения тут нет вовсе: netlink-сокет открывается и закрывается
+// внутри каждого вызова библиотеки, поэтому чтение из обработчика HTTP не
+// делит состояние с заливкой (сравните с [DiagNft], где соединение своё).
+func DiagRoute(_ context.Context) (DiagRouteState, error) {
+	return NewRoute().DiagState()
+}
 
 // netlinkRoutes — настоящая реализация routeHandle. Тонкая: вся логика выше,
 // здесь только вызовы netlink, которые компилируются лишь под linux.
