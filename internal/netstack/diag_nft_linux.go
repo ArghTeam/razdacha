@@ -3,9 +3,11 @@ package netstack
 import (
 	"context"
 	"fmt"
+	"net/netip"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
+	"go4.org/netipx"
 )
 
 // DiagNft читает состояние таблицы `inet razdacha` отдельным соединением.
@@ -65,7 +67,7 @@ func (n *Nft) DiagState() (DiagNftState, error) {
 		if err != nil {
 			return DiagNftState{}, fmt.Errorf("содержимое сета %s: %w", s.Name, err)
 		}
-		out.SubnetIntervals = diagCountIntervals(elements)
+		out.Subnets = diagRanges(elements)
 	}
 
 	if postrouting != nil {
@@ -78,17 +80,39 @@ func (n *Nft) DiagState() (DiagNftState, error) {
 	return out, nil
 }
 
-// diagCountIntervals считает начала интервалов. Диапазон лежит в ядре парой
-// элементов — началом и маркером конца, — поэтому маркеры в счёт не идут:
-// иначе число подсетей в сводке оказывается вдвое больше настоящего.
-func diagCountIntervals(elements []nftables.SetElement) int {
-	n := 0
-	for _, e := range elements {
-		if !e.IntervalEnd {
-			n++
+// diagRanges собирает интервалы сета обратно из границ, которыми они лежат в
+// ядре: элемент без флага открывает диапазон, элемент с IntervalEnd закрывает
+// его — и закрывает исключающе, ровно как их пишет [setElements].
+//
+// Незакрытая граница означает диапазон до верха адресного пространства: маркер
+// на 255.255.255.255 не ставится, потому что следующего адреса не существует.
+func diagRanges(elements []nftables.SetElement) []netipx.IPRange {
+	var out []netipx.IPRange
+	var start netip.Addr
+	open := false
+	add := func(from, to netip.Addr) {
+		if r := netipx.IPRangeFrom(from, to); r.IsValid() {
+			out = append(out, r)
 		}
 	}
-	return n
+	for _, e := range elements {
+		addr, ok := netip.AddrFromSlice(e.Key)
+		if !ok || !addr.Is4() {
+			continue
+		}
+		if open {
+			add(start, addr.Prev())
+			open = false
+		}
+		if e.IntervalEnd {
+			continue
+		}
+		start, open = addr, true
+	}
+	if open {
+		add(start, netip.AddrFrom4([4]byte{255, 255, 255, 255}))
+	}
+	return out
 }
 
 // diagMasquerade ищет в правилах цепочки masquerade и интерфейс, на который он

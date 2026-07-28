@@ -2,6 +2,8 @@ package netstack
 
 import (
 	"errors"
+	"slices"
+	"sort"
 	"testing"
 
 	"github.com/google/nftables"
@@ -43,9 +45,27 @@ func TestDiagStateFullTable(t *testing.T) {
 	if !st.Masquerade || st.MasqueradeOIf != "eth0" {
 		t.Errorf("masquerade=%v на %q, ожидался eth0", st.Masquerade, st.MasqueradeOIf)
 	}
-	if st.SubnetIntervals != 2 {
-		t.Errorf("подсетей %d, ожидалось 2: маркеры конца интервала не считаются",
-			st.SubnetIntervals)
+	if len(st.Subnets) != 2 {
+		t.Fatalf("интервалов %d, ожидалось 2: маркеры конца — границы, а не элементы",
+			len(st.Subnets))
+	}
+	// Интервалы читаются содержимым: сверять сет с правилами по числу
+	// бесполезно (issue #123).
+	want := []string{"203.0.113.0-203.0.113.255", "198.51.100.7-198.51.100.7"}
+	var got []string
+	for _, r := range st.Subnets {
+		got = append(got, r.String())
+	}
+	sort.Strings(got)
+	sort.Strings(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("интервалы сета %v, ожидались %v", got, want)
+	}
+	if missing := st.SubnetIndex().Missing([]string{
+		"203.0.113.128/25", "198.51.100.7", "192.0.2.0/24", "2001:db8::/32",
+	}); !slices.Equal(missing, []string{"192.0.2.0/24"}) {
+		t.Errorf("недостача %v, ожидалась только 192.0.2.0/24: покрытие считается "+
+			"по вхождению, IPv6 в сет не заливается", missing)
 	}
 }
 

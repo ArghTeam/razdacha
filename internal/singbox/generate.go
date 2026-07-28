@@ -19,7 +19,41 @@ import (
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
-// Generate собирает конфиг sing-box целиком из снимка состояния.
+// chainPair — цепь из двух звеньев: firstID принимает трафик с сервера, viaID
+// выпускает его наружу. Пара, а не правило: тег клона зависит только от неё, и
+// одинаковые пары из разных правил дают один outbound (ADR 0012).
+type chainPair struct {
+	viaID   string
+	firstID string
+}
+
+// RuleDiag — что генератор сделал с одним правилом. По успеху [Generate] этого
+// не видно: и отказ, и пропуск — штатный успех, а для пользователя это разные
+// состояния (issue #123).
+type RuleDiag struct {
+	// ID, Name — правило, о котором речь. Имя идёт в текст проверки: «есть
+	// расхождение» без имени не говорит, что чинить.
+	ID, Name string
+	// Reason — почему у правила нет маршрута: «туннель выключен» и прочие
+	// причины из [Generate]. Пусто означает, что маршрут есть. Правило с
+	// причиной уходит в конфиг отказом (ADR 0013): ресурс недоступен, но и
+	// напрямую не идёт.
+	Reason string
+	// Skipped — правила в конфиге нет вовсе. После ADR 0013 остался ровно один
+	// такой случай: у правила не осталось ни одного условия совпадения. Его
+	// трафик разбирают правила ниже, а в конце — прямой выход.
+	Skipped bool
+}
+
+// Generate собирает конфиг sing-box целиком из снимка состояния, отбрасывая
+// диагностику по правилам. Всё остальное — в [GenerateWithDiag].
+func Generate(snap store.Snapshot) (option.Options, error) {
+	opts, _, err := GenerateWithDiag(snap)
+	return opts, err
+}
+
+// GenerateWithDiag собирает конфиг sing-box целиком из снимка состояния и
+// рассказывает, что стало с каждым включённым правилом ([RuleDiag]).
 //
 // Генерация — чистая функция от состояния. Частичного патча конфига нет: правило,
 // ссылающееся на туннель, и DNS-правило того же набора обязаны меняться вместе, а
@@ -33,15 +67,10 @@ import (
 // отказом, потому что совпадать оно будет со всем.
 // Ссылка на несуществующий туннель — ошибка: состояние повреждено, и молчаливое
 // продолжение скрыло бы это.
-// chainPair — цепь из двух звеньев: firstID принимает трафик с сервера, viaID
-// выпускает его наружу. Пара, а не правило: тег клона зависит только от неё, и
-// одинаковые пары из разных правил дают один outbound (ADR 0012).
-type chainPair struct {
-	viaID   string
-	firstID string
-}
-
-func Generate(snap store.Snapshot) (option.Options, error) {
+//
+// Диагностика собирается тем же проходом, что и конфиг: отдельная функция,
+// повторяющая условия генератора, разъехалась бы с ним молча.
+func GenerateWithDiag(snap store.Snapshot) (option.Options, []RuleDiag, error) {
 	tunnels := make(map[string]store.Tunnel, len(snap.Tunnels))
 	for _, t := range snap.Tunnels {
 		tunnels[t.ID] = t
@@ -50,7 +79,7 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 	log := slog.Default()
 	endpoints, outbounds, skipped, err := buildTunnels(snap.Tunnels, log)
 	if err != nil {
-		return option.Options{}, err
+		return option.Options{}, nil, err
 	}
 
 	// Адреса всех пиров, не только включённых: правилу, у которого все выбранные
@@ -64,7 +93,7 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 				// Выключенный пир с битым адресом конфиг не ломает: в wg0 его нет.
 				continue
 			}
-			return option.Options{}, fmt.Errorf("адрес пира %q: %w", p.Name, err)
+			return option.Options{}, nil, fmt.Errorf("адрес пира %q: %w", p.Name, err)
 		}
 		peers[p.ID] = addr
 		live[p.ID] = p.Enabled
@@ -72,7 +101,7 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 
 	dns, err := buildDNS(snap.Settings)
 	if err != nil {
-		return option.Options{}, err
+		return option.Options{}, nil, err
 	}
 
 	// Первым делом — перехват DNS: всё, что пришло на dns-in, уходит в резолвер,
@@ -96,6 +125,9 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 	// (ADR 0012). Порядок задаётся первым правилом пары и потому воспроизводим.
 	var chains []chainPair
 	seenChains := make(map[string]bool)
+	// Судьба каждого включённого правила: с маршрутом, отказом или вовсе мимо
+	// конфига. Порядок — тот же, в каком правила идут в route.rules.
+	diags := make([]RuleDiag, 0, len(snap.Rules))
 	for _, r := range sortedRules(snap.Rules) {
 		tunnelTag := ""
 		// Непустая причина означает: маршрута у правила нет, и оно уходит в
@@ -105,7 +137,7 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 		if r.Action == store.ActionTunnel {
 			t, ok := tunnels[r.TunnelID]
 			if !ok {
-				return option.Options{}, fmt.Errorf(
+				return option.Options{}, nil, fmt.Errorf(
 					"правило %q ссылается на несуществующий туннель %s", r.Name, r.TunnelID)
 			}
 			switch {
@@ -121,11 +153,11 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 			if unavailable == "" && r.ViaTunnelID != "" {
 				via, ok := tunnels[r.ViaTunnelID]
 				if !ok {
-					return option.Options{}, fmt.Errorf(
+					return option.Options{}, nil, fmt.Errorf(
 						"второе звено правила %q — несуществующий туннель %s", r.Name, r.ViaTunnelID)
 				}
 				if via.Source != store.SourceWARP {
-					return option.Options{}, fmt.Errorf(
+					return option.Options{}, nil, fmt.Errorf(
 						"второе звено правила %q — туннель %q, а им бывает только WARP", r.Name, via.Name)
 				}
 				// Выключенное второе звено обрывает цепь целиком. Отправить
@@ -146,11 +178,12 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 
 		sets, tags, err := buildRuleSets(r, snap.Settings)
 		if err != nil {
-			return option.Options{}, err
+			return option.Options{}, nil, err
 		}
 		// Единственный пропуск: правило без условий совпадения нельзя выразить ни
 		// маршрутом, ни отказом — совпадать оно будет со всем.
 		if len(tags) == 0 {
+			diags = append(diags, RuleDiag{ID: r.ID, Name: r.Name, Skipped: true})
 			continue
 		}
 
@@ -172,6 +205,7 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 			ruleSets = append(ruleSets, set)
 		}
 		denied := unavailable != ""
+		diags = append(diags, RuleDiag{ID: r.ID, Name: r.Name, Reason: unavailable})
 		routeRules = append(routeRules, routeRule(r, tags, sources, tunnelTag, denied))
 		if dnsRule, ok := dnsRuleFor(r, tags, sources, denied); ok {
 			dns.Rules = append(dns.Rules, dnsRule)
@@ -181,7 +215,7 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 	for _, c := range chains {
 		ep, err := chainEndpoint(tunnels[c.viaID], ChainTag(c.viaID, c.firstID), TunnelTag(c.firstID))
 		if err != nil {
-			return option.Options{}, err
+			return option.Options{}, nil, err
 		}
 		endpoints = append(endpoints, ep)
 	}
@@ -225,7 +259,7 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 			},
 			ClashAPI: &option.ClashAPIOptions{ExternalController: clashListen},
 		},
-	}, nil
+	}, diags, nil
 }
 
 // Marshal сериализует конфиг для записи в /etc/sing-box/config.json. Часть типов
