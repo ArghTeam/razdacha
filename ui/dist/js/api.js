@@ -206,12 +206,98 @@ export const settings = {
 /* --- Версии ---------------------------------------------------------------
    Что развёрнуто на сервере: версия демона и коммит от линкера, версия схемы
    БД, версии библиотеки и рантайма sing-box, версия, записанная установщиком.
-   Поле `version_mismatch` — расхождение бинарника с установщиком; проверки
-   новых версий наружу здесь нет и не заводится, за ней пришлось бы идти в
-   GitHub. */
+   Поле `version_mismatch` — расхождение бинарника с установщиком. Свежести
+   релиза в этой ручке нет и не заводится: за ней панель ходит в GitHub сама,
+   раздел ниже. */
 
 export const version = {
   get: () => get('/api/version'),
+};
+
+/* --- Свежесть релиза: GitHub, мимо нашего API ------------------------------
+   Единственный запрос панели не к своему демону, и это сознательный выбор
+   (docs/08-install-upgrade.md). Спрашивает браузер: демон наружу не ходит ни
+   при каких обстоятельствах, контракт «наружу только по явному действию»
+   (ADR 0010, WARP, оповещения) остаётся целым, а панель работает и на сервере
+   без исходящего интернета. Публичные релизы GitHub отдаёт с
+   `Access-Control-Allow-Origin: *`, поэтому прокси через наш API не нужен.
+
+   Не узнали — не беда: null, и бейджа в шапке просто нет. Ни тоста, ни ошибки:
+   свежесть версии не то, ради чего стоит пугать пользователя. */
+
+const RELEASE_URL = 'https://api.github.com/repos/ArghTeam/razdacha/releases/latest';
+const RELEASE_KEY = 'razdacha:latest-release';
+
+/* Шесть часов. Лимит GitHub без авторизации — 60 запросов в час на адрес, и он
+   общий на всех, кто сидит за одним NAT; каждая перезагрузка панели тратила бы
+   его впустую. Релизы выходят раз в недели, спрашивать чаще нечего, а вышедшую
+   версию всё равно видно в тот же рабочий день. */
+const RELEASE_TTL_MS = 6 * 60 * 60 * 1000;
+
+/* Неудачу помним пятнадцать минут. Иначе панель на сервере без выхода наружу —
+   или упёршаяся в лимит — будет дёргать GitHub на каждой перезагрузке, то есть
+   ровно там, где это вреднее всего. */
+const RELEASE_FAIL_TTL_MS = 15 * 60 * 1000;
+
+/* Ждём не дольше пяти секунд: бейдж — украшение шапки, а не данные экрана, и
+   висящий запрос не должен держать вкладку. */
+const RELEASE_TIMEOUT_MS = 5000;
+
+/** Свежий ответ из хранилища или null. Битый кэш и запрет хранилища в приватном
+    режиме — не повод падать: спросим заново. */
+function cachedRelease() {
+  try {
+    const box = JSON.parse(sessionStorage.getItem(RELEASE_KEY) || 'null');
+    if (!box || !Number.isFinite(box.at)) return null;
+    const ttl = box.tag ? RELEASE_TTL_MS : RELEASE_FAIL_TTL_MS;
+    return Date.now() - box.at > ttl ? null : box;
+  } catch {
+    return null;
+  }
+}
+
+function rememberRelease(tag) {
+  try {
+    sessionStorage.setItem(RELEASE_KEY, JSON.stringify({ at: Date.now(), tag }));
+  } catch { /* хранилища нет — просто спросим ещё раз */ }
+}
+
+export const release = {
+  /** Тег последнего релиза (`v0.2.5`) или null, если узнать не вышло. */
+  latest: async () => {
+    const hit = cachedRelease();
+    if (hit) return hit.tag;
+
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), RELEASE_TIMEOUT_MS);
+    try {
+      const res = await fetch(RELEASE_URL, {
+        // Чужой origin: куки панели тут не при чём, а реферер выдал бы GitHub
+        // адрес сервера. И то, и другое отключается явно.
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        headers: { Accept: 'application/vnd.github+json' },
+        cache: 'no-store',
+        signal: ctl.signal,
+      });
+      if (!res.ok) {
+        // Сюда попадает и 403 «rate limit exceeded»: для панели это то же
+        // самое «не узнали», и запоминается оно ровно затем, чтобы не долбить
+        // выбранный лимит дальше.
+        rememberRelease(null);
+        return null;
+      }
+      const body = await res.json();
+      const tag = typeof body.tag_name === 'string' ? body.tag_name.trim() : '';
+      rememberRelease(tag || null);
+      return tag || null;
+    } catch {
+      rememberRelease(null);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
 };
 
 /* --- Диагностика --------------------------------------------------------- */

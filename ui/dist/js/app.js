@@ -9,7 +9,7 @@ import * as api from './api.js';
 import {
   state, toast, toastError, closeModal, closeMenu, modalOpen, loading,
 } from './shell.js';
-import { $, $$ } from './util.js';
+import { $, $$, compareVersions, versionLabel } from './util.js';
 
 import * as peersScreen from './screens/peers.js';
 import * as tunnelsScreen from './screens/tunnels.js';
@@ -199,6 +199,7 @@ async function refreshApplyStatus() {
 function render() {
   $$('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.screen === state.screen)));
   renderVersion();
+  renderFreshness();
   const el = $('#screen');
   el.innerHTML = SCREENS[state.screen].view();
   el.scrollTop = 0;
@@ -228,6 +229,50 @@ function renderVersion() {
     ? `Работает ${v.version}, установщик записал ${v.installed_version}.`
       + ' Похоже, после обновления демон не перезапустился. Подробности — на экране «Диагностика».'
     : `Версия демона${v.commit ? `, коммит ${v.commit}` : ''}`;
+}
+
+/** Бейдж свежести рядом с версией.
+ *
+ * Молчание — штатный исход, а не сбой: GitHub недоступен, лимит выбран, версия
+ * `dev` или разобрать её не вышло — метки просто нет. «Неизвестно» в шапке было
+ * бы шумом, за которым не стоит ни одного действия.
+ *
+ * Отставание названо версией, а не числом коммитов и не словом «устарела»:
+ * обновляются до версии, и её имя — единственное, что здесь можно применить.
+ * Заодно это ноль дополнительных запросов к GitHub: тег последнего релиза уже
+ * есть, а счёт коммитов пришлось бы спрашивать отдельно. */
+function renderFreshness() {
+  const el = $('#brand-fresh');
+  const running = state.version && state.version.version;
+  const latest = state.latestRelease;
+  const cmp = running && latest ? compareVersions(latest, running) : null;
+  if (cmp === null) {
+    el.hidden = true;
+    el.textContent = '';
+    el.classList.remove('behind');
+    return;
+  }
+  el.hidden = false;
+  const behind = cmp > 0;
+  el.classList.toggle('behind', behind);
+  // `latest` стоит и тогда, когда развёрнуто новее релиза (сборка из ветки):
+  // «отстали на -1» — неправда, а свежее на GitHub и правда ничего нет.
+  el.textContent = behind ? `есть ${versionLabel(latest)}` : 'latest';
+  el.title = behind
+    ? `Работает ${versionLabel(running)}, на GitHub ${versionLabel(latest)}.`
+      + ' Обновление — тем же установщиком, что и первая установка.'
+    : 'Свежее на GitHub нет: развёрнута последняя версия.';
+}
+
+/** Свежесть версии — фоном и вне общей загрузки: GitHub может отвечать
+ * секундами, а экран из-за метки в шапке ждать не должен. Спрашивается один раз
+ * на заход, такт опроса сюда не заглядывает — релизы выходят не так часто, а
+ * лимит GitHub общий на всех за одним адресом. */
+async function checkFreshness() {
+  const tag = await api.release.latest();
+  if (!tag) return;
+  state.latestRelease = tag;
+  if (!$('#app').hidden) renderFreshness();
 }
 
 function fromHash() {
@@ -312,6 +357,7 @@ async function start() {
     toastError(err);
   }
   await navigate();
+  checkFreshness();
   startPolling();
 }
 
