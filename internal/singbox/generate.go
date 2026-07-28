@@ -25,11 +25,14 @@ import (
 // ссылающееся на туннель, и DNS-правило того же набора обязаны меняться вместе, а
 // точечная правка JSON этого не гарантирует.
 //
-// Выключенные туннели и правила в конфиг не попадают. Правило пропускается, если
-// его туннель выключен, если у него не осталось ни одного условия совпадения
-// (иначе оно поймало бы весь трафик), или если все выбранные им пиры выключены.
-// Ссылка на несуществующий туннель — ошибка: состояние повреждено, и молчаливый
-// пропуск правила увёл бы трафик мимо туннеля.
+// Выключенные туннели в конфиг не попадают, а правило, чей туннель недоступен,
+// остаётся в конфиге с действием reject — и в route.rules, и в dns.rules
+// (ADR 0013). Убрать его нельзя: route.final — прямой выход, и исчезнувшее
+// правило отдало бы свой трафик наружу с адреса сервера. Единственное исключение
+// — правило без единого условия совпадения: его не выразить ни маршрутом, ни
+// отказом, потому что совпадать оно будет со всем.
+// Ссылка на несуществующий туннель — ошибка: состояние повреждено, и молчаливое
+// продолжение скрыло бы это.
 // chainPair — цепь из двух звеньев: firstID принимает трафик с сервера, viaID
 // выпускает его наружу. Пара, а не правило: тег клона зависит только от неё, и
 // одинаковые пары из разных правил дают один outbound (ADR 0012).
@@ -50,16 +53,21 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 		return option.Options{}, err
 	}
 
+	// Адреса всех пиров, не только включённых: правилу, у которого все выбранные
+	// пиры выключены, адреса нужны, чтобы отказ достался ровно им, а не всем.
 	peers := make(map[string]string, len(snap.Peers))
+	live := make(map[string]bool, len(snap.Peers))
 	for _, p := range snap.Peers {
-		if !p.Enabled {
-			continue
-		}
 		addr, err := cidr(p.Address)
 		if err != nil {
+			if !p.Enabled {
+				// Выключенный пир с битым адресом конфиг не ломает: в wg0 его нет.
+				continue
+			}
 			return option.Options{}, fmt.Errorf("адрес пира %q: %w", p.Name, err)
 		}
 		peers[p.ID] = addr
+		live[p.ID] = p.Enabled
 	}
 
 	dns, err := buildDNS(snap.Settings)
@@ -90,24 +98,27 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 	seenChains := make(map[string]bool)
 	for _, r := range sortedRules(snap.Rules) {
 		tunnelTag := ""
+		// Непустая причина означает: маршрута у правила нет, и оно уходит в
+		// конфиг отказом. Причина идёт только в лог, пользователь видит
+		// недоступный туннель в панели.
+		unavailable := ""
 		if r.Action == store.ActionTunnel {
 			t, ok := tunnels[r.TunnelID]
 			if !ok {
 				return option.Options{}, fmt.Errorf(
 					"правило %q ссылается на несуществующий туннель %s", r.Name, r.TunnelID)
 			}
-			if !t.Enabled {
-				continue
-			}
+			switch {
+			case !t.Enabled:
+				unavailable = "туннель выключен"
 			// Пул без пригодных серверов тега не получил, ссылаться не на что.
-			if skipped[t.ID] {
-				log.Warn("правило пропущено: у его туннеля-пула нет серверов",
-					"правило", r.Name, "туннель", t.Name)
-				continue
+			case skipped[t.ID]:
+				unavailable = "у туннеля-пула нет серверов"
+			default:
+				tunnelTag = TunnelTag(t.ID)
 			}
-			tunnelTag = TunnelTag(t.ID)
 
-			if r.ViaTunnelID != "" {
+			if unavailable == "" && r.ViaTunnelID != "" {
 				via, ok := tunnels[r.ViaTunnelID]
 				if !ok {
 					return option.Options{}, fmt.Errorf(
@@ -121,14 +132,14 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 				// трафик одним первым звеном было бы тихой подменой маршрута:
 				// ресурс увидел бы не тот адрес, ради которого цепь и заводили.
 				if !via.Enabled {
-					log.Warn("правило пропущено: второе звено цепи выключено",
-						"правило", r.Name, "туннель", via.Name)
-					continue
-				}
-				tunnelTag = ChainTag(via.ID, t.ID)
-				if !seenChains[tunnelTag] {
-					seenChains[tunnelTag] = true
-					chains = append(chains, chainPair{viaID: via.ID, firstID: t.ID})
+					unavailable = "второе звено цепи выключено"
+					tunnelTag = ""
+				} else {
+					tunnelTag = ChainTag(via.ID, t.ID)
+					if !seenChains[tunnelTag] {
+						seenChains[tunnelTag] = true
+						chains = append(chains, chainPair{viaID: via.ID, firstID: t.ID})
+					}
 				}
 			}
 		}
@@ -137,13 +148,20 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 		if err != nil {
 			return option.Options{}, err
 		}
+		// Единственный пропуск: правило без условий совпадения нельзя выразить ни
+		// маршрутом, ни отказом — совпадать оно будет со всем.
 		if len(tags) == 0 {
 			continue
 		}
 
-		sources, ok := sourceCIDRs(r, peers)
+		sources, ok := sourceCIDRs(r, peers, live)
 		if !ok {
-			continue
+			unavailable = "выключены все выбранные пиры"
+			tunnelTag = ""
+		}
+		if unavailable != "" {
+			log.Warn("правило отказывает: маршрута нет",
+				"правило", r.Name, "причина", unavailable)
 		}
 
 		for _, set := range sets {
@@ -153,8 +171,9 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 			seenSets[set.Tag] = true
 			ruleSets = append(ruleSets, set)
 		}
-		routeRules = append(routeRules, routeRule(r, tags, sources, tunnelTag))
-		if dnsRule, ok := dnsRuleFor(r, tags, sources); ok {
+		denied := unavailable != ""
+		routeRules = append(routeRules, routeRule(r, tags, sources, tunnelTag, denied))
+		if dnsRule, ok := dnsRuleFor(r, tags, sources, denied); ok {
 			dns.Rules = append(dns.Rules, dnsRule)
 		}
 	}
@@ -238,38 +257,51 @@ func sortedRules(rules []store.Rule) []store.Rule {
 }
 
 // sourceCIDRs возвращает адреса пиров, на которых действует правило. Второе
-// значение — false, если правило адресовано выбранным пирам, но все они выключены:
-// пустой source_ip_cidr означал бы «для всех», а это противоположность заданному.
-func sourceCIDRs(r store.Rule, peers map[string]string) ([]string, bool) {
+// значение — false, если правило адресовано выбранным пирам, но все они
+// выключены: маршрута у такого правила нет, оно уходит в конфиг отказом.
+//
+// Адреса при этом возвращаются всё равно — теперь уже выключенных пиров. Отказ
+// без них достался бы всем: пустой source_ip_cidr означает «для всех», а это
+// противоположность заданному.
+func sourceCIDRs(r store.Rule, peers map[string]string, live map[string]bool) ([]string, bool) {
 	if r.PeerScope != store.ScopeSelected {
 		return nil, true
 	}
-	var out []string
+	var selected, enabled []string
 	for _, id := range r.PeerIDs {
-		if addr, ok := peers[id]; ok {
-			out = append(out, addr)
+		addr, ok := peers[id]
+		if !ok {
+			continue
+		}
+		selected = append(selected, addr)
+		if live[id] {
+			enabled = append(enabled, addr)
 		}
 	}
-	if len(out) == 0 {
-		return nil, false
+	if len(enabled) == 0 {
+		return selected, false
 	}
-	return out, true
+	return enabled, true
 }
 
 // routeRule собирает запись route.rules[] для одного правила.
-func routeRule(r store.Rule, tags, sources []string, tunnelTag string) option.Rule {
+//
+// denied — маршрута у правила нет: туннель недоступен. Такое правило остаётся в
+// конфиге отказом, потому что route.final — прямой выход и выпавшее правило
+// отдало бы свой трафик наружу с адреса сервера (ADR 0013).
+func routeRule(r store.Rule, tags, sources []string, tunnelTag string, denied bool) option.Rule {
 	raw := option.RawDefaultRule{
 		RuleSet:      tags,
 		SourceIPCIDR: sources,
 	}
 	var action option.RuleAction
-	switch r.Action {
-	case store.ActionBlock:
+	switch {
+	case denied, r.Action == store.ActionBlock:
 		action = option.RuleAction{
 			Action:        C.RuleActionTypeReject,
 			RejectOptions: option.RejectActionOptions{Method: C.RuleActionRejectMethodDefault},
 		}
-	case store.ActionDirect:
+	case r.Action == store.ActionDirect:
 		action = option.RuleAction{
 			Action:       C.RuleActionTypeRoute,
 			RouteOptions: option.RouteActionOptions{Outbound: TagDirect},
@@ -291,13 +323,14 @@ func routeRule(r store.Rule, tags, sources []string, tunnelTag string) option.Ru
 // Правило в туннель получает FakeIP: без него трафик к домену пошёл бы на
 // настоящий адрес мимо nft-метки, то есть мимо туннеля. Правило block получает
 // отказ по той же причине — без FakeIP запись в route.rules ловила бы только
-// подсети, а домены уходили бы напрямую. Правилу direct DNS-запись не нужна: его
+// подсети, а домены уходили бы напрямую. Правило с недоступным туннелем (denied)
+// отказывает ровно поэтому же (ADR 0013). Правилу direct DNS-запись не нужна: его
 // трафик и так идёт мимо sing-box. Не нужна и правилу с resolve_real_ip — там
 // клиенту нужен настоящий адрес.
-func dnsRuleFor(r store.Rule, tags, sources []string) (option.DNSRule, bool) {
+func dnsRuleFor(r store.Rule, tags, sources []string, denied bool) (option.DNSRule, bool) {
 	raw := option.RawDefaultDNSRule{RuleSet: tags, SourceIPCIDR: sources}
 	switch {
-	case r.Action == store.ActionBlock:
+	case denied, r.Action == store.ActionBlock:
 		return reject(raw), true
 	case r.Action == store.ActionTunnel && !r.ResolveRealIP:
 		ttl := uint32(fakeIPTTL)
