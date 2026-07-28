@@ -308,10 +308,10 @@ function modalTunnel(id) {
       <label for="t-name">Имя</label>
       <input type="text" id="t-name" value="${esc(t ? t.name : '')}" placeholder="Нидерланды" autocomplete="off">
     </div>
-    <div class="field">
+    <div class="field" id="t-raw-field">
       <label for="t-raw">Вставьте ссылку или конфиг WireGuard</label>
-      <textarea id="t-raw" spellcheck="false" placeholder="vless://…">${esc(t ? t.raw : '')}</textarea>
-      <div class="parse-result idle" id="t-parse">${esc(IDLE_HINT)}</div>
+      <textarea id="t-raw" spellcheck="false" placeholder="vless://…"${t ? ' disabled' : ''}></textarea>
+      <div class="parse-result idle" id="t-parse">${esc(t ? 'Загружаю конфиг…' : IDLE_HINT)}</div>
     </div>`,
   `<button class="btn" data-act="close-modal">Отмена</button>
      <button class="btn btn-primary" data-act="save-tunnel" data-id="${esc(t ? t.id : '')}">Сохранить</button>`),
@@ -323,9 +323,47 @@ function modalTunnel(id) {
       clearTimeout(timer);
       timer = setTimeout(() => runParse(raw.value), 350);
     });
-    if (t) runParse(raw.value);
-    (t ? raw : m.querySelector('#t-name')).focus();
+    if (t) loadTunnelRaw(t, m);
+    else m.querySelector('#t-name').focus();
   });
+}
+
+/* Конфиг существующего туннеля приходит отдельным запросом, а не из списка: в
+   нём UUID ключа, а у WARP — приватный ключ устройства, и в ответе экрана они
+   ездили бы с каждым опросом (#124). Поле пустое и заблокировано, пока конфиг
+   не приехал: пустое активное поле выглядит как «конфига нет», и сохранение
+   стёрло бы настоящий.
+
+   Не приехал вовсе — поле открывается пустым и говорит, что вставленный конфиг
+   заменит прежний: заводить туннель заново из-за отказа одной ручки незачем. */
+async function loadTunnelRaw(t, m) {
+  const raw = m.querySelector('#t-raw');
+  const out = m.querySelector('#t-parse');
+  try {
+    const got = await api.tunnels.raw(t.id);
+    if (got.editable === false) {
+      // Ключ сгенерировал сервер (WARP): править его руками нечего, поле
+      // конфига уступает место объяснению, и правится только имя.
+      const field = m.querySelector('#t-raw-field');
+      field.innerHTML = '<div class="parse-result idle"></div>';
+      field.firstElementChild.textContent = got.note
+        || 'Конфиг этого туннеля выдал сервер — править его руками нечего.';
+      m.querySelector('#t-name').focus();
+      return;
+    }
+    raw.disabled = false;
+    raw.value = got.raw || '';
+    raw.focus();
+    runParse(raw.value);
+  } catch (err) {
+    raw.disabled = false;
+    out.className = 'parse-result ' + (err.missing ? 'idle' : 'err');
+    out.textContent = err.missing
+      ? 'Конфиг не загружен: GET /api/tunnels/{id}/raw ещё не реализован. '
+        + 'Вставьте конфиг заново — сохранение заменит прежний.'
+      : 'Конфиг не загружен: ' + err.message
+        + '. Вставьте его заново — сохранение заменит прежний.';
+  }
 }
 
 /** Результат последнего разбора: по нему решается, можно ли сохранять. */
@@ -368,17 +406,21 @@ async function runParse(raw) {
 
 async function saveTunnel(id) {
   const name = $('#t-name').value.trim();
-  const raw = $('#t-raw').value.trim();
+  // Поля конфига нет вовсе у туннеля, чей ключ выдал сервер (WARP): у него
+  // меняется только имя, и слать `raw` в PATCH значило бы стереть ключ.
+  const field = $('#t-raw');
+  const raw = field ? field.value.trim() : '';
   if (!name) { toast('Введите имя туннеля', 'err'); return; }
-  if (!raw) { toast('Вставьте конфиг туннеля', 'err'); return; }
-  if (lastParse.raw === raw && !lastParse.ok) {
+  if (field && field.disabled) { toast('Конфиг ещё загружается', 'err'); return; }
+  if (field && !raw) { toast('Вставьте конфиг туннеля', 'err'); return; }
+  if (field && lastParse.raw === raw && !lastParse.ok) {
     toast('Конфиг не разобран — исправьте его перед сохранением', 'err');
     return;
   }
   const btn = $('#modal [data-act="save-tunnel"]');
   btn.disabled = true;
   try {
-    if (id) await api.tunnels.update(id, { name, raw });
+    if (id) await api.tunnels.update(id, field ? { name, raw } : { name });
     else await api.tunnels.create(name, raw);
     closeModal();
     markDirty();

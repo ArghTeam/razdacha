@@ -1,6 +1,7 @@
 package singbox
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -472,4 +473,48 @@ func hasOutbound(opts option.Options, tag string) bool {
 		}
 	}
 	return false
+}
+
+// В лог уходит адрес, а не ссылка: журнал демона читают шире, чем БД, а в ссылке
+// UUID ключа (issue #124).
+func TestPoolWarnHasNoKey(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	const link = "vless://@203.0.113.7:443#Тест" // без UUID: парсер такую не осилит
+	_, ok := buildPool(store.Tunnel{
+		ID: "pppp", Name: "Пул", Pool: []store.PoolServer{{URL: link, Title: "VLESS (NL) 42"}},
+	}, log)
+	if ok {
+		t.Fatal("битая ссылка попала в конфиг")
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "11111111-2222-3333-4444-555555555555") || strings.Contains(out, "vless://") {
+		t.Errorf("ключ уехал в лог: %s", out)
+	}
+	if !strings.Contains(out, "203.0.113.7:443") {
+		t.Errorf("в логе нет адреса сервера: %s", out)
+	}
+}
+
+// serverAddr отдаёт адрес только тогда, когда это действительно адрес: у `ss://`
+// в host лежит base64 со всем содержимым ключа, и отдавать его нельзя.
+func TestServerAddr(t *testing.T) {
+	cases := map[string]string{
+		"vless://11111111-2222-3333-4444-555555555555@203.0.113.7:443?x=1": "203.0.113.7:443",
+		"trojan://пароль@example.org:8443":                                 "example.org:8443",
+		"socks5://10.0.0.1:1080":                                           "10.0.0.1:1080",
+		// Ссылка целиком в base64 — адреса в ней не видно, и гадать нельзя.
+		"ss://YWVzLTI1Ni1nY206cGFzc0AxLjIuMy40Ojg0ODg=#tag": unknownAddr,
+		"мусор":     unknownAddr,
+		"vless://":  unknownAddr,
+		"":          unknownAddr,
+		"vless://@": unknownAddr,
+	}
+	for in, want := range cases {
+		if got := serverAddr(in); got != want {
+			t.Errorf("serverAddr(%q) = %q, ожидалось %q", in, got, want)
+		}
+	}
 }

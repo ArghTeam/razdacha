@@ -3,6 +3,8 @@ package singbox
 import (
 	"fmt"
 	"log/slog"
+	"net"
+	"strings"
 	"time"
 
 	C "github.com/sagernet/sing-box/constant"
@@ -40,6 +42,68 @@ const (
 	// по умолчанию; задан явно, чтобы конфиг не менялся при смене его дефолта.
 	poolTestURL = "https://www.gstatic.com/generate_204"
 )
+
+// unknownAddr — что пишется в лог вместо адреса, когда достать его из ссылки
+// нечем. Пустое значение выглядело бы как «адреса нет», а не «не разобрали».
+const unknownAddr = "неизвестен"
+
+// serverAddr достаёт из ссылки на сервер `хост:порт` для лога.
+//
+// Сама ссылка в лог не попадает никогда: в ней UUID или пароль, а журнал демона
+// читают шире, чем БД (issue #124).
+//
+// Разбор ручной, а не через [url.Parse]: сюда попадают в том числе ссылки,
+// которые парсер уже не осилил, а `url.Parse` спотыкается о не-ASCII в
+// логин-части (`trojan://пароль@…`) и отдал бы «адрес неизвестен» там, где он
+// есть. Хост принимается только если выглядит адресом ([plainHost]): у `ss://`
+// на его месте бывает base64 со всем содержимым ключа.
+func serverAddr(rawURL string) string {
+	s := strings.TrimSpace(rawURL)
+	if i := strings.Index(s, "://"); i >= 0 {
+		s = s[i+3:]
+	}
+	if i := strings.IndexAny(s, "/?#"); i >= 0 {
+		s = s[:i]
+	}
+	// Логин отбрасывается по последнему `@`: пароль сам по себе может его содержать.
+	if i := strings.LastIndex(s, "@"); i >= 0 {
+		s = s[i+1:]
+	}
+
+	host, port := s, ""
+	if h, p, err := net.SplitHostPort(s); err == nil {
+		host, port = h, p
+	}
+	host = strings.Trim(host, "[]")
+	if !plainHost(host) {
+		return unknownAddr
+	}
+	if port != "" {
+		return net.JoinHostPort(host, port)
+	}
+	return host
+}
+
+// plainHost — похоже ли это на имя хоста или IP, а не на закодированный ключ.
+// Base64 живёт в алфавите без точек, поэтому обязательная точка отсекает его, а
+// вместе с ним и всё, что не является адресом.
+func plainHost(h string) bool {
+	if h == "" || len(h) > 253 {
+		return false
+	}
+	if net.ParseIP(h) != nil {
+		return true
+	}
+	for _, r := range h {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '-', r == '.', r == '_':
+		default:
+			return false
+		}
+	}
+	return strings.Contains(h, ".")
+}
 
 // poolMemberTag — тег одного участника пула. Индекс — позиция в отобранном наборе,
 // а порядок отбора держит слой lists, поэтому уцелевший сервер сохраняет свой тег, и
@@ -80,12 +144,12 @@ func buildPool(t store.Tunnel, log *slog.Logger) ([]option.Outbound, bool) {
 		res, err := Parse(s.URL)
 		if err != nil {
 			log.Warn("сервер пула пропущен: ссылка не разобрана",
-				"туннель", t.Name, "url", s.URL, "ошибка", err)
+				"туннель", t.Name, "сервер", s.Title, "адрес", serverAddr(s.URL), "ошибка", err)
 			continue
 		}
 		if res.Outbound == nil {
 			log.Warn("сервер пула пропущен: не outbound",
-				"туннель", t.Name, "url", s.URL, "тип", res.Type)
+				"туннель", t.Name, "сервер", s.Title, "адрес", serverAddr(s.URL), "тип", res.Type)
 			continue
 		}
 		ob := *res.Outbound

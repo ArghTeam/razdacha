@@ -17,12 +17,17 @@ import (
 // (`POST /api/tunnels/{id}/check`, [checkCache]). Пока её не делали — null:
 // ноль в latency означал бы «ноль миллисекунд», а «down» — утверждение о
 // туннеле, которого никто не проверял.
+// Поля `raw` здесь нет намеренно: в нём вставленная ссылка с UUID, а у туннеля
+// WARP — целый `.conf` с приватным ключом, который сгенерировал сервер. Список
+// перечитывается на каждый опрос экрана «Туннели», то есть ключ оседал бы в кэше
+// браузера и в логах всего, что стоит между nginx и клиентом (issue #124). Форме
+// правки конфиг отдаётся отдельной ручкой по явному запросу —
+// [Server.handleTunnelRaw].
 type tunnelResponse struct {
 	ID        string             `json:"id"`
 	Name      string             `json:"name"`
 	Type      store.TunnelType   `json:"type"`
 	Source    store.TunnelSource `json:"source"`
-	Raw       string             `json:"raw"`
 	Enabled   bool               `json:"enabled"`
 	CreatedAt time.Time          `json:"created_at"`
 
@@ -48,7 +53,6 @@ func newTunnelResponse(t store.Tunnel, poolEvery time.Duration) tunnelResponse {
 		Name:      t.Name,
 		Type:      t.Type,
 		Source:    t.Source,
-		Raw:       t.Raw,
 		Enabled:   t.Enabled,
 		Builtin:   t.Builtin,
 		CreatedAt: t.CreatedAt.UTC(),
@@ -73,6 +77,42 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	s.checks.keep(alive)
 	s.withPoolState(r.Context(), out, byID)
 	writeJSON(w, s.log, http.StatusOK, out)
+}
+
+// tunnelRawResponse — ответ `GET /api/tunnels/{id}/raw`: конфиг туннеля для формы
+// правки. Отдельной ручкой, а не полем списка: конфиг нужен одной открытой форме,
+// а в списке он ездил бы с каждым опросом экрана вместе с ключом внутри.
+//
+// Editable — можно ли этот конфиг править руками. У WARP нельзя: ключ выдал
+// Cloudflare, пользователь его не вводил и заменять его текстом в поле незачем —
+// вместо конфига форма показывает Note и оставляет только имя. Raw у такого
+// туннеля пустой: отдавать приватный ключ в поле, которое всё равно только для
+// чтения, значит вернуть ту же утечку через другую дверь.
+type tunnelRawResponse struct {
+	Raw      string `json:"raw"`
+	Editable bool   `json:"editable"`
+	Note     string `json:"note,omitempty"`
+}
+
+// handleTunnelRaw — `GET /api/tunnels/{id}/raw`.
+func (s *Server) handleTunnelRaw(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.idFrom(w, r)
+	if !ok {
+		return
+	}
+	t, err := s.store.Tunnel(r.Context(), id)
+	if err != nil {
+		s.storeError(w, err, "Туннель не найден")
+		return
+	}
+	if t.Source == store.SourceWARP {
+		writeJSON(w, s.log, http.StatusOK, tunnelRawResponse{
+			Note: "Конфиг выдал Cloudflare — в нём приватный ключ устройства, " +
+				"и править его руками нечего. Поменять можно имя туннеля.",
+		})
+		return
+	}
+	writeJSON(w, s.log, http.StatusOK, tunnelRawResponse{Raw: t.Raw, Editable: true})
 }
 
 // tunnelRequest — тело создания и изменения туннеля. Тип и разобранный конфиг не
