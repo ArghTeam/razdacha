@@ -280,7 +280,12 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 	if err := json.Unmarshal(body, &out); err != nil {
 		return "", fmt.Errorf("%w: версия рантайма: %w", ErrBadResponse, err)
 	}
-	v := strings.TrimPrefix(strings.TrimSpace(out.Version), "v")
+	// Живой sing-box отвечает не голой версией, а «sing-box 1.12.25»
+	// (проверено на стенде). Имя продукта здесь лишнее: строка подписана
+	// «sing-box, рантайм» и сравнивается с версией библиотеки из go.mod,
+	// записанной без него.
+	v := strings.TrimPrefix(strings.TrimSpace(out.Version), "sing-box")
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
 	if v == "" {
 		return "", fmt.Errorf("%w: версия рантайма пуста", ErrBadResponse)
 	}

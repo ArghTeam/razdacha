@@ -220,27 +220,37 @@ func TestLatencyUnknown(t *testing.T) {
 	}
 }
 
-// TestVersionOK — рантайм отвечает своей версией. Ведущая «v» снимается: версия
-// библиотеки в go.mod записана без неё, и панель сравнивает их как строки.
+// TestVersionOK — рантайм отвечает своей версией.
+//
+// Формы ответа разные, а версия одна: живой sing-box отдаёт «sing-box 1.12.25»
+// (проверено на стенде), ведущая «v» встречается тоже. Наружу уходит голая
+// версия — её сравнивают с версией библиотеки из go.mod, записанной без имени
+// продукта и без «v».
 func TestVersionOK(t *testing.T) {
-	var gotPath string
-	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write([]byte(`{"meta":true,"premium":false,"version":"v1.12.25"}`)); err != nil {
-			t.Errorf("запись ответа: %v", err)
-		}
-	})
+	for _, body := range []string{
+		`{"meta":true,"premium":false,"version":"sing-box 1.12.25"}`,
+		`{"meta":true,"premium":false,"version":"v1.12.25"}`,
+		`{"meta":true,"premium":false,"version":"1.12.25"}`,
+	} {
+		var gotPath string
+		c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			w.Header().Set("Content-Type", "application/json")
+			if _, err := w.Write([]byte(body)); err != nil {
+				t.Errorf("запись ответа: %v", err)
+			}
+		})
 
-	v, err := c.Version(context.Background())
-	if err != nil {
-		t.Fatalf("Version: %v", err)
-	}
-	if v != "1.12.25" {
-		t.Errorf("версия = %q, ожидалась 1.12.25", v)
-	}
-	if gotPath != "/version" {
-		t.Errorf("путь = %q, ожидался /version", gotPath)
+		v, err := c.Version(context.Background())
+		if err != nil {
+			t.Fatalf("Version (%s): %v", body, err)
+		}
+		if v != "1.12.25" {
+			t.Errorf("версия = %q, ожидалась 1.12.25 (ответ %s)", v, body)
+		}
+		if gotPath != "/version" {
+			t.Errorf("путь = %q, ожидался /version", gotPath)
+		}
 	}
 }
 

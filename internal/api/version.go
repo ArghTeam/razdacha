@@ -2,9 +2,13 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/ArghTeam/razdacha/internal/clash"
 )
 
 // versionProbeTimeout — сколько ждём рантайм с ответом о своей версии.
@@ -35,8 +39,9 @@ type singboxVersions struct {
 	Library *string `json:"library"`
 	// Runtime — версия работающего рантайма.
 	Runtime *string `json:"runtime"`
-	// RuntimeDetail — почему версии рантайма нет. Текст на русском, он
-	// показывается пользователю как есть.
+	// RuntimeDetail — почему версии рантайма нет: короткая причина на русском,
+	// она показывается пользователю как есть. Сырая ошибка с адресом Clash API
+	// сюда не попадает — она уходит в лог демона.
 	RuntimeDetail *string `json:"runtime_detail"`
 }
 
@@ -89,10 +94,36 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	if v, verr := s.clash.Version(ctx); verr == nil {
 		out.Singbox.Runtime = optionalText(v)
 	} else {
-		out.Singbox.RuntimeDetail = optionalText(verr.Error())
+		// Сырая ошибка уходит в лог, а не в панель: в ней внутренний адрес
+		// Clash API и англоязычный хвост от net/http, а разбираться по ней всё
+		// равно нам. Пользователю — короткая причина словами.
+		s.log.Warn("версия рантайма sing-box не получена", "ошибка", verr)
+		out.Singbox.RuntimeDetail = optionalText(runtimeReason(verr))
 	}
 
 	writeJSON(w, s.log, http.StatusOK, out)
+}
+
+// runtimeReason переводит отказ Clash API в причину для панели.
+//
+// Ничего нового для этого не нужно: клиент уже размечает исходы сентинелами, и
+// «не запущен» отличается от «не отвечает» отвергнутым соединением — сокет
+// закрыт, ядро отвечает сразу. Отличать стоит: остановленный юнит и живой, но
+// зависший рантайм лечатся по-разному.
+//
+// Текст короткий намеренно. Он показывается значением строки в сводке версий,
+// и сырая ошибка на две строки разносит там вёрстку.
+func runtimeReason(err error) string {
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "sing-box не запущен"
+	case errors.Is(err, clash.ErrUnavailable):
+		return "sing-box не отвечает"
+	case errors.Is(err, clash.ErrBadResponse):
+		return "sing-box ответил неожиданно"
+	default:
+		return "версию рантайма узнать не удалось"
+	}
 }
 
 // versionMismatch отвечает, разошлись ли версия работающего бинарника и та, что

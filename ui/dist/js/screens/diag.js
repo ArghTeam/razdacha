@@ -261,7 +261,10 @@ function report() {
     `демон: ${v.version ?? '—'}${v.commit ? ` (${v.commit})` : ''}`,
     `версия установки: ${v.installed_version ?? '—'}${v.version_mismatch ? ' — РАСХОЖДЕНИЕ с работающим бинарником' : ''}`,
     `схема БД: ${v.schema_version ?? '—'}`,
-    `sing-box: библиотека ${sb.library ?? '—'}, рантайм ${sb.runtime ?? (sb.runtime_detail || '—')}`,
+    `sing-box, библиотека: ${sb.library ?? '—'}`,
+    // Причина недоступности рантайма приходит от демона короткой фразой; ставим
+    // её после «неизвестно», иначе строка читается как версия.
+    `sing-box, рантайм: ${sb.runtime ?? `неизвестно — ${sb.runtime_detail || 'причина не названа'}`}`,
     '',
     '## Проверки',
     ...(d.checks || []).map((c) => `${String(c.status).padEnd(5)} ${c.title}: ${c.detail || ''}`),
