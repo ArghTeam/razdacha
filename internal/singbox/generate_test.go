@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 
 	"github.com/ArghTeam/razdacha/internal/store"
@@ -20,7 +21,8 @@ var update = flag.Bool("update", false, "перезаписать эталоны
 
 // fixture — состояние, покрывающее все ветки генератора: WireGuard-туннель в
 // endpoints, VLESS в outbounds, правила всех трёх действий, community-список,
-// свои домены и подсети, внешний .srs и правило для выбранных пиров.
+// свои домены и подсети, внешний .srs, правило для выбранных пиров и правило на
+// выключенный туннель — оно попадает в конфиг отказом (ADR 0013).
 func fixture() store.Snapshot {
 	s := store.DefaultSettings()
 	s.ListUpdateInterval = 24 * time.Hour
@@ -86,6 +88,12 @@ func fixture() store.Snapshot {
 				ID: "r5", Name: "Выключенное", Action: store.ActionDirect,
 				Priority: 4, Enabled: false,
 				Domains:   []string{"example.com"},
+				PeerScope: store.ScopeAll,
+			},
+			{
+				ID: "r6", Name: "В выключенный туннель", Action: store.ActionTunnel,
+				TunnelID: "cccc", Priority: 5, Enabled: true,
+				Domains:   []string{"habr.com"},
 				PeerScope: store.ScopeAll,
 			},
 		},
@@ -159,23 +167,30 @@ func TestRuleOrder(t *testing.T) {
 	golden(t, "full.json", generate(t, snap))
 }
 
-func TestSkipped(t *testing.T) {
+// TestUnavailableTunnelRejects держит ADR 0013: правило, которому некуда идти,
+// остаётся в конфиге отказом — и в route.rules, и в dns.rules. Выпади оно, его
+// трафик забрал бы route.final, то есть ушёл бы напрямую с адреса сервера, а
+// домены без DNS-записи резолвились бы в настоящие адреса.
+func TestUnavailableTunnelRejects(t *testing.T) {
 	baseline := len(mustGenerate(t, fixture()).Route.Rules)
 	tests := []struct {
 		name string
 		mut  func(*store.Snapshot)
 	}{
 		{
-			name: "правило на выключенный туннель",
+			name: "туннель выключен",
 			mut: func(s *store.Snapshot) {
 				s.Rules[0].TunnelID = "cccc"
 			},
 		},
 		{
-			name: "правило без единого условия",
+			name: "у туннеля-пула нет пригодных серверов",
 			mut: func(s *store.Snapshot) {
-				s.Rules[0].CommunityLists = nil
-				s.Rules[0].Domains = nil
+				s.Tunnels = append(s.Tunnels, store.Tunnel{
+					ID: "pppp", Name: "Пул", Type: store.TunnelVLESS,
+					Source: store.SourcePool, Raw: "https://example.org/keys", Enabled: true,
+				})
+				s.Rules[0].TunnelID = "pppp"
 			},
 		},
 		{
@@ -192,16 +207,88 @@ func TestSkipped(t *testing.T) {
 			snap := fixture()
 			tt.mut(&snap)
 			opts := mustGenerate(t, snap)
-			for _, r := range opts.Route.Rules {
-				if contains(r.DefaultOptions.RuleSet, ruleSetTag("r1")) {
-					t.Fatal("правило попало в конфиг, хотя должно быть пропущено")
-				}
+			if len(opts.Route.Rules) != baseline {
+				t.Fatalf("правил %d, ожидалось %d: правило выпало из конфига",
+					len(opts.Route.Rules), baseline)
 			}
-			if len(opts.Route.Rules) != baseline-1 {
-				t.Fatalf("правил %d, ожидалось %d", len(opts.Route.Rules), baseline-1)
-			}
+			assertRejected(t, opts, ruleSetTag("r1"))
 		})
 	}
+}
+
+// assertRejected: правило с набором tag есть в обоих наборах правил и в обоих
+// отказывает, никуда не маршрутизируясь.
+func assertRejected(t *testing.T, opts option.Options, tag string) {
+	t.Helper()
+	var inRoute, inDNS bool
+	for _, r := range opts.Route.Rules {
+		if !contains(r.DefaultOptions.RuleSet, tag) {
+			continue
+		}
+		inRoute = true
+		if r.DefaultOptions.Action != C.RuleActionTypeReject {
+			t.Errorf("route.rules: действие %q, ожидался reject", r.DefaultOptions.Action)
+		}
+		if out := r.DefaultOptions.RouteOptions.Outbound; out != "" {
+			t.Errorf("route.rules: правило ушло в %q вместо отказа", out)
+		}
+	}
+	for _, r := range opts.DNS.Rules {
+		if !contains(r.DefaultOptions.RuleSet, tag) {
+			continue
+		}
+		inDNS = true
+		if r.DefaultOptions.Action != C.RuleActionTypeReject {
+			t.Errorf("dns.rules: действие %q, ожидался reject", r.DefaultOptions.Action)
+		}
+	}
+	if !inRoute {
+		t.Error("правила нет в route.rules — его трафик заберёт final, то есть прямой выход")
+	}
+	if !inDNS {
+		t.Error("правила нет в dns.rules — его домены резолвятся в настоящие адреса")
+	}
+}
+
+// Правило без единого условия совпадения — единственный оставшийся пропуск: его
+// не выразить ни маршрутом, ни отказом, потому что совпадать оно будет со всем.
+func TestRuleWithoutConditionsSkipped(t *testing.T) {
+	baseline := len(mustGenerate(t, fixture()).Route.Rules)
+	snap := fixture()
+	snap.Rules[0].CommunityLists = nil
+	snap.Rules[0].Domains = nil
+
+	opts := mustGenerate(t, snap)
+	for _, r := range opts.Route.Rules {
+		if contains(r.DefaultOptions.RuleSet, ruleSetTag("r1")) {
+			t.Fatal("правило без условий попало в конфиг")
+		}
+	}
+	if len(opts.Route.Rules) != baseline-1 {
+		t.Fatalf("правил %d, ожидалось %d", len(opts.Route.Rules), baseline-1)
+	}
+}
+
+// Отказ правилу, у которого выключены все выбранные пиры, достаётся ровно этим
+// пирам: пустой source_ip_cidr означал бы «для всех» и оборвал бы чужой трафик.
+func TestRejectKeepsDisabledPeerSources(t *testing.T) {
+	snap := fixture()
+	snap.Rules[0].PeerScope = store.ScopeSelected
+	snap.Rules[0].PeerIDs = []string{"p2"}
+	snap.Peers[1].Enabled = false
+
+	opts := mustGenerate(t, snap)
+	for _, r := range opts.Route.Rules {
+		if !contains(r.DefaultOptions.RuleSet, ruleSetTag("r1")) {
+			continue
+		}
+		if !reflect.DeepEqual([]string(r.DefaultOptions.SourceIPCIDR), []string{"10.8.0.3/32"}) {
+			t.Fatalf("source_ip_cidr = %v, ожидался адрес выбранного пира",
+				r.DefaultOptions.SourceIPCIDR)
+		}
+		return
+	}
+	t.Fatal("правила нет в route.rules")
 }
 
 // TestDNSRulesPerAction: FakeIP получают только правила в туннель, block — отказ
@@ -225,6 +312,7 @@ func TestDNSRulesPerAction(t *testing.T) {
 	want := map[string]string{
 		ruleSetTag("r1"): "route:" + TagDNSFakeIP,
 		ruleSetTag("r4"): "reject:",
+		ruleSetTag("r6"): "reject:", // туннель выключен — отказ, а не пропуск
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("DNS-правила: %v, ожидалось %v", got, want)
