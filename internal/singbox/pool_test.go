@@ -248,6 +248,61 @@ func TestPoolWithoutServersIsSkipped(t *testing.T) {
 	}
 }
 
+// Ключ из каталога с `allowInsecure=1` попадает в конфиг с проверкой сертификата:
+// согласие на перехват в туннеле никто не давал, ссылку демон взял сам с чужой
+// страницы (issue #128). Ручная вставка того же ключа поведения не меняет.
+func TestPoolIgnoresInsecureFromCatalog(t *testing.T) {
+	const link = "vless://11111111-2222-3333-4444-555555555555@203.0.113.7:443" +
+		"?security=tls&sni=example.org&allowInsecure=1#NL-1"
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	group, ok := buildPool(store.Tunnel{
+		ID: "pppp", Name: "Пул", Pool: []store.PoolServer{{URL: link, Title: "VLESS (NL) 1"}},
+	}, log)
+	if !ok {
+		t.Fatal("пул не собрался")
+	}
+
+	var member *option.VLESSOutboundOptions
+	for _, ob := range group {
+		if ob.Tag != poolMemberTag("pppp", 0) {
+			continue
+		}
+		o, isVLESS := ob.Options.(*option.VLESSOutboundOptions)
+		if !isVLESS {
+			t.Fatalf("у участника пула не те опции: %T", ob.Options)
+		}
+		member = o
+	}
+	if member == nil {
+		t.Fatal("участника пула нет в группе")
+	}
+	if member.TLS == nil || !member.TLS.Enabled {
+		t.Fatal("у участника пула нет TLS")
+	}
+	if member.TLS.Insecure {
+		t.Error("ключ из каталога отключил проверку сертификата")
+	}
+	if !strings.Contains(buf.String(), "проверка оставлена включённой") {
+		t.Errorf("в логе нет следа снятого флага: %s", buf.String())
+	}
+
+	// Тот же ключ, вставленный руками: разбор одинаков для всех источников, и
+	// гасить флаг в парсере нельзя — там источник неизвестен.
+	res, err := Parse(link)
+	if err != nil {
+		t.Fatalf("разбор ссылки: %v", err)
+	}
+	manual, isVLESS := res.Outbound.Options.(*option.VLESSOutboundOptions)
+	if !isVLESS {
+		t.Fatalf("не те опции при ручном разборе: %T", res.Outbound.Options)
+	}
+	if manual.TLS == nil || !manual.TLS.Insecure {
+		t.Error("ручная вставка потеряла allowInsecure — это решение пользователя")
+	}
+}
+
 // Выключенный пул в конфиг не попадает вовсе.
 func TestPoolDisabled(t *testing.T) {
 	snap := poolFixture(poolServers(t, 3))
