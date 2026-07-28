@@ -85,6 +85,12 @@ type Config struct {
 	// `sing-box check` и `systemctl reload`; тесты подставляют свой.
 	Applier Applier
 
+	// PlainLists отдаёт содержимое внешних списков, которые sing-box не читает
+	// сам (не .srs и не .json). Уходит и в применение, и в диагностику: сверять
+	// конфиг с БД по-другому, чем он собирается, значит врать про правила
+	// (issue #125). Пустое означает работу без таких списков.
+	PlainLists singbox.PlainLists
+
 	// ApplyNft перезаливает таблицу nft по тому же `POST /api/apply`: конфиг и
 	// сет подсетей — две половины одного применения. Пустое поле означает
 	// «источника нет» — ручка применяет только конфиг и отдаёт `nft: null`;
@@ -124,14 +130,15 @@ type Server struct {
 	verify   chan struct{}
 	// sleep выдерживает задержку после неудачного входа; в тестах подменяется,
 	// чтобы проверка блокировки не занимала секунды реального времени.
-	sleep     func(context.Context, time.Duration)
-	serverKey func(context.Context) (string, error)
-	peerStat  func(context.Context) (map[string]netstack.WGPeerStat, error)
-	diag      DiagSources
-	ui        fs.FS
-	applier   Applier
-	applyNft  NftApplier
-	clash     *clash.Client
+	sleep      func(context.Context, time.Duration)
+	serverKey  func(context.Context) (string, error)
+	peerStat   func(context.Context) (map[string]netstack.WGPeerStat, error)
+	diag       DiagSources
+	ui         fs.FS
+	applier    Applier
+	applyNft   NftApplier
+	plainLists singbox.PlainLists
+	clash      *clash.Client
 	// checks — результаты проверок туннелей с момента запуска демона,
 	// источник производных полей в `GET /api/tunnels`.
 	checks *checkCache
@@ -196,6 +203,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		ui:          cfg.UI,
 		applier:     cfg.Applier,
 		applyNft:    cfg.ApplyNft,
+		plainLists:  cfg.PlainLists,
 		clash:       clash.New(clash.Options{Addr: cfg.ClashAddr}),
 		checks:      newCheckCache(),
 		events:      newTunnelEvents(),
@@ -210,7 +218,9 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		s.ui = ui.Files()
 	}
 	if s.applier == nil {
-		s.applier = singbox.NewApplier()
+		a := singbox.NewApplier()
+		a.PlainLists = cfg.PlainLists
+		s.applier = a
 	}
 	if s.log == nil {
 		s.log = slog.Default()

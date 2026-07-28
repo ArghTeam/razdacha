@@ -201,7 +201,7 @@ func (s *Server) diagCheck(id string, in diagInput) check {
 	case checkWG:
 		return wgCheck(in.wg, in.wgErr, in.snap)
 	case checkSingbox:
-		return singboxCheck(in.snap)
+		return singboxCheck(in.snap, s.plainLists)
 	case checkNft:
 		return nftCheck(in.nft, in.nftErr, in.snap)
 	case checkTunnels:
@@ -315,9 +315,9 @@ const diagNameLimit = 3
 // состояние пользователь выбрал сам, выключив туннель. Но и `ok` тут неверен:
 // «всё хорошо» над неработающими сайтами — то же враньё, только в другую
 // сторону.
-func singboxCheck(snap store.Snapshot) check {
+func singboxCheck(snap store.Snapshot, plain singbox.PlainLists) check {
 	c := check{ID: "singbox", Title: "sing-box"}
-	opts, rules, err := singbox.GenerateWithDiag(snap)
+	opts, rules, err := singbox.GenerateWithDiag(snap, plain)
 	if err != nil {
 		c.Status = statusError
 		c.Detail = err.Error()
@@ -333,7 +333,11 @@ func singboxCheck(snap store.Snapshot) check {
 	for _, r := range rules {
 		switch {
 		case r.Skipped:
-			skipped = append(skipped, fmt.Sprintf("«%s» (%s)", r.Name, diagSkipReason))
+			reason := r.SkipReason
+			if reason == "" {
+				reason = diagSkipReason
+			}
+			skipped = append(skipped, fmt.Sprintf("«%s» (%s)", r.Name, reason))
 		case r.Reason != "":
 			denied = append(denied, fmt.Sprintf("«%s» (%s)", r.Name, r.Reason))
 		}

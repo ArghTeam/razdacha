@@ -164,13 +164,13 @@ func TestChainFromPool(t *testing.T) {
 func TestChainRejectsNonWARP(t *testing.T) {
 	snap := chainFixture()
 	snap.Rules[0].ViaTunnelID = "bbbb"
-	if _, err := Generate(snap); err == nil {
+	if _, err := Generate(snap, testPlain); err == nil {
 		t.Fatal("ожидалась ошибка на второе звено, которое не WARP")
 	}
 
 	snap = chainFixture()
 	snap.Rules[0].ViaTunnelID = "нет такого"
-	if _, err := Generate(snap); err == nil {
+	if _, err := Generate(snap, testPlain); err == nil {
 		t.Fatal("ожидалась ошибка на второе звено в никуда")
 	}
 }

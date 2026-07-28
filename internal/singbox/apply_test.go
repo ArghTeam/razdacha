@@ -48,6 +48,7 @@ func applier(t *testing.T, c Checker, r Reloader) (*Applier, string) {
 		ConfigPath: path,
 		Checker:    c,
 		Reloader:   r,
+		PlainLists: testPlain,
 		Log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}, path
 }

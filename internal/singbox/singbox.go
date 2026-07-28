@@ -63,3 +63,10 @@ func communityTag(key string) string { return "list-" + key }
 func remoteListTag(ruleID string, i int) string {
 	return fmt.Sprintf("rule-%s-remote-%d", ruleID, i)
 }
+
+// plainListTag — тег inline-набора, собранного из plain-списка правила.
+// Отдельный от remoteListTag: у одного правила бывают оба вида списков, и
+// номер в общем перечне RemoteLists один, а теги обязаны различаться.
+func plainListTag(ruleID string, i int) string {
+	return fmt.Sprintf("rule-%s-plain-%d", ruleID, i)
+}
