@@ -101,6 +101,11 @@ type Config struct {
 	// WARP регистрирует устройство по `POST /api/tunnels/warp`. Пустой означает
 	// настоящий API Cloudflare; тесты подставляют свой — наружу они не ходят.
 	WARP warpRegistrar
+
+	// Build — версия демона, коммит и версия библиотеки sing-box для
+	// `GET /api/version`. Пустые поля означают сборку мимо `Makefile`: версия
+	// отдаётся как `dev`, остальное как null.
+	Build Build
 }
 
 // Server — HTTP-сервер панели.
@@ -139,6 +144,9 @@ type Server struct {
 	// notify подменяет отправителя оповещений в тестах: настоящий
 	// api.telegram.org в них не участвует. Пустой означает настоящий транспорт.
 	notify func(store.NotifyConfig) notifySender
+
+	// build — факты сборки демона, источник `GET /api/version`.
+	build Build
 }
 
 // notifySender — то, что слою api нужно от отправителя оповещений.
@@ -187,6 +195,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		poolEvery:   cfg.PoolEvery,
 		poolProxies: cfg.PoolProxies,
 		warp:        cfg.WARP,
+		build:       cfg.Build,
 		verify:      make(chan struct{}, maxVerifications),
 	}
 	if s.ui == nil {

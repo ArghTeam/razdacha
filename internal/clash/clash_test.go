@@ -219,3 +219,52 @@ func TestLatencyUnknown(t *testing.T) {
 		}
 	}
 }
+
+// TestVersionOK — рантайм отвечает своей версией. Ведущая «v» снимается: версия
+// библиотеки в go.mod записана без неё, и панель сравнивает их как строки.
+func TestVersionOK(t *testing.T) {
+	var gotPath string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{"meta":true,"premium":false,"version":"v1.12.25"}`)); err != nil {
+			t.Errorf("запись ответа: %v", err)
+		}
+	})
+
+	v, err := c.Version(context.Background())
+	if err != nil {
+		t.Fatalf("Version: %v", err)
+	}
+	if v != "1.12.25" {
+		t.Errorf("версия = %q, ожидалась 1.12.25", v)
+	}
+	if gotPath != "/version" {
+		t.Errorf("путь = %q, ожидался /version", gotPath)
+	}
+}
+
+// TestVersionUnavailable — sing-box не запущен. Это состояние демона, и оно
+// обязано отличаться от «версия такая-то»: панель показывает причину словами.
+func TestVersionUnavailable(t *testing.T) {
+	c := New(Options{
+		Addr:       "127.0.0.1:1",
+		HTTPClient: &http.Client{Timeout: 300 * time.Millisecond},
+	})
+	if _, err := c.Version(context.Background()); !errors.Is(err, ErrUnavailable) {
+		t.Errorf("ошибка = %v, ожидалась ErrUnavailable", err)
+	}
+}
+
+// TestVersionEmpty — пустое поле в ответе это не пустая версия: рантайм ответил
+// не тем, и выдавать пустую строку за версию нельзя.
+func TestVersionEmpty(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write([]byte(`{"meta":true}`)); err != nil {
+			t.Errorf("запись ответа: %v", err)
+		}
+	})
+	if _, err := c.Version(context.Background()); !errors.Is(err, ErrBadResponse) {
+		t.Errorf("ошибка = %v, ожидалась ErrBadResponse", err)
+	}
+}
