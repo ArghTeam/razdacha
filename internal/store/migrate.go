@@ -198,6 +198,15 @@ func (s *Store) migrate(ctx context.Context) error {
 	return nil
 }
 
+// SchemaVersion отдаёт версию схемы, которая сейчас в БД.
+//
+// После [Open] она всегда равна последней миграции: открытие накатывает
+// недостающие шаги. Наружу она нужна панели — после обновления первый вопрос
+// «накатилась ли миграция», и ответ на него дешевле показать, чем искать в логах.
+func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
+	return s.userVersion(ctx)
+}
+
 // userVersion читает текущую версию схемы из БД. Пустая БД отдаёт 0.
 func (s *Store) userVersion(ctx context.Context) (int, error) {
 	var v int

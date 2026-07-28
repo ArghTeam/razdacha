@@ -28,6 +28,21 @@ func openAt(t *testing.T, path string) *Store {
 	return s
 }
 
+// TestSchemaVersionMatchesMigrations — версия, которую отдают наружу, это
+// состояние БД, а не константа из кода: разъедутся — панель покажет неправду
+// ровно там, где её и читают, после обновления.
+func TestSchemaVersionMatchesMigrations(t *testing.T) {
+	s := open(t)
+
+	v, err := s.SchemaVersion(context.Background())
+	if err != nil {
+		t.Fatalf("SchemaVersion: %v", err)
+	}
+	if v != schemaVersion() {
+		t.Errorf("SchemaVersion = %d, ожидалась %d", v, schemaVersion())
+	}
+}
+
 func TestOpenCreatesSchema(t *testing.T) {
 	s := open(t)
 

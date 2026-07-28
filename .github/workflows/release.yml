@@ -52,12 +52,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
+          # Коммит идёт тем же путём, что версия, — линкером: панель показывает
+          # его рядом с версией, а версия релиза приходит из тега и коммита в
+          # себе не несёт.
+          commit="$(git rev-parse --short=12 HEAD)"
           for arch in amd64 arm64; do
             out="build/linux-$arch"
             mkdir -p "$out"
             for cmd in razdachad razdacha; do
               GOOS=linux GOARCH="$arch" go build \
-                -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+                -trimpath -ldflags "-s -w -X main.version=$VERSION -X main.commit=$commit" \
                 -o "$out/$cmd" "./cmd/$cmd"
             done
             cp LICENSE README.md "$out/"

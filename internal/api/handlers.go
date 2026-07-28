@@ -52,6 +52,8 @@ func (s *Server) routes() http.Handler {
 
 	s.protect(mux, "POST /api/apply", s.handleApply)
 
+	s.protect(mux, "GET /api/version", s.handleVersion)
+
 	s.protect(mux, "GET /api/diag", s.handleDiag)
 	s.protect(mux, "POST /api/diag/run", s.handleDiag)
 

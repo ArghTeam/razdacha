@@ -2,7 +2,10 @@ BIN     := razdachad
 CLI     := razdacha
 PKG     := ./cmd/$(BIN)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X main.version=$(VERSION)
+# Коммит подставляется линкером, а не берётся из вшитой информации о сборке:
+# в связанном git-worktree `vcs.revision` показывает HEAD основного чекаута.
+COMMIT  ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null)
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 # статический бинарник — обязательное требование, см. docs/decisions/0006-go-daemon.md
 export CGO_ENABLED := 0

@@ -41,6 +41,11 @@
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-name">razdacha</span>
+        <!-- Версия демона. Скрыта, пока не пришла: пустое место в шапке
+             читается как сломанная панель. Расхождение с версией установщика
+             красит её предупреждением — это ровно случай «собрал новое, а
+             systemd крутит старый». -->
+        <span class="brand-version" id="brand-version" hidden></span>
       </div>
       <nav class="tabs" id="tabs" role="tablist">
         <button class="tab" role="tab" data-screen="peers">Клиенты</button>

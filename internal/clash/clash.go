@@ -254,6 +254,44 @@ func (c *Client) Proxies(ctx context.Context) (map[string]Proxy, error) {
 	return out.Proxies, nil
 }
 
+// Version отдаёт версию работающего рантайма sing-box, без ведущей «v».
+//
+// Спрашиваем сам процесс, а не запускаем `sing-box version`, по трём причинам,
+// и первая — не стилистическая: бинарник на диске может отличаться от того, что
+// сейчас в памяти (обновление меняет файл, но пока юнит не перезапущен, работает
+// прежний), а вопрос задаётся именно про работающий рантайм. Вторая — запускать
+// бинарники ради состояния системы мы не хотим вообще, это то же основание, по
+// которому не вызываются `nft`, `ip` и `wg`. Третья — этот клиент уже есть, и
+// нового пути наружу не появляется.
+//
+// Рантайм не отвечает — [ErrUnavailable], как и у остальных методов: это
+// состояние демона, а не версия «неизвестна навсегда».
+func (c *Client) Version(ctx context.Context) (string, error) {
+	body, status, err := c.get(ctx, "/version", nil)
+	if err != nil {
+		return "", err
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("%w: код %d, %s", ErrBadResponse, status, detail(body))
+	}
+	var out struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return "", fmt.Errorf("%w: версия рантайма: %w", ErrBadResponse, err)
+	}
+	// Живой sing-box отвечает не голой версией, а «sing-box 1.12.25»
+	// (проверено на стенде). Имя продукта здесь лишнее: строка подписана
+	// «sing-box, рантайм» и сравнивается с версией библиотеки из go.mod,
+	// записанной без него.
+	v := strings.TrimPrefix(strings.TrimSpace(out.Version), "sing-box")
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if v == "" {
+		return "", fmt.Errorf("%w: версия рантайма пуста", ErrBadResponse)
+	}
+	return v, nil
+}
+
 // get выполняет запрос и возвращает тело с кодом. Ошибка отсюда означает
 // недоступный Clash API — коды разбирает вызывающий, у каждого пути они свои.
 func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, int, error) {

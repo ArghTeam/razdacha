@@ -167,13 +167,15 @@ async function pull(key, loader, fallback) {
 }
 
 async function loadAll() {
-  const [settings, peers, tunnels, rules, community] = await Promise.all([
+  const [settings, peers, tunnels, rules, community, version] = await Promise.all([
     pull('settings', api.settings.get, null),
     pull('peers', api.peers.list, []),
     pull('tunnels', api.tunnels.list, []),
     pull('rules', api.rules.list, []),
     pull('community', api.lists.community, []),
+    pull('version', api.version.get, null),
   ]);
+  state.version = version;
   state.settings = settings;
   state.peers = peers || [];
   state.tunnels = tunnels || [];
@@ -196,9 +198,36 @@ async function refreshApplyStatus() {
 
 function render() {
   $$('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.screen === state.screen)));
+  renderVersion();
   const el = $('#screen');
   el.innerHTML = SCREENS[state.screen].view();
   el.scrollTop = 0;
+}
+
+/** Версия демона в шапке.
+ *
+ * Три состояния, и ни одно не должно выглядеть сломанным. Версии нет (старый
+ * демон без ручки, сервер не ответил) — метка скрыта целиком, пустое место в
+ * шапке читается как «панель отвалилась». Версия есть — показывается как есть,
+ * включая `dev`: сборка из рабочего дерева так и называется, и подставлять
+ * вместо неё прочерк значило бы прятать правду. Версия разошлась с записанной
+ * установщиком — метка становится предупреждением: это ровно случай «на диске
+ * новый бинарник, а systemd крутит старый процесс». */
+function renderVersion() {
+  const el = $('#brand-version');
+  const v = state.version;
+  if (!v || !v.version) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  const mismatch = Boolean(v.version_mismatch);
+  el.classList.toggle('warn', mismatch);
+  el.textContent = mismatch ? `${v.version} ≠ ${v.installed_version}` : v.version;
+  el.title = mismatch
+    ? `Работает ${v.version}, установщик записал ${v.installed_version}.`
+      + ' Похоже, после обновления демон не перезапустился. Подробности — на экране «Диагностика».'
+    : `Версия демона${v.commit ? `, коммит ${v.commit}` : ''}`;
 }
 
 function fromHash() {
