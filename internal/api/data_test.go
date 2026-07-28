@@ -78,6 +78,7 @@ func TestDataEndpointsRequireSession(t *testing.T) {
 		{http.MethodPost, "/api/tunnels/parse"},
 		{http.MethodPatch, "/api/tunnels/t1"},
 		{http.MethodDelete, "/api/tunnels/t1"},
+		{http.MethodGet, "/api/tunnels/t1/raw"},
 		{http.MethodGet, "/api/rules"},
 		{http.MethodPost, "/api/rules"},
 		{http.MethodPut, "/api/rules/order"},

@@ -164,6 +164,12 @@ export const tunnels = {
   update: (id, patchBody) => patch(`/api/tunnels/${encodeURIComponent(id)}`, patchBody),
   remove: (id) => del(`/api/tunnels/${encodeURIComponent(id)}`),
   parse: (raw) => post('/api/tunnels/parse', { raw }),
+  /** Конфиг туннеля для формы правки: `{ raw, editable, note }`. Отдельным
+      запросом, а не полем списка — в конфиге UUID ключа, а у WARP приватный
+      ключ, и в списке они ездили бы с каждым опросом экрана (#124). У WARP
+      `editable: false` и пустой `raw`: ключ выдал Cloudflare, править его
+      нечего, вместо поля форма показывает `note`. */
+  raw: (id) => get(`/api/tunnels/${encodeURIComponent(id)}/raw`),
   /** WARP: демон сам регистрирует бесплатное устройство у Cloudflare и заводит
       из его ключей обычный wireguard-туннель. Единственный запрос панели, за
       которым сервер идёт в Cloudflare, — и только по нажатию. Второй раз ручка
