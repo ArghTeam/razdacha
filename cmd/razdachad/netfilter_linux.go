@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
@@ -18,6 +19,11 @@ import (
 // (`mgr` может быть nil — тогда только ручные). После каждого прогона
 // планировщика таблица перезаливается заново: сет — часть таблицы, отдельно от
 // неё он не обновляется.
+//
+// Та же заливка уезжает в слой api замыканием (`netfilter.applyNft`): по
+// `POST /api/apply` она перезаливает таблицу вместе с конфигом sing-box, иначе
+// дописанные руками подсети ждали бы планового прогона списков до суток
+// (issue #119), а при неподнявшемся планировщике — до перезапуска демона.
 func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
 	log *slog.Logger,
 ) (netfilter, error) {
@@ -32,7 +38,15 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
 		return netfilter{}, fmt.Errorf("определение внешнего интерфейса: %w", err)
 	}
 
-	apply := func() (int, error) {
+	// Соединение с nftables одно на все заливки, а зовут их теперь двое —
+	// планировщик списков и обработчик `POST /api/apply`. Мьютекс сериализует
+	// их: делить netlink-соединение между одновременными транзакциями нельзя,
+	// а заливка редкая, и очередь из двух ожидающих здесь ничего не стоит.
+	var mu sync.Mutex
+	apply := func(ctx context.Context) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
 		rules, err := ruleSubnets(ctx, st)
 		if err != nil {
 			return 0, err
@@ -50,7 +64,7 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
 		return len(subnets), nil
 	}
 
-	count, err := apply()
+	count, err := apply(ctx)
 	if err != nil {
 		return netfilter{}, err
 	}
@@ -70,7 +84,7 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
 	// Диагностика читает состояние своим соединением ([netstack.DiagNft]), а
 	// не тем, которым залиты правила: она ходит из обработчика HTTP, и
 	// соединение nftables пришлось бы делить между запросами.
-	return netfilter{stop: func() {}, nftState: netstack.DiagNft}, nil
+	return netfilter{stop: func() {}, nftState: netstack.DiagNft, applyNft: apply}, nil
 }
 
 // watchLists перезаливает правила после каждого прогона планировщика.
@@ -78,14 +92,14 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
 // Неудачная перезаливка только пишется в лог: в ядре остаётся прежняя таблица
 // (пакет изменений откатывается целиком), клиенты продолжают работать, а
 // следующий прогон списков попробует снова.
-func watchLists(ctx context.Context, mgr *lists.Manager, apply func() (int, error), log *slog.Logger) {
+func watchLists(ctx context.Context, mgr *lists.Manager, apply func(context.Context) (int, error), log *slog.Logger) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-mgr.Updates():
 		}
-		count, err := apply()
+		count, err := apply(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
