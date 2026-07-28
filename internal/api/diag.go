@@ -203,7 +203,7 @@ func (s *Server) diagCheck(id string, in diagInput) check {
 	case checkSingbox:
 		return singboxCheck(in.snap)
 	case checkNft:
-		return nftCheck(in.nft, in.nftErr)
+		return nftCheck(in.nft, in.nftErr, in.snap)
 	case checkTunnels:
 		return tunnelsCheck(in.snap.Tunnels, s.checks)
 	case checkLists:
@@ -291,12 +291,33 @@ func diagEnabledPeers(peers []store.Peer) int {
 	return n
 }
 
-// singboxCheck собирает конфиг из снимка состояния. Ошибка здесь означает, что
-// применить конфигурацию не удастся — например, правило ссылается на туннель,
-// которого нет.
+// diagSkipReason — почему правило не попало в конфиг. Причина после ADR 0013
+// осталась одна, и названа она словами пользователя, а не генератора: «нет
+// условий совпадения» ничего не говорит тому, кто заполнял форму.
+const diagSkipReason = "у правила нет ни доменов, ни подсетей, ни списков"
+
+// diagNameLimit — сколько правил перечисляется поимённо. Остальные идут числом:
+// строка сводки читается человеком, а не грепом, и список из сорока имён в ней
+// бесполезен.
+const diagNameLimit = 3
+
+// singboxCheck собирает конфиг из снимка состояния и сверяет правила БД с тем,
+// что в конфиг попало. Ошибка сборки означает, что применить конфигурацию не
+// удастся — например, правило ссылается на туннель, которого нет.
+//
+// Успех `Generate` сам по себе ничего не доказывает (issue #123): правило,
+// которому нечем совпадать, в конфиг не попадает, и его трафик разбирают
+// правила ниже, а в конце — прямой выход. Это error: правило в БД включено,
+// пользователь считает его работающим, а другого признака у него нет.
+//
+// Правило с недоступным туннелем в конфиге есть, но отказывает (ADR 0013).
+// Это warn, а не error: защита сработала, утечки нет, ресурс недоступен — и
+// состояние пользователь выбрал сам, выключив туннель. Но и `ok` тут неверен:
+// «всё хорошо» над неработающими сайтами — то же враньё, только в другую
+// сторону.
 func singboxCheck(snap store.Snapshot) check {
 	c := check{ID: "singbox", Title: "sing-box"}
-	opts, err := singbox.Generate(snap)
+	opts, rules, err := singbox.GenerateWithDiag(snap)
 	if err != nil {
 		c.Status = statusError
 		c.Detail = err.Error()
@@ -307,10 +328,44 @@ func singboxCheck(snap store.Snapshot) check {
 		c.Detail = err.Error()
 		return c
 	}
-	c.Status = statusOK
-	c.Detail = fmt.Sprintf("конфиг собирается: туннелей %d, правил %d",
-		len(snap.Tunnels), len(snap.Rules))
+
+	var skipped, denied []string
+	for _, r := range rules {
+		switch {
+		case r.Skipped:
+			skipped = append(skipped, fmt.Sprintf("«%s» (%s)", r.Name, diagSkipReason))
+		case r.Reason != "":
+			denied = append(denied, fmt.Sprintf("«%s» (%s)", r.Name, r.Reason))
+		}
+	}
+
+	switch {
+	case len(skipped) > 0:
+		c.Status = statusError
+		c.Detail = "в конфиг не попали правила: " + diagNames(skipped) +
+			" — их трафик уходит напрямую"
+		if len(denied) > 0 {
+			c.Detail += "; отказывают: " + diagNames(denied)
+		}
+	case len(denied) > 0:
+		c.Status = statusWarn
+		c.Detail = "правила отказывают, ресурсы недоступны: " + diagNames(denied) +
+			" — трафик мимо туннеля не идёт, но и в туннель не идёт"
+	default:
+		c.Status = statusOK
+		c.Detail = fmt.Sprintf("конфиг собирается: туннелей %d, правил %d",
+			len(snap.Tunnels), len(snap.Rules))
+	}
 	return c
+}
+
+// diagNames перечисляет не больше [diagNameLimit] записей, остальные — числом.
+func diagNames(items []string) string {
+	if len(items) <= diagNameLimit {
+		return strings.Join(items, ", ")
+	}
+	return fmt.Sprintf("%s и ещё %d", strings.Join(items[:diagNameLimit], ", "),
+		len(items)-diagNameLimit)
 }
 
 // tunnelsCheck — сводка по проверкам туннелей, сделанным с запуска демона.
@@ -359,8 +414,19 @@ func tunnelsCheck(tunnels []store.Tunnel, cache *checkCache) check {
 	return c
 }
 
-// nftCheck — таблица на месте, цепочки и сеты созданы.
-func nftCheck(st netstack.DiagNftState, err error) check {
+// nftCheck — таблица на месте, цепочки и сеты созданы, а сет подсетей отвечает
+// правилам в БД.
+//
+// Сет сверяется по содержимому, а не по числу интервалов: заливка сливает
+// пересекающиеся диапазоны, и совпадение чисел ничего не значит — сет,
+// отставший ровно на замену одной подсети другой, выглядел бы исправным
+// (issue #123). Проверяется покрытие: подсеть правила законно лежит внутри
+// более широкого интервала из списка.
+//
+// Недостача — error, а не warn: пользователь этого не выбирал. Он завёл
+// правило, панель сказала «применено», а пакеты к этим адресам не метятся и
+// уходят напрямую с адреса сервера.
+func nftCheck(st netstack.DiagNftState, err error, snap store.Snapshot) check {
 	c := check{ID: "nft", Title: "Правила nftables"}
 	if err != nil {
 		return diagUnknown(c, "состояние nftables не прочитано", err)
@@ -382,10 +448,36 @@ func nftCheck(st netstack.DiagNftState, err error) check {
 			table, diagMissingText(chains, sets))
 		return c
 	}
+	if missing := diagMissingSubnets(st, snap.Rules); len(missing) > 0 {
+		c.Status = statusError
+		c.Detail = fmt.Sprintf("в сете %s нет подсетей правил: %s — трафик к ним идёт напрямую",
+			netstack.SetSubnets, diagNames(missing))
+		return c
+	}
 	c.Status = statusOK
 	c.Detail = fmt.Sprintf("таблица inet %s на месте: цепочек %d, сетов %d, подсетей в сете %d",
-		table, len(st.Chains), len(st.Sets), st.SubnetIntervals)
+		table, len(st.Chains), len(st.Sets), len(st.Subnets))
 	return c
+}
+
+// diagMissingSubnets перечисляет правила, чьих подсетей в сете не хватает.
+//
+// Берутся включённые правила в туннель — ровно те, чьи подсети заливает демон
+// (`cmd/razdachad/netfilter_linux.go`, `ruleSubnets`). Правило block свои
+// подсети в сет не отдаёт, и требовать их здесь значило бы красить исправную
+// систему.
+func diagMissingSubnets(st netstack.DiagNftState, rules []store.Rule) []string {
+	index := st.SubnetIndex()
+	var out []string
+	for _, r := range rules {
+		if !r.Enabled || r.Action != store.ActionTunnel || len(r.Subnets) == 0 {
+			continue
+		}
+		if missing := index.Missing(r.Subnets); len(missing) > 0 {
+			out = append(out, fmt.Sprintf("«%s» — %s", r.Name, diagNames(missing)))
+		}
+	}
+	return out
 }
 
 // diagMissingText перечисляет недостающие объекты таблицы.

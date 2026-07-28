@@ -3,8 +3,11 @@ package netstack
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
+
+	"go4.org/netipx"
 )
 
 // Файл отдаёт диагностике снимки состояния системы: что видно об интерфейсе
@@ -60,8 +63,70 @@ type DiagNftState struct {
 	// MasqueradeOIf — интерфейс, на который это правило смотрит. Пустая строка
 	// означает правило без сравнения по oifname.
 	MasqueradeOIf string
-	// SubnetIntervals — сколько интервалов лежит в сете razdacha_subnets.
-	SubnetIntervals int
+	// Subnets — содержимое сета razdacha_subnets интервалами, а не числом.
+	// Считать интервалы бесполезно: сет, отставший от правил ровно на замену
+	// одной подсети другой, даёт то же число, и проверка называет его исправным
+	// (issue #123).
+	Subnets []netipx.IPRange
+}
+
+// DiagSubnetIndex — содержимое сета подсетей, подготовленное к проверке
+// покрытия. Собирается один раз на сводку: интервалов в сете бывают десятки
+// тысяч (community-списки), а правил, чьи подсети сверяются, — единицы.
+type DiagSubnetIndex struct {
+	set *netipx.IPSet
+}
+
+// SubnetIndex готовит индекс по прочитанному сету.
+func (s DiagNftState) SubnetIndex() DiagSubnetIndex {
+	var b netipx.IPSetBuilder
+	for _, r := range s.Subnets {
+		b.AddRange(r)
+	}
+	set, err := b.IPSet()
+	if err != nil {
+		// Индекс не собрался — предъявлять сету нечего: пустой индекс объявил
+		// бы недостающими все подсети разом.
+		return DiagSubnetIndex{}
+	}
+	return DiagSubnetIndex{set: set}
+}
+
+// Missing — какие из подсетей want сет не покрывает. Проверяется покрытие, а не
+// точное совпадение интервалов: заливка сливает пересекающиеся диапазоны
+// ([MergeSubnets]), и подсеть правила законно лежит внутри чужого интервала.
+//
+// Записи, которых в сете не бывает по построению, пропускаются: IPv6 и мусор
+// [MergeSubnets] отбрасывает при заливке, и спрашивать за них с сета нечего.
+func (i DiagSubnetIndex) Missing(want []string) []string {
+	if i.set == nil {
+		return nil
+	}
+	var out []string
+	for _, raw := range want {
+		s := strings.TrimSpace(raw)
+		switch {
+		case s == "":
+			continue
+		case strings.Contains(s, "/"):
+			p, err := netip.ParsePrefix(s)
+			if err != nil || !p.Addr().Is4() {
+				continue
+			}
+			if !i.set.ContainsPrefix(p.Masked()) {
+				out = append(out, s)
+			}
+		default:
+			a, err := netip.ParseAddr(s)
+			if err != nil || !a.Is4() {
+				continue
+			}
+			if !i.set.Contains(a) {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
 }
 
 // DiagMissing — каких цепочек и сетов не хватает по сравнению с тем, что

@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go4.org/netipx"
+
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -32,11 +34,21 @@ func diagHealthyNft() netstack.DiagNftState {
 			netstack.ChainMangle, netstack.ChainProxy, netstack.ChainDNSNat,
 			netstack.ChainForward, netstack.ChainPostrouting,
 		},
-		Sets:            []string{netstack.SetLocalV4, netstack.SetSubnets},
-		Masquerade:      true,
-		MasqueradeOIf:   "eth0",
-		SubnetIntervals: 1284,
+		Sets:          []string{netstack.SetLocalV4, netstack.SetSubnets},
+		Masquerade:    true,
+		MasqueradeOIf: "eth0",
+		Subnets:       diagRanges("203.0.113.0/24", "198.51.100.0/24"),
 	}
+}
+
+// diagRanges — интервалы сета из записей CIDR: сет диагностика читает
+// содержимым, а не числом.
+func diagRanges(subnets ...string) []netipx.IPRange {
+	ranges, skipped := netstack.MergeSubnets(subnets)
+	if skipped > 0 {
+		panic("подсеть теста не разобрана")
+	}
+	return ranges
 }
 
 func diagHealthyLists() DiagLists {
@@ -302,13 +314,13 @@ func TestDiagNftCheck(t *testing.T) {
 	partial.Chains = []string{netstack.ChainMangle}
 	partial.Sets = []string{netstack.SetLocalV4}
 
-	if c := nftCheck(diagHealthyNft(), nil); c.Status != statusOK {
+	if c := nftCheck(diagHealthyNft(), nil, store.Snapshot{}); c.Status != statusOK {
 		t.Errorf("полная таблица = %q (%s)", c.Status, c.Detail)
 	}
-	if c := nftCheck(netstack.DiagNftState{}, nil); c.Status != statusError {
+	if c := nftCheck(netstack.DiagNftState{}, nil, store.Snapshot{}); c.Status != statusError {
 		t.Errorf("отсутствие таблицы = %q, ожидался error", c.Status)
 	}
-	c := nftCheck(partial, nil)
+	c := nftCheck(partial, nil, store.Snapshot{})
 	if c.Status != statusError {
 		t.Fatalf("неполная таблица = %q, ожидался error", c.Status)
 	}
@@ -316,6 +328,108 @@ func TestDiagNftCheck(t *testing.T) {
 		if !strings.Contains(c.Detail, want) {
 			t.Errorf("в %q не назван недостающий объект %q", c.Detail, want)
 		}
+	}
+}
+
+// TestDiagNftSubnets — сет сверяется с подсетями правил по содержимому.
+//
+// Правило, чьих подсетей в сете нет, — это трафик мимо туннеля, и проверка
+// обязана назвать и правило, и подсеть. Совпадения чисел мало: сет с тем же
+// числом интервалов, но чужими адресами, исправным не считается.
+func TestDiagNftSubnets(t *testing.T) {
+	snap := store.Snapshot{Rules: []store.Rule{
+		{
+			Name: "Стриминг", Enabled: true, Action: store.ActionTunnel,
+			Subnets: []string{"203.0.113.128/25", "198.51.100.0/24"},
+		},
+		{
+			Name: "Выключенное", Enabled: false, Action: store.ActionTunnel,
+			Subnets: []string{"192.0.2.0/24"},
+		},
+		{
+			Name: "Блокировка", Enabled: true, Action: store.ActionBlock,
+			Subnets: []string{"192.0.2.0/24"},
+		},
+	}}
+
+	// Подсеть правила лежит внутри более широкого интервала списка — это
+	// покрытие, а не расхождение.
+	if c := nftCheck(diagHealthyNft(), nil, snap); c.Status != statusOK {
+		t.Errorf("покрытые подсети = %q (%s)", c.Status, c.Detail)
+	}
+
+	stale := diagHealthyNft()
+	stale.Subnets = diagRanges("203.0.113.0/24", "192.0.2.0/24")
+	c := nftCheck(stale, nil, snap)
+	if c.Status != statusError {
+		t.Fatalf("отставший сет = %q, ожидался error (%s)", c.Status, c.Detail)
+	}
+	for _, want := range []string{"Стриминг", "198.51.100.0/24"} {
+		if !strings.Contains(c.Detail, want) {
+			t.Errorf("в %q не названо %q", c.Detail, want)
+		}
+	}
+	if strings.Contains(c.Detail, "Выключенное") || strings.Contains(c.Detail, "Блокировка") {
+		t.Errorf("в %q спрошено за подсети, которых в сете и не бывает", c.Detail)
+	}
+}
+
+// TestDiagSingboxCheck — сводка различает три судьбы правила: маршрут, отказ и
+// пропуск. Успех Generate сам по себе ни о чём не говорит (issue #123).
+func TestDiagSingboxCheck(t *testing.T) {
+	settings := store.DefaultSettings()
+	working := store.Rule{
+		ID: "r1", Name: "Прямое", Enabled: true, Action: store.ActionDirect,
+		Domains: []string{"example.org"},
+	}
+	denied := store.Rule{
+		ID: "r2", Name: "Стриминг", Enabled: true, Action: store.ActionTunnel,
+		TunnelID: "t1", Domains: []string{"netflix.com"},
+	}
+	empty := store.Rule{
+		ID: "r3", Name: "Пустое", Enabled: true, Action: store.ActionDirect,
+	}
+	off := store.Tunnel{ID: "t1", Name: "Нидерланды", Enabled: false}
+
+	cases := []struct {
+		name string
+		snap store.Snapshot
+		want string
+		says []string
+	}{
+		{
+			name: "правило работает",
+			snap: store.Snapshot{Settings: settings, Rules: []store.Rule{working}},
+			want: statusOK,
+		},
+		{
+			name: "туннель выключен",
+			snap: store.Snapshot{
+				Settings: settings, Tunnels: []store.Tunnel{off},
+				Rules: []store.Rule{denied},
+			},
+			want: statusWarn,
+			says: []string{"Стриминг", "туннель выключен"},
+		},
+		{
+			name: "правило не попало в конфиг",
+			snap: store.Snapshot{Settings: settings, Rules: []store.Rule{working, empty}},
+			want: statusError,
+			says: []string{"Пустое", "напрямую"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := singboxCheck(tc.snap)
+			if c.Status != tc.want {
+				t.Fatalf("статус %q, ожидался %q (%s)", c.Status, tc.want, c.Detail)
+			}
+			for _, want := range tc.says {
+				if !strings.Contains(c.Detail, want) {
+					t.Errorf("в %q не названо %q", c.Detail, want)
+				}
+			}
+		})
 	}
 }
 
