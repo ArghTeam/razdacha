@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"sort"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
@@ -80,39 +81,91 @@ func (n *Nft) DiagState() (DiagNftState, error) {
 	return out, nil
 }
 
-// diagRanges собирает интервалы сета обратно из границ, которыми они лежат в
-// ядре: элемент без флага открывает диапазон, элемент с IntervalEnd закрывает
-// его — и закрывает исключающе, ровно как их пишет [setElements].
+// diagMaxV4 — верх адресного пространства: им закрывается интервал, у которого
+// маркера конца нет и быть не может (следующего адреса за 255.255.255.255 не
+// существует, поэтому [setElements] маркер и не ставит).
+var diagMaxV4 = netip.AddrFrom4([4]byte{255, 255, 255, 255})
+
+// diagBound — граница интервала: адрес и то, открывает он диапазон или
+// закрывает.
+type diagBound struct {
+	addr netip.Addr
+	end  bool
+}
+
+// diagRanges собирает интервалы сета обратно из того, что отдаёт ядро.
 //
-// Незакрытая граница означает диапазон до верха адресного пространства: маркер
-// на 255.255.255.255 не ставится, потому что следующего адреса не существует.
+// Форм две, и встречаются обе. Интервал одним элементом — границы в Key и
+// KeyEnd, конец включающий. Интервал парой элементов — начало и отдельный
+// элемент с флагом IntervalEnd, конец исключающий; так их пишет [setElements].
+//
+// **Порядок элементов в дампе ничего не гарантирует.** Живое ядро 6.12 отдаёт
+// пары «конец, начало», то есть маркер приходит раньше своего начала (issue
+// #123: разбор по порядку склеивал соседние интервалы в один и объявлял сет
+// покрывающим что угодно). Поэтому границы сначала собираются, потом
+// сортируются по адресу, и только потом разбираются на интервалы. На равных
+// адресах конец идёт раньше начала: два стыкующихся интервала — это два
+// интервала, а не вложенность.
 func diagRanges(elements []nftables.SetElement) []netipx.IPRange {
 	var out []netipx.IPRange
-	var start netip.Addr
-	open := false
 	add := func(from, to netip.Addr) {
 		if r := netipx.IPRangeFrom(from, to); r.IsValid() {
 			out = append(out, r)
 		}
 	}
+
+	bounds := make([]diagBound, 0, len(elements))
 	for _, e := range elements {
-		addr, ok := netip.AddrFromSlice(e.Key)
-		if !ok || !addr.Is4() {
+		key, ok := diagAddr4(e.Key)
+		if !ok {
+			continue
+		}
+		if end, ok := diagAddr4(e.KeyEnd); ok {
+			add(key, end)
+			continue
+		}
+		bounds = append(bounds, diagBound{addr: key, end: e.IntervalEnd})
+	}
+	sort.Slice(bounds, func(i, j int) bool {
+		if c := bounds[i].addr.Compare(bounds[j].addr); c != 0 {
+			return c < 0
+		}
+		return bounds[i].end && !bounds[j].end
+	})
+
+	var start netip.Addr
+	open := false
+	for _, b := range bounds {
+		if b.end {
+			if open {
+				add(start, b.addr.Prev())
+				open = false
+			}
+			// Маркер, которому нечего закрывать, — не наш интервал: молча
+			// пропускаем, выдумывать под него диапазон нельзя.
 			continue
 		}
 		if open {
-			add(start, addr.Prev())
-			open = false
+			add(start, b.addr.Prev())
 		}
-		if e.IntervalEnd {
-			continue
-		}
-		start, open = addr, true
+		start, open = b.addr, true
 	}
 	if open {
-		add(start, netip.AddrFrom4([4]byte{255, 255, 255, 255}))
+		add(start, diagMaxV4)
 	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].From().Compare(out[j].From()) < 0 })
 	return out
+}
+
+// diagAddr4 — адрес IPv4 из ключа элемента. Ключи чужих семейств и пустые
+// пропускаются: сет объявлен как ipv4_addr (ADR 0005).
+func diagAddr4(key []byte) (netip.Addr, bool) {
+	addr, ok := netip.AddrFromSlice(key)
+	if !ok || !addr.Is4() {
+		return netip.Addr{}, false
+	}
+	return addr, true
 }
 
 // diagMasquerade ищет в правилах цепочки masquerade и интерфейс, на который он
