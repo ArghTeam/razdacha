@@ -741,3 +741,27 @@ textarea.bad { border-color: color-mix(in srgb, var(--err) 55%, var(--line-stron
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
 }
 .version-warn strong { display: block; margin-bottom: 3px; }
+
+/* --- бейдж свежести релиза ---
+   Появляется асинхронно: ответ GitHub приходит позже первого кадра. Дёрганья от
+   этого нет и место под бейдж не резервируется — справа от бренда пустое место,
+   вкладки прижаты `margin-left: auto`, а на узкой раскладке уезжают на свою
+   строку. Резерв был бы хуже: у сборки `dev` и на сервере без интернета бейджа
+   не будет никогда, и дырка в шапке осталась бы навсегда. */
+
+.brand-fresh {
+  font-size: 11.5px; font-weight: 500; letter-spacing: 0;
+  padding: 1px 6px; border-radius: 999px;
+  color: var(--fg-faint);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  white-space: nowrap; max-width: 30vw; overflow: hidden; text-overflow: ellipsis;
+  cursor: help;
+}
+/* Вышла новая — акцент, а не предупреждение: устаревшая версия работает, это
+   приглашение обновиться, а не поломка (в отличие от `.brand-version.warn`). */
+.brand-fresh.behind {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-sunken));
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}

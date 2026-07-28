@@ -161,3 +161,32 @@ export function download(name, text, type = 'text/plain;charset=utf-8') {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/* --- версии ---------------------------------------------------------------- */
+
+/** Версия без ведущей «v»: установщик пишет её из тега без неё, `git describe`
+    и теги GitHub — с ней, а в шапке они стоят рядом. */
+export const versionLabel = (v) => String(v ?? '').trim().replace(/^v/i, '');
+
+/** Числовые части версии: `v0.2.10` → `[0, 2, 10]`. null — разобрать не вышло
+    (`dev`, пусто, мусор). Хвост после `-` или `+` отбрасывается: сравнивать
+    предрелизы панели незачем. */
+function versionParts(v) {
+  const core = versionLabel(v).split(/[-+]/)[0];
+  const parts = core ? core.split('.') : [];
+  if (!parts.length || !parts.every((p) => /^\d+$/.test(p))) return null;
+  return parts.map(Number);
+}
+
+/** Сравнение версий по числам, а не по строке: `0.2.10` новее `0.2.9`, хотя
+    строкой выходит наоборот. Возвращает 1, 0 или -1, а null означает «сравнить
+    не вышло» — вызывающий обязан промолчать, а не показать отставание. */
+export function compareVersions(a, b) {
+  const pa = versionParts(a), pb = versionParts(b);
+  if (!pa || !pb) return null;
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
