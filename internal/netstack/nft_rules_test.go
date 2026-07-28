@@ -57,6 +57,7 @@ func TestBuildNftRulesetChains(t *testing.T) {
 	}{
 		{ChainMangle, "filter", "prerouting", -150},
 		{ChainProxy, "filter", "prerouting", -100},
+		{ChainDNSNat, "nat", "prerouting", -100},
 		{ChainForward, "filter", "forward", -150},
 		{ChainPostrouting, "nat", "postrouting", 100},
 	}
@@ -79,8 +80,10 @@ func TestBuildNftRulesetMarking(t *testing.T) {
 	rs := buildOK(t, testConfig())
 	mangle := chainByName(t, rs, ChainMangle)
 
-	if len(mangle.Rules) != 4 {
-		t.Fatalf("правил в mangle %d, ожидалось 4", len(mangle.Rules))
+	// Одно правило-отсечка, четыре выхода по DNS-портам (53 и 853 × tcp/udp),
+	// выход по local_v4 и две маркировки.
+	if len(mangle.Rules) != 8 {
+		t.Fatalf("правил в mangle %d, ожидалось 8", len(mangle.Rules))
 	}
 
 	// Первое правило отсекает всё, что пришло не от клиентов, — включая
@@ -90,17 +93,17 @@ func TestBuildNftRulesetMarking(t *testing.T) {
 		t.Errorf("первое правило mangle = %+v, ожидалось iifname != wg0 return", first)
 	}
 
-	local := mangle.Rules[1]
+	local := mangle.Rules[5]
 	if local.DstSet != SetLocalV4 || local.Action != ActionReturn {
-		t.Errorf("второе правило mangle = %+v, ожидался return по local_v4", local)
+		t.Errorf("правило local_v4 = %+v, ожидался return", local)
 	}
 
-	fakeip := mangle.Rules[2]
+	fakeip := mangle.Rules[6]
 	if fakeip.DstPrefix != netip.MustParsePrefix("198.18.0.0/15") || fakeip.Action != ActionMark {
 		t.Errorf("правило FakeIP = %+v", fakeip)
 	}
 
-	subnets := mangle.Rules[3]
+	subnets := mangle.Rules[7]
 	if subnets.DstSet != SetSubnets || subnets.Action != ActionMark {
 		t.Errorf("правило подсетей = %+v, ожидалась маркировка по %s", subnets, SetSubnets)
 	}
@@ -132,6 +135,118 @@ func TestBuildNftRulesetTProxy(t *testing.T) {
 	}
 	if TProxyAddr != "127.0.0.1" || TProxyPort != 1602 {
 		t.Errorf("tproxy слушает %s:%d, ожидалось 127.0.0.1:1602", TProxyAddr, TProxyPort)
+	}
+}
+
+// Весь plaintext-DNS клиентов уходит на наш резолвер, что бы клиент себе ни
+// прописал (issue #122). Проверяется и tcp, и udp: 8.8.8.8 отвечает по обоим.
+func TestBuildNftRulesetDNSHijack(t *testing.T) {
+	rs := buildOK(t, NftConfig{WANInterface: "eth0", ResolverAddr: "10.9.0.1"})
+	chain := chainByName(t, rs, ChainDNSNat)
+
+	if chain.Type != "nat" || chain.Hook != "prerouting" {
+		t.Fatalf("цепочка перехвата = %+v, ожидался nat prerouting", chain)
+	}
+	if len(chain.Rules) != 2 {
+		t.Fatalf("правил перехвата %d, ожидалось 2 (tcp и udp)", len(chain.Rules))
+	}
+
+	protos := map[string]bool{}
+	resolver := netip.MustParseAddr("10.9.0.1")
+	for _, r := range chain.Rules {
+		if r.Action != ActionDNAT {
+			t.Errorf("правило перехвата = %+v, ожидался dnat", r)
+		}
+		if r.IIf != DefaultWGInterface {
+			t.Errorf("перехват не ограничен интерфейсом клиентов: %+v", r)
+		}
+		if r.DstPort != DNSPort {
+			t.Errorf("перехват не по порту 53: %+v", r)
+		}
+		// Без «ip daddr != резолвер» правило переписывало бы и то, что и так
+		// адресовано нам.
+		if !r.DstPrefixNeq || r.DstPrefix.Addr() != resolver {
+			t.Errorf("нет исключения для самого резолвера: %+v", r)
+		}
+		if r.DNATAddr != resolver || r.DNATPort != DNSPort {
+			t.Errorf("перехват ведёт не на резолвер: %+v", r)
+		}
+		protos[r.L4Proto] = true
+	}
+	if !protos["tcp"] || !protos["udp"] {
+		t.Errorf("протоколы перехвата = %v, ожидались tcp и udp", protos)
+	}
+
+	// Пустой адрес — дефолт из настроек, битый — ошибка, а не молчаливый DNAT
+	// в никуда.
+	def := buildOK(t, testConfig())
+	if got := chainByName(t, def, ChainDNSNat).Rules[0].DNATAddr; got.String() != DefaultResolverAddr {
+		t.Errorf("резолвер по умолчанию = %s, ожидался %s", got, DefaultResolverAddr)
+	}
+	bad := NftConfig{WANInterface: "eth0", ResolverAddr: "не адрес"}
+	if _, err := BuildNftRuleset(bad); !errors.Is(err, ErrNftBadResolver) {
+		t.Errorf("битый адрес резолвера: ошибка = %v, ожидалось ErrNftBadResolver", err)
+	}
+}
+
+// DNS-порты выходят из mangle до маркировки: иначе запрос на резолвер, чей
+// адрес попал в razdacha_subnets, ушёл бы в tproxy и не дошёл ни до перехвата,
+// ни до отказа.
+func TestBuildNftRulesetDNSNotMarked(t *testing.T) {
+	rs := buildOK(t, testConfig("8.8.8.8", "9.9.9.9"))
+	mangle := chainByName(t, rs, ChainMangle)
+
+	ports := map[uint16]map[string]bool{
+		DNSPort: {},
+		DoTPort: {},
+	}
+	for _, r := range mangle.Rules {
+		if r.DstPort == 0 {
+			continue
+		}
+		if r.Action != ActionReturn {
+			t.Errorf("правило по DNS-порту = %+v, ожидался return", r)
+		}
+		if seen, ok := ports[r.DstPort]; ok {
+			seen[r.L4Proto] = true
+		} else {
+			t.Errorf("неожиданный порт в mangle: %+v", r)
+		}
+		// Выход обязан стоять раньше любой маркировки — иначе он бесполезен.
+		for _, before := range mangle.Rules {
+			if before.Action == ActionMark {
+				t.Errorf("маркировка стоит раньше выхода по порту %d", r.DstPort)
+				break
+			}
+			if before.DstPort == r.DstPort && before.L4Proto == r.L4Proto {
+				break
+			}
+		}
+	}
+	for port, seen := range ports {
+		if !seen["tcp"] || !seen["udp"] {
+			t.Errorf("порт %d прикрыт не полностью: %v", port, seen)
+		}
+	}
+}
+
+// DoT и DoQ переписать некуда — остаётся отказ, и он должен быть виден клиенту
+// сразу, а не таймаутом.
+func TestBuildNftRulesetRejectDoT(t *testing.T) {
+	rs := buildOK(t, testConfig())
+
+	protos := map[string]bool{}
+	for _, r := range chainByName(t, rs, ChainForward).Rules {
+		if r.Action != ActionRejectICMP {
+			continue
+		}
+		if r.IIf != DefaultWGInterface || r.DstPort != DoTPort {
+			t.Errorf("отказ не по DoT с клиентов: %+v", r)
+		}
+		protos[r.L4Proto] = true
+	}
+	if !protos["tcp"] || !protos["udp"] {
+		t.Errorf("отказ по 853 = %v, ожидались tcp (DoT) и udp (DoQ)", protos)
 	}
 }
 

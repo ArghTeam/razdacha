@@ -48,7 +48,7 @@ VPN-инфраструктуру на них незачем.
 ## Базовые требования
 
 **Ядро ≥ 5.15**, модули: `wireguard` (mainline с 5.6), `nf_tables`, `nft_tproxy`,
-`nft_socket` (все с 4.19).
+`nft_socket` (все с 4.19), `nft_chain_nat` — masquerade и перехват DNS клиентов.
 
 **systemd** — используется для управления `sing-box` и собственного юнита.
 

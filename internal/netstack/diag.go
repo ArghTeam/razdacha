@@ -76,7 +76,7 @@ func (s DiagNftState) DiagMissing() (chains, sets []string) {
 		}
 		return false
 	}
-	for _, name := range []string{ChainMangle, ChainProxy, ChainForward, ChainPostrouting} {
+	for _, name := range []string{ChainMangle, ChainProxy, ChainDNSNat, ChainForward, ChainPostrouting} {
 		if !have(s.Chains, name) {
 			chains = append(chains, name)
 		}

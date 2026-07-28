@@ -23,7 +23,7 @@ curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install
 1. root, systemd, ядро ≥ 5.15, архитектура из поддерживаемых
 2. дистрибутив из [матрицы](07-platform-support.md#матрица)
 3. `systemd-detect-virt` — отказ на OpenVZ
-4. `modprobe wireguard nft_tproxy nft_socket`, наличие `/dev/net/tun`
+4. `modprobe wireguard nft_tproxy nft_socket nft_chain_nat`, наличие `/dev/net/tun`
 5. свободное место ≥ 100 МБ
 6. конфликты: `wg0`, `wg-quick@wg0`, чужой `/etc/sing-box/config.json`,
    чужой `/etc/nginx/sites-available/razdacha` (файл без нашего заголовка-маркера)

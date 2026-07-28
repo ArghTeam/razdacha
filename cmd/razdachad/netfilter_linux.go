@@ -52,9 +52,19 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
 			return 0, err
 		}
 		subnets := nftSubnets(rules, mgr)
+		// Адрес резолвера читается на каждой заливке: на него DNAT-ит перехват
+		// DNS, и разъехаться с адресом, который слушает sing-box, он не должен.
+		settings, err := st.Settings(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("чтение настроек: %w", err)
+		}
 		// Заливка идёт одной транзакцией (инвариант слоя netstack): окна без
 		// правил не возникает, и обновление сета не рвёт живые соединения.
-		rs, err := nft.Apply(netstack.NftConfig{WANInterface: wan, Subnets: subnets})
+		rs, err := nft.Apply(netstack.NftConfig{
+			WANInterface: wan,
+			ResolverAddr: settings.WGServerAddress,
+			Subnets:      subnets,
+		})
 		if err != nil {
 			return 0, fmt.Errorf("заливка правил: %w", err)
 		}
