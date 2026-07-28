@@ -108,6 +108,7 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		Diag: api.DiagSources{
 			WG:        wg.DiagState,
 			Nft:       nf.nftState,
+			Route:     nf.routeState,
 			IPForward: netstack.DiagIPForward,
 			Lists:     listsDiag(st, listsMgr),
 		},
@@ -165,6 +166,9 @@ type netfilter struct {
 	// nftState отдаёт состояние таблицы диагностике. Пустое поле означает
 	// «источника нет», и проверка отвечает unknown с объяснением.
 	nftState func(context.Context) (netstack.DiagNftState, error)
+	// routeState отдаёт состояние правила по метке и таблицы маршрутизации.
+	// Пустое поле означает «источника нет» — как и у nftState.
+	routeState func(context.Context) (netstack.DiagRouteState, error)
 	// applyNft перезаливает таблицу по требованию слоя api и отвечает, сколько
 	// подсетей ушло в сет. Пустое поле означает «подсистема правил не поднята»:
 	// `POST /api/apply` тогда применяет только конфиг sing-box.

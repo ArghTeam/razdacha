@@ -51,6 +51,18 @@ func diagRanges(subnets ...string) []netipx.IPRange {
 	return ranges
 }
 
+// diagHealthyRoute — правило по метке и таблица 105 на месте.
+func diagHealthyRoute() netstack.DiagRouteState {
+	return netstack.DiagRouteState{
+		Table:        netstack.RouteTable,
+		Mark:         netstack.FwMark,
+		Rule:         true,
+		RulePriority: netstack.RulePriority,
+		LocalRoute:   true,
+		Routes:       1,
+	}
+}
+
 func diagHealthyLists() DiagLists {
 	return DiagLists{Sources: 3, Loaded: 3, LastRefresh: diagNow.Add(-3 * time.Hour)}
 }
@@ -63,6 +75,9 @@ func diagHealthySources() DiagSources {
 		},
 		Nft: func(context.Context) (netstack.DiagNftState, error) {
 			return diagHealthyNft(), nil
+		},
+		Route: func(context.Context) (netstack.DiagRouteState, error) {
+			return diagHealthyRoute(), nil
 		},
 		IPForward: func(context.Context) (bool, error) { return true, nil },
 		Lists:     func(context.Context) (DiagLists, error) { return diagHealthyLists(), nil },
@@ -93,7 +108,7 @@ func TestDiagAllGreen(t *testing.T) {
 
 	byID, _ := diagChecks(t, ts, cookie)
 	requireCode(t, ts.auth(t, cookie, http.MethodPost, "/api/diag/run", ""), http.StatusOK)
-	for _, id := range []string{"wg", "nft", "forward", "mtu", "lists", "singbox"} {
+	for _, id := range []string{"wg", "nft", "route", "forward", "mtu", "lists", "singbox"} {
 		c, ok := byID[id]
 		if !ok {
 			t.Errorf("проверки %q нет в сводке", id)
@@ -181,10 +196,10 @@ func TestDiagUnknownAlwaysExplained(t *testing.T) {
 	cookie := ts.login(t)
 
 	byID, overall := diagChecks(t, ts, cookie)
-	if len(byID) != 7 {
-		t.Fatalf("проверок %d, ожидалось 7", len(byID))
+	if len(byID) != len(diagCheckIDs) {
+		t.Fatalf("проверок %d, объявлено %d", len(byID), len(diagCheckIDs))
 	}
-	for _, id := range []string{"wg", "nft", "forward", "mtu", "lists"} {
+	for _, id := range []string{"wg", "nft", "route", "forward", "mtu", "lists"} {
 		c := byID[id]
 		if c.Status != statusUnknown {
 			t.Errorf("%s = %q, ожидался unknown: источника нет", id, c.Status)
@@ -328,6 +343,39 @@ func TestDiagNftCheck(t *testing.T) {
 		if !strings.Contains(c.Detail, want) {
 			t.Errorf("в %q не назван недостающий объект %q", c.Detail, want)
 		}
+	}
+}
+
+// TestDiagRouteCheck — правило по метке и таблица 105.
+//
+// Нет правила или нет local-маршрута — error с названием недостающего: nft при
+// этом цел, и без этой строки сводка была бы зелёной (issue #120).
+func TestDiagRouteCheck(t *testing.T) {
+	if c := routeCheck(diagHealthyRoute(), nil); c.Status != statusOK {
+		t.Errorf("исправная маршрутизация = %q (%s)", c.Status, c.Detail)
+	}
+	if c := routeCheck(netstack.DiagRouteState{}, errors.New("нет доступа")); c.Status != statusUnknown {
+		t.Errorf("ошибка чтения = %q, ожидался unknown", c.Status)
+	}
+
+	noRule := diagHealthyRoute()
+	noRule.Rule = false
+	c := routeCheck(noRule, nil)
+	if c.Status != statusError {
+		t.Fatalf("правила нет = %q, ожидался error", c.Status)
+	}
+	if !strings.Contains(c.Detail, "fwmark") {
+		t.Errorf("в %q не названо недостающее правило", c.Detail)
+	}
+
+	noRoute := diagHealthyRoute()
+	noRoute.LocalRoute = false
+	c = routeCheck(noRoute, nil)
+	if c.Status != statusError {
+		t.Fatalf("маршрута нет = %q, ожидался error", c.Status)
+	}
+	if !strings.Contains(c.Detail, "local") {
+		t.Errorf("в %q не назван недостающий маршрут", c.Detail)
 	}
 }
 
