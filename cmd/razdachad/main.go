@@ -16,11 +16,15 @@ import (
 	"github.com/ArghTeam/razdacha/internal/api"
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
+	"github.com/ArghTeam/razdacha/internal/packaging"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
-// version подставляется линкером при сборке, см. Makefile.
-var version = "dev"
+// version и commit подставляются линкером при сборке, см. Makefile.
+var (
+	version = "dev"
+	commit  = ""
+)
 
 // defaultDBPath — состояние демона, см. docs/01-architecture.md.
 const defaultDBPath = "/var/lib/razdacha/state.db"
@@ -107,6 +111,7 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 			Lists:     listsDiag(st, listsMgr),
 		},
 		Pools: poolsMgr,
+		Build: buildInfo(),
 	})
 	if errors.Is(err, api.ErrNoPassword) {
 		return fmt.Errorf("%w; задайте его: razdachad -set-password", err)
@@ -126,6 +131,25 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	}
 
 	return srv.Run(ctx)
+}
+
+// buildInfo собирает факты сборки для `GET /api/version`: их знает точка входа,
+// слой api их только отдаёт.
+//
+// Коммит берётся от линкера, а не из вшитой информации о сборке
+// (`debug.ReadBuildInfo`, настройка `vcs.revision`), хотя она и доступна: в
+// связанном git-worktree она показывает HEAD основного чекаута, а не рабочего
+// дерева. То есть врёт ровно в той ситуации, ради которой ручку и завели —
+// когда собранное и работающее расходятся. Сборка мимо `Makefile` оставляет
+// коммит пустым, и API отдаёт null вместо выдуманного значения.
+func buildInfo() api.Build {
+	// Версия библиотеки sing-box — не условие работы: не определилась, панель
+	// скажет «неизвестна», а демон останавливать из-за этого не за что.
+	lib, err := packaging.SingboxLibraryVersion()
+	if err != nil {
+		slog.Warn("версия библиотеки sing-box не определена", "ошибка", err)
+	}
+	return api.Build{Version: version, Commit: commit, SingboxLibrary: lib}
 }
 
 // netfilter — то, что демон получает от подсистемы правил: снятие при
