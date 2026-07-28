@@ -116,6 +116,15 @@ table inet razdacha {
         type filter hook prerouting priority mangle;
 
         iifname != "wg0" return
+
+        # DNS-порты выходят до маркировки: 53 забирает себе цепочка dnsnat,
+        # 853 отклоняет forward. Иначе запрос на резолвер, чей адрес попал в
+        # razdacha_subnets, уехал бы в tproxy мимо перехвата.
+        udp dport 53  return
+        tcp dport 53  return
+        udp dport 853 return
+        tcp dport 853 return
+
         ip daddr @local_v4 return
 
         ip daddr 198.18.0.0/15      meta mark set 0x00100000
@@ -128,6 +137,14 @@ table inet razdacha {
         meta mark 0x00100000 meta l4proto { tcp, udp } tproxy ip to 127.0.0.1:1602 accept
     }
 
+    # перехват DNS клиентов: спрашивать можно у кого угодно, отвечаем мы
+    chain dnsnat {
+        type nat hook prerouting priority dstnat;
+
+        iifname "wg0" ip daddr != 10.8.0.1 udp dport 53 dnat ip to 10.8.0.1:53
+        iifname "wg0" ip daddr != 10.8.0.1 tcp dport 53 dnat ip to 10.8.0.1:53
+    }
+
     chain forward {
         type filter hook forward priority mangle; policy accept;
 
@@ -137,6 +154,10 @@ table inet razdacha {
 
         # IPv6 клиентов — reject, не drop
         iifname "wg0" meta nfproto ipv6 reject with icmpv6 type admin-prohibited
+
+        # DoT и DoQ: переписать некуда, поэтому отказ (docs/04-dns-fakeip.md)
+        iifname "wg0" udp dport 853 reject with icmp type admin-prohibited
+        iifname "wg0" tcp dport 853 reject with icmp type admin-prohibited
     }
 
     chain postrouting {
@@ -146,6 +167,11 @@ table inet razdacha {
     }
 }
 ```
+
+`10.8.0.1` в цепочке `dnsnat` — не константа: адрес берётся из
+`Settings.wg_server_address`, того же, на котором sing-box слушает DNS. Разъехаться они
+не могут — таблица перезаливается вместе с конфигом. Почему DNAT, а не метка, и что
+остаётся за границей перехвата — [DNS и FakeIP](04-dns-fakeip.md#перехват-dns).
 
 ### Policy routing
 
@@ -163,6 +189,11 @@ sing-box открывает исходящие соединения от сво�
 цепочки `mangle` — `iifname != "wg0" return` — отсекает весь трафик, пришедший не от
 клиентов, включая собственный трафик sing-box к апстрим-туннелям. Дополнительные
 исключения по cgroup или метке не требуются.
+
+Перехват DNS петли тоже не создаёт: цепочка `dnsnat` висит на `prerouting` и смотрит
+только на `iifname "wg0"`, а запросы самого sing-box к апстриму идут через `output`.
+Сравнение `ip daddr != 10.8.0.1` дополнительно не даёт переписывать то, что и так
+адресовано нашему резолверу.
 
 Это прямое следствие [ADR 0002](decisions/0002-userspace-wireguard-outbound.md):
 при kernel-интерфейсах для исходящих туннелей понадобились бы отдельные таблицы
@@ -202,5 +233,6 @@ net.ipv4.ip_forward = 1
 ```
 
 Выставляется установщиком в `/etc/sysctl.d/99-razdacha.conf`. Модули ядра:
-`wireguard`, `nft_tproxy`, `nft_socket`, `nf_tables`. Проверка доступности — часть
-установщика, см. [поддержка платформ](07-platform-support.md).
+`wireguard`, `nft_tproxy`, `nft_socket`, `nf_tables`, `nft_chain_nat` (masquerade и
+перехват DNS). Проверка доступности — часть установщика, см.
+[поддержка платформ](07-platform-support.md).

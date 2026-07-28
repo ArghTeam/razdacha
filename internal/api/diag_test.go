@@ -31,7 +31,7 @@ func diagHealthyNft() netstack.DiagNftState {
 		Table:  netstack.NftTable,
 		Exists: true,
 		Chains: []string{
-			netstack.ChainMangle, netstack.ChainProxy,
+			netstack.ChainMangle, netstack.ChainProxy, netstack.ChainDNSNat,
 			netstack.ChainForward, netstack.ChainPostrouting,
 		},
 		Sets:          []string{netstack.SetLocalV4, netstack.SetSubnets},

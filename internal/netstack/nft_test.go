@@ -157,16 +157,21 @@ func TestNftApplyObjects(t *testing.T) {
 	f := newFakeNftConn()
 	applyFake(t, f, NftConfig{WANInterface: "eth0", Subnets: []string{"149.154.160.0/20"}})
 
-	if len(f.chains) != 4 {
-		t.Fatalf("цепочек %d, ожидалось 4", len(f.chains))
+	if len(f.chains) != 5 {
+		t.Fatalf("цепочек %d, ожидалось 5", len(f.chains))
 	}
+	nat := map[string]bool{ChainDNSNat: true, ChainPostrouting: true}
 	for _, c := range f.chains {
 		if c.Hooknum == nil || c.Policy == nil {
 			t.Errorf("цепочка %s без хука или политики", c.Name)
 		}
-	}
-	if f.chains[3].Type != nftables.ChainTypeNAT {
-		t.Errorf("цепочка %s типа %s, ожидался nat", f.chains[3].Name, f.chains[3].Type)
+		want := nftables.ChainTypeFilter
+		if nat[c.Name] {
+			want = nftables.ChainTypeNAT
+		}
+		if c.Type != want {
+			t.Errorf("цепочка %s типа %s, ожидался %s", c.Name, c.Type, want)
+		}
 	}
 
 	if _, ok := f.sets[SetLocalV4]; !ok {
@@ -200,7 +205,7 @@ func TestNftApplyExprs(t *testing.T) {
 	f := newFakeNftConn()
 	applyFake(t, f, NftConfig{WANInterface: "eth0"})
 
-	var tproxy, reject, masq, lookups int
+	var tproxy, reject, masq, lookups, dnat int
 	for _, r := range f.rules {
 		for _, e := range r.Exprs {
 			switch v := e.(type) {
@@ -209,9 +214,14 @@ func TestNftApplyExprs(t *testing.T) {
 				if v.RegPort == 0 {
 					t.Errorf("tproxy без порта в регистре")
 				}
+			case *expr.NAT:
+				dnat++
+				if v.Type != expr.NATTypeDestNAT || v.RegAddrMin == 0 || v.RegProtoMin == 0 {
+					t.Errorf("dnat без адреса или порта в регистрах: %+v", v)
+				}
 			case *expr.Reject:
 				reject++
-				if v.Code != icmpv6AdminProhibited {
+				if v.Code != icmpv6AdminProhibited && v.Code != icmpAdminProhibited {
 					t.Errorf("reject с кодом %d, ожидался admin-prohibited", v.Code)
 				}
 			case *expr.Masq:
@@ -228,8 +238,12 @@ func TestNftApplyExprs(t *testing.T) {
 	if tproxy != 2 {
 		t.Errorf("правил tproxy %d, ожидалось два (tcp и udp)", tproxy)
 	}
-	if reject != 1 {
-		t.Errorf("правил reject %d, ожидалось одно (IPv6 клиентов)", reject)
+	if reject != 3 {
+		t.Errorf("правил reject %d, ожидалось три (IPv6 клиентов и 853 tcp/udp)", reject)
+	}
+	// Перехват DNS: по одному DNAT на tcp и udp (issue #122).
+	if dnat != 2 {
+		t.Errorf("правил dnat %d, ожидалось два (tcp и udp)", dnat)
 	}
 	if masq != 1 {
 		t.Errorf("правил masquerade %d, ожидалось одно", masq)
