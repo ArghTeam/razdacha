@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-28
+
+### #33 — коммит сборки через линкер
+
+**Changed:** `Makefile` и `release.yml` — `-X main.commit`; `buildInfo()` в `cmd/razdachad/main.go`.
+**Beware:** коммит НЕ берётся из `debug.ReadBuildInfo`: в связанном git-worktree Go стемпит HEAD основного чекаута, а не ветки — проверено, `git describe` и `vcs.revision` разошлись. Реализация у нас всегда идёт в воркtree, встроенный источник врал бы каждый раз.
+
 ## 2026-07-27
 
 ### #90 — оповещения из окружения
