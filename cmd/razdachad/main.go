@@ -111,8 +111,11 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 			IPForward: netstack.DiagIPForward,
 			Lists:     listsDiag(st, listsMgr),
 		},
-		Pools: poolsMgr,
-		Build: buildInfo(),
+		// Заливка nft уходит в слой api замыканием: `POST /api/apply`
+		// применяет обе половины — конфиг sing-box и таблицу (issue #119).
+		ApplyNft: nf.applyNft,
+		Pools:    poolsMgr,
+		Build:    buildInfo(),
 	})
 	if errors.Is(err, api.ErrNoPassword) {
 		return fmt.Errorf("%w; задайте его: razdachad -set-password", err)
@@ -162,6 +165,10 @@ type netfilter struct {
 	// nftState отдаёт состояние таблицы диагностике. Пустое поле означает
 	// «источника нет», и проверка отвечает unknown с объяснением.
 	nftState func(context.Context) (netstack.DiagNftState, error)
+	// applyNft перезаливает таблицу по требованию слоя api и отвечает, сколько
+	// подсетей ушло в сет. Пустое поле означает «подсистема правил не поднята»:
+	// `POST /api/apply` тогда применяет только конфиг sing-box.
+	applyNft api.NftApplier
 }
 
 // listsDiag — источник свежести списков для диагностики: набор источников
