@@ -139,6 +139,7 @@ func buildPool(t store.Tunnel, log *slog.Logger) ([]option.Outbound, bool) {
 	servers := selectPoolServers(t.Pool)
 	out := make([]option.Outbound, 0, len(servers)+1)
 	tags := make([]string, 0, len(servers))
+	insecure := 0
 
 	for i, s := range servers {
 		res, err := Parse(s.URL)
@@ -153,11 +154,21 @@ func buildPool(t store.Tunnel, log *slog.Logger) ([]option.Outbound, bool) {
 			continue
 		}
 		ob := *res.Outbound
+		if forceCertVerify(&ob) {
+			insecure++
+		}
 		// Тег привязан к позиции в наборе, а не к номеру принятого сервера:
 		// иначе один неразобравшийся ключ сдвинул бы теги всех следующих.
 		ob.Tag = poolMemberTag(t.ID, i)
 		out = append(out, ob)
 		tags = append(tags, ob.Tag)
+	}
+
+	// Одной строкой на пул, а не на сервер: каталог раздаёт `allowInsecure=1`
+	// пачками, и построчный лог утонул бы в повторах на каждой генерации конфига.
+	if insecure > 0 {
+		log.Warn("серверы пула просили не проверять сертификат — проверка оставлена включённой",
+			"туннель", t.Name, "серверов", insecure, "всего", len(tags))
 	}
 
 	if len(tags) == 0 {
@@ -177,6 +188,39 @@ func buildPool(t store.Tunnel, log *slog.Logger) ([]option.Outbound, bool) {
 			IdleTimeout: badoption.Duration(poolIdleTimeout),
 		},
 	}), true
+}
+
+// forceCertVerify снимает у сервера пула «не проверять сертификат» и говорит,
+// был ли флаг поднят.
+//
+// Флаг `allowInsecure` (он же `insecure`, он же `skip-cert-verify` у других
+// клиентов) в ссылке, которую вставил человек, — его собственное решение: свой
+// сервер с самоподписанным сертификатом имеет право работать. Ключ пула никто не
+// вставлял: демон взял его сам со страницы, которую мы не контролируем (ADR 0010),
+// и одна строка в чужой выдаче сняла бы шифрование в том самом канале, ради
+// которого туннель существует. Согласие на перехват должно быть осознанным, а
+// здесь его дать некому.
+//
+// Гасится здесь, а не в [proxyURL.insecure]: разбор ссылки одинаков для всех
+// источников и обязан таким остаться — тот же `Parse` обслуживает ручную вставку,
+// где флаг законен, и ручку проверки ключа в панели. Источник известен ровно на
+// этом уровне, поэтому источникозависимая правка живёт тут. Не переносить обратно
+// в parse_url.go как «пропущенный случай» (issue #128).
+func forceCertVerify(ob *option.Outbound) bool {
+	w, ok := ob.Options.(option.OutboundTLSOptionsWrapper)
+	if !ok {
+		return false
+	}
+	tls := w.TakeOutboundTLSOptions()
+	if tls == nil || !tls.Insecure {
+		return false
+	}
+	// Копия, а не правка на месте: секция TLS общая с результатом разбора, и
+	// портить чужую структуру ради своей копии outbound'а незачем.
+	fixed := *tls
+	fixed.Insecure = false
+	w.ReplaceOutboundTLSOptions(&fixed)
+	return true
 }
 
 // selectPoolServers отбирает серверы для конфига: первые poolMaxServers штук в том
