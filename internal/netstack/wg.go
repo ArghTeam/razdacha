@@ -288,8 +288,12 @@ func (c WGConfig) validate() error {
 	if c.ListenPort < 1 || c.ListenPort > 65535 {
 		return fmt.Errorf("%w: порт %d вне диапазона 1–65535", ErrWGConfig, c.ListenPort)
 	}
-	if c.MTU < 576 || c.MTU > 1500 {
-		return fmt.Errorf("%w: MTU %d вне диапазона 576–1500", ErrWGConfig, c.MTU)
+	// Границы те же, что у настроек: MTU wg0 обязан совпадать с MTU клиентов
+	// (ADR 0004), и два разных диапазона на один параметр означали бы, что
+	// значение, отвергнутое панелью, проходит здесь.
+	if c.MTU < store.MinClientMTU || c.MTU > store.MaxClientMTU {
+		return fmt.Errorf("%w: MTU %d вне диапазона %d–%d",
+			ErrWGConfig, c.MTU, store.MinClientMTU, store.MaxClientMTU)
 	}
 	return nil
 }

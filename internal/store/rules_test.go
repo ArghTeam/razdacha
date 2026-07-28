@@ -380,3 +380,45 @@ func TestRuleChainRejectedForNonTunnelAction(t *testing.T) {
 		t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
 	}
 }
+
+// resolve_real_ip выключает FakeIP, и маршрут правила остаётся на подсетях.
+// Правило без единого их источника не маршрутизирует ничего и не сохраняется:
+// иначе трафик молча ушёл бы напрямую (аудит от 2026-07, пункт 8).
+func TestRuleResolveRealIPWithoutSubnets(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	tun, errTun := s.CreateTunnel(ctx, sampleTunnel("основной"))
+	if errTun != nil {
+		t.Fatalf("CreateTunnel: %v", errTun)
+	}
+
+	r := Rule{
+		Name: "Свой сервис", Action: ActionTunnel, TunnelID: tun.ID,
+		Enabled: true, PeerScope: ScopeAll, ResolveRealIP: true,
+		Domains: []string{"example.org"},
+	}
+	if _, err := s.CreateRule(ctx, r); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
+	}
+
+	// Подсети руками — правило рабочее.
+	withSubnets := r
+	withSubnets.Subnets = []string{"192.0.2.0/24"}
+	created, err := s.CreateRule(ctx, withSubnets)
+	if err != nil {
+		t.Fatalf("CreateRule с подсетями: %v", err)
+	}
+
+	// Список тоже источник подсетей: их заливает в nft-сет слой lists.
+	fromList := r
+	fromList.RemoteLists = []string{"https://example.org/list.txt"}
+	if _, err := s.CreateRule(ctx, fromList); err != nil {
+		t.Fatalf("CreateRule со списком: %v", err)
+	}
+
+	// Снятие подсетей правкой запрещено ровно так же, как их отсутствие при создании.
+	created.Subnets = nil
+	if err := s.UpdateRule(ctx, created); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ожидалась ErrInvalid при снятии подсетей, получено: %v", err)
+	}
+}
