@@ -15,6 +15,8 @@ var (
 	ErrNftNoWAN = errors.New("не задан WAN-интерфейс")
 	// ErrNftNoWG — не задан интерфейс клиентов, маркировать нечего.
 	ErrNftNoWG = errors.New("не задан интерфейс WireGuard")
+	// ErrNftBadResolver — адрес резолвера не разобран или не IPv4.
+	ErrNftBadResolver = errors.New("адрес резолвера не разобран")
 )
 
 // Имена объектов nft. Заданы в docs/03-networking.md и цитируются
@@ -26,6 +28,9 @@ const (
 	ChainMangle = "mangle"
 	// ChainProxy — передача помеченного трафика в tproxy sing-box.
 	ChainProxy = "proxy"
+	// ChainDNSNat — перехват DNS клиентов: адрес назначения переписывается на
+	// наш резолвер, каким бы он ни был прописан у клиента.
+	ChainDNSNat = "dnsnat"
 	// ChainForward — MSS-клампинг и отказ IPv6 клиентов.
 	ChainForward = "forward"
 	// ChainPostrouting — masquerade прямого трафика.
@@ -45,7 +50,18 @@ const (
 	TProxyAddr = "127.0.0.1"
 	// TProxyPort — порт inbound tproxy sing-box.
 	TProxyPort uint16 = 1602
+	// DNSPort — plaintext DNS. Весь такой трафик с wg0 забирает себе наш
+	// резолвер, на этом держится селективность (docs/04-dns-fakeip.md).
+	DNSPort uint16 = 53
+	// DoTPort — DNS поверх TLS и QUIC. Перехватить нельзя, поэтому отказ:
+	// молча ушедший в чужой шифрованный резолвер клиент теряет FakeIP.
+	DoTPort uint16 = 853
 )
+
+// DefaultResolverAddr — адрес, на котором sing-box слушает DNS клиентов. Тот
+// же, что store.DefaultSettings().WGServerAddress; вызывающий передаёт живое
+// значение из настроек, константа — только запасной вариант.
+const DefaultResolverAddr = "10.8.0.1"
 
 // FakeIPRange — диапазон FakeIP sing-box (ADR 0005: только v4). Трафик на эти
 // адреса всегда проксируется: реального маршрута к ним не существует.
@@ -70,6 +86,9 @@ type NftConfig struct {
 	WGInterface string
 	// WANInterface — внешний интерфейс, на него уходит masquerade.
 	WANInterface string
+	// ResolverAddr — адрес нашего резолвера (Settings.WGServerAddress), на него
+	// переписывается DNS клиентов. Пусто означает [DefaultResolverAddr].
+	ResolverAddr string
 	// Subnets — подсети из слоя lists (Manager.Subnets), строками CIDR или
 	// отдельными адресами. Битые и IPv6-записи пропускаются, а не роняют сборку.
 	Subnets []string
@@ -93,6 +112,12 @@ const (
 	// ActionRejectICMPv6 — отказ IPv6 клиентов, слой 3 ADR 0005. Именно reject:
 	// drop даёт Happy Eyeballs четверть секунды задержки на каждое соединение.
 	ActionRejectICMPv6 NftAction = "reject-icmpv6"
+	// ActionRejectICMP — отказ IPv4 с ICMP «administratively prohibited».
+	// Клиент получает отказ сразу и переходит к следующему резолверу, а не
+	// ждёт таймаута, как было бы с drop.
+	ActionRejectICMP NftAction = "reject-icmp"
+	// ActionDNAT — переписать адрес и порт назначения на DNATAddr:DNATPort.
+	ActionDNAT NftAction = "dnat"
 )
 
 // NftRule — одно правило в терминах предметной области: набор условий и
@@ -107,14 +132,22 @@ type NftRule struct {
 	NFProto string
 	// DstPrefix — совпадение по адресу назначения.
 	DstPrefix netip.Prefix
+	// DstPrefixNeq инвертирует сравнение по DstPrefix.
+	DstPrefixNeq bool
 	// DstSet — совпадение адреса назначения с сетом по имени.
 	DstSet string
 	// L4Proto — "tcp" или "udp".
 	L4Proto string
+	// DstPort — порт назначения, 0 означает «любой». Требует непустого
+	// L4Proto: без него заголовок транспортного уровня читать нельзя.
+	DstPort uint16
 	// MarkMatch — совпадение метки: mark & MarkMatch == MarkMatch.
 	MarkMatch uint32
 	// TCPSyn — только SYN-пакеты (tcp flags syn / syn,rst).
 	TCPSyn bool
+	// DNATAddr, DNATPort — куда переписывается назначение для ActionDNAT.
+	DNATAddr netip.Addr
+	DNATPort uint16
 	// Action — что делать с совпавшим пакетом.
 	Action NftAction
 }
@@ -152,6 +185,7 @@ type NftRuleset struct {
 const (
 	priorityMangle = -150
 	priorityProxy  = -100
+	priorityDstNAT = -100
 	prioritySrcNAT = 100
 )
 
@@ -167,6 +201,10 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 	}
 	if strings.TrimSpace(cfg.WANInterface) == "" {
 		return NftRuleset{}, fmt.Errorf("сборка nft-правил: %w", ErrNftNoWAN)
+	}
+	resolver, err := resolverAddr(cfg.ResolverAddr)
+	if err != nil {
+		return NftRuleset{}, err
 	}
 
 	local, _ := MergeSubnets(localV4)
@@ -184,14 +222,55 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 	// mangle: что маркируется. Первое правило отсекает всё, что пришло не от
 	// клиентов, включая исходящий трафик самого sing-box — поэтому петли нет
 	// и отдельные исключения по адресам эндпоинтов не нужны (ADR 0002).
+	//
+	// Сразу за ним — выход для DNS-портов. Он обязателен: без него запрос на
+	// чужой резолвер, чей адрес случайно попал в razdacha_subnets, получил бы
+	// метку и уехал бы в tproxy, где перехватывать его уже нечем — правило
+	// hijack-dns в sing-box висит на inbound dns-in, а не на tproxy. С выходом
+	// DNS гарантированно доходит до цепочки dnsnat, а DoT — до forward, где
+	// его ждёт отказ. Заодно снимается вопрос порядка между цепочками proxy и
+	// dnsnat: они обе на приоритете -100, и кто из них раньше — не определено.
+	mangleRules := []NftRule{{IIf: wg, IIfNeq: true, Action: ActionReturn}}
+	for _, port := range []uint16{DNSPort, DoTPort} {
+		mangleRules = append(mangleRules,
+			portRules(NftRule{NFProto: "ipv4", DstPort: port, Action: ActionReturn})...)
+	}
+	mangleRules = append(mangleRules,
+		NftRule{NFProto: "ipv4", DstSet: SetLocalV4, Action: ActionReturn},
+		NftRule{NFProto: "ipv4", DstPrefix: FakeIPRange, Action: ActionMark},
+		NftRule{NFProto: "ipv4", DstSet: SetSubnets, Action: ActionMark},
+	)
 	mangle := NftChain{
 		Name: ChainMangle, Type: "filter", Hook: "prerouting", Priority: priorityMangle,
-		Rules: []NftRule{
-			{IIf: wg, IIfNeq: true, Action: ActionReturn},
-			{NFProto: "ipv4", DstSet: SetLocalV4, Action: ActionReturn},
-			{NFProto: "ipv4", DstPrefix: FakeIPRange, Action: ActionMark},
-			{NFProto: "ipv4", DstSet: SetSubnets, Action: ActionMark},
-		},
+		Rules: mangleRules,
+	}
+
+	// dnsnat: весь plaintext-DNS клиентов обслуживает наш резолвер, что бы
+	// клиент себе ни прописал — 8.8.8.8 руками, Android Private DNS, зашитый
+	// в приложение адрес. Без этого домен резолвится в настоящий адрес, FakeIP
+	// не выдаётся, и правило по домену перестаёт существовать (issue #122).
+	//
+	// Почему DNAT, а не метка с перехватом в tproxy:
+	//   - метка увела бы DNS в таблицу 105 и в tproxy, где его пришлось бы
+	//     разбирать sniff-ом и отдельным правилом hijack-dns на tproxy-inbound;
+	//     DNAT доводит пакет до inbound dns-in, для которого перехват уже
+	//     настроен, — новых сущностей в конфиге sing-box не появляется;
+	//   - маркировка остаётся ровно тем, чем была: «адрес назначения совпал со
+	//     списком». Порт в неё не входит, драться правилам не за что;
+	//   - conntrack сам разворачивает ответ обратно, и клиент видит его от того
+	//     адреса, на который спрашивал: перехват прозрачен.
+	//
+	// Петли нет по двум причинам сразу: цепочка висит на prerouting и смотрит
+	// только на iifname wg0, а собственные запросы sing-box к апстриму идут
+	// через output; плюс сравнение `ip daddr != резолвер` не даёт переписывать
+	// то, что и так адресовано нам.
+	dnsnat := NftChain{
+		Name: ChainDNSNat, Type: "nat", Hook: "prerouting", Priority: priorityDstNAT,
+		Rules: portRules(NftRule{
+			IIf: wg, NFProto: "ipv4", DstPort: DNSPort,
+			DstPrefix: netip.PrefixFrom(resolver, resolver.BitLen()), DstPrefixNeq: true,
+			DNATAddr: resolver, DNATPort: DNSPort, Action: ActionDNAT,
+		}),
 	}
 
 	// proxy: помеченное уходит в sing-box. Всё остальное сюда не попадает —
@@ -204,13 +283,25 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 		},
 	}
 
+	// forward: клампинг, отказ IPv6 и отказ шифрованному DNS.
+	//
+	// 853 (DoT и DoQ) переписать некуда: внутри TLS запрос не разобрать, а
+	// подставить свой сертификат нечем. Остаётся отказ — иначе клиент с
+	// Private DNS молча уходит мимо нас и теряет FakeIP, ничего не замечая.
+	// Отказ здесь, а не в prerouting: reject ядро принимает только в input,
+	// forward и output. DoH на 443 не трогаем — он неотличим от обычного
+	// HTTPS, и это записано в docs/04-dns-fakeip.md как граница.
+	forwardRules := []NftRule{
+		{IIf: wg, NFProto: "ipv4", L4Proto: "tcp", TCPSyn: true, Action: ActionClampMSS},
+		{OIf: wg, NFProto: "ipv4", L4Proto: "tcp", TCPSyn: true, Action: ActionClampMSS},
+		{IIf: wg, NFProto: "ipv6", Action: ActionRejectICMPv6},
+	}
+	forwardRules = append(forwardRules, portRules(NftRule{
+		IIf: wg, NFProto: "ipv4", DstPort: DoTPort, Action: ActionRejectICMP,
+	})...)
 	forward := NftChain{
 		Name: ChainForward, Type: "filter", Hook: "forward", Priority: priorityMangle,
-		Rules: []NftRule{
-			{IIf: wg, NFProto: "ipv4", L4Proto: "tcp", TCPSyn: true, Action: ActionClampMSS},
-			{OIf: wg, NFProto: "ipv4", L4Proto: "tcp", TCPSyn: true, Action: ActionClampMSS},
-			{IIf: wg, NFProto: "ipv6", Action: ActionRejectICMPv6},
-		},
+		Rules: forwardRules,
 	}
 
 	postrouting := NftChain{
@@ -220,8 +311,33 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 		},
 	}
 
-	rs.Chains = []NftChain{mangle, proxy, forward, postrouting}
+	rs.Chains = []NftChain{mangle, proxy, dnsnat, forward, postrouting}
 	return rs, nil
+}
+
+// portRules размножает правило на tcp и udp: пара «одно и то же условие для
+// обоих протоколов» встречается везде, где речь о порте.
+func portRules(base NftRule) []NftRule {
+	out := make([]NftRule, 0, 2)
+	for _, proto := range []string{"udp", "tcp"} {
+		r := base
+		r.L4Proto = proto
+		out = append(out, r)
+	}
+	return out
+}
+
+// resolverAddr разбирает адрес нашего резолвера. Только IPv4: DNS клиентов
+// ходит внутри туннеля, где v6 выключен тремя слоями (ADR 0005).
+func resolverAddr(s string) (netip.Addr, error) {
+	if strings.TrimSpace(s) == "" {
+		s = DefaultResolverAddr
+	}
+	addr, err := netip.ParseAddr(strings.TrimSpace(s))
+	if err != nil || !addr.Is4() {
+		return netip.Addr{}, fmt.Errorf("сборка nft-правил: %w: %q", ErrNftBadResolver, s)
+	}
+	return addr, nil
 }
 
 // MergeSubnets превращает записи списков в непересекающиеся интервалы IPv4 и

@@ -120,7 +120,7 @@ func TestDiagIPForwardMissing(t *testing.T) {
 // строится набор правил.
 func TestDiagMissing(t *testing.T) {
 	full := DiagNftState{
-		Chains: []string{ChainMangle, ChainProxy, ChainForward, ChainPostrouting},
+		Chains: []string{ChainMangle, ChainProxy, ChainDNSNat, ChainForward, ChainPostrouting},
 		Sets:   []string{SetLocalV4, SetSubnets},
 	}
 	if chains, sets := full.DiagMissing(); len(chains) > 0 || len(sets) > 0 {
@@ -129,7 +129,7 @@ func TestDiagMissing(t *testing.T) {
 
 	partial := DiagNftState{Chains: []string{ChainMangle}, Sets: []string{SetLocalV4}}
 	chains, sets := partial.DiagMissing()
-	if len(chains) != 3 || len(sets) != 1 {
-		t.Errorf("недостача %v / %v, ожидались три цепочки и один сет", chains, sets)
+	if len(chains) != 4 || len(sets) != 1 {
+		t.Errorf("недостача %v / %v, ожидались четыре цепочки и один сет", chains, sets)
 	}
 }

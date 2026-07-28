@@ -17,6 +17,10 @@ import (
 // (RFC 4443, type 1 code 1). Слой 3 отключения IPv6 (ADR 0005).
 const icmpv6AdminProhibited = 1
 
+// icmpAdminProhibited — код ICMP «communication administratively prohibited»
+// (RFC 1812, type 3 code 13). Им отклоняется DoT/DoQ клиентов.
+const icmpAdminProhibited = 13
+
 // nftConn — то, что слой берёт от netlink-соединения nftables. Интерфейс
 // существует ради тестов: подменённое соединение записывает вызовы, и состав
 // таблицы проверяется без root и без ядра.
@@ -252,7 +256,7 @@ func ruleExprs(r NftRule, sets map[string]*nftables.Set) ([]expr.Any, error) {
 		)
 	}
 	if r.DstPrefix.IsValid() {
-		out = append(out, dstMatch(r.DstPrefix)...)
+		out = append(out, dstMatch(r.DstPrefix, r.DstPrefixNeq)...)
 	}
 	if r.DstSet != "" {
 		set, ok := sets[r.DstSet]
@@ -265,6 +269,22 @@ func ruleExprs(r NftRule, sets map[string]*nftables.Set) ([]expr.Any, error) {
 				Offset: 16, Len: 4,
 			},
 			&expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID},
+		)
+	}
+	if r.DstPort != 0 {
+		if r.L4Proto == "" {
+			return nil, fmt.Errorf("правило с портом %d без протокола", r.DstPort)
+		}
+		// Порт назначения лежит на одном и том же смещении у tcp и у udp.
+		out = append(out,
+			&expr.Payload{
+				DestRegister: 1, Base: expr.PayloadBaseTransportHeader,
+				Offset: 2, Len: 2,
+			},
+			&expr.Cmp{
+				Op: expr.CmpOpEq, Register: 1,
+				Data: binaryutil.BigEndian.PutUint16(r.DstPort),
+			},
 		)
 	}
 	if r.TCPSyn {
@@ -282,22 +302,26 @@ func ruleExprs(r NftRule, sets map[string]*nftables.Set) ([]expr.Any, error) {
 		)
 	}
 
-	action, err := actionExprs(r.Action)
+	action, err := actionExprs(r)
 	if err != nil {
 		return nil, err
 	}
 	return append(out, action...), nil
 }
 
-// dstMatch — совпадение по адресу назначения IPv4.
-func dstMatch(p netip.Prefix) []expr.Any {
+// dstMatch — совпадение по адресу назначения IPv4; neq инвертирует сравнение.
+func dstMatch(p netip.Prefix, neq bool) []expr.Any {
 	addr := p.Masked().Addr().As4()
+	op := expr.CmpOpEq
+	if neq {
+		op = expr.CmpOpNeq
+	}
 	load := &expr.Payload{
 		DestRegister: 1, Base: expr.PayloadBaseNetworkHeader,
 		Offset: 16, Len: 4,
 	}
 	if p.Bits() == 32 {
-		return []expr.Any{load, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr[:]}}
+		return []expr.Any{load, &expr.Cmp{Op: op, Register: 1, Data: addr[:]}}
 	}
 	mask := netip.PrefixFrom(p.Addr(), p.Bits())
 	m := prefixMask(mask.Bits())
@@ -307,7 +331,7 @@ func dstMatch(p netip.Prefix) []expr.Any {
 			SourceRegister: 1, DestRegister: 1, Len: 4,
 			Mask: m, Xor: []byte{0, 0, 0, 0},
 		},
-		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: addr[:]},
+		&expr.Cmp{Op: op, Register: 1, Data: addr[:]},
 	}
 }
 
@@ -320,9 +344,10 @@ func prefixMask(bits int) []byte {
 	return binaryutil.BigEndian.PutUint32(v)
 }
 
-// actionExprs — выражения действия правила.
-func actionExprs(a NftAction) ([]expr.Any, error) {
-	switch a {
+// actionExprs — выражения действия правила. Берёт правило целиком: адрес и
+// порт назначения DNAT — часть правила, а не глобальная константа.
+func actionExprs(r NftRule) ([]expr.Any, error) {
+	switch r.Action {
 	case ActionReturn:
 		return []expr.Any{&expr.Verdict{Kind: expr.VerdictReturn}}, nil
 
@@ -371,8 +396,33 @@ func actionExprs(a NftAction) ([]expr.Any, error) {
 			Type: unix.NFT_REJECT_ICMP_UNREACH,
 			Code: icmpv6AdminProhibited,
 		}}, nil
+
+	case ActionRejectICMP:
+		return []expr.Any{&expr.Reject{
+			Type: unix.NFT_REJECT_ICMP_UNREACH,
+			Code: icmpAdminProhibited,
+		}}, nil
+
+	case ActionDNAT:
+		// Адрес идёт в регистр 1, порт — в регистр 2, оба в сетевом порядке:
+		// ядро берёт их оттуда по NFTA_NAT_REG_ADDR_MIN и REG_PROTO_MIN.
+		if !r.DNATAddr.Is4() || r.DNATPort == 0 {
+			return nil, fmt.Errorf("dnat без адреса или порта назначения: %v:%d",
+				r.DNATAddr, r.DNATPort)
+		}
+		addr := r.DNATAddr.As4()
+		return []expr.Any{
+			&expr.Immediate{Register: 1, Data: addr[:]},
+			&expr.Immediate{Register: 2, Data: binaryutil.BigEndian.PutUint16(r.DNATPort)},
+			&expr.NAT{
+				Type:        expr.NATTypeDestNAT,
+				Family:      unix.NFPROTO_IPV4,
+				RegAddrMin:  1,
+				RegProtoMin: 2,
+			},
+		}, nil
 	}
-	return nil, fmt.Errorf("неизвестное действие правила %q", a)
+	return nil, fmt.Errorf("неизвестное действие правила %q", r.Action)
 }
 
 // ifname — имя интерфейса так, как его сравнивает ядро: строка с нулём.

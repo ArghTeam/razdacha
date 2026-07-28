@@ -160,7 +160,9 @@ check_modules() {
 	if [ ! -e /dev/net/tun ]; then
 		fail "нет /dev/net/tun — почти всегда это OpenVZ или контейнер без доступа к tun"
 	fi
-	for module in wireguard nft_tproxy nft_socket; do
+	# nft_chain_nat — masquerade прямого трафика и DNAT перехвата DNS: без него
+	# заливка таблицы отваливается целиком, уже после установки.
+	for module in wireguard nft_tproxy nft_socket nft_chain_nat; do
 		if [ -d "/sys/module/$module" ]; then
 			continue
 		fi
