@@ -5,6 +5,11 @@
 
 ## 2026-07-28
 
+### #107 — снятие устройства WARP у Cloudflare
+
+**Changed:** `warp.go` — `Unregister(ctx, deviceID, accessToken)` и сентинел `ErrWARPUnregisterRejected` отдельно от `ErrWARPRejected`.
+**Beware:** два сентинела вместо одного с подстановкой операции: слой api снимает префикс сентинела и собирает из остатка фразу для панели, поэтому операция внутри детали дала бы «отказ в регистрации (регистрация, код …)».
+
 ### #99 — цепь «туннель → WARP» через detour
 
 **Changed:** `singbox.go` — `ChainTag`; `tunnel.go` — `chainEndpoint`, клон с `detour`; `generate.go` — сбор и дедупликация пар. Эталон `testdata/chain.json` гоняется настоящим `sing-box check` в CI.
