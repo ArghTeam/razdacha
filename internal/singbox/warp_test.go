@@ -245,7 +245,8 @@ func TestWARPUnregister(t *testing.T) {
 	}
 }
 
-// Отказы снятия разведены теми же сентинелами, что и отказы регистрации, а
+// Сеть и отказ у снятия разведены так же, как у регистрации, но отказ — свой:
+// причина уходит в лог демона и обязана называть настоящую операцию. А
 // «устройства уже нет» — успех: именно этого мы и добивались.
 func TestWARPUnregisterErrors(t *testing.T) {
 	t.Run("устройства уже нет", func(t *testing.T) {
@@ -262,8 +263,16 @@ func TestWARPUnregisterErrors(t *testing.T) {
 			w.WriteHeader(http.StatusForbidden)
 		})
 		err := reg.Unregister(context.Background(), "t.42", "секрет")
-		if !errors.Is(err, ErrWARPRejected) {
-			t.Fatalf("ожидалась ErrWARPRejected, получено: %v", err)
+		if !errors.Is(err, ErrWARPUnregisterRejected) {
+			t.Fatalf("ожидалась ErrWARPUnregisterRejected, получено: %v", err)
+		}
+		// Причина уходит в лог как есть и называет ту операцию, которая
+		// действительно шла: регистрацию в этот момент никто не заводил.
+		if errors.Is(err, ErrWARPRejected) {
+			t.Errorf("отказ снятия выдан за отказ регистрации: %v", err)
+		}
+		if got, want := err.Error(), "снятие устройства отклонено Cloudflare: код 403"; got != want {
+			t.Errorf("причина %q, ожидалась %q", got, want)
 		}
 	})
 
@@ -283,8 +292,8 @@ func TestWARPUnregisterErrors(t *testing.T) {
 		var called bool
 		reg := warpServer(t, func(http.ResponseWriter, *http.Request) { called = true })
 		err := reg.Unregister(context.Background(), "", "")
-		if !errors.Is(err, ErrWARPRejected) {
-			t.Fatalf("ожидалась ErrWARPRejected, получено: %v", err)
+		if !errors.Is(err, ErrWARPUnregisterRejected) {
+			t.Fatalf("ожидалась ErrWARPUnregisterRejected, получено: %v", err)
 		}
 		if called {
 			t.Error("запрос ушёл наружу без идентификатора устройства")

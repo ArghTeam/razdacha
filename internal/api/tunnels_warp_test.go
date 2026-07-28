@@ -294,7 +294,7 @@ func TestDeleteWARPSurvivesCloudflareFailure(t *testing.T) {
 	cookie := ts.login(t)
 	reg := withWARP(ts, &fakeWARP{
 		conf:     warpDeviceConf,
-		unregErr: fmt.Errorf("%w: код 500", singbox.ErrWARPRejected),
+		unregErr: fmt.Errorf("%w: код 401", singbox.ErrWARPUnregisterRejected),
 	})
 
 	resp := addWARP(t, ts, cookie, "")
@@ -319,8 +319,21 @@ func TestDeleteWARPSurvivesCloudflareFailure(t *testing.T) {
 	if len(list) != 0 {
 		t.Errorf("туннелей %d — отказ Cloudflare помешал удалить локально", len(list))
 	}
-	if !strings.Contains(ts.logs.String(), "устройство WARP осталось у Cloudflare") {
-		t.Errorf("отказ снятия не попал в лог:\n%s", ts.logs.String())
+	logs := ts.logs.String()
+	if !strings.Contains(logs, "устройство WARP осталось у Cloudflare") {
+		t.Errorf("отказ снятия не попал в лог:\n%s", logs)
+	}
+	// В логе остаётся единственный след зависшего устройства: идентификатор и
+	// причина. Причина обязана называть снятие — регистрацию в этот момент
+	// никто не заводил.
+	if !strings.Contains(logs, warpFakeDeviceID) {
+		t.Errorf("в логе нет идентификатора устройства:\n%s", logs)
+	}
+	if !strings.Contains(logs, "снятие устройства отклонено Cloudflare: код 401") {
+		t.Errorf("причина в логе не называет снятие:\n%s", logs)
+	}
+	if strings.Contains(logs, warpFakeToken) {
+		t.Errorf("токен устройства уехал в лог:\n%s", logs)
 	}
 }
 
