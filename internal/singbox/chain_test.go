@@ -175,17 +175,19 @@ func TestChainRejectsNonWARP(t *testing.T) {
 	}
 }
 
-// Выключенное второе звено обрывает цепь: правило пропускается целиком, а не
-// уходит одним первым звеном — иначе ресурс увидел бы не тот адрес.
-func TestChainSkippedWhenSecondHopDisabled(t *testing.T) {
+// Выключенное второе звено обрывает цепь: правило отказывает, а не уходит одним
+// первым звеном — иначе ресурс увидел бы не тот адрес. И не выпадает из конфига:
+// тогда его трафик ушёл бы вовсе мимо туннелей, напрямую (ADR 0013).
+func TestChainRejectsWhenSecondHopDisabled(t *testing.T) {
 	snap := chainFixture()
 	snap.Rules[0].ViaTunnelID = "wwww"
 	snap.Tunnels[len(snap.Tunnels)-1].Enabled = false
 
 	opts := mustGenerate(t, snap)
-	for _, r := range opts.Route.Rules {
-		if contains(r.DefaultOptions.RuleSet, ruleSetTag("r1")) {
-			t.Fatal("правило с выключенным вторым звеном попало в конфиг")
+	assertRejected(t, opts, ruleSetTag("r1"))
+	for _, e := range chainEndpoints(t, snap) {
+		if strings.HasPrefix(e.Tag, "chain-") {
+			t.Errorf("оборванная цепь оставила в конфиге звено %q", e.Tag)
 		}
 	}
 }

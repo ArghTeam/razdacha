@@ -85,6 +85,12 @@ type Config struct {
 	// `sing-box check` и `systemctl reload`; тесты подставляют свой.
 	Applier Applier
 
+	// ApplyNft перезаливает таблицу nft по тому же `POST /api/apply`: конфиг и
+	// сет подсетей — две половины одного применения. Пустое поле означает
+	// «источника нет» — ручка применяет только конфиг и отдаёт `nft: null`;
+	// подсистема правил есть только в Linux, и в тестах слоя её нет.
+	ApplyNft NftApplier
+
 	// Pools обходит каталог туннеля-пула по `POST /api/tunnels/{id}/refresh`.
 	// Пустой означает, что расписание не запущено: ручка отвечает 503, а не
 	// делает вид, что обновила каталог.
@@ -124,6 +130,7 @@ type Server struct {
 	diag      DiagSources
 	ui        fs.FS
 	applier   Applier
+	applyNft  NftApplier
 	clash     *clash.Client
 	// checks — результаты проверок туннелей с момента запуска демона,
 	// источник производных полей в `GET /api/tunnels`.
@@ -188,6 +195,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		diag:        cfg.Diag,
 		ui:          cfg.UI,
 		applier:     cfg.Applier,
+		applyNft:    cfg.ApplyNft,
 		clash:       clash.New(clash.Options{Addr: cfg.ClashAddr}),
 		checks:      newCheckCache(),
 		events:      newTunnelEvents(),

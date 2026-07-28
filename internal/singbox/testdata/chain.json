@@ -51,6 +51,10 @@
       {
         "rule_set": "rule-r4",
         "action": "reject"
+      },
+      {
+        "rule_set": "rule-r6",
+        "action": "reject"
       }
     ],
     "final": "upstream",
@@ -172,6 +176,10 @@
       {
         "rule_set": "rule-r4",
         "action": "reject"
+      },
+      {
+        "rule_set": "rule-r6",
+        "action": "reject"
       }
     ],
     "rule_set": [
@@ -222,6 +230,14 @@
         "rules": [
           {
             "domain_suffix": "doubleclick.net"
+          }
+        ]
+      },
+      {
+        "tag": "rule-r6",
+        "rules": [
+          {
+            "domain_suffix": "habr.com"
           }
         ]
       }
