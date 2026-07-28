@@ -107,7 +107,7 @@ WARP» (`POST /api/tunnels/warp`) либо пользователь вставл
 | `remote_lists` | []url | внешние списки (`.srs`, `.json`, plain) |
 | `peer_scope` | enum | `all` \| `selected` |
 | `peer_ids` | []uuid | при `peer_scope = selected` |
-| `resolve_real_ip` | bool | резолвить настоящий IP вместо FakeIP (редкие случаи) |
+| `resolve_real_ip` | bool | резолвить настоящий IP вместо FakeIP (редкие случаи); требует источника подсетей |
 
 **`via_tunnel_id` — второе звено цепи** ([ADR 0012](decisions/0012-tunnel-chain-detour.md)):
 трафик уходит в `tunnel_id`, а наружу выходит через него. Звеньев ровно два, и второе —
@@ -154,16 +154,27 @@ WARP» (`POST /api/tunnels/warp`) либо пользователь вставл
 | Поле | Дефолт | Описание |
 |---|---|---|
 | `wg_listen_port` | `51820` | |
-| `wg_pool` | `10.8.0.0/24` | |
-| `wg_server_address` | `10.8.0.1` | |
+| `wg_pool` | `10.8.0.0/24` | IPv4-подсеть; разбирается при сохранении |
+| `wg_server_address` | `10.8.0.1` | IPv4-адрес внутри `wg_pool`; разбирается при сохранении |
 | `endpoint_host` | автодетект | что попадёт в `Endpoint` клиентских конфигов |
-| `client_mtu` | `1280` | [ADR 0004](decisions/0004-client-mtu-1280.md) |
+| `client_mtu` | `1280` | [ADR 0004](decisions/0004-client-mtu-1280.md); принимается 1280–1420 |
 | `dns_upstream` | `1.1.1.1` | апстрим для sing-box |
 | `dns_type` | `udp` | `udp` \| `dot` \| `doh` |
 | `wan_interface` | автодетект | для masquerade |
 | `list_update_interval` | `1d` | |
 | `tunnel_check_interval` | `2m` | как часто снимается состояние туннелей ([ADR 0011](decisions/0011-tunnel-check-schedule.md)); меньше 30 секунд не принимается |
 | `log_level` | `warn` | |
+
+**Адреса разбираются при сохранении, а не при использовании.** `wg_pool` обязан быть
+IPv4-подсетью, `wg_server_address` — IPv4-адресом внутри неё. Проверки непустоты мало:
+строка с опечаткой доезжала до `WGConfigFromSettings` и роняла старт демона — шлюз не
+поднимался вовсе, а панель на записи молчала.
+
+**`client_mtu` — 1280–1420.** Нижняя граница и есть значение решения
+([ADR 0004](decisions/0004-client-mtu-1280.md)): 1280 — минимальный MTU IPv6, на него же
+настроен MSS-клампинг. Верхняя — то самое «1420 для максимальной скорости в надёжной
+сети», которое ADR 0004 оставляет в UI. Прежние 576–1500 границами решения не были и
+пропускали и дефолт системы, и значения, режущие полезную нагрузку без причины.
 
 Всё, что можно вывести автоматически — выводится. В UI показываются только
 `wg_listen_port`, `endpoint_host`, `client_mtu`, `dns_upstream`,
