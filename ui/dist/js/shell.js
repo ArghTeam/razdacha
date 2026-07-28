@@ -14,6 +14,8 @@ export const state = {
   communityLists: [],
   settings: null,
   diag: null,
+  /** Ответ `GET /api/version`: что развёрнуто на сервере. null — ещё не пришло. */
+  version: null,
   dirty: false,
   /** Эндпоинты, которых ещё нет: экран говорит об этом вместо пустого списка. */
   missing: new Set(),

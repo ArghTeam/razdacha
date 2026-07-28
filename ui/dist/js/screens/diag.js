@@ -11,6 +11,14 @@ import { esc, since, isOnline, maskIP, maskKey, download, tunnelEndpoint } from 
 export const title = 'Диагностика';
 
 export async function load() {
+  // Версии перечитываются и во время перезапуска: они не часть сводки проверок
+  // и от неё не зависят. Отказ здесь не роняет экран — версии показываются
+  // отдельным блоком, и его отсутствие не должно скрывать проверки.
+  try {
+    state.version = await api.version.get();
+  } catch {
+    state.version = null;
+  }
   // Пока идёт перезапуск, снимок с сервера не подменяет строки: он относится к
   // прошлой проверке, и часть строк сейчас честно говорит «проверяется».
   if (run) return;
@@ -53,7 +61,7 @@ let run = null;
 
 export function view() {
   if (state.missing.has('diag') || !state.diag) {
-    return head() + `<div class="card">${notImplemented('Диагностика')}</div>`;
+    return head() + `<div class="card">${notImplemented('Диагностика')}</div>` + versionsCard();
   }
   return head() + overallBar() + `
     <div class="card">
@@ -63,11 +71,55 @@ export function view() {
         <button class="btn" data-act="logs">Логи</button>
         <button class="btn" data-act="singbox-config">Конфиг sing-box</button>
       </div>
-    </div>
+    </div>` + versionsCard() + `
     <p class="screen-sub" style="margin-top:10px">
       В отчёте маскируются ключи, внешние адреса эндпоинтов и UUID: такие отчёты
       вставляют в публичные чаты.
     </p>`;
+}
+
+/* --- версии --------------------------------------------------------------
+   Что развёрнуто на сервере. Здесь, а не в настройках: сюда идут, когда
+   что-то не так, и первый вопрос после обновления — доехало ли оно вообще.
+   Проверки новых версий тут нет: за ней пришлось бы идти в GitHub, и такие
+   вещи у нас включаются явно. */
+
+/** Значение или «неизвестно» — пустота не заполняется выдумкой. */
+function versionValue(v, unknownText = 'неизвестно') {
+  return v ? `<dd>${esc(String(v))}</dd>` : `<dd class="unknown">${esc(unknownText)}</dd>`;
+}
+
+function versionsCard() {
+  const v = state.version;
+  if (!v) {
+    return `<div class="card" style="margin-top:10px">
+      <div class="empty">Версии не пришли: демон не ответил на <code>GET /api/version</code>.</div>
+    </div>`;
+  }
+
+  const singbox = v.singbox || {};
+  return `<div class="card" style="margin-top:10px">
+    ${v.version_mismatch ? mismatchNote(v) : ''}
+    <dl class="versions">
+      <dt>Демон</dt>${versionValue(v.version)}
+      <dt>Коммит</dt>${versionValue(v.commit)}
+      <dt>Версия установки</dt>${versionValue(v.installed_version, 'не записана (установка старше 0.2.1)')}
+      <dt>Схема БД</dt>${versionValue(v.schema_version)}
+      <dt>sing-box, библиотека</dt>${versionValue(singbox.library)}
+      <dt>sing-box, рантайм</dt>${versionValue(singbox.runtime, singbox.runtime_detail || 'неизвестно')}
+    </dl>
+  </div>`;
+}
+
+/** Расхождение названо словами и с действием: сама цифра ни о чём не говорит. */
+function mismatchNote(v) {
+  return `<div class="version-warn">
+    <strong>Работает не та версия, которую поставил установщик</strong>
+    Запущен демон ${esc(String(v.version))}, установщик записал
+    ${esc(String(v.installed_version || 'неизвестно'))}. Обычно это значит, что после
+    обновления юнит не перезапустился: на диске новый бинарник, в памяти старый процесс.
+    Поможет <code>systemctl restart razdachad</code>.
+  </div>`;
 }
 
 function head() {
@@ -197,10 +249,19 @@ function modalSingboxConfig() {
 function report() {
   const s = state.settings || {};
   const d = state.diag || { overall: 'unknown', checks: [] };
+  const v = state.version || {};
+  const sb = v.singbox || {};
   const out = [
     'razdacha — отчёт диагностики',
     `дата: ${new Date().toISOString()}`,
     `общий статус: ${d.overall}`,
+    '',
+    // Версии идут в отчёт первым блоком: багрепорт без них разбирать нечем.
+    '## Версии',
+    `демон: ${v.version ?? '—'}${v.commit ? ` (${v.commit})` : ''}`,
+    `версия установки: ${v.installed_version ?? '—'}${v.version_mismatch ? ' — РАСХОЖДЕНИЕ с работающим бинарником' : ''}`,
+    `схема БД: ${v.schema_version ?? '—'}`,
+    `sing-box: библиотека ${sb.library ?? '—'}, рантайм ${sb.runtime ?? (sb.runtime_detail || '—')}`,
     '',
     '## Проверки',
     ...(d.checks || []).map((c) => `${String(c.status).padEnd(5)} ${c.title}: ${c.detail || ''}`),

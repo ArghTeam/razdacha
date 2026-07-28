@@ -706,3 +706,38 @@ textarea.bad { border-color: color-mix(in srgb, var(--err) 55%, var(--line-stron
 .pool-srv-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .pool-srv-country { color: var(--fg-dim); }
 .pool-srv-name { font-family: var(--mono); font-size: 13px; }
+
+/* --- версия в шапке ---
+   Блок дописан в конец файла по той же причине, что и «ход проверки»: правила
+   не переопределяют ничего выше, и параллельные ветки не спорят за одни строки. */
+
+.brand-version {
+  font-size: 11.5px; font-weight: 500; letter-spacing: 0;
+  padding: 1px 6px; border-radius: 999px;
+  color: var(--fg-faint);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  white-space: nowrap; max-width: 40vw; overflow: hidden; text-overflow: ellipsis;
+}
+/* Расхождение версий видно из шапки, а не только в ответе API. */
+.brand-version.warn {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, var(--bg-sunken));
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  cursor: help;
+}
+
+/* --- блок версий на экране диагностики --- */
+.versions { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; padding: 12px 14px; font-size: 13px; }
+.versions dt { color: var(--fg-dim); }
+.versions dd { margin: 0; }
+.versions dd.unknown { color: var(--fg-faint); }
+.version-warn {
+  margin: 0 14px 12px;
+  font-size: 12.5px; line-height: 1.5;
+  padding: 9px 11px; border-radius: 8px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-sunken));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+}
+.version-warn strong { display: block; margin-bottom: 3px; }
