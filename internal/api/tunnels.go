@@ -186,14 +186,29 @@ func (s *Server) handleUpdateTunnel(w http.ResponseWriter, r *http.Request) {
 //
 // Туннель, на который ссылается правило, store удалить не даёт и называет эти
 // правила; это 409 с его текстом, а не 500: пользователю есть что с этим сделать.
+//
+// У туннеля WARP, заведённого кнопкой, за записью стоит настоящее устройство у
+// Cloudflare, и его снимают здесь же. Регистрация читается **до** удаления —
+// после строки уже нет (ON DELETE CASCADE), — а запрос наружу идёт только после
+// успешного удаления: не удалили локально, значит и устройство ещё нужно.
 func (s *Server) handleDeleteTunnel(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.idFrom(w, r)
 	if !ok {
 		return
 	}
+	reg, registered, err := s.store.WARPRegistration(r.Context(), id)
+	if err != nil {
+		s.storeError(w, err, "Туннель не найден")
+		return
+	}
 	if err := s.store.DeleteTunnel(r.Context(), id); err != nil {
 		s.storeError(w, err, "Туннель не найден")
 		return
+	}
+	if registered {
+		// Отказ Cloudflare сюда не долетает: туннеля уже нет, отвечать 502 не о
+		// чем. Событие остаётся в логе демона ([Server.unregisterWARP]).
+		s.unregisterWARP(r.Context(), id, reg)
 	}
 	writeJSON(w, s.log, http.StatusOK, map[string]bool{"ok": true})
 }

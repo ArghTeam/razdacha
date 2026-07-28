@@ -133,6 +133,31 @@ UPDATE tunnels SET source = 'warp'
 ALTER TABLE rules ADD COLUMN via_tunnel_id TEXT REFERENCES tunnels(id) ON DELETE RESTRICT;
 `,
 	},
+	{
+		// Регистрация устройства WARP у Cloudflare: пара «идентификатор +
+		// токен», которой снимается устройство при удалении туннеля (issue #107).
+		//
+		// Отдельная таблица, а не колонки в tunnels: токен — секрет, и место ему
+		// вне [Tunnel], который целиком уезжает в ответ API и пользователю на
+		// экран. Тот же приём, что у токена телеграма и хеша пароля — они лежат
+		// вне [Settings] по той же причине.
+		//
+		// Записи здесь есть только у туннелей, заведённых кнопкой. Вставленный
+		// руками .conf и WARP, заведённый до этой версии, строки не получают —
+		// снимать их у Cloudflare нечем, и это законно: устройство завёл не
+		// демон. Задним числом пара не восстанавливается ниоткуда.
+		//
+		// ON DELETE CASCADE: удалённый туннель не держит за собой регистрацию.
+		// Читать её нужно до удаления — после строки уже нет.
+		version: 9,
+		stmts: `
+CREATE TABLE warp_registrations (
+  tunnel_id TEXT PRIMARY KEY REFERENCES tunnels(id) ON DELETE CASCADE,
+  device_id TEXT NOT NULL,
+  access_token TEXT NOT NULL,
+  created_at INTEGER NOT NULL);
+`,
+	},
 }
 
 // schemaVersion — версия схемы, которую ожидает этот код.

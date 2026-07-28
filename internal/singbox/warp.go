@@ -10,22 +10,33 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-// Ошибки регистрации WARP. Сеть и отказ Cloudflare разведены двумя сентинелами:
-// в первом случае чинят сервер, во втором ждут или пробуют позже, и путать их
-// нельзя. Что именно увидит пользователь, решает слой api: здесь лежит причина,
-// а не готовая фраза для панели — потому и с маленькой буквы, как всякая ошибка
-// Go, которую могут обернуть ещё раз.
+// Ошибки разговора с Cloudflare. Сеть и отказ разведены сентинелами: в первом
+// случае чинят сервер, во втором ждут или пробуют позже, и путать их нельзя.
+// Что именно увидит пользователь, решает слой api: здесь лежит причина, а не
+// готовая фраза для панели — потому и с маленькой буквы, как всякая ошибка Go,
+// которую могут обернуть ещё раз.
+//
+// Отказ назван по операции, а не одним словом на обе. Причина уходит в лог
+// демона как есть, и для снятия это единственный след устройства, зависшего у
+// Cloudflare: разбираться по нему будут потом, а «регистрация отклонена» там,
+// где ничего не регистрировали, уводит не туда (issue #107).
 var (
-	// ErrWARPUnreachable — до Cloudflare не дозвонились.
+	// ErrWARPUnreachable — до Cloudflare не дозвонились. Операции не называет:
+	// сеть отваливается одинаково у обеих.
 	ErrWARPUnreachable = errors.New("не удалось связаться с Cloudflare")
-	// ErrWARPRejected — Cloudflare ответил, но отказом или непонятным телом.
+	// ErrWARPRejected — Cloudflare ответил на регистрацию отказом или
+	// непонятным телом.
 	ErrWARPRejected = errors.New("регистрация устройства отклонена Cloudflare")
+	// ErrWARPUnregisterRejected — то же самое про снятие устройства
+	// ([WARPRegistrar.Unregister]).
+	ErrWARPUnregisterRejected = errors.New("снятие устройства отклонено Cloudflare")
 )
 
 const (
@@ -59,9 +70,13 @@ const (
 type WARPDevice struct {
 	// Conf — конфиг WireGuard, готовый к разбору и хранению.
 	Conf string
-	// DeviceID — идентификатор устройства у Cloudflare. Нужен только логу:
-	// туннель им не пользуется.
+	// DeviceID — идентификатор устройства у Cloudflare. Туннелю он не нужен, но
+	// без него устройство у Cloudflare не снять: путь снятия — `/reg/{device_id}`.
 	DeviceID string
+	// AccessToken — токен устройства, которым подписываются запросы о нём же
+	// ([WARPRegistrar.Unregister]). Секрет: наружу из API не отдаётся и в
+	// `Tunnel.Raw` не попадает.
+	AccessToken string
 }
 
 // WARPRegistrar регистрирует бесплатное устройство WARP.
@@ -115,9 +130,10 @@ type warpRegRequest struct {
 }
 
 // warpRegResponse — то, что нужно из ответа регистрации. Остальные поля
-// (аккаунт, токен доступа, дата) туннелю не нужны и не читаются.
+// (аккаунт, дата, лицензия) туннелю не нужны и не читаются.
 type warpRegResponse struct {
 	ID     string `json:"id"`
+	Token  string `json:"token"`
 	Config struct {
 		ClientID string `json:"client_id"`
 		Peers    []struct {
@@ -190,7 +206,46 @@ func (r *WARPRegistrar) Register(ctx context.Context) (WARPDevice, error) {
 	if err != nil {
 		return WARPDevice{}, err
 	}
-	return WARPDevice{Conf: conf, DeviceID: out.ID}, nil
+	return WARPDevice{Conf: conf, DeviceID: out.ID, AccessToken: out.Token}, nil
+}
+
+// Unregister снимает устройство у Cloudflare — `DELETE /reg/{device_id}` с
+// токеном самого устройства.
+//
+// Зовётся при удалении WARP-туннеля. Отказ здесь ничего не отменяет: локально
+// туннель уже удалён, а решение, что делать с ошибкой, принимает слой api — он
+// пишет её в лог. Устройство, которое снять не удалось, останется у Cloudflare,
+// и это лучше, чем нерушимый туннель в панели из-за чужого сервиса.
+//
+// 404 — успех: устройства уже нет, а именно этого мы и добивались.
+func (r *WARPRegistrar) Unregister(ctx context.Context, deviceID, accessToken string) error {
+	if deviceID == "" || accessToken == "" {
+		return fmt.Errorf("%w: нет идентификатора устройства или токена",
+			ErrWARPUnregisterRejected)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		r.base+"/reg/"+url.PathEscape(deviceID), nil)
+	if err != nil {
+		return fmt.Errorf("запрос снятия устройства WARP: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("User-Agent", warpUserAgent)
+	req.Header.Set("CF-Client-Version", warpClientVersion)
+
+	resp, err := r.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: проверьте сеть на сервере", ErrWARPUnreachable)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// Тело ответа не нужно, но дочитать его стоит: иначе соединение не вернётся
+	// в пул keep-alive.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxWARPBody))
+
+	if resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	return fmt.Errorf("%w: код %d", ErrWARPUnregisterRejected, resp.StatusCode)
 }
 
 // warpConf собирает `.conf` из ответа регистрации.

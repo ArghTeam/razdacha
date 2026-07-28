@@ -14,6 +14,7 @@ import (
 // *singbox.WARPRegistrar: в тестах настоящий api.cloudflareclient.com не участвует.
 type warpRegistrar interface {
 	Register(ctx context.Context) (singbox.WARPDevice, error)
+	Unregister(ctx context.Context, deviceID, accessToken string) error
 }
 
 // defaultWARPName — имя туннеля, который заводит кнопка. Пользователь может
@@ -74,7 +75,10 @@ func (s *Server) handleAddWARP(w http.ResponseWriter, r *http.Request) {
 		name = strings.TrimSpace(*req.Name)
 	}
 
-	created, err := s.store.CreateTunnel(r.Context(), store.Tunnel{
+	// Туннель и регистрация пишутся вместе: устройство у Cloudflare уже
+	// существует, и туннель без пары «идентификатор + токен» означал бы, что
+	// снять его нечем — узнать её потом неоткуда (issue #107).
+	created, err := s.store.CreateWARPTunnel(r.Context(), store.Tunnel{
 		Name:      name,
 		Type:      res.Type,
 		Source:    res.Source,
@@ -82,12 +86,36 @@ func (s *Server) handleAddWARP(w http.ResponseWriter, r *http.Request) {
 		Parsed:    res.Parsed,
 		Enabled:   true,
 		CreatedAt: s.now().UTC(),
+	}, store.WARPRegistration{
+		DeviceID:    dev.DeviceID,
+		AccessToken: dev.AccessToken,
+		CreatedAt:   s.now().UTC(),
 	})
 	if err != nil {
 		s.storeError(w, err, "Туннель не найден")
 		return
 	}
 	writeJSON(w, s.log, http.StatusCreated, newTunnelResponse(created, s.poolInterval()))
+}
+
+// unregisterWARP снимает устройство у Cloudflare после удаления туннеля.
+//
+// Зовётся уже **после** успешного удаления и ничего не отменяет: пользователь не
+// обязан застревать в панели из-за чужого сервиса. Но молчать тоже нельзя —
+// иначе у Cloudflare тихо копятся мёртвые устройства, — поэтому и удача, и отказ
+// уходят в лог демона.
+//
+// Пары может не быть вовсе: WARP, вставленный руками `.conf`, и заведённый до
+// появления таблицы регистраций устройства у Cloudflare не заводили. Снимать в
+// этом случае нечего, и это не событие.
+func (s *Server) unregisterWARP(ctx context.Context, tunnelID string, reg store.WARPRegistration) {
+	if err := s.warpRegistrar().Unregister(ctx, reg.DeviceID, reg.AccessToken); err != nil {
+		s.log.Warn("устройство WARP осталось у Cloudflare",
+			"туннель", tunnelID, "устройство", reg.DeviceID, "ошибка", err)
+		return
+	}
+	s.log.Info("устройство WARP снято у Cloudflare",
+		"туннель", tunnelID, "устройство", reg.DeviceID)
 }
 
 // warpError переводит отказ регистрации в ответ панели.
