@@ -21,9 +21,10 @@ import (
 )
 
 // version и commit подставляются линкером при сборке, см. Makefile.
+// Пустой commit означает сборку мимо Makefile: API отдаёт null, а не выдумку.
 var (
 	version = "dev"
-	commit  = ""
+	commit  string
 )
 
 // defaultDBPath — состояние демона, см. docs/01-architecture.md.
