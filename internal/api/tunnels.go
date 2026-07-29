@@ -37,6 +37,21 @@ type tunnelResponse struct {
 	// с самим собой.
 	Builtin bool `json:"builtin"`
 
+	// Host и Port — адрес туннеля для карточки: у vless/ss/trojan/hysteria2 это
+	// сервер и порт, у wireguard и WARP — endpoint первого пира. Два поля, а не
+	// строка `host:port`: та же форма, что уже отдаёт `POST /api/tunnels/parse`,
+	// и панель складывает их сама — склеенную строку ей пришлось бы разбирать
+	// обратно, чтобы замаскировать адрес в отчёте диагностики.
+	//
+	// Это единственное, что берётся из хранимого `Parsed`. Целиком его отдавать
+	// нельзя: там весь конфиг, включая приватный ключ WARP (issue #124).
+	// Оба поля `omitempty`: у пула своего адреса нет вовсе (серверы меняются
+	// сами, на его месте карточка показывает `pool.catalog_url`), у нечитаемого
+	// конфига адреса не нашлось — и в обоих случаях отсутствие поля честнее,
+	// чем пустая строка с портом 0.
+	Host string `json:"host,omitempty"`
+	Port uint16 `json:"port,omitempty"`
+
 	Status    *string    `json:"status"`
 	LatencyMS *int       `json:"latency_ms"`
 	LastCheck *time.Time `json:"last_check"`
@@ -47,8 +62,18 @@ type tunnelResponse struct {
 }
 
 func newTunnelResponse(t store.Tunnel, poolEvery time.Duration) tunnelResponse {
+	host, port := "", uint16(0)
+	// У пула адрес не спрашиваем: серверов там сотня, и меняются они сами.
+	if t.Source != store.SourcePool {
+		// Ошибка разбора сюда не выносится: туннель с нечитаемым конфигом
+		// остаётся в списке без адреса, а не роняет весь ответ. Что именно не
+		// разобралось, показывает `POST /api/tunnels/parse` в форме правки.
+		host, port = parsedEndpoint(t.Parsed)
+	}
 	return tunnelResponse{
 		Pool:      newPoolResponse(t, poolEvery),
+		Host:      host,
+		Port:      port,
 		ID:        t.ID,
 		Name:      t.Name,
 		Type:      t.Type,
@@ -302,33 +327,13 @@ func preview(res singbox.ParseResult) parsePreview {
 		return out
 	}
 
-	var probe struct {
-		Server     string `json:"server"`
-		ServerPort uint16 `json:"server_port"`
-		TLS        *struct {
-			Enabled bool `json:"enabled"`
-			Reality *struct {
-				Enabled bool `json:"enabled"`
-			} `json:"reality"`
-		} `json:"tls"`
-		Transport *struct {
-			Type string `json:"type"`
-		} `json:"transport"`
-		Peers []struct {
-			Address string `json:"address"`
-			Port    uint16 `json:"port"`
-		} `json:"peers"`
-	}
+	var probe endpointProbe
 	if err := json.Unmarshal(res.Parsed, &probe); err != nil {
 		out.Warnings = append(out.Warnings, "разобранный конфиг не читается обратно")
 		return out
 	}
 
-	out.Host, out.Port = probe.Server, probe.ServerPort
-	if out.Host == "" && len(probe.Peers) > 0 {
-		// WireGuard: адрес сервера лежит в первом пире endpoint'а.
-		out.Host, out.Port = probe.Peers[0].Address, probe.Peers[0].Port
-	}
+	out.Host, out.Port = probe.endpoint()
 
 	switch {
 	case probe.TLS != nil && probe.TLS.Reality != nil && probe.TLS.Reality.Enabled:
@@ -350,6 +355,53 @@ func preview(res singbox.ParseResult) parsePreview {
 		out.Warnings = append(out.Warnings, "в конфиге не нашёлся адрес сервера")
 	}
 	return out
+}
+
+// endpointProbe — то немногое, что читается из разобранного конфига обоими
+// потребителями: превью формы и карточкой в списке. Читается сам JSON, а не
+// структуры option: у outbound и endpoint поля разные, а формат JSON один и уже
+// нормализован разбором.
+type endpointProbe struct {
+	Server     string `json:"server"`
+	ServerPort uint16 `json:"server_port"`
+	TLS        *struct {
+		Enabled bool `json:"enabled"`
+		Reality *struct {
+			Enabled bool `json:"enabled"`
+		} `json:"reality"`
+	} `json:"tls"`
+	Transport *struct {
+		Type string `json:"type"`
+	} `json:"transport"`
+	Peers []struct {
+		Address string `json:"address"`
+		Port    uint16 `json:"port"`
+	} `json:"peers"`
+}
+
+// endpoint — адрес туннеля: сервер и порт, а у wireguard и WARP — endpoint
+// первого пира, потому что своего `server` у них нет.
+func (p endpointProbe) endpoint() (string, uint16) {
+	if p.Server != "" {
+		return p.Server, p.ServerPort
+	}
+	if len(p.Peers) > 0 {
+		return p.Peers[0].Address, p.Peers[0].Port
+	}
+	return "", 0
+}
+
+// parsedEndpoint достаёт адрес из хранимого `parsed`. Конфига нет или он не
+// читается — пусто: адрес показывать нечем, но список из-за этого не падает.
+func parsedEndpoint(parsed json.RawMessage) (string, uint16) {
+	if len(parsed) == 0 {
+		return "", 0
+	}
+	var probe endpointProbe
+	if err := json.Unmarshal(parsed, &probe); err != nil {
+		return "", 0
+	}
+	return probe.endpoint()
 }
 
 // parseError отвечает на ошибку разбора вставленной строки. Это ввод

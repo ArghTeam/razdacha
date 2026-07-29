@@ -108,16 +108,17 @@ export const tunnelLabel = (t) => {
   return TUNNEL_LABEL[t.type] || t.type;
 };
 
-/** Адрес туннеля. Хранимый `parsed` пользуется server/server_port,
-    ответ `POST /api/tunnels/parse` — host/port; принимаем оба.
+/** Адрес туннеля — `host` и `port` из ответа. Одна форма и в списке
+    (`GET /api/tunnels`), и в превью формы (`POST /api/tunnels/parse`):
+    разобранного конфига целиком панель не видит, в нём ключи (issue #124).
+    Полей нет — адреса нет: у нечитаемого конфига «—» законно.
     У пула одного адреса нет вовсе — серверы меняются сами, — поэтому на его
     месте стоит каталог, из которого они берутся. */
 export function tunnelEndpoint(t) {
   const pool = tunnelPool(t);
   if (pool) return pool.catalog_url || '—';
-  const p = t.parsed || {};
-  const host = p.server ?? p.host ?? t.host ?? '';
-  const port = p.server_port ?? p.port ?? t.port ?? '';
+  const host = (t && t.host) || '';
+  const port = (t && t.port) || '';
   if (!host) return '—';
   return port ? `${host}:${port}` : String(host);
 }

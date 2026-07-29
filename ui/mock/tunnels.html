@@ -117,12 +117,12 @@ state.tunnels = [
   {
     id: 'wg-1', name: 'Нидерланды', type: 'wireguard', source: 'wg_conf',
     enabled: true, status: 'up', latency_ms: 74,
-    parsed: { server: '203.0.113.10', server_port: 51820 },
+    host: '203.0.113.10', port: 51820,
   },
   {
     id: 'vless-1', name: 'Резерв', type: 'vless', source: 'url',
     enabled: false, status: 'not_applied',
-    parsed: { server: '198.51.100.7', server_port: 443 },
+    host: '198.51.100.7', port: 443,
   },
 ];
 
