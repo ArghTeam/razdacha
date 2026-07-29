@@ -33,7 +33,9 @@ Settings   │      │
 каталога, `pool` — снятые с него серверы (URL, страна, подпись, пинг карточки). Такой
 туннель разворачивается в N vless-outbound'ов плюс `urltest` под тегом туннеля; ротацию и
 health-check ведёт sing-box ([ADR 0010](decisions/0010-tunnel-pool-urltest.md)). Выключение
-пула — штатный `enabled`.
+пула — штатный `enabled`. Колонку `pool` ведёт расписание, а не пользователь: изменившийся
+состав демон применяет сам, не дожидаясь кнопки «Применить»
+([Applying](05-api.md#applying)).
 
 **`source = warp`** — WireGuard-туннель Cloudflare WARP. Тип остаётся `wireguard`, в
 `raw` лежит обычный `.conf`, в `parsed` — тот же endpoint sing-box, что у любого другого
