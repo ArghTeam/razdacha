@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/lists"
+	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -124,6 +125,24 @@ func plainLists(m *lists.Manager) singbox.PlainLists {
 		}
 		return singbox.PlainList{Domains: l.Domains, Subnets: l.Subnets}, true
 	}
+}
+
+// ruleSubnets собирает подсети правил, которым нужна метка nft. Отбор —
+// [netstack.RuleMarksSubnets], там же записано, почему действие правила в нём
+// не участвует (issue #126).
+//
+// Функция лежит рядом с nftSubnets, а не в netfilter_linux.go: она про
+// содержимое сета, а не про netlink, и на платформе без nftables она обязана
+// собираться — иначе её тесты не идут нигде, кроме Linux.
+func ruleSubnets(rules []store.Rule) []string {
+	var out []string
+	for _, r := range rules {
+		if !netstack.RuleMarksSubnets(r) {
+			continue
+		}
+		out = append(out, r.Subnets...)
+	}
+	return out
 }
 
 // nftSubnets — что уходит в сет razdacha_subnets: подсети, введённые руками, и

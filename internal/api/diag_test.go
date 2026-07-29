@@ -385,6 +385,9 @@ func TestDiagRouteCheck(t *testing.T) {
 // Правило, чьих подсетей в сете нет, — это трафик мимо туннеля, и проверка
 // обязана назвать и правило, и подсеть. Совпадения чисел мало: сет с тем же
 // числом интервалов, но чужими адресами, исправным не считается.
+//
+// Спрашивается за правила с любым действием: подсети block-правил тоже заливают
+// в сет, иначе трафик к ним не доезжает до `reject` в sing-box (issue #126).
 func TestDiagNftSubnets(t *testing.T) {
 	snap := store.Snapshot{Rules: []store.Rule{
 		{
@@ -397,7 +400,7 @@ func TestDiagNftSubnets(t *testing.T) {
 		},
 		{
 			Name: "Блокировка", Enabled: true, Action: store.ActionBlock,
-			Subnets: []string{"192.0.2.0/24"},
+			Subnets: []string{"198.51.100.128/25"},
 		},
 	}}
 
@@ -413,12 +416,12 @@ func TestDiagNftSubnets(t *testing.T) {
 	if c.Status != statusError {
 		t.Fatalf("отставший сет = %q, ожидался error (%s)", c.Status, c.Detail)
 	}
-	for _, want := range []string{"Стриминг", "198.51.100.0/24"} {
+	for _, want := range []string{"Стриминг", "198.51.100.0/24", "Блокировка", "198.51.100.128/25"} {
 		if !strings.Contains(c.Detail, want) {
 			t.Errorf("в %q не названо %q", c.Detail, want)
 		}
 	}
-	if strings.Contains(c.Detail, "Выключенное") || strings.Contains(c.Detail, "Блокировка") {
+	if strings.Contains(c.Detail, "Выключенное") {
 		t.Errorf("в %q спрошено за подсети, которых в сете и не бывает", c.Detail)
 	}
 }

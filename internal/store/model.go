@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,6 +54,16 @@ const (
 	ActionDirect RuleAction = "direct"
 	ActionBlock  RuleAction = "block"
 )
+
+// RuleActions — все действия правила, какие бывают.
+//
+// Список ведётся одним местом и им же проверяется ввод (`Rule.validate`):
+// обход всех действий в тестах должен ломаться при добавлении нового, иначе
+// новое действие тихо остаётся непроверенным. Ровно на этом разъехались отбор
+// подсетей для nft-сета и отбор списков в слое lists (issue #126).
+func RuleActions() []RuleAction {
+	return []RuleAction{ActionTunnel, ActionDirect, ActionBlock}
+}
 
 // PeerScope — на кого распространяется правило.
 type PeerScope string
@@ -219,6 +230,9 @@ func (r *Rule) validate() error {
 	if r.Name == "" {
 		return fmt.Errorf("%w: у правила пустое имя", ErrInvalid)
 	}
+	if !slices.Contains(RuleActions(), r.Action) {
+		return fmt.Errorf("%w: неизвестное действие правила %q", ErrInvalid, r.Action)
+	}
 	switch r.Action {
 	case ActionTunnel:
 		if r.TunnelID == "" {
@@ -229,8 +243,6 @@ func (r *Rule) validate() error {
 			return fmt.Errorf("%w: правило %q с действием %q не может ссылаться на туннель",
 				ErrInvalid, r.Name, r.Action)
 		}
-	default:
-		return fmt.Errorf("%w: неизвестное действие правила %q", ErrInvalid, r.Action)
 	}
 	// resolve_real_ip выключает выдачу FakeIP (docs/04-dns-fakeip.md), а без
 	// FakeIP клиент идёт на настоящий адрес, и пометить этот трафик для tproxy

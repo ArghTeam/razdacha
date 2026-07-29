@@ -63,11 +63,11 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
 			return 0, fmt.Errorf("маршрутизация помеченного трафика: %w", err)
 		}
 
-		rules, err := ruleSubnets(ctx, st)
+		rules, err := st.Rules(ctx)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("чтение правил: %w", err)
 		}
-		subnets := nftSubnets(rules, mgr)
+		subnets := nftSubnets(ruleSubnets(rules), mgr)
 		// Адрес резолвера читается на каждой заливке: на него DNAT-ит перехват
 		// DNS, и разъехаться с адресом, который слушает sing-box, он не должен.
 		settings, err := st.Settings(ctx)
@@ -154,22 +154,4 @@ func resetNetfilter() error {
 		return fmt.Errorf("снятие маршрутизации: %w", err)
 	}
 	return nil
-}
-
-// ruleSubnets собирает подсети всех включённых правил, ведущих в туннель:
-// для них FakeIP не работает, клиент идёт на настоящий адрес, и пометить его
-// можно только по совпадению с сетом.
-func ruleSubnets(ctx context.Context, st *store.Store) ([]string, error) {
-	rules, err := st.Rules(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("чтение правил: %w", err)
-	}
-	var out []string
-	for _, r := range rules {
-		if !r.Enabled || r.Action != store.ActionTunnel {
-			continue
-		}
-		out = append(out, r.Subnets...)
-	}
-	return out, nil
 }

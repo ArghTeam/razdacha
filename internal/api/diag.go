@@ -477,15 +477,15 @@ func nftCheck(st netstack.DiagNftState, err error, snap store.Snapshot) check {
 
 // diagMissingSubnets перечисляет правила, чьих подсетей в сете не хватает.
 //
-// Берутся включённые правила в туннель — ровно те, чьи подсети заливает демон
-// (`cmd/razdachad/netfilter_linux.go`, `ruleSubnets`). Правило block свои
-// подсети в сет не отдаёт, и требовать их здесь значило бы красить исправную
-// систему.
+// Берутся ровно те правила, чьи подсети заливает демон, — отбор один на оба
+// места, [netstack.RuleMarksSubnets]. Своего условия здесь быть не должно:
+// пока проверка спрашивала только за правила в туннель, подсети block-правил не
+// заливались и никем не проверялись (issue #126).
 func diagMissingSubnets(st netstack.DiagNftState, rules []store.Rule) []string {
 	index := st.SubnetIndex()
 	var out []string
 	for _, r := range rules {
-		if !r.Enabled || r.Action != store.ActionTunnel || len(r.Subnets) == 0 {
+		if !netstack.RuleMarksSubnets(r) || len(r.Subnets) == 0 {
 			continue
 		}
 		if missing := index.Missing(r.Subnets); len(missing) > 0 {

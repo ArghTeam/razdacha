@@ -47,6 +47,10 @@ func Sources(snap store.Snapshot) []Source {
 		}
 		// Правила с любым действием: чтобы sing-box отбросил трафик по
 		// action = block, тот сперва должен до него дойти по метке nft.
+		// Вторая половина того же сета — ручные подсети правил, и отбор там
+		// обязан быть таким же (`netstack.RuleMarksSubnets`); пока он был по
+		// одному действию, блокировка по ручной подсети молчала (issue #126).
+		// Расхождение стережёт TestRuleSubnetsAgreesWithListSources.
 		for _, key := range r.CommunityLists {
 			// Только сервисы, у которых в allow-domains есть подсети:
 			// у остальных .srs с одними доменами, и качать его незачем.
