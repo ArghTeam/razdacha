@@ -177,3 +177,45 @@ func TestStartListsBrokenCache(t *testing.T) {
 		t.Errorf("без планировщика: получено %v", got)
 	}
 }
+
+// TestPlainListsFeedsGenerator — домены plain-списка доезжают от планировщика до
+// генератора конфига. Без этой проводки они разбирались и выбрасывались, а
+// правило с одним таким списком выпадало из конфига (issue #125).
+func TestPlainListsFeedsGenerator(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("example.com\n149.154.160.0/20\n"))
+	}))
+	defer srv.Close()
+
+	fetcher, err := lists.NewFetcher(lists.Options{Dir: t.TempDir(), Logger: quietSlog()})
+	if err != nil {
+		t.Fatalf("NewFetcher: %v", err)
+	}
+	m := lists.NewManager(lists.ManagerOptions{Fetcher: fetcher, Logger: quietSlog()})
+	url := srv.URL + "/blocked.txt"
+	m.SetSources([]lists.Source{{URL: url, Format: lists.FormatPlain}})
+	if err := m.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+
+	src := plainLists(m)
+	got, ok := src(url)
+	if !ok {
+		t.Fatal("скачанного списка нет у генератора")
+	}
+	if !slices.Contains(got.Domains, "example.com") {
+		t.Errorf("доменов нет: %v", got.Domains)
+	}
+	if !slices.Contains(got.Subnets, "149.154.160.0/20") {
+		t.Errorf("подсетей нет: %v", got.Subnets)
+	}
+	// Неизвестный адрес — не «пустой список», а «списка нет»: генератор обязан
+	// различать это, чтобы сказать о пропуске вслух.
+	if _, ok := src(srv.URL + "/другой.txt"); ok {
+		t.Error("незнакомый список отдан как скачанный")
+	}
+	// Планировщика может не быть вовсе.
+	if plainLists(nil) != nil {
+		t.Error("без планировщика ожидалось пустое замыкание")
+	}
+}

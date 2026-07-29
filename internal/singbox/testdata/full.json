@@ -43,7 +43,8 @@
         "rule_set": [
           "list-youtube",
           "rule-r2",
-          "rule-r2-remote-0"
+          "rule-r2-remote-0",
+          "rule-r2-plain-1"
         ],
         "server": "fakeip",
         "rewrite_ttl": 60
@@ -128,7 +129,8 @@
         "rule_set": [
           "list-youtube",
           "rule-r2",
-          "rule-r2-remote-0"
+          "rule-r2-remote-0",
+          "rule-r2-plain-1"
         ],
         "outbound": "tun-bbbb"
       },
@@ -179,6 +181,20 @@
         "tag": "rule-r2-remote-0",
         "url": "https://example.org/my.srs",
         "update_interval": "24h0m0s"
+      },
+      {
+        "tag": "rule-r2-plain-1",
+        "rules": [
+          {
+            "domain_suffix": [
+              "blocked.example",
+              "news.example"
+            ]
+          },
+          {
+            "ip_cidr": "203.0.113.0/24"
+          }
+        ]
       },
       {
         "tag": "rule-r3",

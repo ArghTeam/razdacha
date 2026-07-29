@@ -19,6 +19,23 @@ import (
 
 var update = flag.Bool("update", false, "перезаписать эталоны в testdata")
 
+// plainListURL — внешний список правила r2 не в формате .srs: sing-box его не
+// прочитает, качает и разбирает его слой lists.
+const plainListURL = "https://example.org/plain.lst"
+
+// testPlain — то, что слой lists отдал бы генератору по этому адресу. Разбор
+// проверяется у себя в слое, здесь важно одно: содержимое доезжает до конфига
+// (issue #125).
+func testPlain(url string) (PlainList, bool) {
+	if url != plainListURL {
+		return PlainList{}, false
+	}
+	return PlainList{
+		Domains: []string{"blocked.example", "news.example"},
+		Subnets: []string{"203.0.113.0/24"},
+	}, true
+}
+
 // fixture — состояние, покрывающее все ветки генератора: WireGuard-туннель в
 // endpoints, VLESS в outbounds, правила всех трёх действий, community-список,
 // свои домены и подсети, внешний .srs, правило для выбранных пиров и правило на
@@ -112,7 +129,7 @@ func fixture() store.Snapshot {
 
 func generate(t *testing.T, snap store.Snapshot) []byte {
 	t.Helper()
-	opts, err := Generate(snap)
+	opts, err := Generate(snap, testPlain)
 	if err != nil {
 		t.Fatalf("генерация: %v", err)
 	}
@@ -374,7 +391,7 @@ func TestParsedFeedsGenerate(t *testing.T) {
 func TestMissingTunnelIsError(t *testing.T) {
 	snap := fixture()
 	snap.Rules[0].TunnelID = "нет такого"
-	if _, err := Generate(snap); err == nil {
+	if _, err := Generate(snap, testPlain); err == nil {
 		t.Fatal("ожидалась ошибка на ссылку в никуда")
 	}
 }
@@ -383,7 +400,7 @@ func TestDisabledPeerNotInSources(t *testing.T) {
 	snap := fixture()
 	snap.Rules[1].PeerIDs = []string{"p1", "p2"}
 	snap.Peers[1].Enabled = false
-	opts, err := Generate(snap)
+	opts, err := Generate(snap, testPlain)
 	if err != nil {
 		t.Fatalf("генерация: %v", err)
 	}
@@ -467,7 +484,7 @@ func TestWireGuardIsUserspace(t *testing.T) {
 
 func mustGenerate(t *testing.T, snap store.Snapshot) option.Options {
 	t.Helper()
-	opts, err := Generate(snap)
+	opts, err := Generate(snap, testPlain)
 	if err != nil {
 		t.Fatalf("генерация: %v", err)
 	}
@@ -483,6 +500,137 @@ func contains(list []string, v string) bool {
 	return false
 }
 
+// plainOnly — правило, у которого нет ничего, кроме списка не в формате .srs.
+// Ровно тот случай, ради которого заведён issue #125: наборов у правила больше
+// взять неоткуда.
+func plainOnly() store.Snapshot {
+	return store.Snapshot{
+		Settings: store.DefaultSettings(),
+		Tunnels: []store.Tunnel{{
+			ID: "aaaa", Name: "Амстердам", Type: store.TunnelVLESS,
+			Source: store.SourceURL, Raw: "vless://…", Enabled: true,
+			Parsed: json.RawMessage(`{
+				"server": "5.6.7.8", "server_port": 443,
+				"uuid": "00000000-0000-0000-0000-000000000000"
+			}`),
+		}},
+		Rules: []store.Rule{{
+			ID: "r1", Name: "Свой список", Action: store.ActionTunnel,
+			TunnelID: "aaaa", Enabled: true, PeerScope: store.ScopeAll,
+			RemoteLists: []string{plainListURL},
+		}},
+	}
+}
+
+// TestPlainListRoutesToTunnel: домены списка, который sing-box сам не прочитает,
+// доезжают до конфига inline-набором, и правило уходит в туннель, а не выпадает
+// из конфига под route.final — то есть напрямую с адреса сервера (issue #125).
+func TestPlainListRoutesToTunnel(t *testing.T) {
+	opts, diags, err := GenerateWithDiag(plainOnly(), testPlain)
+	if err != nil {
+		t.Fatalf("генерация: %v", err)
+	}
+	if len(diags) != 1 || diags[0].Skipped {
+		t.Fatalf("правило пропущено: %+v", diags)
+	}
+
+	tag := plainListTag("r1", 0)
+	var set *option.RuleSet
+	for i, s := range opts.Route.RuleSet {
+		if s.Tag == tag {
+			set = &opts.Route.RuleSet[i]
+		}
+	}
+	if set == nil {
+		t.Fatalf("набора %q нет в конфиге", tag)
+	}
+	// Набор inline, а не local: конфиг остаётся единственным артефактом на диске.
+	if set.Type != C.RuleSetTypeInline {
+		t.Errorf("тип набора %q, ожидался inline", set.Type)
+	}
+	// Домены и подсети — две записи набора: внутри записи условия по «и».
+	if len(set.InlineOptions.Rules) != 2 {
+		t.Fatalf("записей в наборе %d, ожидалось 2", len(set.InlineOptions.Rules))
+	}
+	if !contains(set.InlineOptions.Rules[0].DefaultOptions.DomainSuffix, "blocked.example") {
+		t.Errorf("доменов списка нет в наборе: %+v", set.InlineOptions.Rules[0])
+	}
+
+	// Маршрут в туннель — и в route.rules, и в dns.rules: без FakeIP домены
+	// резолвились бы в настоящие адреса и ушли бы мимо туннеля.
+	var routed, resolved bool
+	for _, r := range opts.Route.Rules {
+		if contains(r.DefaultOptions.RuleSet, tag) &&
+			r.DefaultOptions.RouteOptions.Outbound == TunnelTag("aaaa") {
+			routed = true
+		}
+	}
+	for _, r := range opts.DNS.Rules {
+		if contains(r.DefaultOptions.RuleSet, tag) &&
+			r.DefaultOptions.RouteOptions.Server == TagDNSFakeIP {
+			resolved = true
+		}
+	}
+	if !routed || !resolved {
+		t.Fatalf("маршрут %v, FakeIP %v — ожидалось true/true", routed, resolved)
+	}
+}
+
+// TestPlainListNotFetchedIsLoud: списка ещё нет — правилу нечем совпадать, и оно
+// пропускается (ADR 0013 оставляет ровно этот случай). Пропуск обязан быть
+// названным: диагностика показывает причину пользователю.
+func TestPlainListNotFetchedIsLoud(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		plain PlainLists
+	}{
+		{name: "планировщика нет", plain: nil},
+		{name: "список не скачан", plain: func(string) (PlainList, bool) { return PlainList{}, false }},
+		{name: "список пуст", plain: func(string) (PlainList, bool) { return PlainList{}, true }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts, diags, err := GenerateWithDiag(plainOnly(), tt.plain)
+			if err != nil {
+				t.Fatalf("генерация: %v", err)
+			}
+			if len(diags) != 1 || !diags[0].Skipped {
+				t.Fatalf("ожидался пропуск правила, получено %+v", diags)
+			}
+			if !strings.Contains(diags[0].SkipReason, plainListURL) {
+				t.Errorf("причина %q не называет список", diags[0].SkipReason)
+			}
+			// Правило без условий совпало бы со всем: в конфиге ему места нет.
+			if len(opts.Route.Rules) != 1 {
+				t.Fatalf("правил в конфиге %d, ожидался только перехват DNS",
+					len(opts.Route.Rules))
+			}
+		})
+	}
+}
+
+// TestPlainListSameURLDifferentRules: один и тот же список у двух правил даёт
+// два набора с разными тегами. Тег обязан быть уникальным, а содержимое у
+// наборов одинаковое — совпадениями они не мешают друг другу.
+func TestPlainListSameURLDifferentRules(t *testing.T) {
+	snap := plainOnly()
+	second := snap.Rules[0]
+	second.ID, second.Name, second.Priority = "r2", "Тот же список", 1
+	snap.Rules = append(snap.Rules, second)
+
+	opts := mustGenerate(t, snap)
+	for _, tag := range []string{plainListTag("r1", 0), plainListTag("r2", 0)} {
+		var found bool
+		for _, s := range opts.Route.RuleSet {
+			if s.Tag == tag {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("набора %q нет в конфиге", tag)
+		}
+	}
+}
+
 // Битый адрес сервера в настройках — ошибка генератора, а не паника. До этого
 // `netip.MustParseAddr` в listen превращал опечатку в 500 на POST /api/apply и
 // в невзлетающий демон на следующем старте (аудит от 2026-07, пункт 11).
@@ -495,7 +643,7 @@ func TestGenerateRejectsBadServerAddress(t *testing.T) {
 			t.Fatalf("генератор паникует вместо ошибки: %v", r)
 		}
 	}()
-	if _, err := Generate(store.Snapshot{Settings: s}); err == nil {
+	if _, err := Generate(store.Snapshot{Settings: s}, nil); err == nil {
 		t.Fatal("ожидалась ошибка разбора адреса, получен успех")
 	}
 }

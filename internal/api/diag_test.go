@@ -11,6 +11,7 @@ import (
 	"go4.org/netipx"
 
 	"github.com/ArghTeam/razdacha/internal/netstack"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -437,13 +438,20 @@ func TestDiagSingboxCheck(t *testing.T) {
 	empty := store.Rule{
 		ID: "r3", Name: "Пустое", Enabled: true, Action: store.ActionDirect,
 	}
+	// Список не в формате .srs: его содержимое даёт слой lists, и пока он не
+	// скачан, условий у правила нет вовсе (issue #125).
+	pending := store.Rule{
+		ID: "r4", Name: "Свой список", Enabled: true, Action: store.ActionDirect,
+		RemoteLists: []string{"https://example.org/plain.lst"},
+	}
 	off := store.Tunnel{ID: "t1", Name: "Нидерланды", Enabled: false}
 
 	cases := []struct {
-		name string
-		snap store.Snapshot
-		want string
-		says []string
+		name  string
+		snap  store.Snapshot
+		plain singbox.PlainLists
+		want  string
+		says  []string
 	}{
 		{
 			name: "правило работает",
@@ -465,10 +473,24 @@ func TestDiagSingboxCheck(t *testing.T) {
 			want: statusError,
 			says: []string{"Пустое", "напрямую"},
 		},
+		{
+			name: "список правила ещё не скачан",
+			snap: store.Snapshot{Settings: settings, Rules: []store.Rule{working, pending}},
+			want: statusError,
+			says: []string{"Свой список", "не скачан", "plain.lst"},
+		},
+		{
+			name: "скачанный список даёт правилу условия",
+			snap: store.Snapshot{Settings: settings, Rules: []store.Rule{working, pending}},
+			plain: func(string) (singbox.PlainList, bool) {
+				return singbox.PlainList{Domains: []string{"example.net"}}, true
+			},
+			want: statusOK,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := singboxCheck(tc.snap)
+			c := singboxCheck(tc.snap, tc.plain)
 			if c.Status != tc.want {
 				t.Fatalf("статус %q, ожидался %q (%s)", c.Status, tc.want, c.Detail)
 			}

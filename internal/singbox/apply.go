@@ -75,6 +75,11 @@ type Applier struct {
 	Checker  Checker
 	Reloader Reloader
 
+	// PlainLists отдаёт содержимое внешних списков, которые sing-box не читает
+	// сам. Пустое означает работу без них: наборы таких списков в конфиг не
+	// попадут, и правило, у которого список единственный, выпадет (issue #125).
+	PlainLists PlainLists
+
 	Log *slog.Logger
 }
 
@@ -145,7 +150,7 @@ func (a *Applier) reloader() Reloader {
 func (a *Applier) Apply(ctx context.Context, snap store.Snapshot) (ApplyResult, error) {
 	res := ApplyResult{Path: a.path()}
 
-	opts, err := Generate(snap)
+	opts, err := Generate(snap, a.PlainLists)
 	if err != nil {
 		return res, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
 	}

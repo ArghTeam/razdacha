@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/lists"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -100,6 +101,29 @@ func listSources(ctx context.Context, st *store.Store, log *slog.Logger) []lists
 		return nil
 	}
 	return lists.Sources(snap)
+}
+
+// plainLists — проводка разобранных plain-списков в генератор конфига.
+//
+// Списки, которые sing-box не читает сам (не .srs и не .json), качает и
+// разбирает планировщик, а генератор кладёт их домены и подсети в inline-набор
+// правила. Без этой проводки домены пропадали бы молча, а правило, у которого
+// такой список единственный, выпадало бы из конфига — и его трафик уходил бы
+// напрямую по route.final (issue #125).
+//
+// Планировщик может быть не поднят: тогда замыкание пустое, и генератор
+// собирает конфиг без таких наборов.
+func plainLists(m *lists.Manager) singbox.PlainLists {
+	if m == nil {
+		return nil
+	}
+	return func(url string) (singbox.PlainList, bool) {
+		l, ok := m.List(url)
+		if !ok {
+			return singbox.PlainList{}, false
+		}
+		return singbox.PlainList{Domains: l.Domains, Subnets: l.Subnets}, true
+	}
 }
 
 // nftSubnets — что уходит в сет razdacha_subnets: подсети, введённые руками, и

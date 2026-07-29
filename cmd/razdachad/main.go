@@ -115,8 +115,12 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		// Заливка nft уходит в слой api замыканием: `POST /api/apply`
 		// применяет обе половины — конфиг sing-box и таблицу (issue #119).
 		ApplyNft: nf.applyNft,
-		Pools:    poolsMgr,
-		Build:    buildInfo(),
+		// Содержимое plain-списков — тем же приёмом: генератор берёт домены и
+		// подсети из кэша планировщика, иначе они никуда не попадают
+		// (issue #125).
+		PlainLists: plainLists(listsMgr),
+		Pools:      poolsMgr,
+		Build:      buildInfo(),
 	})
 	if errors.Is(err, api.ErrNoPassword) {
 		return fmt.Errorf("%w; задайте его: razdachad -set-password", err)

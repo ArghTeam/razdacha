@@ -43,12 +43,17 @@ type RuleDiag struct {
 	// такой случай: у правила не осталось ни одного условия совпадения. Его
 	// трафик разбирают правила ниже, а в конце — прямой выход.
 	Skipped bool
+	// SkipReason — почему условий не осталось, когда причина известнее общей.
+	// Пусто означает «правило и заполнено ничем»; непустое — например, что
+	// plain-список правила ещё не скачан (issue #125). Вызывающий показывает
+	// это человеку, поэтому текст русский и без имён внутренностей.
+	SkipReason string
 }
 
 // Generate собирает конфиг sing-box целиком из снимка состояния, отбрасывая
 // диагностику по правилам. Всё остальное — в [GenerateWithDiag].
-func Generate(snap store.Snapshot) (option.Options, error) {
-	opts, _, err := GenerateWithDiag(snap)
+func Generate(snap store.Snapshot, plain PlainLists) (option.Options, error) {
+	opts, _, err := GenerateWithDiag(snap, plain)
 	return opts, err
 }
 
@@ -68,9 +73,14 @@ func Generate(snap store.Snapshot) (option.Options, error) {
 // Ссылка на несуществующий туннель — ошибка: состояние повреждено, и молчаливое
 // продолжение скрыло бы это.
 //
+// Домены и подсети внешних списков, которые sing-box не читает сам (не .srs и
+// не .json), приходят через plain: слой lists их качает и разбирает, генератор
+// кладёт в inline-набор правила (issue #125). Нулевое замыкание допустимо —
+// тогда таких наборов в конфиге не будет.
+//
 // Диагностика собирается тем же проходом, что и конфиг: отдельная функция,
 // повторяющая условия генератора, разъехалась бы с ним молча.
-func GenerateWithDiag(snap store.Snapshot) (option.Options, []RuleDiag, error) {
+func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []RuleDiag, error) {
 	tunnels := make(map[string]store.Tunnel, len(snap.Tunnels))
 	for _, t := range snap.Tunnels {
 		tunnels[t.ID] = t
@@ -176,14 +186,23 @@ func GenerateWithDiag(snap store.Snapshot) (option.Options, []RuleDiag, error) {
 			}
 		}
 
-		sets, tags, err := buildRuleSets(r, snap.Settings)
-		if err != nil {
-			return option.Options{}, nil, err
+		sets, tags, missing := buildRuleSets(r, snap.Settings, plain)
+		for _, url := range missing {
+			// Списка ещё нет в кэше — его домены и подсети в конфиг не попали.
+			// Правило от этого может остаться и вовсе без условий, поэтому
+			// строка в логе обязательна, а не «на всякий случай».
+			log.Warn("список ещё не скачан, его домены в конфиг не попали",
+				"правило", r.Name, "список", url)
 		}
 		// Единственный пропуск: правило без условий совпадения нельзя выразить ни
 		// маршрутом, ни отказом — совпадать оно будет со всем.
 		if len(tags) == 0 {
-			diags = append(diags, RuleDiag{ID: r.ID, Name: r.Name, Skipped: true})
+			skip := RuleDiag{ID: r.ID, Name: r.Name, Skipped: true}
+			if len(missing) > 0 {
+				skip.SkipReason = fmt.Sprintf(
+					"списки правила ещё не скачаны (%s)", strings.Join(missing, ", "))
+			}
+			diags = append(diags, skip)
 			continue
 		}
 
