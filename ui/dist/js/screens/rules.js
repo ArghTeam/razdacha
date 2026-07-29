@@ -440,7 +440,12 @@ async function saveRule(id) {
   if (scope === 'selected' && !peerIds.length) {
     toast('Выберите хотя бы одного клиента', 'err'); return;
   }
-  if (!listsSel.length && !domains.length && !subnets.length) {
+  /* Списков по ссылке в форме нет — их задают через API, — но условием совпадения
+     они считаются наравне с остальным (store.Rule.validate, #142). Без этой
+     поправки правило, живущее на remote_lists, нельзя было бы отредактировать в
+     панели: сохранение упиралось бы в проверку строже серверной. */
+  const remote = (id ? (state.rules.find((x) => x.id === id) || {}).remote_lists : null) || [];
+  if (!listsSel.length && !domains.length && !subnets.length && !remote.length) {
     toast('Правило без условий поймало бы весь трафик — добавьте списки, домены или подсети', 'err');
     return;
   }

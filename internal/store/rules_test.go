@@ -20,6 +20,15 @@ func sampleRule(name, tunnelID string) Rule {
 	}
 }
 
+// directRule — правило «напрямую» с одним доменом. Условие совпадения обязательно
+// (issue #142), а какое именно — этим тестам всё равно.
+func directRule(name string) Rule {
+	return Rule{
+		Name: name, Action: ActionDirect, Enabled: true, PeerScope: ScopeAll,
+		Domains: []string{name + ".example"},
+	}
+}
+
 // ruleIDs — идентификаторы правил в текущем порядке проверки.
 func ruleIDs(t *testing.T, s *Store) []string {
 	t.Helper()
@@ -116,15 +125,16 @@ func TestRuleValidation(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 
+	d := []string{"x.example"}
 	cases := map[string]Rule{
-		"tunnel без туннеля":   {Name: "X", Action: ActionTunnel, PeerScope: ScopeAll},
-		"block с туннелем":     {Name: "X", Action: ActionBlock, TunnelID: "t", PeerScope: ScopeAll},
-		"неизвестное действие": {Name: "X", Action: "dorect", PeerScope: ScopeAll},
-		"selected без пиров":   {Name: "X", Action: ActionDirect, PeerScope: ScopeSelected},
+		"tunnel без туннеля":   {Name: "X", Action: ActionTunnel, Domains: d, PeerScope: ScopeAll},
+		"block с туннелем":     {Name: "X", Action: ActionBlock, TunnelID: "t", Domains: d, PeerScope: ScopeAll},
+		"неизвестное действие": {Name: "X", Action: "dorect", Domains: d, PeerScope: ScopeAll},
+		"selected без пиров":   {Name: "X", Action: ActionDirect, Domains: d, PeerScope: ScopeSelected},
 		"all со списком пиров": {
-			Name: "X", Action: ActionDirect, PeerScope: ScopeAll, PeerIDs: []string{"p"},
+			Name: "X", Action: ActionDirect, Domains: d, PeerScope: ScopeAll, PeerIDs: []string{"p"},
 		},
-		"пустое имя": {Action: ActionDirect, PeerScope: ScopeAll},
+		"пустое имя": {Action: ActionDirect, Domains: d, PeerScope: ScopeAll},
 	}
 	for name, r := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -151,9 +161,7 @@ func TestCreateRuleAppendsToEnd(t *testing.T) {
 	s := open(t)
 
 	for _, name := range []string{"первое", "второе", "третье"} {
-		r, err := s.CreateRule(ctx, Rule{
-			Name: name, Action: ActionDirect, Enabled: true, PeerScope: ScopeAll,
-		})
+		r, err := s.CreateRule(ctx, directRule(name))
 		if err != nil {
 			t.Fatalf("CreateRule %s: %v", name, err)
 		}
@@ -180,9 +188,7 @@ func TestReorderRules(t *testing.T) {
 	s := open(t)
 
 	for _, name := range []string{"a", "b", "c", "d"} {
-		if _, err := s.CreateRule(ctx, Rule{
-			Name: name, Action: ActionDirect, Enabled: true, PeerScope: ScopeAll,
-		}); err != nil {
+		if _, err := s.CreateRule(ctx, directRule(name)); err != nil {
 			t.Fatalf("CreateRule %s: %v", name, err)
 		}
 	}
@@ -215,9 +221,7 @@ func TestReorderRulesRejectsPartialOrder(t *testing.T) {
 	s := open(t)
 
 	for _, name := range []string{"a", "b"} {
-		if _, err := s.CreateRule(ctx, Rule{
-			Name: name, Action: ActionDirect, Enabled: true, PeerScope: ScopeAll,
-		}); err != nil {
+		if _, err := s.CreateRule(ctx, directRule(name)); err != nil {
 			t.Fatalf("CreateRule %s: %v", name, err)
 		}
 	}
@@ -243,9 +247,7 @@ func TestDeleteRuleCompactsPriorities(t *testing.T) {
 	s := open(t)
 
 	for _, name := range []string{"a", "b", "c"} {
-		if _, err := s.CreateRule(ctx, Rule{
-			Name: name, Action: ActionDirect, Enabled: true, PeerScope: ScopeAll,
-		}); err != nil {
+		if _, err := s.CreateRule(ctx, directRule(name)); err != nil {
 			t.Fatalf("CreateRule %s: %v", name, err)
 		}
 	}
@@ -261,9 +263,7 @@ func TestDeleteRuleCompactsPriorities(t *testing.T) {
 	}
 
 	// Новое правило встаёт в конец, а не на освободившийся приоритет.
-	if _, err := s.CreateRule(ctx, Rule{
-		Name: "d", Action: ActionDirect, Enabled: true, PeerScope: ScopeAll,
-	}); err != nil {
+	if _, err := s.CreateRule(ctx, directRule("d")); err != nil {
 		t.Fatalf("CreateRule: %v", err)
 	}
 	if final := ruleIDs(t, s); len(final) != 3 {
@@ -277,9 +277,7 @@ func TestUpdateRuleKeepsPriority(t *testing.T) {
 	s := open(t)
 
 	for _, name := range []string{"a", "b"} {
-		if _, err := s.CreateRule(ctx, Rule{
-			Name: name, Action: ActionDirect, Enabled: true, PeerScope: ScopeAll,
-		}); err != nil {
+		if _, err := s.CreateRule(ctx, directRule(name)); err != nil {
 			t.Fatalf("CreateRule %s: %v", name, err)
 		}
 	}
@@ -420,5 +418,91 @@ func TestRuleResolveRealIPWithoutSubnets(t *testing.T) {
 	created.Subnets = nil
 	if err := s.UpdateRule(ctx, created); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("ожидалась ErrInvalid при снятии подсетей, получено: %v", err)
+	}
+}
+
+// Правило без единого условия совпадения не сохраняется: в конфиг оно не попадает,
+// и его трафик уходит напрямую с адреса сервера (issue #142, ADR 0013).
+func TestRuleWithoutMatchRejected(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	tunnel, err := s.CreateTunnel(ctx, sampleTunnel("основной"))
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+
+	// Проверка не зависит от действия, а выбранные пиры условием совпадения не
+	// считаются: они сужают источник, а не назначение.
+	cases := map[string]Rule{
+		"в туннель":   {Name: "X", Action: ActionTunnel, TunnelID: tunnel.ID, PeerScope: ScopeAll},
+		"напрямую":    {Name: "X", Action: ActionDirect, PeerScope: ScopeAll},
+		"блокировать": {Name: "X", Action: ActionBlock, PeerScope: ScopeAll},
+		"только с пирами": {
+			Name: "X", Action: ActionDirect, PeerScope: ScopeSelected, PeerIDs: []string{"p"},
+		},
+	}
+	for name, r := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := s.CreateRule(ctx, r)
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
+			}
+			if !strings.Contains(err.Error(), "условия совпадения") {
+				t.Errorf("отказ не называет причину: %v", err)
+			}
+		})
+	}
+
+	// Любого одного условия достаточно, включая список по ссылке: он приезжает
+	// в конфиг набором так же, как community-список.
+	ok := map[string]Rule{
+		"свой домен":     {Name: "A", Action: ActionDirect, Domains: []string{"example.org"}, PeerScope: ScopeAll},
+		"своя подсеть":   {Name: "B", Action: ActionDirect, Subnets: []string{"192.0.2.0/24"}, PeerScope: ScopeAll},
+		"готовый список": {Name: "C", Action: ActionDirect, CommunityLists: []string{"youtube"}, PeerScope: ScopeAll},
+		"список по ссылке": {
+			Name: "D", Action: ActionDirect,
+			RemoteLists: []string{"https://example.org/list.srs"}, PeerScope: ScopeAll,
+		},
+	}
+	for name, r := range ok {
+		t.Run(name, func(t *testing.T) {
+			if _, err := s.CreateRule(ctx, r); err != nil {
+				t.Fatalf("CreateRule: %v", err)
+			}
+		})
+	}
+}
+
+// Пустое правило, уже лежащее в БД, читается, попадает в снимок и удаляется:
+// отказ только на запись, миграции нет (issue #142).
+func TestExistingRuleWithoutMatchSurvives(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	// Мимо CreateRule: так запись выглядит после версий, где проверки не было.
+	const id = "старое-пустое"
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO rules (id, name, action, priority, enabled) VALUES (?, ?, ?, ?, ?)`,
+		id, "пустое", string(ActionDirect), 0, true); err != nil {
+		t.Fatalf("вставка правила: %v", err)
+	}
+
+	got, err := s.Rule(ctx, id)
+	if err != nil {
+		t.Fatalf("Rule: %v", err)
+	}
+	if got.Name != "пустое" {
+		t.Errorf("правило прочиталось не тем: %+v", got)
+	}
+	snap, err := s.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if len(snap.Rules) != 1 {
+		t.Fatalf("в снимке %d правил, ожидалось 1", len(snap.Rules))
+	}
+	if err := s.DeleteRule(ctx, id); err != nil {
+		t.Fatalf("DeleteRule: %v", err)
 	}
 }
