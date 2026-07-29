@@ -3,6 +3,18 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-29
+
+### #126 — в nft-сет идут подсети правил с любым действием
+
+**Changed:** `RuleMarksSubnets` в `internal/netstack/rule_subnets.go` — единый отбор; `ruleSubnets` переехал в `cmd/razdachad/lists.go` и стал чистой функцией.
+**Beware:** `direct` метится тоже, хотя сам по себе метки не требует: списки приходят из `lists` без действия правила, и без этого вышло бы «список работает, ручная подсеть — нет». Сторож — `TestRuleSubnetsAgreesWithListSources`.
+
+### #120 — маршрутизация по метке заводится в каждом прогоне
+
+**Changed:** `route.Apply()` первым шагом замыкания `apply`, до `nft.Apply()`; в диагностике проверка `route`.
+**Beware:** на стенде проверено — без правила по метке трафик **не утекает**, а обрывается: помеченный пакет пропадает, а не форвардится. Формулировка аудита «уходит напрямую» неверна.
+
 ## 2026-07-28
 
 ### #122 — DNS клиента перехватывается принудительно
