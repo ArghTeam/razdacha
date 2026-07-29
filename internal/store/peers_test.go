@@ -128,6 +128,7 @@ func TestDeletePeerCleansRules(t *testing.T) {
 
 	both, err := s.CreateRule(ctx, Rule{
 		Name: "оба", Action: ActionDirect, Enabled: true,
+		Domains:   []string{"oba.example"},
 		PeerScope: ScopeSelected, PeerIDs: []string{one.ID, two.ID},
 	})
 	if err != nil {
@@ -135,6 +136,7 @@ func TestDeletePeerCleansRules(t *testing.T) {
 	}
 	only, err := s.CreateRule(ctx, Rule{
 		Name: "только один", Action: ActionDirect, Enabled: true,
+		Domains:   []string{"one.example"},
 		PeerScope: ScopeSelected, PeerIDs: []string{one.ID},
 	})
 	if err != nil {
