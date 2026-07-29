@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-07-29
+
+### #135 — адрес на карточке туннеля
+
+**Changed:** `tunnelEndpoint` читает `t.host`/`t.port` вместо несуществовавшего `t.parsed`; макет `ui/mock/tunnels.html` приведён к той же форме.
+**Beware:** разобранного конфига панель не видит вовсе — в нём ключи. Полей нет — рисуем «—», это законное состояние, а не поломка.
+
 ## 2026-07-28
 
 ### #114 — бейдж свежести рядом с версией
