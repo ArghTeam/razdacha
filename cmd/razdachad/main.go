@@ -98,6 +98,14 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	}
 	defer nf.stop()
 
+	// Применение конфига собирается здесь, а не внутри слоя api: дверей к нему
+	// две — кнопка «Применить» и расписание пулов, которое приносит свежие
+	// ключи само (issue #121).
+	apply, err := startApply(ctx, st, poolsMgr, plainLists(listsMgr), slog.Default())
+	if err != nil {
+		return err
+	}
+
 	// Без пароля демон не стартует: панель доступна из интернета, и запуск
 	// «пока без авторизации» отдал бы наружу root-демон (ADR 0009).
 	srv, err := api.New(ctx, api.Config{
@@ -115,9 +123,11 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		// Заливка nft уходит в слой api замыканием: `POST /api/apply`
 		// применяет обе половины — конфиг sing-box и таблицу (issue #119).
 		ApplyNft: nf.applyNft,
+		Applier:  apply,
 		// Содержимое plain-списков — тем же приёмом: генератор берёт домены и
 		// подсети из кэша планировщика, иначе они никуда не попадают
-		// (issue #125).
+		// (issue #125). Применению они уже отданы в startApply; здесь их берёт
+		// диагностика, которая обязана сверять конфиг так же, как он собран.
 		PlainLists: plainLists(listsMgr),
 		Pools:      poolsMgr,
 		Build:      buildInfo(),
