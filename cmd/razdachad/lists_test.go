@@ -219,3 +219,77 @@ func TestPlainListsFeedsGenerator(t *testing.T) {
 		t.Error("без планировщика ожидалось пустое замыкание")
 	}
 }
+
+// TestRuleSubnetsAgreesWithListSources — сторож против расхождения двух половин
+// одного сета (issue #126).
+//
+// Сет `razdacha_subnets` наполняется из двух мест, и отбор в них разный по
+// природе: ruleSubnets отбирает правила, а lists.Sources — списки правил.
+// Оба отбора отвечают на один вопрос — «должен ли трафик этого правила доехать
+// до sing-box по метке nft», — и ответы обязаны совпадать для каждого действия.
+// Разошлись они ровно так: `lists.Sources` брал списки любого правила, а
+// `ruleSubnets` — подсети только правил в туннель, и блокировка по вписанной
+// руками подсети молча не работала, а по подсети из списка того же правила —
+// работала.
+//
+// Тест перебирает все действия из store.RuleActions() и для каждого сравнивает
+// два признака: качается ли список правила (значит его подсети приедут в сет
+// через Manager.Subnets) и попадают ли в сет ручные подсети того же правила.
+// Совпадать они должны в обе стороны — иначе у одного правила снова окажется
+// два разных ответа. Новое действие правила придётся вписать в
+// store.RuleActions(), иначе ввод с ним не проходит валидацию, — и тест начнёт
+// проверять его сам.
+func TestRuleSubnetsAgreesWithListSources(t *testing.T) {
+	for _, action := range store.RuleActions() {
+		rule := store.Rule{
+			Name:           "правило",
+			Enabled:        true,
+			Action:         action,
+			Subnets:        []string{"192.0.2.0/24"},
+			CommunityLists: []string{"telegram"},
+			RemoteLists:    []string{"https://example.invalid/list.lst"},
+		}
+		if action == store.ActionTunnel {
+			rule.TunnelID = "tunnel-1"
+		}
+		snap := store.Snapshot{Rules: []store.Rule{rule}}
+
+		fromLists := len(lists.Sources(snap)) > 0
+		fromRule := len(ruleSubnets(snap.Rules)) > 0
+		if fromLists != fromRule {
+			t.Errorf("действие %q: подсети списков в сете = %v, ручные подсети в сете = %v; "+
+				"отбор в lists.Sources и в ruleSubnets разошёлся",
+				action, fromLists, fromRule)
+		}
+	}
+
+	// Выключенное правило не отдаёт в сет ничего ни одной половиной.
+	off := store.Snapshot{Rules: []store.Rule{{
+		Name: "выключенное", Enabled: false, Action: store.ActionBlock,
+		Subnets: []string{"192.0.2.0/24"}, CommunityLists: []string{"telegram"},
+	}}}
+	if got := ruleSubnets(off.Rules); len(got) != 0 {
+		t.Errorf("подсети выключенного правила уехали в сет: %v", got)
+	}
+	if got := lists.Sources(off); len(got) != 0 {
+		t.Errorf("списки выключенного правила качаются: %v", got)
+	}
+}
+
+// TestRuleSubnetsTakesBlock — подсеть, вписанная руками в block-правило,
+// доезжает до сета. Без метки nft пакет не попадает в sing-box, а значит и под
+// `reject` из route.rules[]/dns.rules[] не попадает: блокировка молчит
+// (issue #126).
+func TestRuleSubnetsTakesBlock(t *testing.T) {
+	rules := []store.Rule{
+		{Name: "блок", Enabled: true, Action: store.ActionBlock, Subnets: []string{"198.51.100.0/24"}},
+		{Name: "прямо", Enabled: true, Action: store.ActionDirect, Subnets: []string{"203.0.113.0/24"}},
+		{Name: "туннель", Enabled: true, Action: store.ActionTunnel, TunnelID: "t", Subnets: []string{"192.0.2.0/24"}},
+	}
+	got := ruleSubnets(rules)
+	for _, want := range []string{"198.51.100.0/24", "203.0.113.0/24", "192.0.2.0/24"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("подсеть %s не попала в сет: %v", want, got)
+		}
+	}
+}
