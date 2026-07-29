@@ -47,7 +47,7 @@ type check struct {
 //
 // Overall — худший из вернувшихся статусов. При запуске одной проверки
 // (`POST /api/diag/run?check=…`) в ответе она одна, и сводка по ней же:
-// собрать общий статус из семи проверок в этом случае может только тот, кто
+// собрать общий статус из восьми проверок в этом случае может только тот, кто
 // их все и запускал, — панель.
 type diagResponse struct {
 	Checks []check `json:"checks"`
@@ -64,6 +64,7 @@ const (
 	checkWG      = "wg"
 	checkSingbox = "singbox"
 	checkNft     = "nft"
+	checkRoute   = "route"
 	checkTunnels = "tunnels"
 	checkLists   = "lists"
 	checkForward = "forward"
@@ -72,7 +73,7 @@ const (
 
 // diagCheckIDs — полный набор проверок в порядке показа.
 var diagCheckIDs = []string{
-	checkWG, checkSingbox, checkNft, checkTunnels, checkLists, checkForward, checkMTU,
+	checkWG, checkSingbox, checkNft, checkRoute, checkTunnels, checkLists, checkForward, checkMTU,
 }
 
 // DiagLists — свежесть кэша списков глазами диагностики. Заполняет
@@ -99,6 +100,8 @@ type DiagSources struct {
 	WG func(context.Context) (netstack.DiagWGState, error)
 	// Nft — состояние таблицы `inet razdacha`, [netstack.DiagNft].
 	Nft func(context.Context) (netstack.DiagNftState, error)
+	// Route — правило по метке и таблица маршрутизации, [netstack.DiagRoute].
+	Route func(context.Context) (netstack.DiagRouteState, error)
 	// IPForward — net.ipv4.ip_forward, [netstack.DiagIPForward].
 	IPForward func(context.Context) (bool, error)
 	// Lists — свежесть кэша списков.
@@ -163,6 +166,9 @@ type diagInput struct {
 	nft    netstack.DiagNftState
 	nftErr error
 
+	route    netstack.DiagRouteState
+	routeErr error
+
 	forward    bool
 	forwardErr error
 
@@ -186,6 +192,9 @@ func (s *Server) diagRead(ctx context.Context, snap store.Snapshot, ids []string
 	if want(checkNft, checkForward) {
 		in.nft, in.nftErr = diagSource(ctx, s.diag.Nft)
 	}
+	if want(checkRoute) {
+		in.route, in.routeErr = diagSource(ctx, s.diag.Route)
+	}
 	if want(checkForward) {
 		in.forward, in.forwardErr = diagSource(ctx, s.diag.IPForward)
 	}
@@ -204,6 +213,8 @@ func (s *Server) diagCheck(id string, in diagInput) check {
 		return singboxCheck(in.snap, s.plainLists)
 	case checkNft:
 		return nftCheck(in.nft, in.nftErr, in.snap)
+	case checkRoute:
+		return routeCheck(in.route, in.routeErr)
 	case checkTunnels:
 		return tunnelsCheck(in.snap.Tunnels, s.checks)
 	case checkLists:
@@ -494,6 +505,54 @@ func diagMissingText(chains, sets []string) string {
 		parts = append(parts, "нет сетов "+strings.Join(sets, ", "))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// routeCheck — правило по метке и таблица 105 на месте (docs/03-networking.md,
+// «Policy routing»).
+//
+// Проверяются оба признака: nft метит пакет, но разбирает метку уже policy
+// routing, и без правила или без local-маршрута помеченный трафик не идёт тем
+// путём, ради которого его метили. Что при этом делает ядро — уводит пакет
+// обычным маршрутом или обрывает его — из кода не следует и здесь не
+// утверждается; проверка говорит о состоянии, а не о судьбе пакета.
+//
+// Недостача — error, а не warn: правило заводит сам демон, пользователь этого
+// состояния не выбирал, и никакого другого признака у него нет — nft-правила
+// при этом целы, и проверка «nft» зелёная.
+func routeCheck(st netstack.DiagRouteState, err error) check {
+	c := check{ID: "route", Title: "Маршрутизация по метке"}
+	if err != nil {
+		return diagUnknown(c, "состояние маршрутизации не прочитано", err)
+	}
+
+	table := st.Table
+	if table == 0 {
+		table = netstack.RouteTable
+	}
+	mark := st.Mark
+	if mark == 0 {
+		mark = netstack.FwMark
+	}
+
+	var missing []string
+	if !st.Rule {
+		missing = append(missing, fmt.Sprintf("нет правила fwmark %#08x → таблица %d", mark, table))
+	}
+	if !st.LocalRoute {
+		missing = append(missing, fmt.Sprintf(
+			"в таблице %d нет маршрута local 0.0.0.0/0 dev %s", table, netstack.LoopbackName))
+	}
+	if len(missing) > 0 {
+		c.Status = statusError
+		c.Detail = strings.Join(missing, "; ") +
+			" — маршрутизация помеченного трафика не работает как задумано"
+		return c
+	}
+
+	c.Status = statusOK
+	c.Detail = fmt.Sprintf("fwmark %#08x → таблица %d (приоритет %d), local-маршрут на месте",
+		mark, table, st.RulePriority)
+	return c
 }
 
 // forwardCheck — форвардинг включён и обратный путь есть: без masquerade

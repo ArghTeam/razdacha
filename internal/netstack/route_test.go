@@ -138,6 +138,59 @@ func TestRouteApplyIdempotent(t *testing.T) {
 	}
 }
 
+// Чтение состояния различает три случая: всё на месте, снято правило, снята
+// таблица. Диагностике мало «работает / не работает»: снимают их порознь
+// (issue #120), и назвать пользователю нужно то, чего действительно нет.
+func TestRouteDiagState(t *testing.T) {
+	f := newFakeRoutes()
+	r := &Route{h: f}
+
+	st, err := r.DiagState()
+	if err != nil {
+		t.Fatalf("DiagState до заливки: %v", err)
+	}
+	if st.Rule || st.LocalRoute {
+		t.Errorf("на нетронутой системе состояние = %+v, ожидалось пустое", st)
+	}
+	if st.Table != RouteTable || st.Mark != FwMark {
+		t.Errorf("состояние = %+v, ожидались таблица %d и метка %#x", st, RouteTable, FwMark)
+	}
+
+	if err := r.Apply(); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	st, err = r.DiagState()
+	if err != nil {
+		t.Fatalf("DiagState после заливки: %v", err)
+	}
+	if !st.Rule || !st.LocalRoute || st.RulePriority != RulePriority || st.Routes != 1 {
+		t.Errorf("после заливки состояние = %+v, ожидались правило и маршрут", st)
+	}
+
+	// Правило снято чужим `ip rule flush`, маршрут остался.
+	f.rules = nil
+	st, err = r.DiagState()
+	if err != nil {
+		t.Fatalf("DiagState без правила: %v", err)
+	}
+	if st.Rule || !st.LocalRoute {
+		t.Errorf("без правила состояние = %+v, ожидалось Rule=false при живом маршруте", st)
+	}
+
+	// Таблица очищена, правило осталось.
+	if err := r.Apply(); err != nil {
+		t.Fatalf("Apply после снятия правила: %v", err)
+	}
+	f.routes = nil
+	st, err = r.DiagState()
+	if err != nil {
+		t.Fatalf("DiagState без маршрута: %v", err)
+	}
+	if !st.Rule || st.LocalRoute {
+		t.Errorf("без маршрута состояние = %+v, ожидалось LocalRoute=false при живом правиле", st)
+	}
+}
+
 // Снятие возвращает систему в исходное состояние: ни правила, ни таблицы 105.
 func TestRouteClear(t *testing.T) {
 	f := newFakeRoutes()

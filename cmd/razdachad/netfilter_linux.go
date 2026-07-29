@@ -47,6 +47,22 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
 		mu.Lock()
 		defer mu.Unlock()
 
+		// Маршрутизация заводится до nft и на каждом прогоне (issue #120).
+		//
+		// До — потому что метку ставит nft, а разбирает её policy routing: с
+		// обратным порядком между заливкой и правилом остаётся окно, в котором
+		// пакеты уже помечены, а таблицы 105 для них ещё нет. И отказ здесь
+		// не оставляет систему в состоянии «nft залит, маршрутизации нет» —
+		// прежняя таблица остаётся в ядре нетронутой.
+		//
+		// На каждом — потому что правило снимается не только нами: `ip rule
+		// flush` чужого софта или сброс сети уносят его молча, а перезаливка
+		// идёт при каждом изменении конфигурации. [netstack.Route.Apply]
+		// идемпотентен, дублей от повторных вызовов не появляется.
+		if err := route.Apply(); err != nil {
+			return 0, fmt.Errorf("маршрутизация помеченного трафика: %w", err)
+		}
+
 		rules, err := ruleSubnets(ctx, st)
 		if err != nil {
 			return 0, err
@@ -78,9 +94,6 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
 	if err != nil {
 		return netfilter{}, err
 	}
-	if err := route.Apply(); err != nil {
-		return netfilter{}, fmt.Errorf("маршрутизация помеченного трафика: %w", err)
-	}
 	log.Info("правила залиты", "wan", wan, "подсетей", count)
 
 	if mgr != nil {
@@ -94,7 +107,12 @@ func startNetfilter(ctx context.Context, st *store.Store, mgr *lists.Manager,
 	// Диагностика читает состояние своим соединением ([netstack.DiagNft]), а
 	// не тем, которым залиты правила: она ходит из обработчика HTTP, и
 	// соединение nftables пришлось бы делить между запросами.
-	return netfilter{stop: func() {}, nftState: netstack.DiagNft, applyNft: apply}, nil
+	return netfilter{
+		stop:       func() {},
+		nftState:   netstack.DiagNft,
+		routeState: netstack.DiagRoute,
+		applyNft:   apply,
+	}, nil
 }
 
 // watchLists перезаливает правила после каждого прогона планировщика.

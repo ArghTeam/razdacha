@@ -298,6 +298,37 @@ func TestSettingsPatch(t *testing.T) {
 	}
 }
 
+// Опечатка в адресе отвергается ручкой: до этого она сохранялась, а падал
+// следующий старт демона — шлюз не поднимался вовсе (аудит от 2026-07, пункт 11).
+func TestSettingsPatchRejectsBadAddress(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	cases := map[string]string{
+		"адрес сервера с буквой": `{"wg_server_address":"10.8.0.o"}`,
+		"пул без маски":          `{"wg_pool":"10.8.0.0"}`,
+		"адрес вне пула":         `{"wg_server_address":"10.9.0.1"}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			resp := ts.auth(t, cookie, http.MethodPatch, "/api/settings", body)
+			requireCode(t, resp, http.StatusBadRequest)
+			if e := decodeError(t, resp); e.Error == "" {
+				t.Errorf("ошибка %+v без объяснения", e)
+			}
+		})
+	}
+
+	// В БД не осталось битого значения: следующее чтение настроек рабочее.
+	resp := ts.auth(t, cookie, http.MethodGet, "/api/settings", "")
+	requireCode(t, resp, http.StatusOK)
+	var out settingsResponse
+	decodeJSONBody(t, resp, &out)
+	if out.WGServerAddress != "10.8.0.1" || out.WGPool != "10.8.0.0/24" {
+		t.Errorf("настройки изменились: пул %q, адрес %q", out.WGPool, out.WGServerAddress)
+	}
+}
+
 // TestTunnelLifecycle — создание из URL, изменение, разбор и удаление.
 func TestTunnelLifecycle(t *testing.T) {
 	ts := newTestServer(t)

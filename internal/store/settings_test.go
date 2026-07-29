@@ -81,11 +81,22 @@ func TestSettingsValidation(t *testing.T) {
 	cases := map[string]func(*Settings){
 		"порт вне диапазона":  func(v *Settings) { v.WGListenPort = 0 },
 		"MTU вне диапазона":   func(v *Settings) { v.ClientMTU = 9000 },
+		"MTU ниже 1280":       func(v *Settings) { v.ClientMTU = 1000 },
+		"MTU выше 1420":       func(v *Settings) { v.ClientMTU = 1500 },
 		"пустой пул":          func(v *Settings) { v.WGPool = "" },
 		"пустой апстрим DNS":  func(v *Settings) { v.DNSUpstream = "" },
 		"неизвестный DNS":     func(v *Settings) { v.DNSType = "quic" },
 		"неизвестный уровень": func(v *Settings) { v.LogLevel = "trace" },
 		"нулевой интервал":    func(v *Settings) { v.ListUpdateInterval = 0 },
+		// Опечатка в адресе доезжала до старта демона и не давала поднять шлюз
+		// (аудит от 2026-07, пункт 11).
+		"пул не подсеть":          func(v *Settings) { v.WGPool = "10.8.0.0" },
+		"пул с пробелом":          func(v *Settings) { v.WGPool = " 10.8.0.0/24" },
+		"пул IPv6":                func(v *Settings) { v.WGPool = "fd00::/64" },
+		"адрес сервера с буквой":  func(v *Settings) { v.WGServerAddress = "10.8.0.o" },
+		"адрес сервера — подсеть": func(v *Settings) { v.WGServerAddress = "10.8.0.1/24" },
+		"адрес сервера IPv6":      func(v *Settings) { v.WGServerAddress = "fd00::1" },
+		"адрес сервера вне пула":  func(v *Settings) { v.WGServerAddress = "10.9.0.1" },
 	}
 	for name, broken := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -109,5 +120,20 @@ func TestSettingsBrokenNumber(t *testing.T) {
 	}
 	if _, err := s.Settings(ctx); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
+	}
+}
+
+// 1420 из подсказки ADR 0004 остаётся допустимым: диапазон сужен снизу, а не
+// схлопнут в одно значение.
+func TestSettingsMTUBounds(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	for _, mtu := range []int{MinClientMTU, 1400, MaxClientMTU} {
+		v := DefaultSettings()
+		v.ClientMTU = mtu
+		if err := s.SaveSettings(ctx, v); err != nil {
+			t.Fatalf("MTU %d отвергнут: %v", mtu, err)
+		}
 	}
 }

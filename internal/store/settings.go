@@ -4,8 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/netip"
 	"strconv"
 	"time"
+)
+
+// Границы MTU клиентов (ADR 0004). Нижняя — само значение решения: 1280 это
+// минимальный MTU IPv6, и на него же настроен MSS-клампинг; всё, что ниже,
+// режет полезную нагрузку без причины и расходится с инвариантом конституции.
+// Верхняя — то самое «1420 для максимальной скорости в надёжной сети», которое
+// ADR 0004 оставляет в UI для тех, кто понимает, что делает; выше начинается
+// дефолт системы, а его решение запрещает прямо.
+//
+// Прежние 576–1500 не были границами решения вовсе: 576 — минимальный IPv4 MTU
+// из RFC 791, к нашей двойной инкапсуляции отношения не имеющий.
+const (
+	MinClientMTU = 1280
+	MaxClientMTU = 1420
 )
 
 // Settings — единственная запись настроек. В БД лежит как key/value, чтобы добавление
@@ -178,11 +193,30 @@ func (v Settings) validate() error {
 	if v.WGListenPort < 1 || v.WGListenPort > 65535 {
 		return fmt.Errorf("%w: порт WireGuard %d вне диапазона 1–65535", ErrInvalid, v.WGListenPort)
 	}
-	if v.ClientMTU < 576 || v.ClientMTU > 1500 {
-		return fmt.Errorf("%w: MTU %d вне диапазона 576–1500", ErrInvalid, v.ClientMTU)
+	if v.ClientMTU < MinClientMTU || v.ClientMTU > MaxClientMTU {
+		return fmt.Errorf("%w: MTU %d вне диапазона %d–%d",
+			ErrInvalid, v.ClientMTU, MinClientMTU, MaxClientMTU)
 	}
 	if v.WGPool == "" || v.WGServerAddress == "" {
 		return fmt.Errorf("%w: пул адресов и адрес сервера обязательны", ErrInvalid)
+	}
+	// Адреса разбираются здесь, а не только на слое netstack: непустая строка с
+	// опечаткой доезжала до `WGConfigFromSettings` и роняла **старт демона**, то
+	// есть шлюз не поднимался вовсе, а панель на записи молчала (аудит от
+	// 2026-07, пункт 11). Ручка обязана отказать раньше, чем это попадёт в БД.
+	pool, err := netip.ParsePrefix(v.WGPool)
+	if err != nil {
+		return fmt.Errorf("%w: пул адресов %q — не подсеть вида 10.8.0.0/24", ErrInvalid, v.WGPool)
+	}
+	if !pool.Addr().Is4() {
+		return fmt.Errorf("%w: пул адресов %q не IPv4", ErrInvalid, v.WGPool)
+	}
+	addr, err := netip.ParseAddr(v.WGServerAddress)
+	if err != nil || !addr.Is4() {
+		return fmt.Errorf("%w: адрес сервера %q не IPv4-адрес", ErrInvalid, v.WGServerAddress)
+	}
+	if !pool.Contains(addr) {
+		return fmt.Errorf("%w: адрес сервера %s вне пула %s", ErrInvalid, addr, pool)
 	}
 	if v.DNSUpstream == "" {
 		return fmt.Errorf("%w: апстрим DNS обязателен", ErrInvalid)

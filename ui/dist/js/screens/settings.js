@@ -55,8 +55,9 @@ export async function modalSettings() {
       <div class="field"><label for="s-host">Внешний адрес</label>
         <input type="text" id="s-host" value="${esc(s.endpoint_host)}"></div>
       <div class="field"><label for="s-mtu">MTU клиентов</label>
-        <input type="number" id="s-mtu" value="${esc(s.client_mtu)}">
-        <div class="hint">1280 — значение по умолчанию, менять без причины не стоит.</div></div>
+        <input type="number" id="s-mtu" min="1280" max="1420" value="${esc(s.client_mtu)}">
+        <div class="hint">1280 — значение по умолчанию, менять без причины не стоит.
+          1420 — максимальная скорость в надёжной сети.</div></div>
       <div class="field"><label for="s-dns">DNS-апстрим</label>
         <input type="text" id="s-dns" value="${esc(s.dns_upstream)}"></div>
     </div>

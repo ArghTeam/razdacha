@@ -630,3 +630,20 @@ func TestPlainListSameURLDifferentRules(t *testing.T) {
 		}
 	}
 }
+
+// Битый адрес сервера в настройках — ошибка генератора, а не паника. До этого
+// `netip.MustParseAddr` в listen превращал опечатку в 500 на POST /api/apply и
+// в невзлетающий демон на следующем старте (аудит от 2026-07, пункт 11).
+func TestGenerateRejectsBadServerAddress(t *testing.T) {
+	s := store.DefaultSettings()
+	s.WGServerAddress = "10.8.0.o"
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("генератор паникует вместо ошибки: %v", r)
+		}
+	}()
+	if _, err := Generate(store.Snapshot{Settings: s}, nil); err == nil {
+		t.Fatal("ожидалась ошибка разбора адреса, получен успех")
+	}
+}

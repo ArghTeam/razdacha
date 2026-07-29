@@ -239,6 +239,15 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 		endpoints = append(endpoints, ep)
 	}
 
+	dnsListen, err := listen(snap.Settings.WGServerAddress, dnsPort)
+	if err != nil {
+		return option.Options{}, nil, fmt.Errorf("адрес сервера в настройках: %w", err)
+	}
+	tproxyIn, err := listen(tproxyListen, tproxyPort)
+	if err != nil {
+		return option.Options{}, nil, err
+	}
+
 	return option.Options{
 		Log: &option.LogOptions{Level: snap.Settings.LogLevel},
 		DNS: dns,
@@ -247,14 +256,14 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 				Type: C.TypeDirect,
 				Tag:  TagDNSIn,
 				Options: &option.DirectInboundOptions{
-					ListenOptions: listen(snap.Settings.WGServerAddress, dnsPort),
+					ListenOptions: dnsListen,
 				},
 			},
 			{
 				Type: C.TypeTProxy,
 				Tag:  TagTProxyIn,
 				Options: &option.TProxyInboundOptions{
-					ListenOptions: listen(tproxyListen, tproxyPort),
+					ListenOptions: tproxyIn,
 				},
 			},
 		},
@@ -406,9 +415,19 @@ func dnsRuleFor(r store.Rule, tags, sources []string, denied bool) (option.DNSRu
 }
 
 // listen — общая часть inbound: адрес и порт, больше ничего не настраивается.
-func listen(addr string, port uint16) option.ListenOptions {
-	a := badoption.Addr(netip.MustParseAddr(addr))
-	return option.ListenOptions{Listen: &a, ListenPort: port}
+//
+// Ошибка, а не паника: адрес приходит из настроек, то есть от пользователя.
+// `MustParseAddr` здесь превращал опечатку в 500 на `POST /api/apply` и в
+// невзлетающий демон на следующем старте (аудит от 2026-07, пункт 11). Разбор
+// адреса при сохранении настроек сюда битую строку уже не пускает, но
+// генератору незачем полагаться на чужую проверку.
+func listen(addr string, port uint16) (option.ListenOptions, error) {
+	a, err := netip.ParseAddr(addr)
+	if err != nil {
+		return option.ListenOptions{}, fmt.Errorf("адрес %q не разобран: %w", addr, err)
+	}
+	la := badoption.Addr(a)
+	return option.ListenOptions{Listen: &la, ListenPort: port}, nil
 }
 
 // cidr нормализует адрес до префикса: голый адрес пира — это /32.
