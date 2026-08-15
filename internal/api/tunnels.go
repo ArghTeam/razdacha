@@ -3,10 +3,12 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -237,8 +239,14 @@ func (s *Server) handleUpdateTunnel(w http.ResponseWriter, r *http.Request) {
 			s.parseError(w, perr)
 			return
 		}
-		t.Raw = strings.TrimSpace(*req.Raw)
-		t.Type = res.Type
+		raw := strings.TrimSpace(*req.Raw)
+		typ, terr := tunnelType(res, raw)
+		if terr != nil {
+			writeError(w, s.log, http.StatusBadRequest, codeBadRequest, terr.Error())
+			return
+		}
+		t.Raw = raw
+		t.Type = typ
 		t.Source = res.Source
 		t.Parsed = res.Parsed
 	}
@@ -315,7 +323,37 @@ func (s *Server) handleParseTunnel(w http.ResponseWriter, r *http.Request) {
 		s.parseError(w, err)
 		return
 	}
-	writeJSON(w, s.log, http.StatusOK, preview(res))
+	out := preview(res)
+	// Тип каталожной ссылки знает драйвер, а не разбор: форма показывает протокол
+	// ключей, которые придут из этого каталога, а не выдуманный по схеме ссылки.
+	if res.Source == store.SourcePool {
+		typ, terr := tunnelType(res, strings.TrimSpace(*req.Raw))
+		if terr != nil {
+			writeError(w, s.log, http.StatusBadRequest, codeBadRequest, terr.Error())
+			return
+		}
+		out.Type = typ
+	}
+	writeJSON(w, s.log, http.StatusOK, out)
+}
+
+// tunnelType — протокол туннеля по разбору конфига.
+//
+// У каталожной ссылки его выдаёт не разбор, а драйвер каталога: `http(s)://` говорит
+// лишь о том, что это каталог, и прошитый vless пережил свой источник (ADR 0015).
+// Каталог без драйвера получает отказ здесь — ссылку на неизвестный сайт панель
+// принять не может, иначе пул завёлся бы и молча остался пустым (issue #153).
+func tunnelType(res singbox.ParseResult, raw string) (store.TunnelType, error) {
+	if res.Source != store.SourcePool {
+		return res.Type, nil
+	}
+	typ, err := lists.PoolKeyType(raw)
+	if err != nil {
+		// Текст показывается пользователю как есть, поэтому идёт наружу целиком:
+		// в нём и хост, и причина — закрылся источник или разборщика не было вовсе.
+		return "", fmt.Errorf("ключи из этого каталога брать нечем: %w", err)
+	}
+	return typ, nil
 }
 
 // preview вынимает из разобранного конфига то, что показывается в форме.

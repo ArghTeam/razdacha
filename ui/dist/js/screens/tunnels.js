@@ -130,10 +130,15 @@ function poolServerRow(s, { current } = {}) {
     badge = '<span class="badge err">нет ответа</span>';
   } else if (s.in_rotation) {
     badge = '<span class="badge">не проверялся</span>';
-  } else if (s.ping_ms) {
+  } else if (s.ping_ms != null) {
     // Вне ротации своей задержки нет: показываем пинг карточки каталога и
     // подписываем, откуда он, чтобы его не спутали с измеренным.
     badge = `<span class="badge">${esc(s.ping_ms)} мс по каталогу</span>`;
+  } else {
+    // Пинга у каталога может не быть вовсе: outlinekeys задержку не измеряет
+    // (ADR 0015). Ноль здесь читался бы как «ноль миллисекунд», поэтому так и
+    // говорим — неизвестно.
+    badge = '<span class="badge">пинг неизвестен</span>';
   }
 
   return `<div class="pool-srv${current ? ' current' : ''}">

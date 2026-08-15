@@ -207,16 +207,18 @@ WARP-конфигом отвечает `201` — это законный пут�
 Форма ссылки проверяется до отказа, поэтому битая ссылка получает свои `400` с объяснением,
 а не общий отказ.
 
-У пула (`source = pool`, `type = vless` — см. ADR 0010) в ответе есть блок `pool`;
-у остальных туннелей его нет. Тип остаётся протоколом: пул из vless-серверов — это
-vless, а «пул» — это форма конфига, и интерфейс узнаёт его по `source`.
+У пула (`source = pool`) в ответе есть блок `pool`; у остальных туннелей его нет. Тип
+остаётся протоколом, и какой он — решает драйвер каталога, а не схема ссылки
+([ADR 0015](decisions/0015-pool-source-driver.md)): каталог outlinekeys раздаёт `ss://`,
+значит `type = shadowsocks`. «Пул» — это форма конфига, и интерфейс узнаёт его по
+`source`, а не по типу.
 
 ```json
 "pool": {
-  "catalog_url": "https://vpnkeys.me/protocol/vless",
+  "catalog_url": "https://outlinekeys.com/protocols/outline/",
   "servers_total": 24,
   "servers_alive": 19,
-  "current": {"name": "VLESS (Netherlands) 8821", "country": "Netherlands", "latency_ms": 210},
+  "current": {"name": "Netherlands #39701", "country": "Netherlands", "latency_ms": 210},
   "updated_at": "2026-07-26T03:52:00Z",
   "next_update_at": "2026-07-26T15:52:00Z"
 }
@@ -268,18 +270,20 @@ Clash API: живых считает сам `urltest`, по которому и 
 
 ```json
 {
-  "catalog_url": "https://vpnkeys.me/protocol/vless",
+  "catalog_url": "https://outlinekeys.com/protocols/outline/",
   "updated_at": "2026-07-26T13:37:08Z",
   "servers": [
-    {"title": "VLESS (Germany) 11293", "country": "Germany", "ping_ms": 36,
+    {"title": "Germany #39712", "country": "Germany", "ping_ms": null,
      "in_rotation": true, "alive": true, "latency_ms": 36, "current": true}
   ]
 }
 ```
 
-`title`, `country` и `ping_ms` — то, что было на карточке каталога; `ping_ms` равен `0`,
-если карточка его не показала. `in_rotation` — попал ли сервер в конфиг: там лежат лучшие
-по пингу карточки, но не больше `poolMaxServers` ([ADR 0010](decisions/0010-tunnel-pool-urltest.md)).
+`title` и `country` — то, что было на карточке каталога. `ping_ms` — **тоже указатель**:
+пинг перестал быть обязательным, источник может его не измерять вовсе (outlinekeys не
+измеряет), и тогда приходит `null`, а не `0` — ноль читался бы как «ноль миллисекунд».
+`in_rotation` — попал ли сервер в конфиг: там лежат первые по порядку отбора, но не больше
+`poolMaxServers` ([ADR 0010](decisions/0010-tunnel-pool-urltest.md)).
 
 `alive` и `latency_ms` берутся из Clash API и осмысленны только для серверов в ротации —
 у остальных они **строго `null`**: их никто не проверял, а `false` был бы утверждением о
@@ -287,9 +291,9 @@ Clash API: живых считает сам `urltest`, по которому и 
 когда пул выключен или sing-box недоступен. `current` — сервер, который `urltest` выбрал
 прямо сейчас; когда выбора нет, он `false` у всех.
 
-Ссылки `vless://` наружу не отдаются: в них UUID ключа, а на экране от него пользы нет.
-Порядок серверов — ротация впереди (по задержке, потом по пингу карточки), затем остальные
-по стране и пингу; панель группирует их сама.
+Ссылки на серверы наружу не отдаются: в них UUID или пароль ключа, а на экране от них
+пользы нет. Порядок серверов — ротация впереди (по задержке, потом по пингу карточки),
+затем остальные по стране и пингу; панель группирует их сама.
 
 ## Rules
 

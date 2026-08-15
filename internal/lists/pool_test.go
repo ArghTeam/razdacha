@@ -4,12 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -18,106 +23,302 @@ import (
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
-// catalogServer отдаёт сохранённые страницы каталога: разметка server-side, и её
-// правка ломает разбор молча, поэтому разборщик проверяется файлом, а не сетью.
+// fixture читает сохранённую страницу источника.
+func fixture(t *testing.T, name string) string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatalf("чтение фикстуры %s: %v", name, err)
+	}
+	return string(body)
+}
+
+// reKeyID — номер ключа в пути `/key/<id>/`.
+var reKeyID = regexp.MustCompile(`^/key/(\d+)/$`)
+
+// catalogServer поднимает копию outlinekeys на сохранённых страницах: разметка
+// server-side, и её правка ломает разбор молча, поэтому разборщик проверяется
+// файлами, а не сетью.
+//
+// Драйвер выбирается по хосту, а httptest живёт на 127.0.0.1 со случайным портом —
+// поэтому тот же драйвер регистрируется на адрес сервера. Страницы ключей одна и та
+// же фикстура с подставленным номером: сайт отдаёт на каждой свой ключ, а фикстур у
+// нас три.
 func catalogServer(t *testing.T) (*httptest.Server, *int) {
 	t.Helper()
 	var (
 		mu       sync.Mutex
 		requests int
 	)
+	pages := []string{
+		fixture(t, "outlinekeys-outline-page1.html"),
+		fixture(t, "outlinekeys-outline-page2.html"),
+		fixture(t, "outlinekeys-outline-page3.html"),
+	}
+	key := fixture(t, "outlinekeys-key-online.html")
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		requests++
 		mu.Unlock()
+		w.Header().Set("Content-Type", "text/html")
 
-		if r.URL.Query().Get("per_page") != "100" {
-			t.Errorf("per_page = %q, а сайт принимает только 20/50/100",
-				r.URL.Query().Get("per_page"))
-		}
-		page := r.URL.Query().Get("page")
-		name := "vpnkeys-vless-page" + page + ".html"
-		body, err := os.ReadFile(filepath.Join("testdata", name))
-		if err != nil {
-			// Страниц в фикстуре две; третью сайт отдал бы без карточек.
-			w.Header().Set("Content-Type", "text/html")
-			_, _ = w.Write([]byte("<html><body>ничего не найдено</body></html>"))
+		if m := reKeyID.FindStringSubmatch(r.URL.Path); m != nil {
+			// Порт в ссылке — номер ключа: иначе все страницы отдали бы один и
+			// тот же ключ, и обход схлопнулся бы в один сервер.
+			_, _ = io.WriteString(w, strings.ReplaceAll(key, "212.193.6.27:234",
+				"212.193.6.27:"+m[1]))
 			return
 		}
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write(body)
+		n, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if n < 1 || n > len(pages) {
+			// За последней страницей сайт отдаёт вёрстку без карточек и код 200.
+			n = len(pages)
+		}
+		_, _ = io.WriteString(w, pages[n-1])
 	}))
 	t.Cleanup(srv.Close)
+	t.Cleanup(RegisterPoolDriver(srv.Listener.Addr().(*net.TCPAddr).IP.String(), outlineKeys{}))
 	return srv, &requests
 }
 
-// Разбор фикстуры даёт весь пул за два запроса, включая метаданные карточек.
+// catalogAddr — адрес каталога на тестовом сервере. Раздел тот единственный,
+// который драйвер берёт.
+func catalogAddr(srv *httptest.Server) string {
+	return srv.URL + outlineKeysSection
+}
+
+// poolCatalog — разборщик без пауз: ждать по 300 мс между запросами в тестах незачем.
+func poolCatalog(srv *httptest.Server) *PoolCatalog {
+	return &PoolCatalog{Client: srv.Client(), Log: quietSlog(), Pause: -1}
+}
+
+// Обход фикстуры: две страницы с карточками, третья пустая — и по одному запросу
+// на каждый живой ключ. Мёртвые карточки отдельного запроса не стоят.
 func TestPoolCatalogServers(t *testing.T) {
 	srv, requests := catalogServer(t)
-	c := &PoolCatalog{Client: srv.Client(), Log: quietSlog()}
+	c := poolCatalog(srv)
 
-	servers, err := c.Servers(context.Background(), srv.URL+"/protocol/vless")
+	servers, err := c.Servers(context.Background(), catalogAddr(srv))
 	if err != nil {
 		t.Fatalf("Servers: %v", err)
 	}
-	// Сайт заявляет 128 ключей, карточек без ссылки на первой странице одна.
-	if len(servers) != 127 {
-		t.Fatalf("снято %d ключей, в фикстуре 127", len(servers))
+	// На первой странице фикстуры двадцать живых карточек, на второй пять живых
+	// из двадцати, третья пустая — это конец каталога.
+	if len(servers) != 25 {
+		t.Fatalf("снято %d ключей, в фикстуре 25", len(servers))
 	}
-	if *requests != 2 {
-		t.Errorf("сделано %d запросов, страниц в каталоге две", *requests)
+	// Три страницы списка плюс страница на каждый снятый ключ. Мёртвые карточки в
+	// счёт не идут: за ними не ходили.
+	if want := 3 + len(servers); *requests != want {
+		t.Errorf("сделано %d запросов, ожидалось %d", *requests, want)
 	}
 
-	withPing, withCountry := 0, 0
+	withCountry := 0
 	for _, s := range servers {
-		if !strings.HasPrefix(s.URL, "vless://") {
-			t.Fatalf("не ссылка vless: %q", s.URL)
+		if !strings.HasPrefix(s.URL, "ss://") {
+			t.Fatalf("не ссылка shadowsocks: %q", s.URL)
 		}
-		// Подпись карточки идёт в атрибуте после самого URL через пробел и
-		// обязана быть отрезана.
-		if strings.ContainsAny(s.URL, " \t") {
-			t.Fatalf("в ссылке остался хвост атрибута: %q", s.URL)
+		if strings.ContainsAny(s.URL, " \t\n") {
+			t.Fatalf("в ссылке остался мусор разметки: %q", s.URL)
 		}
-		if s.PingMS > 0 {
-			withPing++
+		// Пинга этот источник не даёт вовсе, и выдумывать его нельзя.
+		if s.PingMS != 0 {
+			t.Fatalf("у сервера %q взялся пинг %d, а источник его не измеряет",
+				s.Title, s.PingMS)
 		}
 		if s.Country != "" {
 			withCountry++
 		}
 	}
-	if withPing == 0 {
-		t.Error("ни у одного сервера не снят пинг — отбор лучших работать не будет")
-	}
-	if withCountry == 0 {
-		t.Error("ни у одного сервера не снята страна")
+	if withCountry != len(servers) {
+		t.Errorf("страна снята у %d серверов из %d", withCountry, len(servers))
 	}
 }
 
-// Обход кончается по числу карточек, а не по числу ключей: карточка без
-// data-key-url на первой странице есть, и порог по ключам оборвал бы обход на ней.
-func TestPoolCatalogPageEndsByCards(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join("testdata", "vpnkeys-vless-page1.html"))
+// Мёртвая по мнению сайта карточка в пул не идёт и запроса за ключом не стоит.
+func TestOutlineKeysSkipsOffline(t *testing.T) {
+	cards := parseOutlineKeysList(fixture(t, "outlinekeys-outline-page2.html"))
+	online, offline := 0, 0
+	for _, c := range cards {
+		if c.online {
+			online++
+		} else {
+			offline++
+		}
+	}
+	if online != 5 || offline != 15 {
+		t.Fatalf("на странице %d живых и %d мёртвых, в фикстуре 5 и 15", online, offline)
+	}
+}
+
+// Конец каталога — страница без карточек: сайт отдаёт её с кодом 200, а не 404.
+func TestOutlineKeysEmptyPageEndsCrawl(t *testing.T) {
+	if cards := parseOutlineKeysList(fixture(t, "outlinekeys-outline-page3.html")); len(cards) != 0 {
+		t.Fatalf("на пустой странице нашлось %d карточек", len(cards))
+	}
+}
+
+// Разделы vless и trojan того же сайта не собираются вовсе: их ссылки приходят со
+// срезанным query, проходят парсер и гарантированно не соединяются (ADR 0015).
+func TestOutlineKeysRefusesTruncatedSections(t *testing.T) {
+	srv, requests := catalogServer(t)
+	c := poolCatalog(srv)
+
+	for _, section := range []string{"/protocols/vless/", "/protocols/trojan/", "/"} {
+		_, err := c.Servers(context.Background(), srv.URL+section)
+		if err == nil {
+			t.Fatalf("раздел %s принят", section)
+		}
+		if !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("раздел %s отвергнут не как неверный ввод: %v", section, err)
+		}
+	}
+	if *requests != 0 {
+		t.Errorf("за чужим разделом сходили в сеть %d раз", *requests)
+	}
+}
+
+// Ключ не той схемы в БД не попадает, даже если сайт отдал его в разделе outline:
+// раздел мы выбрали, но подтверждение берём из самой ссылки.
+func TestOutlineKeysSkipsForeignScheme(t *testing.T) {
+	list := fixture(t, "outlinekeys-outline-page1.html")
+	vless := fixture(t, "outlinekeys-key-vless.html")
+	empty := fixture(t, "outlinekeys-outline-page3.html")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case reKeyID.MatchString(r.URL.Path):
+			_, _ = io.WriteString(w, vless)
+		case r.URL.Query().Get("page") == "1":
+			_, _ = io.WriteString(w, list)
+		default:
+			_, _ = io.WriteString(w, empty)
+		}
+	}))
+	defer srv.Close()
+	defer RegisterPoolDriver(srv.Listener.Addr().(*net.TCPAddr).IP.String(), outlineKeys{})()
+
+	_, err := poolCatalog(srv).Servers(context.Background(), catalogAddr(srv))
+	if err == nil {
+		t.Fatal("страница с vless-ключом дала пул")
+	}
+	if !errors.Is(err, ErrBadResponse) {
+		t.Errorf("ожидался пустой каталог, получено: %v", err)
+	}
+}
+
+// Ключ, который не осилит наш парсер, в БД не попадает: ссылка, которую не возьмёт
+// генератор конфига, занимает место и проходит как исправная до первой пробы.
+func TestPoolCatalogDropsUnparsedKeys(t *testing.T) {
+	srv, _ := catalogServer(t)
+	c := poolCatalog(srv)
+	c.CheckKey = func(raw string) error {
+		if strings.Contains(raw, ":39") {
+			return fmt.Errorf("наш парсер такое не берёт")
+		}
+		return nil
+	}
+
+	servers, err := c.Servers(context.Background(), catalogAddr(srv))
 	if err != nil {
-		t.Fatalf("чтение фикстуры: %v", err)
+		t.Fatalf("Servers: %v", err)
 	}
-	keys, cards := parseVPNKeysPage(string(body))
-	if cards != poolPerPage {
-		t.Fatalf("карточек на первой странице %d, ожидалось %d", cards, poolPerPage)
+	for _, s := range servers {
+		if strings.Contains(s.URL, ":39") {
+			t.Fatalf("неразобравшийся ключ попал в состав: %q", s.Title)
+		}
 	}
-	if len(keys) >= cards {
-		t.Fatalf("ключей %d при %d карточках — карточка без ссылки не найдена, "+
-			"а обход по ключам обрывался бы на первой странице", len(keys), cards)
+	if len(servers) != 5 {
+		t.Fatalf("в составе %d серверов, отбраковано должно быть двадцать ключей первой страницы из двадцати пяти",
+			len(servers))
 	}
+}
+
+// Потолок собранного соблюдается, и лишних запросов за ним не делается.
+func TestPoolCatalogRespectsLimit(t *testing.T) {
+	srv, requests := catalogServer(t)
+	c := poolCatalog(srv)
+	c.Limit = 7
+
+	servers, err := c.Servers(context.Background(), catalogAddr(srv))
+	if err != nil {
+		t.Fatalf("Servers: %v", err)
+	}
+	if len(servers) != 7 {
+		t.Fatalf("собрано %d ключей при потолке 7", len(servers))
+	}
+	// Одна страница списка и семь страниц ключей: за восьмым уже не ходили.
+	if *requests != 8 {
+		t.Errorf("сделано %d запросов, ожидалось 8", *requests)
+	}
+}
+
+// Драйвер выбирается по хосту: добавление источника — запись в карте, а не правка
+// существующего разборщика.
+func TestPoolDriverByHost(t *testing.T) {
+	defer RegisterPoolDriver("keys.example", fakePoolDriver{})()
+
+	d, u, err := PoolDriverFor("https://keys.example/anything")
+	if err != nil {
+		t.Fatalf("PoolDriverFor: %v", err)
+	}
+	if d.Name() != "fake" || u.Host != "keys.example" {
+		t.Errorf("выбран драйвер %q для %s", d.Name(), u)
+	}
+	if got, err := PoolKeyType("https://keys.example/anything"); err != nil || got != store.TunnelSOCKS {
+		t.Errorf("протокол пула %q (%v), а его сообщает драйвер", got, err)
+	}
+	if got, err := PoolKeyType(DefaultPoolCatalogURL); err != nil || got != store.TunnelShadowsocks {
+		t.Errorf("у каталога по умолчанию протокол %q (%v)", got, err)
+	}
+}
+
+// Хост без драйвера — внятная ошибка, а не пустой пул. Умерший источник узнаётся
+// отдельно: у всех установок до ADR 0015 в БД лежит именно он.
+func TestPoolDriverUnknownHost(t *testing.T) {
+	for _, addr := range []string{
+		"https://example.org/protocol/vless",
+		"https://vpnkeys.me/protocol/vless",
+	} {
+		if _, _, err := PoolDriverFor(addr); !errors.Is(err, ErrNoPoolDriver) {
+			t.Errorf("%s: ожидалась ErrNoPoolDriver, получено: %v", addr, err)
+		}
+	}
+	if !PoolCatalogRetired("https://vpnkeys.me/protocol/vless") {
+		t.Error("умерший источник не опознан")
+	}
+	if PoolCatalogRetired(DefaultPoolCatalogURL) {
+		t.Error("живой каталог сочтён умершим")
+	}
+}
+
+// fakePoolDriver — драйвер-пустышка: доказывает, что источник добавляется, не трогая
+// разборщик outlinekeys.
+type fakePoolDriver struct{}
+
+func (fakePoolDriver) Name() string              { return "fake" }
+func (fakePoolDriver) KeyType() store.TunnelType { return store.TunnelSOCKS }
+func (fakePoolDriver) Servers(context.Context, *poolCrawl, *url.URL) ([]store.PoolServer, error) {
+	return []store.PoolServer{{URL: "socks://198.51.100.1:1080"}}, nil
+}
+
+// catalogStub — каталог на своей разметке: тот же драйвер, но страницы задаёт тест.
+func catalogStub(t *testing.T, h http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	t.Cleanup(RegisterPoolDriver(srv.Listener.Addr().(*net.TCPAddr).IP.String(), outlineKeys{}))
+	return srv
 }
 
 func TestPoolCatalogBadResponse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := catalogStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
+	})
 
-	c := &PoolCatalog{Client: srv.Client(), Log: quietSlog()}
-	_, err := c.Servers(context.Background(), srv.URL+"/protocol/vless")
+	c := poolCatalog(srv)
+	_, err := c.Servers(context.Background(), catalogAddr(srv))
 	if !errors.Is(err, ErrBadResponse) {
 		t.Fatalf("ожидалась ErrBadResponse, получено: %v", err)
 	}
@@ -126,13 +327,12 @@ func TestPoolCatalogBadResponse(t *testing.T) {
 // Страница без карточек — не пул из нуля серверов, а ошибка: молча обнулить состав
 // значило бы выкинуть из конфига работающие серверы.
 func TestPoolCatalogEmptyPage(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := catalogStub(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("<html><body></body></html>"))
-	}))
-	defer srv.Close()
+	})
 
-	c := &PoolCatalog{Client: srv.Client(), Log: quietSlog()}
-	if _, err := c.Servers(context.Background(), srv.URL+"/protocol/vless"); err == nil {
+	c := poolCatalog(srv)
+	if _, err := c.Servers(context.Background(), catalogAddr(srv)); err == nil {
 		t.Fatal("пустой каталог принят за пул без серверов")
 	}
 }
@@ -165,7 +365,7 @@ func (w *poolWriter) written() []string {
 func poolManager(t *testing.T, srv *httptest.Server, w *poolWriter) *PoolManager {
 	t.Helper()
 	return NewPoolManager(PoolManagerOptions{
-		Catalog: &PoolCatalog{Client: srv.Client(), Log: quietSlog()},
+		Catalog: poolCatalog(srv),
 		Writer:  w,
 		Logger:  quietSlog(),
 	})
@@ -178,7 +378,7 @@ func TestPoolManagerWritesOnlyOnChange(t *testing.T) {
 	w := &poolWriter{}
 	m := poolManager(t, srv, w)
 
-	catalog := srv.URL + "/protocol/vless"
+	catalog := catalogAddr(srv)
 	m.SetTunnels([]PoolTunnel{{ID: "pppp", Name: "пул", CatalogURL: catalog, Enabled: true}})
 
 	if err := m.Refresh(context.Background()); err != nil {
@@ -224,7 +424,7 @@ func TestPoolManagerIgnoresPingDrift(t *testing.T) {
 	srv, _ := catalogServer(t)
 	w := &poolWriter{}
 	m := poolManager(t, srv, w)
-	catalog := srv.URL + "/protocol/vless"
+	catalog := catalogAddr(srv)
 
 	m.SetTunnels([]PoolTunnel{{ID: "pppp", Name: "пул", CatalogURL: catalog, Enabled: true}})
 	if err := m.Refresh(context.Background()); err != nil {
@@ -256,7 +456,7 @@ func TestPoolManagerSkipsDisabled(t *testing.T) {
 
 	m.SetTunnels([]PoolTunnel{{
 		ID: "pppp", Name: "выключенный пул",
-		CatalogURL: srv.URL + "/protocol/vless", Enabled: false,
+		CatalogURL: catalogAddr(srv), Enabled: false,
 	}})
 	if err := m.Refresh(context.Background()); err != nil {
 		t.Fatalf("Refresh: %v", err)
@@ -280,8 +480,8 @@ func TestPoolManagerOneFailureDoesNotStopOthers(t *testing.T) {
 	w := &poolWriter{}
 	m := poolManager(t, srv, w)
 	m.SetTunnels([]PoolTunnel{
-		{ID: "broken", Name: "битый", CatalogURL: broken.URL + "/protocol/vless", Enabled: true},
-		{ID: "pppp", Name: "пул", CatalogURL: srv.URL + "/protocol/vless", Enabled: true},
+		{ID: "broken", Name: "битый", CatalogURL: broken.URL + outlineKeysSection, Enabled: true},
+		{ID: "pppp", Name: "пул", CatalogURL: catalogAddr(srv), Enabled: true},
 	})
 
 	err := m.Refresh(context.Background())
@@ -418,7 +618,7 @@ func TestRefreshPoolWithoutSetTunnels(t *testing.T) {
 	m := poolManager(t, srv, w)
 
 	changed, err := m.RefreshPool(context.Background(), PoolTunnel{
-		ID: "свежий", Name: "пул", CatalogURL: srv.URL + "/protocol/vless", Enabled: false,
+		ID: "свежий", Name: "пул", CatalogURL: catalogAddr(srv), Enabled: false,
 	})
 	if err != nil {
 		t.Fatalf("RefreshPool: %v", err)
@@ -591,12 +791,13 @@ func TestMergePoolReplacesOnlyAfterRepeatedMiss(t *testing.T) {
 }
 
 // Пагинация добавляется к адресу каталога, не затирая его параметров.
-func TestPoolPageURL(t *testing.T) {
-	got, err := poolPageURL("https://vpnkeys.me/protocol/vless?sort=ping", 2)
+func TestOutlineKeysPageURL(t *testing.T) {
+	u, err := url.Parse("https://outlinekeys.com/protocols/outline/?sort=new")
 	if err != nil {
-		t.Fatalf("poolPageURL: %v", err)
+		t.Fatalf("разбор адреса: %v", err)
 	}
-	for _, want := range []string{"page=2", "per_page=100", "sort=ping"} {
+	got := outlineKeysPageURL(u, 2)
+	for _, want := range []string{"page=2", "sort=new", "/protocols/outline/"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("в адресе %q нет %q", got, want)
 		}

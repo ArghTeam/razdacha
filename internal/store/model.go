@@ -176,10 +176,16 @@ func (t *Tunnel) validate() error {
 	}
 	switch t.Source {
 	case SourcePool:
-		// Каталог разбирается только для vless: разборщик страницы снимает
-		// именно эти ключи, и участники группы собираются как vless-outbound'ы.
-		if t.Type != TunnelVLESS {
-			return fmt.Errorf("%w: туннель-пул %q бывает только типа vless, а не %q",
+		// Протокол пула — тот, который отдал драйвер каталога (ADR 0015): раздел
+		// outline у outlinekeys даёт shadowsocks, прежний источник давал vless.
+		// Прошитого здесь vless больше нет. Не бывает у пула только двух типов:
+		// wireguard — это endpoint, а не outbound, и группой urltest не собирается;
+		// raw означает «протокол не распознан», а участники группы разбираются
+		// каждый по своей ссылке.
+		switch t.Type {
+		case TunnelWireGuard, TunnelRaw, "":
+			return fmt.Errorf("%w: туннель-пул %q не бывает типа %q — "+
+				"участники группы собираются из ссылок каталога",
 				ErrInvalid, t.Name, t.Type)
 		}
 		if len(t.Parsed) > 0 {

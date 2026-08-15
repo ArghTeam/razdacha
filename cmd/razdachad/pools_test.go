@@ -3,11 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -50,33 +54,68 @@ func (s *logSink) setChanged() int { return s.count("набор пулов из�
 
 // poolCatalogServer отдаёт сохранённые страницы каталога из фикстуры слоя lists:
 // в сеть тесты не ходят. Вторая функция — число сделанных запросов.
+//
+// Драйвер каталога выбирается по хосту, а httptest живёт на 127.0.0.1 со случайным
+// портом, поэтому боевой драйвер регистрируется на адрес тестового сервера
+// ([lists.RegisterPoolDriver]) — обход тогда идёт тем же кодом, что в проде.
 func poolCatalogServer(t *testing.T) (*httptest.Server, func() int) {
 	t.Helper()
 	var (
 		mu       sync.Mutex
 		requests int
 	)
+	read := func(name string) string {
+		body, err := os.ReadFile(filepath.Join("..", "..", "internal", "lists", "testdata", name))
+		if err != nil {
+			t.Fatalf("чтение фикстуры %s: %v", name, err)
+		}
+		return string(body)
+	}
+	pages := []string{
+		read("outlinekeys-outline-page1.html"),
+		read("outlinekeys-outline-page2.html"),
+		read("outlinekeys-outline-page3.html"),
+	}
+	key := read("outlinekeys-key-online.html")
+	keyPath := regexp.MustCompile(`^/key/(\d+)/$`)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		requests++
 		mu.Unlock()
-
-		name := "vpnkeys-vless-page" + r.URL.Query().Get("page") + ".html"
-		body, err := os.ReadFile(filepath.Join("..", "..", "internal", "lists", "testdata", name))
 		w.Header().Set("Content-Type", "text/html")
-		if err != nil {
-			// Страниц в фикстуре две; следующую сайт отдал бы без карточек.
-			_, _ = w.Write([]byte("<html><body>ничего не найдено</body></html>"))
+
+		if m := keyPath.FindStringSubmatch(r.URL.Path); m != nil {
+			// Порт в ссылке — номер ключа: одна фикстура на все страницы дала бы
+			// один и тот же ключ, и пул схлопнулся бы в один сервер.
+			_, _ = io.WriteString(w, strings.ReplaceAll(key, "212.193.6.27:234",
+				"212.193.6.27:"+m[1]))
 			return
 		}
-		_, _ = w.Write(body)
+		n, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if n < 1 || n > len(pages) {
+			n = len(pages)
+		}
+		_, _ = io.WriteString(w, pages[n-1])
 	}))
 	t.Cleanup(srv.Close)
+
+	d, _, err := lists.PoolDriverFor(lists.DefaultPoolCatalogURL)
+	if err != nil {
+		t.Fatalf("драйвер каталога по умолчанию: %v", err)
+	}
+	t.Cleanup(lists.RegisterPoolDriver(srv.Listener.Addr().(*net.TCPAddr).IP.String(), d))
 	return srv, func() int {
 		mu.Lock()
 		defer mu.Unlock()
 		return requests
 	}
+}
+
+// poolCatalogAddr — адрес каталога на тестовом сервере: раздел тот единственный,
+// который берёт драйвер.
+func poolCatalogAddr(srv *httptest.Server) string {
+	return srv.URL + "/protocols/outline/"
 }
 
 // createPool заводит туннель-пул в БД. Не встроенный: встроенный не удаляется, а
@@ -131,14 +170,14 @@ func TestSyncPoolTunnelsIgnoresServerChurn(t *testing.T) {
 	sink := &logSink{}
 
 	m := lists.NewPoolManager(lists.PoolManagerOptions{
-		Catalog: &lists.PoolCatalog{Client: srv.Client(), Log: sink.logger()},
+		Catalog: &lists.PoolCatalog{Client: srv.Client(), Log: sink.logger(), Pause: -1},
 		Writer:  st,
 		Logger:  sink.logger(),
 	})
 
 	// Сверка стартует на пустом состоянии: пул появляется уже при ней.
 	startSync(t, st, m, sink.logger())
-	tn := createPool(t, st, "пул", srv.URL+"/protocol/vless", true)
+	tn := createPool(t, st, "пул", poolCatalogAddr(srv), true)
 
 	waitFor(t, "появившийся пул не обошёлся сразу", func() bool { return sink.setChanged() >= 1 })
 	waitFor(t, "состав пула не записан в БД", func() bool {
@@ -238,5 +277,77 @@ func TestSyncPoolTunnelsRefreshesOnSetChange(t *testing.T) {
 			}
 			waitFor(t, "изменение набора не вызвало обход", func() bool { return sink.setChanged() >= 1 })
 		})
+	}
+}
+
+// Установка, пережившая смерть источника: в БД лежит встроенный пул с адресом
+// vpnkeys.me и составом vless-ключей. Старт демона обязан перевести его на живой
+// каталог, а не оставить молча пустым (issue #153).
+func TestEnsureBuiltinPoolRetargetsDeadCatalog(t *testing.T) {
+	ctx := context.Background()
+	st, _ := openStore(t)
+	sink := &logSink{}
+
+	res, err := st.EnsureBuiltinPool(ctx, retiredBuiltinPoolName,
+		"https://vpnkeys.me/protocol/vless", store.TunnelVLESS)
+	if err != nil || !res.Created {
+		t.Fatalf("заведение старого пула: %v (%+v)", err, res)
+	}
+	stale := []store.PoolServer{{URL: "vless://a@1.2.3.4:443", PingMS: 42}}
+	if err := st.UpdateTunnelPool(ctx, res.Tunnel.ID, stale, time.Now().UTC()); err != nil {
+		t.Fatalf("запись состава: %v", err)
+	}
+
+	ensureBuiltinPool(ctx, st, sink.logger())
+
+	got, err := st.Tunnel(ctx, res.Tunnel.ID)
+	if err != nil {
+		t.Fatalf("чтение пула: %v", err)
+	}
+	if got.Raw != lists.DefaultPoolCatalogURL {
+		t.Errorf("каталог остался прежним: %q", got.Raw)
+	}
+	if got.Type != store.TunnelShadowsocks {
+		t.Errorf("протокол пула %q, а драйвер нового каталога отдаёт shadowsocks", got.Type)
+	}
+	if len(got.Pool) != 0 {
+		t.Errorf("ключи закрывшегося сайта уцелели: %d", len(got.Pool))
+	}
+	if got.Name != builtinPoolName {
+		t.Errorf("имя пула %q, ожидалось %q", got.Name, builtinPoolName)
+	}
+	if sink.count("каталог встроенного пула закрылся") == 0 {
+		t.Error("переезд каталога не виден в логе")
+	}
+	// Второй старт ничего не меняет: пул уже на живом каталоге.
+	ensureBuiltinPool(ctx, st, sink.logger())
+	if got := sink.count("каталог встроенного пула закрылся"); got != 1 {
+		t.Errorf("переезд повторился %d раз", got)
+	}
+}
+
+// Имя, которое поменял пользователь, при переезде каталога остаётся его.
+func TestRetargetKeepsUserRenamedPool(t *testing.T) {
+	ctx := context.Background()
+	st, _ := openStore(t)
+	sink := &logSink{}
+
+	res, err := st.EnsureBuiltinPool(ctx, "Мой пул",
+		"https://vpnkeys.me/protocol/vless", store.TunnelVLESS)
+	if err != nil || !res.Created {
+		t.Fatalf("заведение старого пула: %v (%+v)", err, res)
+	}
+
+	ensureBuiltinPool(ctx, st, sink.logger())
+
+	got, err := st.Tunnel(ctx, res.Tunnel.ID)
+	if err != nil {
+		t.Fatalf("чтение пула: %v", err)
+	}
+	if got.Name != "Мой пул" {
+		t.Errorf("имя пользователя перебито на %q", got.Name)
+	}
+	if got.Raw != lists.DefaultPoolCatalogURL {
+		t.Errorf("каталог не переехал: %q", got.Raw)
 	}
 }

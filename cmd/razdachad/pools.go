@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/lists"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -17,7 +19,16 @@ const poolTunnelsInterval = 30 * time.Second
 
 // builtinPoolName — имя встроенного пула. Видно пользователю, поэтому по-русски и
 // без слова «встроенный»: то, что запись заведена демоном, панель показывает сама.
-const builtinPoolName = "Бесплатные VLESS"
+//
+// Протокола в имени нет: он теперь свойство каталога, а не пула (ADR 0015), и
+// «Бесплатные VLESS» на shadowsocks-пуле было бы враньём.
+const builtinPoolName = "Бесплатные ключи"
+
+// retiredBuiltinPoolName — имя, под которым встроенный пул заводился до ADR 0015.
+//
+// Переименовывается только оно: имя, которое пользователь поменял сам, — его, и
+// трогать его демон не вправе.
+const retiredBuiltinPoolName = "Бесплатные VLESS"
 
 // ensureBuiltinPool приводит БД к состоянию «встроенный пул бесплатных ключей есть».
 //
@@ -29,13 +40,21 @@ const builtinPoolName = "Бесплатные VLESS"
 // Неудача демон не останавливает: без пула панель работает, а сообщение в логе
 // объясняет, почему его нет (например, имя занято туннелем пользователя).
 func ensureBuiltinPool(ctx context.Context, st *store.Store, log *slog.Logger) {
-	res, err := st.EnsureBuiltinPool(ctx, builtinPoolName, lists.DefaultPoolCatalogURL)
+	typ, err := lists.PoolKeyType(lists.DefaultPoolCatalogURL)
+	if err != nil {
+		log.Error("у каталога по умолчанию нет драйвера", "каталог",
+			lists.DefaultPoolCatalogURL, "ошибка", err)
+		return
+	}
+
+	res, err := st.EnsureBuiltinPool(ctx, builtinPoolName, lists.DefaultPoolCatalogURL, typ)
 	if err != nil {
 		if ctx.Err() == nil {
 			log.Warn("встроенный пул не заведён", "ошибка", err)
 		}
 		return
 	}
+	retargetDeadCatalog(ctx, st, res.Tunnel, typ, log)
 	switch {
 	case res.Created:
 		log.Info("заведён встроенный пул бесплатных ключей",
@@ -53,6 +72,55 @@ func ensureBuiltinPool(ctx context.Context, st *store.Store, log *slog.Logger) {
 	}
 }
 
+// retargetDeadCatalog переводит встроенный пул с умершего каталога на живой.
+//
+// Адрес каталога лежит в БД у самого туннеля, поэтому обновление демона его не
+// меняет: у всех, кто поставил razdacha до ADR 0015, там остался мёртвый
+// vpnkeys.me — обход упирается в несуществующий хост, а пул стоит пустым. Молча
+// пустой пул недопустим (issue #153), поэтому адрес и протокол переписываются, а
+// состав чистится: в нём ключи чужого протокола с закрывшегося сайта.
+//
+// Только каталог из списка закрывшихся и только у встроенного пула: адрес, который
+// вписал человек, — его решение, и подменять его нельзя. Каталог живого, но
+// неизвестного нам сайта останется как есть и получит внятную ошибку при обходе.
+//
+// Заодно переименовывается запись, если имя осталось прежним, — протокол пула
+// перестал быть vless, и «Бесплатные VLESS» на shadowsocks было бы враньём. Имя,
+// поменянное пользователем, остаётся его.
+func retargetDeadCatalog(ctx context.Context, st *store.Store, t store.Tunnel,
+	typ store.TunnelType, log *slog.Logger,
+) {
+	if !t.Builtin || !lists.PoolCatalogRetired(t.Raw) {
+		return
+	}
+	if err := st.RetargetBuiltinPool(ctx, t.ID, lists.DefaultPoolCatalogURL, typ); err != nil {
+		if ctx.Err() == nil {
+			log.Warn("каталог встроенного пула не переведён на живой источник",
+				"туннель", t.Name, "каталог", t.Raw, "ошибка", err)
+		}
+		return
+	}
+	log.Warn("каталог встроенного пула закрылся, пул переведён на новый источник",
+		"туннель", t.Name, "было", t.Raw, "стало", lists.DefaultPoolCatalogURL,
+		"протокол", typ, "серверов_сброшено", len(t.Pool))
+
+	if t.Name != retiredBuiltinPoolName {
+		return
+	}
+	t.Name, t.Raw, t.Type, t.Pool, t.PoolUpdatedAt = builtinPoolName,
+		lists.DefaultPoolCatalogURL, typ, nil, time.Time{}
+	if err := st.UpdateTunnel(ctx, t); err != nil {
+		// Имя могло быть занято чужим туннелем — это не повод шуметь ошибкой:
+		// пул уже переехал, а название осталось прежним.
+		if ctx.Err() == nil {
+			log.Info("встроенный пул не переименован", "туннель", t.Name, "ошибка", err)
+		}
+		return
+	}
+	log.Info("встроенный пул переименован", "было", retiredBuiltinPoolName,
+		"стало", builtinPoolName)
+}
+
 // startPools поднимает расписание обновления туннелей-пулов.
 //
 // Каталоги ключей живут на чужих сайтах, поэтому неудача здесь демон не
@@ -61,7 +129,7 @@ func ensureBuiltinPool(ctx context.Context, st *store.Store, log *slog.Logger) {
 // своими правилами (ADR 0010), исправные туннели это не задевает.
 func startPools(ctx context.Context, st *store.Store, log *slog.Logger) *lists.PoolManager {
 	m := lists.NewPoolManager(lists.PoolManagerOptions{
-		Catalog: &lists.PoolCatalog{Log: log},
+		Catalog: &lists.PoolCatalog{Log: log, CheckKey: poolKeyCheck},
 		Writer:  st,
 		Logger:  log,
 	})
@@ -74,6 +142,26 @@ func startPools(ctx context.Context, st *store.Store, log *slog.Logger) *lists.P
 	m.Start(ctx)
 	go syncPoolTunnels(ctx, st, m, tunnels, poolTunnelsInterval, log)
 	return m
+}
+
+// poolKeyCheck отвергает ключ каталога, который не осилит генератор конфига.
+//
+// Замыкание от демона, а не вызов внутри слоя lists: слой списков про singbox не
+// знает — та же связь, что у `PlainLists` в обратную сторону. Ключ, не прошедший наш
+// парсер, в БД не попадает вовсе: в конфиге он занимал бы место участника группы и
+// проходил бы как исправный до первой пробы, а генератор всё равно выбросил бы его с
+// предупреждением на каждой генерации (issue #153).
+func poolKeyCheck(raw string) error {
+	res, err := singbox.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if res.Outbound == nil {
+		// Участники группы `urltest` — только outbound'ы: endpoint (wireguard)
+		// в неё не встаёт.
+		return fmt.Errorf("ключ разобрался, но outbound из него не вышел")
+	}
+	return nil
 }
 
 // syncPoolTunnels держит набор пулов равным состоянию БД. Появившийся пул
