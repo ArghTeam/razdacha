@@ -19,6 +19,12 @@
 **New surface:** Новый сентинел `lists.ErrPoolCrawlBusy`.
 **Beware:** Замок — по адресу каталога, не по туннелю; такт расписания, попавший на занятый каталог, пишет INFO и неудачей не считается; обрыв клиентского соединения отпускает замок.
 
+### #150 — состав стартового набора правил
+
+**Changed:** `presetKeys`, `Preset()` и поле `InPreset`/`in_preset` в `CommunityService`; состав — `russia_inside`, `google_ai`, `discord`, `meta`, `twitter`.
+**New surface:** `CommunityService.Preset()`, поле `InPreset` в ответе каталога.
+**Beware:** ASN-списки (`cloudflare`, `cloudfront`, `hetzner`, `ovh`, `digitalocean`) намеренно не входят — с ними пресет перестаёт быть селективным; `TestPreset` проверяет, что ключи существуют в каталоге и не конфликтуют.
+
 ## 2026-07-29
 
 ### #121 — обновление пула само доезжает до sing-box
