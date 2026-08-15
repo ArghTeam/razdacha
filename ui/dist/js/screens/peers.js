@@ -26,11 +26,17 @@ export function view() {
 
   const rows = state.peers.map((p) => {
     const on = isOnline(p);
+    // Счётчики живут на wg0, а не на текущем соединении: офлайн-пир их не
+    // теряет, теряет их только выключенный — демон снял его с интерфейса, и
+    // данных для него больше нет вовсе (#104). «был <когда>» остаётся рядом с
+    // цифрами: это разные вопросы — сколько прошло и когда виделись в последний
+    // раз.
+    const traffic = `↓ ${bytes(p.rx_bytes)} · ↑ ${bytes(p.tx_bytes)}`;
     const meta = p.enabled === false
       ? 'отключён'
       : on
-        ? `↓ ${bytes(p.rx_bytes)} · ↑ ${bytes(p.tx_bytes)}${p.endpoint ? ' · ' + esc(p.endpoint) : ''}`
-        : `был ${since(p.last_handshake)}`;
+        ? `${traffic}${p.endpoint ? ' · ' + esc(p.endpoint) : ''}`
+        : `${traffic} · ${p.last_handshake ? 'был ' + since(p.last_handshake) : 'не подключался'}`;
     return `
       <div class="row${p.enabled === false ? ' dim' : ''}">
         <span class="dot ${on ? 'on' : 'off'}" title="${on ? 'онлайн' : 'офлайн'}"></span>
@@ -58,7 +64,7 @@ export function view() {
     </div>
     <div class="card">${rows || '<div class="empty">Клиентов пока нет.</div>'}</div>
     <p class="screen-sub" style="margin-top:10px">
-      Трафик считается накопительно с момента создания пира. Адрес, ключи, MTU и DNS
+      Трафик — с последнего поднятия wg0, не за всё время. Адрес, ключи, MTU и DNS
       выставляются сами — их нельзя задать вручную.
     </p>`;
 }
