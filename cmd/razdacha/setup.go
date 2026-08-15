@@ -195,7 +195,8 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 	if mode.Public {
 		inst.Site = packaging.PublicSiteConfig()
 	}
-	if _, err := inst.Install(); err != nil {
+	installRes, err := inst.Install()
+	if err != nil {
 		return summary{}, err
 	}
 
@@ -235,6 +236,15 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		PanelModeInferred: mode.Inferred,
 		PanelModeUnknown:  mode.Undetermined,
 		Color:             opts.color,
+	}
+	// ExternalPanelURL — адрес, по которому панель отвечает снаружи VPN. Берём
+	// адрес, уже определённый для SAN сертификата (Installer.certIPs), а не
+	// вызываем определение заново: это тот же адрес, на который выписан
+	// сертификат, и вторая попытка могла бы разойтись с первой. Пусто, если
+	// режим не публичный или адрес определить не удалось — тогда врать нечем,
+	// и в выводе печатается честная причина, а не подставной адрес.
+	if installRes.ExternalAddr != "" {
+		out.ExternalPanelURL = panelURL(installRes.ExternalAddr)
 	}
 	if created {
 		conf, err := netstack.ClientConfig(peer, settings, serverKey.PublicKey().String())
