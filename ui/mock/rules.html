@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>razdacha — экран «Правила» на замоканном ответе</title>
+  <link rel="stylesheet" href="../dist/app.css">
+</head>
+<body>
+
+<!--
+  Стенд экрана «Правила» на замоканных `GET /api/rules` и `POST /api/route/test`.
+
+  Зачем: три состояния, ради которых заводился issue #149, на живом сервере
+  сходятся редко и не сразу — выключенный туннель, пул без живых серверов и
+  список, который не обновился. Стенд рисует их рядом одним прогоном.
+
+  Почему здесь, а не в `ui/dist`: `go:embed` забирает только `dist`, поэтому в
+  бинарник демона этот файл не попадает.
+
+  Запуск (любой статический сервер, из корня репозитория):
+
+      python3 -m http.server 8123 --directory ui
+      # открыть http://localhost:8123/mock/rules.html
+-->
+
+<div id="app">
+  <main id="screen" class="screen"></main>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" id="modal"></div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module">
+import { state, closeMenu, closeModal, toastError } from '../dist/js/shell.js';
+import * as api from '../dist/js/api.js';
+import * as rules from '../dist/js/screens/rules.js';
+
+const hoursAgo = (h) => new Date(Date.now() - h * 3600_000).toISOString();
+
+state.communityLists = [
+  { key: 'youtube', title: 'YouTube', has_subnets: false },
+  { key: 'telegram', title: 'Telegram', has_subnets: true },
+  { key: 'discord', title: 'Discord', has_subnets: true },
+];
+
+state.tunnels = [
+  { id: 'wg-1', name: 'Нидерланды', type: 'wireguard', source: 'wg_conf', enabled: true, status: 'up' },
+  { id: 'wg-off', name: 'Резерв', type: 'wireguard', source: 'wg_conf', enabled: false, status: 'not_applied' },
+  {
+    id: 'pool-1', name: 'Бесплатные VLESS', type: 'vless', source: 'pool', builtin: true,
+    enabled: true, status: 'down', pool: { servers_total: 24, servers_alive: 0 },
+  },
+  {
+    // Clash API недоступен: живых серверов не «ноль», а «неизвестно», и красить
+    // такое правило нельзя — это ложное срабатывание.
+    id: 'pool-2', name: 'Пул без связи с ядром', type: 'vless', source: 'pool', builtin: true,
+    enabled: true, status: null, pool: { servers_total: 24, servers_alive: null },
+  },
+];
+
+state.peers = [{ id: 'p1', name: 'Ноутбук' }];
+
+state.rules = [
+  {
+    id: 'r1', name: 'YouTube и Telegram', action: 'tunnel', tunnel_id: 'wg-1', enabled: true,
+    priority: 1, community_lists: ['youtube', 'telegram'], domains: [], subnets: [],
+    remote_lists: [], peer_scope: 'all', peer_ids: [],
+    lists_status: [
+      { key: 'youtube', state: 'core', updated_at: null },
+      {
+        key: 'telegram', source: 'https://.../telegram.lst', state: 'updated',
+        subnets_only: true, updated_at: hoursAgo(5),
+      },
+    ],
+  },
+  {
+    id: 'r2', name: 'Discord и свой список', action: 'tunnel', tunnel_id: 'wg-1', enabled: true,
+    priority: 2, community_lists: ['discord'], domains: [], subnets: [],
+    remote_lists: ['https://example.com/my.lst'], peer_scope: 'all', peer_ids: [],
+    lists_status: [
+      {
+        key: 'discord', source: 'https://.../discord.lst', state: 'failed', subnets_only: true,
+        updated_at: hoursAgo(40), error: 'некорректный ответ источника: сервер ответил 404 Not Found',
+      },
+      { url: 'https://example.com/my.lst', source: 'https://example.com/my.lst', state: 'never', updated_at: null },
+    ],
+  },
+  {
+    id: 'r3', name: 'Через выключенный туннель', action: 'tunnel', tunnel_id: 'wg-off', enabled: true,
+    priority: 3, community_lists: [], domains: ['example.org'], subnets: [], remote_lists: [],
+    peer_scope: 'all', peer_ids: [], lists_status: [],
+  },
+  {
+    id: 'r4', name: 'Через пул без живых серверов', action: 'tunnel', tunnel_id: 'pool-1', enabled: true,
+    priority: 4, community_lists: [], domains: ['example.net'], subnets: [], remote_lists: [],
+    peer_scope: 'all', peer_ids: [], lists_status: [],
+  },
+  {
+    id: 'r5', name: 'Пул, про который ядро молчит', action: 'tunnel', tunnel_id: 'pool-2', enabled: true,
+    priority: 5, community_lists: [], domains: ['example.info'], subnets: [], remote_lists: [],
+    peer_scope: 'all', peer_ids: [], lists_status: [],
+  },
+  {
+    id: 'r6', name: 'Банки напрямую', action: 'direct', enabled: true, priority: 6,
+    community_lists: [], domains: ['sberbank.ru'], subnets: [], remote_lists: [],
+    peer_scope: 'all', peer_ids: [], lists_status: [],
+  },
+  {
+    id: 'r7', name: 'Выключенное правило', action: 'tunnel', tunnel_id: 'wg-off', enabled: false,
+    priority: 7, community_lists: [], domains: ['off.example'], subnets: [], remote_lists: [],
+    peer_scope: 'all', peer_ids: [], lists_status: [],
+  },
+];
+
+/* Пробник: ответы демона в трёх исходах — правило названо, кандидаты и
+   недоступное ядро. Домен решает, какой показать. */
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+api.route.test = async (domain) => {
+  await wait(250);
+  if (domain.includes('down')) {
+    const err = new api.ApiError(503, 'not_ready',
+      'Пробник спрашивает работающий sing-box, а он не ответил: sing-box не отвечает: '
+      + 'не ответил за 11s. Проверьте состояние sing-box на экране «Диагностика».');
+    throw err;
+  }
+  if (domain.includes('blocked')) {
+    // Домен под правилом «блокировать»: ядро отвечает REFUSED, адреса нет, и
+    // это ответ о маршрутизации, а не молчание резолвера.
+    return {
+      domain, addresses: [], fakeip: false,
+      resolve_error: 'запрос отклонён правилом (REFUSED) — так отвечает правило «блокировать» '
+        + 'и правило с недоступным туннелем',
+      refused: true,
+      rule: { id: 'r4', name: 'Через пул без живых серверов', action: 'tunnel', outbound: 'reject', certain: true },
+      candidates: [], core_rules: 6, diverged: false,
+      verdict: 'Домен ловит правило «Через пул без живых серверов», ядро отправляет его в reject. '
+        + 'Резолвер ядра адреса не выдал: запрос отклонён правилом (REFUSED).',
+    };
+  }
+  if (domain.includes('youtube')) {
+    return {
+      domain, addresses: ['198.18.0.9'], fakeip: true, rule: null,
+      candidates: [
+        { id: 'r1', name: 'YouTube и Telegram', action: 'tunnel', outbound: 'route(tun-wg-1)', certain: false },
+        { id: 'r2', name: 'Discord и свой список', action: 'tunnel', outbound: 'route(tun-wg-1)', certain: false },
+      ],
+      core_rules: 6, diverged: false,
+      verdict: 'Домен ловит одно из правил со списками: «YouTube и Telegram» (route(tun-wg-1)), '
+        + '«Discord и свой список» (route(tun-wg-1)). Какое именно — сказать нечем: состав готовых '
+        + 'списков ведёт сам sing-box и наружу не отдаёт. Выигрывает первое из перечисленных. '
+        + 'Резолвер выдал FakeIP — трафик к домену пойдёт через sing-box.',
+    };
+  }
+  if (domain.includes('sberbank')) {
+    return {
+      domain, addresses: ['203.0.113.7'], fakeip: false,
+      rule: { id: 'r6', name: 'Банки напрямую', action: 'direct', outbound: 'route(direct)', certain: true },
+      candidates: [], core_rules: 6, diverged: true,
+      verdict: 'Домен ловит правило «Банки напрямую», ядро отправляет его в route(direct). '
+        + 'Резолвер выдал настоящий адрес: трафик к домену пойдёт мимо FakeIP и попадёт в sing-box, '
+        + 'только если адрес есть в nft-сете подсетей. Внимание: в конфиге ядра 6 правил, '
+        + 'а в базе другое число — есть непримененные правки, нажмите «Применить».',
+    };
+  }
+  return {
+    domain, addresses: ['93.184.216.34'], fakeip: false, rule: null, candidates: [],
+    core_rules: 6, diverged: false,
+    verdict: 'Ни одно правило домен не ловит: трафик уйдёт напрямую, с адреса сервера. '
+      + 'Резолвер выдал настоящий адрес: трафик к домену пойдёт мимо FakeIP и попадёт в sing-box, '
+      + 'только если адрес есть в nft-сете подсетей.',
+  };
+};
+
+const render = () => { document.querySelector('#screen').innerHTML = rules.view(); };
+document.addEventListener('razdacha:render', render);
+
+/* Делегирование то же, что в app.js: разметка перерисовывается целиком. */
+const ACTIONS = { ...rules.actions, 'close-modal': closeModal };
+
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-act]');
+  if (!btn) { closeMenu(); return; }
+  if (!btn.dataset.act.startsWith('menu-')) closeMenu();
+  const fn = ACTIONS[btn.dataset.act];
+  if (!fn) return;
+  const res = fn(btn.dataset.id || '', btn);
+  if (res && typeof res.catch === 'function') res.catch((err) => toastError(err));
+});
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter') return;
+  const fn = ACTIONS[ev.target.dataset ? ev.target.dataset.enter : ''];
+  if (!fn) return;
+  ev.preventDefault();
+  const res = fn('', ev.target);
+  if (res && typeof res.catch === 'function') res.catch((err) => toastError(err));
+});
+
+render();
+</script>
+
+</body>
+</html>

@@ -129,6 +129,9 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		// (issue #125). Применению они уже отданы в startApply; здесь их берёт
 		// диагностика, которая обязана сверять конфиг так же, как он собран.
 		PlainLists: plainLists(listsMgr),
+		// Состояние обновления списков — тем же приёмом: панель показывает его
+		// рядом с чипом списка в строке правила (issue #149).
+		ListStates: listStates(listsMgr),
 		Pools:      poolsMgr,
 		Build:      buildInfo(),
 	})

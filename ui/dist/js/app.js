@@ -330,11 +330,18 @@ function setOffline(on) {
 /* Единственный источник свежих чисел: живого канала нет (docs/05-api.md).
    Такт пропускается, пока вкладка скрыта — панель, забытая в фоне, не должна
    держать демон занятым, — и пока открыта модалка: перерисовка снесла бы
-   наполовину заполненную форму. */
+   наполовину заполненную форму. По той же причине такт молчит, пока курсор
+   стоит в поле ввода прямо на экране: перерисовка экрана заменяет разметку
+   целиком, и набранное вместе с фокусом пропадало бы посреди слова. */
+function typing() {
+  const el = document.activeElement;
+  return Boolean(el && el.matches && el.matches('input, textarea'));
+}
+
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
-    if (document.visibilityState === 'hidden' || modalOpen()) return;
+    if (document.visibilityState === 'hidden' || modalOpen() || typing()) return;
     navigate();
   }, 15000);
 }
@@ -409,6 +416,16 @@ async function boot() {
 
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') { closeModal(); closeMenu(); }
+    // Enter в поле, помеченном `data-enter`, равнозначен нажатию его кнопки:
+    // формы на экранах не отправляются, а искать мышь ради одного домена —
+    // лишний шаг.
+    if (ev.key !== 'Enter') return;
+    const act = ev.target && ev.target.dataset ? ev.target.dataset.enter : '';
+    const fn = act ? ACTIONS[act] : null;
+    if (!fn) return;
+    ev.preventDefault();
+    const res = fn('', ev.target);
+    if (res && typeof res.catch === 'function') res.catch((err) => toastError(err));
   });
 
   // Одно делегирование на документ: разметка экранов перерисовывается целиком,

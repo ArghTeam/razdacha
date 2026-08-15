@@ -7,7 +7,9 @@ import {
   state, tunnelById, peerById, listTitle, toast, toastError,
   openModal, closeModal, modalShell, openMenu, notImplemented, refresh, markDirty,
 } from '../shell.js';
-import { $, $$, esc, lines, badLines, validCidr, plural } from '../util.js';
+import {
+  $, $$, esc, lines, badLines, validCidr, plural, since, stamp,
+} from '../util.js';
 
 export const title = 'Правила';
 
@@ -22,6 +24,82 @@ const head = () => `
     <button class="btn btn-primary" data-act="add-rule">+ Добавить</button>
     <div class="screen-sub">Проверяются сверху вниз, первое совпадение выигрывает.</div>
   </div>`;
+
+/* --- мёртвая цель ---------------------------------------------------------
+   После ADR 0013 правило с недоступным туннелем не исчезает и не течёт — оно
+   отказывает. Отказ обязан быть виден в строке: снаружи «туннель выключен» и
+   «всё работает» выглядят одинаково — ресурс просто не открывается. */
+
+/** Почему туннель не довезёт трафик. Пустая строка — довезёт.
+    Ложных срабатываний быть не должно: `servers_alive` у пула бывает null,
+    когда Clash API недоступен, и это «не знаем», а не «нет живых». */
+function tunnelTrouble(t) {
+  if (!t) return 'туннель удалён';
+  if (!t.enabled) return 'туннель выключен';
+  const pool = t.pool;
+  if (pool && pool.servers_alive === 0) return 'в пуле нет живых серверов';
+  return '';
+}
+
+/** Что не так с целью правила целиком, включая второе звено цепи: выключенное
+    второе звено роняет правило так же, как выключенный первый туннель. */
+function ruleTrouble(r) {
+  if (r.action !== 'tunnel') return '';
+  const first = tunnelTrouble(tunnelById(r.tunnel_id));
+  if (first) return first;
+  if (!r.via_tunnel_id) return '';
+  const via = tunnelTrouble(tunnelById(r.via_tunnel_id));
+  return via ? `второе звено цепи: ${via}` : '';
+}
+
+/* --- состояние списков ----------------------------------------------------
+   Список, который не обновился, тихо перестаёт ловить домены, и в панели это
+   было неотличимо от рабочего состояния. Состояний четыре, и схлопывать их
+   нельзя: «обновился», «не обновился с ошибкой», «ни разу не обновлялся» и
+   «этот список ведёт сам sing-box, демон его не качает». */
+const LIST_STATE = {
+  updated: { word: '', cls: '' },
+  failed: { word: 'не обновился', cls: 'list-bad' },
+  never: { word: 'ни разу не обновлялся', cls: 'list-cold' },
+  unknown: { word: 'состояние неизвестно', cls: 'list-cold' },
+  core: { word: '', cls: '' },
+};
+
+/** Состояния списков правила по ключу и по адресу — их отдаёт `GET /api/rules`
+    полем `lists_status`. Старый демон поля не отдаёт вовсе: тогда состояний нет
+    и чипы выглядят как раньше, без выдуманной зелёной галочки. */
+function listStates(r) {
+  const out = new Map();
+  for (const st of r.lists_status || []) out.set(st.key || st.url, st);
+  return out;
+}
+
+/** Подпись состояния для чипа: коротко и без наведения. */
+function listMark(st) {
+  if (!st) return '';
+  if (st.state === 'updated') return `обновлён ${since(st.updated_at)}`;
+  return LIST_STATE[st.state] ? LIST_STATE[st.state].word : '';
+}
+
+/** Всплывающая подсказка: подробности, включая текст ошибки источника. */
+function listHint(st, name) {
+  if (!st) return '';
+  switch (st.state) {
+    case 'updated':
+      return `${name}: подсети обновлены ${stamp(st.updated_at)}`;
+    case 'failed':
+      return `${name}: последняя попытка обновления не удалась — ${st.error}`
+        + (st.updated_at ? `. В деле версия от ${stamp(st.updated_at)}.` : '. Содержимого нет вовсе.');
+    case 'never':
+      return `${name}: демон ещё ни разу не обновлял этот список`;
+    case 'unknown':
+      return `${name}: планировщик списков не работает, состояние неизвестно`;
+    case 'core':
+      return `${name}: домены качает сам sing-box, у демона состояния по нему нет`;
+    default:
+      return '';
+  }
+}
 
 const conditions = (r) => ({
   lists: r.community_lists || [],
@@ -84,20 +162,57 @@ export function view() {
     const via = r.via_tunnel_id
       ? ` → ${esc((tunnelById(r.via_tunnel_id) || {}).name || 'туннель удалён')}`
       : '';
+    /* Недоступная цель красится прямо в строке: правило с ней не течёт мимо
+       туннеля, а отбрасывает трафик (ADR 0013), и снаружи это выглядит как
+       «ничего не открывается» без единой подсказки почему. */
+    const trouble = r.enabled ? ruleTrouble(r) : '';
     const dest = r.action === 'direct'
       ? '<span class="badge">напрямую</span>'
       : r.action === 'block'
         ? '<span class="badge err">блокировать</span>'
-        : `<span class="badge accent">→ ${esc((tunnelById(r.tunnel_id) || {}).name || 'туннель удалён')}${via}</span>`;
+        : `<span class="badge ${trouble ? 'err' : 'accent'}">${trouble ? '⚠ ' : ''}→ ${
+          esc((tunnelById(r.tunnel_id) || {}).name || 'туннель удалён')}${via}</span>`;
 
-    const chip = (text, key) =>
-      `<span class="chip${shadowed.has(key) ? ' shadowed' : ''}">${esc(text)}</span>`;
+    const states = listStates(r);
+    const chip = (text, key, extra = '') =>
+      `<span class="chip${shadowed.has(key) ? ' shadowed' : ''}${extra}">${esc(text)}</span>`;
+    /* Чип списка носит своё состояние: не обновившийся источник перестаёт
+       ловить домены молча, и по виду чипа это было не отличить от рабочего. */
+    const listChip = (name, key) => {
+      const st = states.get(key);
+      const mark = listMark(st);
+      const cls = st && LIST_STATE[st.state] ? LIST_STATE[st.state].cls : '';
+      const hint = listHint(st, name);
+      return `<span class="chip${shadowed.has(key) ? ' shadowed' : ''}${cls ? ` ${cls}` : ''}"${
+        hint ? ` title="${esc(hint)}"` : ''}>${esc(name)}${
+        mark ? `<span class="chip-state">${esc(mark)}</span>` : ''}</span>`;
+    };
     const chips = [
-      ...(r.community_lists || []).map((k) => chip(listTitle(k), k)),
+      ...(r.community_lists || []).map((k) => listChip(listTitle(k), k)),
       ...(r.domains || []).map((d) => chip(d, d)),
       ...(r.subnets || []).map((n) => chip(n, n)),
-      ...(r.remote_lists || []).map(() => '<span class="chip">внешний список</span>'),
+      ...(r.remote_lists || []).map((url) => listChip('внешний список', url)),
     ].join('');
+
+    /* Текст ошибки источника — строкой под чипами, а не только в подсказке:
+       «почему правило перестало ловить» читается без наведения. */
+    const badLists = (r.lists_status || []).filter((st) => st.state === 'failed');
+    const listNote = badLists.length ? `
+      <div class="overlap-note">
+        <span>⚠</span>
+        <span>${badLists.map((st) =>
+    `${esc(st.key ? listTitle(st.key) : st.url)} — ${esc(st.error)}`).join('; ')}${
+  badLists.some((st) => st.updated_at)
+    ? '. Правило работает на прошлой версии списка.'
+    : '. Содержимого нет вовсе — эти условия правило сейчас не ловит.'}</span>
+      </div>` : '';
+
+    const deadNote = trouble ? `
+      <div class="rule-dead-note">
+        <span>⚠</span>
+        <span>Правило не работает: ${esc(trouble)}. Трафик по нему отбрасывается,
+        а не уходит напрямую — так утечка не подменяет туннель (ADR 0013).</span>
+      </div>` : '';
 
     const scope = r.peer_scope === 'selected'
       ? (r.peer_ids || []).map((id) => (peerById(id) || {}).name || '?').join(', ')
@@ -112,7 +227,7 @@ export function view() {
       </div>` : '';
 
     return `
-      <div class="row${r.enabled ? '' : ' dim'}">
+      <div class="row${r.enabled ? '' : ' dim'}${trouble ? ' rule-dead' : ''}">
         <div class="rule-order">
           <button class="ord-btn" data-act="rule-up" data-id="${esc(r.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Выше">▲</button>
           <button class="ord-btn" data-act="rule-down" data-id="${esc(r.id)}" ${i === state.rules.length - 1 ? 'disabled' : ''} aria-label="Ниже">▼</button>
@@ -122,7 +237,7 @@ export function view() {
           <div class="row-title">${esc(r.name)} ${dest}</div>
           <div class="row-meta">${esc(scope)}${r.resolve_real_ip ? ' · реальный IP' : ''}</div>
           <div class="chips">${chips || '<span class="chip">условий нет — правило не попадёт в конфиг</span>'}</div>
-          ${note}
+          ${deadNote}${listNote}${note}
         </div>
         <div class="row-actions">
           <button class="toggle" role="switch" aria-checked="${Boolean(r.enabled)}" data-act="toggle-rule" data-id="${esc(r.id)}" aria-label="Включено"></button>
@@ -138,9 +253,91 @@ export function view() {
     ? '<p class="screen-sub" style="margin-top:10px">Каталог готовых списков пока недоступен: GET /api/lists/community не реализован. Свои домены и подсети работают.</p>'
     : '';
 
-  return head() + `
+  return head() + probeView() + `
     <div class="card">${rows || '<div class="empty">Правил пока нет — весь трафик идёт напрямую.</div>'}</div>
     ${listsNote}`;
+}
+
+/* --- пробник маршрута -----------------------------------------------------
+   «Куда уйдёт этот домен и по какому правилу» — вопрос, на который до сих пор
+   отвечал только конфиг, прочитанный руками. Спрашивается работающий sing-box,
+   а не база: правки копятся и применяются кнопкой, и объяснять порядок правил
+   бессмысленно, если применён другой их набор.
+
+   Живёт на экране правил, а не на пятом экране: экранов четыре
+   (`docs/00-vision.md`), и ответ нужен ровно там, где стоит список правил. */
+
+/** Состояние пробника переживает перерисовку: экран перечитывается по такту
+    опроса, и ответ, стёртый через пятнадцать секунд, читать некогда. */
+const probe = { domain: '', busy: false, result: null, error: '' };
+
+function probeView() {
+  return `
+    <div class="card probe">
+      <div class="probe-bar">
+        <label for="probe-domain">Куда уйдёт домен</label>
+        <input type="search" id="probe-domain" class="probe-input" autocomplete="off" spellcheck="false"
+          placeholder="youtube.com" value="${esc(probe.domain)}" data-enter="probe-run"
+          aria-label="Домен для проверки">
+        <button class="btn" data-act="probe-run" ${probe.busy ? 'disabled' : ''}>${
+  probe.busy ? 'Спрашиваю…' : 'Проверить'}</button>
+      </div>
+      <div class="probe-hint">Отвечает работающий sing-box: его правила маршрутизации и его же
+        резолвер. Накопленные, но не применённые правки в ответ не попадают — на то он и живой.</div>
+      ${probeResult()}
+    </div>`;
+}
+
+function probeResult() {
+  if (probe.error) return `<div class="probe-out err">${esc(probe.error)}</div>`;
+  const p = probe.result;
+  if (!p) return '';
+
+  const rule = p.rule
+    ? `<div class="probe-rule"><span class="badge ${p.refused ? 'err' : 'accent'}">${esc(p.rule.name)}</span>
+        <span class="mono">${esc(p.rule.outbound)}</span></div>`
+    : '';
+  /* Отказ резолвера — не молчание: правило «блокировать» и правило с
+     недоступным туннелем отвечают на DNS отказом (ADR 0013), и это ответ о
+     маршрутизации, а не поломка DNS. Причина приходит с сервера текстом и
+     показывается как есть. */
+  const noAddr = p.resolve_error
+    ? `<div class="probe-addr${p.refused ? ' refused' : ''}">адреса нет: ${esc(p.resolve_error)}</div>`
+    : '<div class="probe-addr">адреса нет: резолвер ядра ничего не вернул</div>';
+  const addrs = p.addresses && p.addresses.length
+    ? `<div class="probe-addr mono">${esc(p.addresses.join(', '))}${p.fakeip ? ' — FakeIP' : ''}</div>`
+    : noAddr;
+
+  return `<div class="probe-out">
+      <div class="probe-domain mono">${esc(p.domain)}</div>
+      ${rule}
+      <div class="probe-verdict">${esc(p.verdict)}</div>
+      ${addrs}
+    </div>`;
+}
+
+async function runProbe() {
+  const field = $('#probe-domain');
+  probe.domain = field ? field.value.trim() : probe.domain;
+  if (!probe.domain) {
+    toast('Введите домен, например youtube.com', 'err');
+    if (field) field.focus();
+    return;
+  }
+  probe.busy = true;
+  probe.error = '';
+  refresh();
+  try {
+    probe.result = await api.route.test(probe.domain);
+  } catch (err) {
+    // Недоступное ядро отвечает 503 с объяснением — показываем его как есть:
+    // пустой результат читался бы как «ни одно правило не сработает».
+    probe.result = null;
+    probe.error = err.message;
+  } finally {
+    probe.busy = false;
+    refresh();
+  }
 }
 
 /* --- форма правила -------------------------------------------------------- */
@@ -499,6 +696,7 @@ async function move(id, delta) {
 }
 
 export const actions = {
+  'probe-run': () => runProbe(),
   'add-rule': () => modalRule(null),
   'edit-rule': (id) => modalRule(id),
   'save-rule': (id) => saveRule(id || null),

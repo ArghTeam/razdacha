@@ -85,6 +85,7 @@ type Manager struct {
 	interval time.Duration
 	sources  []Source
 	lists    map[string]List
+	states   map[string]SourceState
 	last     time.Time
 
 	updates chan struct{}
@@ -99,6 +100,7 @@ func NewManager(o ManagerOptions) *Manager {
 		retry:    o.Retry,
 		interval: o.Interval,
 		lists:    make(map[string]List),
+		states:   make(map[string]SourceState),
 		updates:  make(chan struct{}, 1),
 	}
 	if m.log == nil {
@@ -202,14 +204,16 @@ func (m *Manager) Refresh(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		list, err := m.fetcher.Parse(ctx, src.URL)
+		res, err := m.fetcher.Update(ctx, src.URL)
 		if err != nil {
 			errs = append(errs, err)
 			m.log.Warn("список пропущен", "url", src.URL, "err", err)
+			m.failState(src.URL, err)
 			continue
 		}
 		m.mu.Lock()
-		m.lists[src.URL] = list
+		m.lists[src.URL] = res.List
+		m.storeState(src.URL, res)
 		m.mu.Unlock()
 	}
 
@@ -235,6 +239,73 @@ func (m *Manager) Subnets() []string {
 		all = append(all, l.Subnets...)
 	}
 	return dedup(all)
+}
+
+// SourceState — что известно об обновлении одного источника.
+//
+// Три состояния, которые нельзя схлопывать в два: обновился (UpdatedAt есть,
+// Err пуст), не обновился (Err с текстом причины), ни разу не обновлялся
+// (записи нет вовсе — источник в наборе, но прогон до него ещё не дошёл).
+// Четвёртое — «не обновился, но работает на прошлой версии»: непустой Err при
+// непустом UpdatedAt.
+type SourceState struct {
+	// URL — адрес источника.
+	URL string
+	// UpdatedAt — когда источник в последний раз ответил телом или 304.
+	// Нулевое время означает, что удачного обновления не было ни разу.
+	UpdatedAt time.Time
+	// FailedAt — когда последняя попытка не удалась. Нулевое — не падала.
+	FailedAt time.Time
+	// Err — причина последней неудачи. Пусто означает, что последняя попытка
+	// удалась. Текст доходит до UI как есть.
+	Err string
+	// Cached — есть ли разобранное содержимое, пусть и прошлой версии.
+	Cached bool
+}
+
+// storeState записывает исход удачного прохода по источнику. Вызывается под
+// уже взятым m.mu.
+func (m *Manager) storeState(url string, res Refreshed) {
+	st := SourceState{URL: url, UpdatedAt: res.FetchedAt, Cached: true}
+	prev := m.states[url]
+	if res.Stale != nil {
+		// Свежести не приехало: время прошлого успеха остаётся прежним, а
+		// причина обязана быть видна — иначе устаревший список неотличим от
+		// свежего.
+		st.UpdatedAt = prev.UpdatedAt
+		st.Err = res.Stale.Error()
+		st.FailedAt = time.Now().UTC()
+	}
+	m.states[url] = st
+}
+
+// failState записывает исход, при котором отдать нечего вовсе: источник не
+// ответил и кэша нет.
+func (m *Manager) failState(url string, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	prev := m.states[url]
+	m.states[url] = SourceState{
+		URL:       url,
+		UpdatedAt: prev.UpdatedAt,
+		FailedAt:  time.Now().UTC(),
+		Err:       err.Error(),
+		Cached:    prev.Cached,
+	}
+}
+
+// States — состояние обновления по каждому источнику, который планировщик уже
+// брал в работу. Отсутствие записи означает «ни разу не обновлялся», и
+// подменять его нулевым временем нельзя: панель обязана различать это и
+// неудачу.
+func (m *Manager) States() map[string]SourceState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make(map[string]SourceState, len(m.states))
+	for k, v := range m.states {
+		out[k] = v
+	}
+	return out
 }
 
 // List отдаёт разобранное содержимое одного списка.

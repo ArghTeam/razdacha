@@ -260,6 +260,48 @@ input[type="password"] {
   display: flex; gap: 6px; align-items: flex-start;
 }
 
+/* Правило с недоступной целью: после ADR 0013 оно отбрасывает трафик, и
+   выглядеть как рабочее не имеет права. Цвет тревожный, а не приглушённый:
+   выключенное правило гасится `.dim`, а это включено и не работает. */
+.rule-dead { background: color-mix(in srgb, var(--err) 6%, transparent); }
+.rule-dead-note {
+  font-size: 12.5px; color: var(--err); margin-top: 5px;
+  display: flex; gap: 6px; align-items: flex-start;
+}
+
+/* Состояние источника списка прямо в чипе: подпись, а не иконка — иконку
+   пришлось бы объяснять, а места хватает. */
+.chip-state { margin-left: 6px; color: var(--fg-faint); font-size: 11px; }
+.chip.list-bad { border-color: color-mix(in srgb, var(--err) 45%, transparent); color: var(--err); }
+.chip.list-bad .chip-state { color: var(--err); }
+.chip.list-cold { border-style: dashed; }
+
+/* --- пробник маршрута --- */
+.probe { padding: 12px 14px; margin-bottom: 12px; }
+.probe-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.probe-bar label { font-weight: 580; font-size: 14px; }
+.probe-input {
+  flex: 1; min-width: 180px;
+  font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--line-strong); background: var(--bg-sunken); color: var(--fg);
+}
+.probe-hint { color: var(--fg-dim); font-size: 12.5px; margin-top: 6px; }
+.probe-out {
+  margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+  background: var(--bg-sunken); border: 1px solid var(--line); font-size: 13.5px;
+}
+.probe-out.err {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 35%, transparent);
+  background: color-mix(in srgb, var(--err) 8%, var(--bg-sunken));
+}
+.probe-domain { font-weight: 600; }
+.probe-rule { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.probe-verdict { margin-top: 6px; color: var(--fg-dim); }
+.probe-addr { margin-top: 4px; color: var(--fg-faint); font-size: 12.5px; }
+/* Отказ по правилу — не молчание резолвера: это ответ о маршрутизации. */
+.probe-addr.refused { color: var(--err); }
+
 /* --- диагностика --- */
 .check { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-top: 1px solid var(--line); }
 .check:first-child { border-top: 0; }

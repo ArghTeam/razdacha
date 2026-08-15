@@ -42,6 +42,12 @@ var fakeIPRange = netip.MustParsePrefix("198.18.0.0/15")
 // Каталог ключей ведёт слой lists, здесь только сборка адреса.
 const communityListURL = "https://github.com/itdoginfo/allow-domains/releases/latest/download/%s.srs"
 
+// FakeIPRange — диапазон FakeIP, тот самый, что уходит в конфиг. Нужен
+// пробнику маршрута: по адресу из ответа резолвера он отличает «домен поймало
+// правило» от «домен ушёл на апстрим». Своя копия диапазона в другом слое
+// разъехалась бы с этой молча.
+func FakeIPRange() netip.Prefix { return fakeIPRange }
+
 // TunnelTag — тег outbound либо endpoint туннеля.
 func TunnelTag(id string) string { return "tun-" + id }
 

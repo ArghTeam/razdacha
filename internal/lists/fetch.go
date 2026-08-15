@@ -197,19 +197,59 @@ func (f *Fetcher) Cached(rawURL string) ([]byte, error) {
 	return f.cache.read(rawURL)
 }
 
+// Refreshed — что вышло из попытки обновить список.
+//
+// Разделение свежести и содержимого нужно панели: список, чей источник не
+// ответил, продолжает работать на прошлой версии, но выглядеть как удачно
+// обновлённый он не должен — иначе правило тихо ловит вчерашние домены
+// (issue #149).
+type Refreshed struct {
+	// List — разобранное содержимое: свежее либо прошлое из кэша.
+	List List
+	// FetchedAt — когда источник в последний раз ответил телом или 304.
+	// Нулевое время означает, что свежести не приехало вовсе.
+	FetchedAt time.Time
+	// Stale — почему свежая версия не приехала. Не nil означает, что в деле
+	// прошлая версия из кэша, а не сегодняшняя.
+	Stale error
+}
+
+// Update скачивает список, разбирает его и отдельно сообщает, приехала ли
+// свежая версия. Ошибка возвращается только когда отдать нечего вовсе: источник
+// не ответил и кэша нет.
+func (f *Fetcher) Update(ctx context.Context, rawURL string) (Refreshed, error) {
+	format := FormatOf(rawURL)
+	var out Refreshed
+
+	res, err := f.Fetch(ctx, rawURL)
+	if err != nil {
+		if _, cached := f.cache.meta(rawURL); !cached {
+			return Refreshed{}, err
+		}
+		f.log.Warn("список не обновлён, берём прошлую версию", "url", rawURL, "err", err)
+		out.Stale = err
+	} else {
+		out.FetchedAt = res.FetchedAt
+	}
+
+	body, err := f.cache.read(rawURL)
+	if err != nil {
+		return Refreshed{}, err
+	}
+	list, err := Parse(body, format)
+	if err != nil {
+		return Refreshed{}, err
+	}
+	out.List = list
+	return out, nil
+}
+
 // Parse скачивает список и разбирает его в домены и подсети. Если источник
 // недоступен, берётся прошлая версия из кэша: устаревший список лучше пустого.
 func (f *Fetcher) Parse(ctx context.Context, rawURL string) (List, error) {
-	format := FormatOf(rawURL)
-	if _, err := f.Fetch(ctx, rawURL); err != nil {
-		if _, cached := f.cache.meta(rawURL); !cached {
-			return List{}, err
-		}
-		f.log.Warn("список не обновлён, берём прошлую версию", "url", rawURL, "err", err)
-	}
-	body, err := f.cache.read(rawURL)
+	res, err := f.Update(ctx, rawURL)
 	if err != nil {
 		return List{}, err
 	}
-	return Parse(body, format)
+	return res.List, nil
 }

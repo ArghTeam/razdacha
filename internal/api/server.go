@@ -91,6 +91,13 @@ type Config struct {
 	// (issue #125). Пустое означает работу без таких списков.
 	PlainLists singbox.PlainLists
 
+	// ListStates отдаёт состояние обновления списков, которые качает демон:
+	// адрес источника → когда обновился и чем кончилась последняя попытка.
+	// Пустое поле означает «источника нет» — состояние каждого списка приходит
+	// как `unknown`, а не как удачное обновление: планировщик мог не подняться,
+	// и тогда списки не обновляются вовсе.
+	ListStates func() map[string]ListState
+
 	// ApplyNft перезаливает таблицу nft по тому же `POST /api/apply`: конфиг и
 	// сет подсетей — две половины одного применения. Пустое поле означает
 	// «источника нет» — ручка применяет только конфиг и отдаёт `nft: null`;
@@ -138,6 +145,7 @@ type Server struct {
 	applier    Applier
 	applyNft   NftApplier
 	plainLists singbox.PlainLists
+	listStates func() map[string]ListState
 	clash      *clash.Client
 	// checks — результаты проверок туннелей с момента запуска демона,
 	// источник производных полей в `GET /api/tunnels`.
@@ -204,6 +212,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		applier:     cfg.Applier,
 		applyNft:    cfg.ApplyNft,
 		plainLists:  cfg.PlainLists,
+		listStates:  cfg.ListStates,
 		clash:       clash.New(clash.Options{Addr: cfg.ClashAddr}),
 		checks:      newCheckCache(),
 		events:      newTunnelEvents(),

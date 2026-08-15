@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -276,5 +277,150 @@ func TestVersionEmpty(t *testing.T) {
 	})
 	if _, err := c.Version(context.Background()); !errors.Is(err, ErrBadResponse) {
 		t.Errorf("ошибка = %v, ожидалась ErrBadResponse", err)
+	}
+}
+
+// TestRules — правила рантайма приходят в порядке проверки, с действием как
+// есть: их разбирает вызывающий, пакет про наши теги ничего не знает.
+func TestRules(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rules" {
+			t.Errorf("путь = %q, ожидался /rules", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{"rules":[
+			{"type":"default","payload":"inbound=dns-in","proxy":"hijack-dns"},
+			{"type":"default","payload":"rule_set=[list-youtube]","proxy":"route(tun-abc)"}]}`)); err != nil {
+			t.Errorf("запись ответа: %v", err)
+		}
+	})
+
+	got, err := c.Rules(context.Background())
+	if err != nil {
+		t.Fatalf("Rules: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("правил %d, ожидалось 2", len(got))
+	}
+	if got[1].Payload != "rule_set=[list-youtube]" || got[1].Proxy != "route(tun-abc)" {
+		t.Errorf("второе правило = %+v", got[1])
+	}
+}
+
+// TestResolveA — из ответа резолвера берутся только записи A: CNAME адресом не
+// является, а FakeIP опознаётся по адресу.
+func TestResolveA(t *testing.T) {
+	var gotName, gotType string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotName = r.URL.Query().Get("name")
+		gotType = r.URL.Query().Get("type")
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{"Status":0,"Answer":[
+			{"name":"youtube.com.","type":5,"TTL":60,"data":"cdn.youtube.com."},
+			{"name":"cdn.youtube.com.","type":1,"TTL":60,"data":"198.18.0.9"}]}`)); err != nil {
+			t.Errorf("запись ответа: %v", err)
+		}
+	})
+
+	addrs, err := c.ResolveA(context.Background(), "youtube.com")
+	if err != nil {
+		t.Fatalf("ResolveA: %v", err)
+	}
+	if gotName != "youtube.com" || gotType != "A" {
+		t.Errorf("запрос = name %q, type %q", gotName, gotType)
+	}
+	if len(addrs) != 1 || addrs[0].String() != "198.18.0.9" {
+		t.Fatalf("адреса = %v, ожидался один 198.18.0.9", addrs)
+	}
+}
+
+// TestResolveAFailed — рантайм ответил отказом: это ответ о домене, а не о
+// самом sing-box, и путать их нельзя.
+func TestResolveAFailed(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		if _, err := w.Write([]byte(`{"message":"upstream не ответил"}`)); err != nil {
+			t.Errorf("запись ответа: %v", err)
+		}
+	})
+
+	_, err := c.ResolveA(context.Background(), "nowhere.example")
+	if !errors.Is(err, ErrResolveFailed) {
+		t.Fatalf("ошибка = %v, ожидалась ErrResolveFailed", err)
+	}
+	if errors.Is(err, ErrUnavailable) {
+		t.Error("отказ резолва принят за недоступный sing-box")
+	}
+}
+
+// TestResolveARcodeInBody — отказ резолва приезжает кодом HTTP 200 и ненулевым
+// `Status` в теле: так отвечает sing-box 1.12.25, проверено на стенде. Разбор
+// по одному коду HTTP пропускал это молча.
+func TestResolveARcodeInBody(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		want    string
+		refused bool
+	}{
+		{
+			name: "несуществующий домен",
+			body: `{"Status":3,"Question":[{"Name":"nowhere149.example."}],"Authority":[{"name":"example."}]}`,
+			want: "NXDOMAIN",
+		},
+		{
+			name:    "домен под правилом reject",
+			body:    `{"Status":5,"Question":[{"Name":"blocked.example."}],"RA":false}`,
+			want:    "REFUSED",
+			refused: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := w.Write([]byte(tt.body)); err != nil {
+					t.Errorf("запись ответа: %v", err)
+				}
+			})
+
+			_, err := c.ResolveA(context.Background(), "example.test")
+			if !errors.Is(err, ErrResolveFailed) {
+				t.Fatalf("ошибка = %v, ожидалась ErrResolveFailed", err)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("текст = %q, ожидалось про %s", err, tt.want)
+			}
+			var re *ResolveError
+			if !errors.As(err, &re) {
+				t.Fatalf("ошибка не *ResolveError: %v", err)
+			}
+			if re.Refused() != tt.refused {
+				t.Errorf("Refused() = %v, ожидалось %v", re.Refused(), tt.refused)
+			}
+			if errors.Is(err, ErrUnavailable) {
+				t.Error("отказ резолва принят за недоступный sing-box")
+			}
+		})
+	}
+}
+
+// TestResolveANoAnswerIsNotFailure — Status 0 без записей A это не отказ: домен
+// разрешён, просто адресов IPv4 у него нет. Пустой список и ошибка — разное.
+func TestResolveANoAnswerIsNotFailure(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{"Status":0,"Question":[{"Name":"empty.example."}]}`)); err != nil {
+			t.Errorf("запись ответа: %v", err)
+		}
+	})
+
+	addrs, err := c.ResolveA(context.Background(), "empty.example")
+	if err != nil {
+		t.Fatalf("ResolveA: %v", err)
+	}
+	if len(addrs) != 0 {
+		t.Errorf("адреса = %v, ожидался пустой список", addrs)
 	}
 }
