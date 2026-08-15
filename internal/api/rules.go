@@ -9,6 +9,17 @@ import (
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
+// ruleResponse — правило как его видит панель: само правило плюс состояние
+// источников его списков.
+//
+// Состояние едет вместе с правилом, а не отдельной ручкой на каждый список:
+// строка правила рисуется целиком на каждом опросе экрана, и запрос на список
+// умножился бы на их число (issue #149).
+type ruleResponse struct {
+	store.Rule
+	Lists []listStatus `json:"lists_status"`
+}
+
 // handleListRules — `GET /api/rules`, по возрастанию priority.
 func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
 	list, err := s.store.Rules(r.Context())
@@ -16,10 +27,11 @@ func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err, "Правило не найдено")
 		return
 	}
-	if list == nil {
-		list = []store.Rule{}
+	out := make([]ruleResponse, 0, len(list))
+	for _, rule := range list {
+		out = append(out, ruleResponse{Rule: rule, Lists: s.ruleLists(rule)})
 	}
-	writeJSON(w, s.log, http.StatusOK, list)
+	writeJSON(w, s.log, http.StatusOK, out)
 }
 
 // handleCreateRule — `POST /api/rules`. Приоритет назначает store, добавляя

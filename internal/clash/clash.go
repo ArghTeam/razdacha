@@ -19,6 +19,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -77,6 +78,10 @@ var (
 
 	// ErrBadResponse — ответ Clash API не разобран.
 	ErrBadResponse = errors.New("непонятный ответ Clash API")
+
+	// ErrResolveFailed — рантайм принял запрос, но домен не разрешил. Это
+	// ответ о домене (или об апстриме DNS), а не о самом sing-box.
+	ErrResolveFailed = errors.New("рантайм не разрешил домен")
 )
 
 // Options — параметры клиента.
@@ -252,6 +257,86 @@ func (c *Client) Proxies(ctx context.Context) (map[string]Proxy, error) {
 		return nil, fmt.Errorf("%w: список прокси: %w", ErrBadResponse, err)
 	}
 	return out.Proxies, nil
+}
+
+// Rule — правило маршрутизации в применённом конфиге, как его видит рантайм.
+//
+// Payload — строковое представление условий (`rule_set=[list-youtube] …`),
+// Proxy — действие (`route(tun-…)`, `reject(default)`). Разбирать их — дело
+// вызывающего: пакет про наши теги ничего не знает.
+type Rule struct {
+	Type    string `json:"type"`
+	Payload string `json:"payload"`
+	Proxy   string `json:"proxy"`
+}
+
+// Rules отдаёт правила маршрутизации работающего sing-box в том порядке, в
+// каком он их проверяет.
+//
+// Спрашивается именно рантайм, а не БД: расхождение между применённым конфигом
+// и накопленными правками — то самое, ради чего пробник и заводился.
+func (c *Client) Rules(ctx context.Context) ([]Rule, error) {
+	body, status, err := c.get(ctx, "/rules", nil)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("%w: код %d, %s", ErrBadResponse, status, detail(body))
+	}
+	var out struct {
+		Rules []Rule `json:"rules"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("%w: правила маршрутизации: %w", ErrBadResponse, err)
+	}
+	return out.Rules, nil
+}
+
+// dnsTypeA — тип записи A в ответе `/dns/query`: рантайм отдаёт числовой код.
+const dnsTypeA = 1
+
+// ResolveA спрашивает домен у резолвера работающего sing-box — того самого, к
+// которому ходят клиенты, — и отдаёт адреса записей A.
+//
+// Это единственный способ узнать, поймало ли домен хоть одно правило: домен
+// правила с туннелем получает FakeIP, остальные — настоящий адрес с апстрима
+// (docs/04-dns-fakeip.md).
+func (c *Client) ResolveA(ctx context.Context, name string) ([]netip.Addr, error) {
+	q := url.Values{"name": {name}, "type": {"A"}}
+	body, status, err := c.get(ctx, "/dns/query", q)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case status == http.StatusOK:
+	case status == http.StatusBadRequest:
+		return nil, fmt.Errorf("%w: домен %q не принят рантаймом: %s", ErrBadResponse, name, detail(body))
+	default:
+		// 500 отдаётся, когда резолв не удался: это ответ о домене, а не сбой API.
+		return nil, fmt.Errorf("%w: %s", ErrResolveFailed, detail(body))
+	}
+
+	var out struct {
+		Answer []struct {
+			Type uint16 `json:"type"`
+			Data string `json:"data"`
+		} `json:"Answer"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("%w: ответ резолвера по %q: %w", ErrBadResponse, name, err)
+	}
+	var addrs []netip.Addr
+	for _, a := range out.Answer {
+		if a.Type != dnsTypeA {
+			continue
+		}
+		addr, err := netip.ParseAddr(strings.TrimSpace(a.Data))
+		if err != nil {
+			continue
+		}
+		addrs = append(addrs, addr)
+	}
+	return addrs, nil
 }
 
 // Version отдаёт версию работающего рантайма sing-box, без ведущей «v».

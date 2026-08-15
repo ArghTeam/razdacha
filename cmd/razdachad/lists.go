@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/ArghTeam/razdacha/internal/api"
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/singbox"
@@ -124,6 +125,34 @@ func plainLists(m *lists.Manager) singbox.PlainLists {
 			return singbox.PlainList{}, false
 		}
 		return singbox.PlainList{Domains: l.Domains, Subnets: l.Subnets}, true
+	}
+}
+
+// listStates — проводка состояния обновления списков в панель.
+//
+// Тем же приёмом, что и plainLists: слой api про кэш и расписание не знает, а
+// строка правила обязана отличать список, обновившийся сегодня, от списка,
+// который не обновился с ошибкой, и от списка, до которого планировщик ещё не
+// дошёл (issue #149).
+//
+// Планировщик не поднялся — замыкание пустое, и панель говорит «неизвестно», а
+// не рисует удачное обновление: списки в этом состоянии не обновляются вовсе.
+func listStates(m *lists.Manager) func() map[string]api.ListState {
+	if m == nil {
+		return nil
+	}
+	return func() map[string]api.ListState {
+		src := m.States()
+		out := make(map[string]api.ListState, len(src))
+		for url, st := range src {
+			out[url] = api.ListState{
+				UpdatedAt: st.UpdatedAt,
+				FailedAt:  st.FailedAt,
+				Err:       st.Err,
+				Cached:    st.Cached,
+			}
+		}
+		return out
 	}
 }
 
