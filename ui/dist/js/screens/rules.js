@@ -294,12 +294,19 @@ function probeResult() {
   if (!p) return '';
 
   const rule = p.rule
-    ? `<div class="probe-rule"><span class="badge accent">${esc(p.rule.name)}</span>
+    ? `<div class="probe-rule"><span class="badge ${p.refused ? 'err' : 'accent'}">${esc(p.rule.name)}</span>
         <span class="mono">${esc(p.rule.outbound)}</span></div>`
     : '';
+  /* Отказ резолвера — не молчание: правило «блокировать» и правило с
+     недоступным туннелем отвечают на DNS отказом (ADR 0013), и это ответ о
+     маршрутизации, а не поломка DNS. Причина приходит с сервера текстом и
+     показывается как есть. */
+  const noAddr = p.resolve_error
+    ? `<div class="probe-addr${p.refused ? ' refused' : ''}">адреса нет: ${esc(p.resolve_error)}</div>`
+    : '<div class="probe-addr">адреса нет: резолвер ядра ничего не вернул</div>';
   const addrs = p.addresses && p.addresses.length
     ? `<div class="probe-addr mono">${esc(p.addresses.join(', '))}${p.fakeip ? ' — FakeIP' : ''}</div>`
-    : '<div class="probe-addr">адреса нет: резолвер ядра не ответил</div>';
+    : noAddr;
 
   return `<div class="probe-out">
       <div class="probe-domain mono">${esc(p.domain)}</div>

@@ -129,6 +129,20 @@ api.route.test = async (domain) => {
       + 'не ответил за 11s. Проверьте состояние sing-box на экране «Диагностика».');
     throw err;
   }
+  if (domain.includes('blocked')) {
+    // Домен под правилом «блокировать»: ядро отвечает REFUSED, адреса нет, и
+    // это ответ о маршрутизации, а не молчание резолвера.
+    return {
+      domain, addresses: [], fakeip: false,
+      resolve_error: 'запрос отклонён правилом (REFUSED) — так отвечает правило «блокировать» '
+        + 'и правило с недоступным туннелем',
+      refused: true,
+      rule: { id: 'r4', name: 'Через пул без живых серверов', action: 'tunnel', outbound: 'reject', certain: true },
+      candidates: [], core_rules: 6, diverged: false,
+      verdict: 'Домен ловит правило «Через пул без живых серверов», ядро отправляет его в reject. '
+        + 'Резолвер ядра адреса не выдал: запрос отклонён правилом (REFUSED).',
+    };
+  }
   if (domain.includes('youtube')) {
     return {
       domain, addresses: ['198.18.0.9'], fakeip: true, rule: null,

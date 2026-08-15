@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -350,5 +351,76 @@ func TestResolveAFailed(t *testing.T) {
 	}
 	if errors.Is(err, ErrUnavailable) {
 		t.Error("отказ резолва принят за недоступный sing-box")
+	}
+}
+
+// TestResolveARcodeInBody — отказ резолва приезжает кодом HTTP 200 и ненулевым
+// `Status` в теле: так отвечает sing-box 1.12.25, проверено на стенде. Разбор
+// по одному коду HTTP пропускал это молча.
+func TestResolveARcodeInBody(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		want    string
+		refused bool
+	}{
+		{
+			name: "несуществующий домен",
+			body: `{"Status":3,"Question":[{"Name":"nowhere149.example."}],"Authority":[{"name":"example."}]}`,
+			want: "NXDOMAIN",
+		},
+		{
+			name:    "домен под правилом reject",
+			body:    `{"Status":5,"Question":[{"Name":"blocked.example."}],"RA":false}`,
+			want:    "REFUSED",
+			refused: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := w.Write([]byte(tt.body)); err != nil {
+					t.Errorf("запись ответа: %v", err)
+				}
+			})
+
+			_, err := c.ResolveA(context.Background(), "example.test")
+			if !errors.Is(err, ErrResolveFailed) {
+				t.Fatalf("ошибка = %v, ожидалась ErrResolveFailed", err)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("текст = %q, ожидалось про %s", err, tt.want)
+			}
+			var re *ResolveError
+			if !errors.As(err, &re) {
+				t.Fatalf("ошибка не *ResolveError: %v", err)
+			}
+			if re.Refused() != tt.refused {
+				t.Errorf("Refused() = %v, ожидалось %v", re.Refused(), tt.refused)
+			}
+			if errors.Is(err, ErrUnavailable) {
+				t.Error("отказ резолва принят за недоступный sing-box")
+			}
+		})
+	}
+}
+
+// TestResolveANoAnswerIsNotFailure — Status 0 без записей A это не отказ: домен
+// разрешён, просто адресов IPv4 у него нет. Пустой список и ошибка — разное.
+func TestResolveANoAnswerIsNotFailure(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{"Status":0,"Question":[{"Name":"empty.example."}]}`)); err != nil {
+			t.Errorf("запись ответа: %v", err)
+		}
+	})
+
+	addrs, err := c.ResolveA(context.Background(), "empty.example")
+	if err != nil {
+		t.Fatalf("ResolveA: %v", err)
+	}
+	if len(addrs) != 0 {
+		t.Errorf("адреса = %v, ожидался пустой список", addrs)
 	}
 }

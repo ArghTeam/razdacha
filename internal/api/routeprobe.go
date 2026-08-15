@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/netip"
@@ -42,7 +43,7 @@ type probeRule struct {
 	Name string `json:"name"`
 	// Action — действие правила из БД (`tunnel`, `direct`, `block`).
 	Action string `json:"action"`
-	// Outbound — действие живого ядра как есть: `route(tun-…)`, `reject(default)`.
+	// Outbound — действие живого ядра как есть: `route(tun-…)`, `reject`.
 	Outbound string `json:"outbound"`
 	// Certain — видит ли демон условия правила целиком. false означает, что у
 	// правила есть наборы, состав которых ведёт сам sing-box.
@@ -57,8 +58,12 @@ type probeResponse struct {
 	// FakeIP — выдан ли адрес из диапазона FakeIP, то есть поймало ли домен
 	// хоть одно правило с туннелем.
 	FakeIP bool `json:"fakeip"`
-	// ResolveError — почему резолвер не ответил. Пусто — ответил.
+	// ResolveError — почему резолвер не выдал адрес. Пусто — выдал.
 	ResolveError string `json:"resolve_error,omitempty"`
+	// Refused — резолвер отклонил запрос по правилу (REFUSED). Это ответ о
+	// маршрутизации, а не поломка DNS: так отвечает правило «блокировать» и
+	// правило с недоступным туннелем (ADR 0013).
+	Refused bool `json:"refused"`
 	// Rule — победившее правило. null означает, что назвать его нечем.
 	Rule *probeRule `json:"rule"`
 	// Candidates — правила, которые могли поймать домен: их наборы ведёт ядро,
@@ -116,14 +121,21 @@ func (s *Server) probe(ctx context.Context, domain string, live []clash.Rule, sn
 
 	matched := matchLiveRules(live, snap.Rules)
 	out.CoreRules = len(matched)
-	out.Diverged = len(matched) != countEnabled(snap.Rules)
+	// Считается по тем правилам, что реально попадают в конфиг, а не по числу
+	// включённых: правило, у которого единственное условие — не скачавшийся
+	// список, в конфиг не идёт, и применять там нечего. Счёт по `Enabled`
+	// объявлял бы непримененной правкой ровно тот случай, ради которого
+	// задача и заводилась (issue #149).
+	out.Diverged = len(matched) != s.countInConfig(snap.Rules)
 
 	// Резолв — отдельный вопрос к ядру, и его неудача не отменяет разбора
 	// правил: сказать, какое правило ловит домен, можно и без адреса.
 	addrs, rerr := s.clash.ResolveA(ctx, domain)
+	var resolveErr *clash.ResolveError
 	if rerr != nil {
 		out.ResolveError = rerr.Error()
-		s.log.Debug("пробник маршрута: резолвер не ответил", "домен", domain, "ошибка", rerr)
+		errors.As(rerr, &resolveErr)
+		s.log.Debug("пробник маршрута: адреса нет", "домен", domain, "ошибка", rerr)
 	}
 	fake := singbox.FakeIPRange()
 	for _, a := range addrs {
@@ -132,14 +144,27 @@ func (s *Server) probe(ctx context.Context, domain string, live []clash.Rule, sn
 			out.FakeIP = true
 		}
 	}
+	// Настоящий адрес от резолвера — доказательство от ядра: ни одно правило с
+	// записью в dns.rules не совпало. Такие записи есть у правила в туннель
+	// (FakeIP), у правила «блокировать» и у правила с недоступным туннелем
+	// (отказ, ADR 0013); нет — только у `direct` и у `resolve_real_ip`
+	// (docs/04-dns-fakeip.md). Отказ резолвера ничего не доказывает: он как раз
+	// и означает, что одно из правил с отказом сработало.
+	proven := rerr == nil && !out.FakeIP && len(addrs) > 0
 
 	// Порядок ядра — тот же, в каком оно проверяет правила, поэтому первое
-	// совпадение и есть победитель. Ниже уверенного совпадения смотреть нечего:
-	// до тех правил трафик не дойдёт.
+	// совпадение и есть победитель. Ниже достоверного совпадения смотреть
+	// нечего: до тех правил трафик не дойдёт.
 	var hits []probeRule
 	for _, m := range matched {
 		hit, certain := s.ruleCatches(m.rule, domain)
 		if !hit {
+			continue
+		}
+		if !certain && proven && dnsRuled(m.rule) {
+			// «Может быть» против доказательства ядра: правило с DNS-записью
+			// не совпало, иначе адрес был бы подставным или его не было бы
+			// вовсе. Кандидат снимается, а не остаётся висеть предположением.
 			continue
 		}
 		hits = append(hits, probeRule{
@@ -153,9 +178,14 @@ func (s *Server) probe(ctx context.Context, domain string, live []clash.Rule, sn
 			break
 		}
 	}
+	// Достоверное совпадение побеждает «может быть»: оно проверено по условиям,
+	// которые демон видит целиком. Кандидаты выше него не выбрасываются — они
+	// стоят раньше по порядку и выиграли бы, окажись домен в их списках, — но
+	// победителем называется то, что известно.
 	switch {
-	case len(hits) > 0 && hits[0].Certain:
-		out.Rule = &hits[0]
+	case len(hits) > 0 && hits[len(hits)-1].Certain:
+		out.Rule = &hits[len(hits)-1]
+		out.Candidates = hits[:len(hits)-1]
 	case len(hits) == 1 && out.FakeIP:
 		// Кандидат один, и ядро подтвердило совпадение FakeIP — поймать домен
 		// было больше некому.
@@ -165,6 +195,9 @@ func (s *Server) probe(ctx context.Context, domain string, live []clash.Rule, sn
 	}
 	if out.Candidates == nil {
 		out.Candidates = []probeRule{}
+	}
+	if resolveErr != nil && resolveErr.Refused() {
+		out.Refused = true
 	}
 
 	out.Verdict = probeVerdict(out)
@@ -176,34 +209,48 @@ func (s *Server) probe(ctx context.Context, domain string, live []clash.Rule, sn
 // пустоту» проще держать в одном месте.
 func probeVerdict(p probeResponse) string {
 	var b strings.Builder
+	names := func(rr []probeRule) string {
+		out := make([]string, 0, len(rr))
+		for _, c := range rr {
+			out = append(out, fmt.Sprintf("«%s» (%s)", c.Name, c.Outbound))
+		}
+		return strings.Join(out, ", ")
+	}
+
 	switch {
 	case p.Rule != nil:
 		fmt.Fprintf(&b, "Домен ловит правило «%s», ядро отправляет его в %s.",
 			p.Rule.Name, p.Rule.Outbound)
-	case len(p.Candidates) > 0:
-		names := make([]string, 0, len(p.Candidates))
-		for _, c := range p.Candidates {
-			names = append(names, fmt.Sprintf("«%s» (%s)", c.Name, c.Outbound))
+		if len(p.Candidates) > 0 {
+			b.WriteString(" Выше него стоят правила со списками: " + names(p.Candidates) +
+				". Состав готовых списков ведёт сам sing-box и наружу не отдаёт — если домен есть" +
+				" и в них, выиграет то, что выше.")
 		}
-		b.WriteString("Домен ловит одно из правил со списками: " + strings.Join(names, ", ") +
+	case len(p.Candidates) > 0:
+		b.WriteString("Домен ловит одно из правил со списками: " + names(p.Candidates) +
 			". Какое именно — сказать нечем: состав готовых списков ведёт сам sing-box и наружу не отдаёт. " +
 			"Выигрывает первое из перечисленных.")
 	case p.FakeIP:
 		b.WriteString("Ядро выдало FakeIP, значит домен поймало какое-то правило, " +
 			"но привязать его к правилу из базы не вышло — похоже, применён другой набор правил.")
+	case p.Refused:
+		b.WriteString("Назвать правило нечем, но ядро отклонило запрос по правилу — " +
+			"значит, домен поймало правило «блокировать» либо правило с недоступным туннелем.")
 	default:
 		b.WriteString("Ни одно правило домен не ловит: трафик уйдёт напрямую, с адреса сервера.")
 	}
 
 	switch {
+	case p.Refused:
+		b.WriteString(" Резолвер ядра адреса не выдал: " + p.ResolveError + ".")
 	case p.ResolveError != "":
-		b.WriteString(" Резолвер ядра домен не разрешил: " + p.ResolveError +
-			". Это вопрос к DNS, а не к правилам.")
+		b.WriteString(" Резолвер ядра адреса не выдал: " + p.ResolveError +
+			". Это вопрос к DNS: правила такой ответ не дают.")
 	case p.FakeIP:
 		b.WriteString(" Резолвер выдал FakeIP — трафик к домену пойдёт через sing-box.")
 	case len(p.Addresses) > 0:
-		b.WriteString(" Резолвер выдал настоящий адрес: трафик к домену пойдёт мимо FakeIP" +
-			" и попадёт в sing-box, только если адрес есть в nft-сете подсетей.")
+		b.WriteString(" Резолвер выдал настоящий адрес: значит, ни одно правило с записью в DNS" +
+			" домен не поймало, и в sing-box трафик попадёт только по подсети из nft-сета.")
 	}
 
 	if p.Diverged {
@@ -349,14 +396,33 @@ func sameSet(a, b []string) bool {
 	return true
 }
 
-func countEnabled(rules []store.Rule) int {
+// countInConfig — сколько правил базы должно оказаться в конфиге ядра.
+//
+// Считаются не включённые, а попадающие: правило без единого условия совпадения
+// генератор пропускает, и чаще всего это правило, чей единственный список ещё
+// не приехал в кэш. Такое правило непримененной правкой не является — применять
+// в нём нечего.
+func (s *Server) countInConfig(rules []store.Rule) int {
 	n := 0
 	for _, r := range rules {
-		if r.Enabled {
+		if singbox.RuleInConfig(r, s.plainLists) {
 			n++
 		}
 	}
 	return n
+}
+
+// dnsRuled — получает ли правило запись в `dns.rules`, то есть виден ли его
+// отказ или его FakeIP в ответе резолвера (docs/04-dns-fakeip.md).
+//
+// Записи нет только у двух видов: `direct` (его трафик и так идёт мимо
+// sing-box) и `resolve_real_ip` (там клиенту нужен настоящий адрес). Всё
+// остальное — туннель, блокировка, недоступный туннель — в DNS видно.
+func dnsRuled(r store.Rule) bool {
+	if r.Action == store.ActionDirect {
+		return false
+	}
+	return !(r.Action == store.ActionTunnel && r.ResolveRealIP)
 }
 
 // ruleCatches отвечает, ловит ли правило домен. Второе значение — уверенность:

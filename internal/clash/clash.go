@@ -262,7 +262,7 @@ func (c *Client) Proxies(ctx context.Context) (map[string]Proxy, error) {
 // Rule — правило маршрутизации в применённом конфиге, как его видит рантайм.
 //
 // Payload — строковое представление условий (`rule_set=[list-youtube] …`),
-// Proxy — действие (`route(tun-…)`, `reject(default)`). Разбирать их — дело
+// Proxy — действие (`route(tun-…)`, `reject`). Разбирать их — дело
 // вызывающего: пакет про наши теги ничего не знает.
 type Rule struct {
 	Type    string `json:"type"`
@@ -295,6 +295,47 @@ func (c *Client) Rules(ctx context.Context) ([]Rule, error) {
 // dnsTypeA — тип записи A в ответе `/dns/query`: рантайм отдаёт числовой код.
 const dnsTypeA = 1
 
+// Коды ответа резолвера, которые разбираются отдельно.
+const (
+	rcodeSuccess  = 0 // NOERROR
+	rcodeServFail = 2
+	rcodeNXDomain = 3
+	rcodeRefused  = 5
+)
+
+// ResolveError — отказ резолвера с его кодом ответа.
+//
+// Коды означают разное, и разница существенна для пользователя: NXDOMAIN —
+// домена нет у апстрима, REFUSED — запрос отклонён нашим же правилом (правило
+// «блокировать» и правило с недоступным туннелем отвечают на DNS отказом,
+// ADR 0013). Второе — не «DNS сломан», а «так и задумано», и путать их нельзя.
+type ResolveError struct {
+	// Code — код ответа (RCODE) из тела `/dns/query`.
+	Code int
+}
+
+func (e *ResolveError) Error() string {
+	switch e.Code {
+	case rcodeServFail:
+		return "апстрим ответил ошибкой (SERVFAIL)"
+	case rcodeNXDomain:
+		return "такого домена нет (NXDOMAIN)"
+	case rcodeRefused:
+		return "запрос отклонён правилом (REFUSED) — так отвечает правило «блокировать» " +
+			"и правило с недоступным туннелем"
+	default:
+		return fmt.Sprintf("резолвер ответил кодом %d", e.Code)
+	}
+}
+
+// Is связывает отказ с [ErrResolveFailed]: вызывающему, которому важен только
+// факт «резолвер не ответил адресом», разбирать код незачем.
+func (e *ResolveError) Is(target error) bool { return target == ErrResolveFailed }
+
+// Refused — отклонён ли запрос правилом. Это ответ о маршрутизации, а не о
+// поломке DNS, и показывать его надо иначе.
+func (e *ResolveError) Refused() bool { return e.Code == rcodeRefused }
+
 // ResolveA спрашивает домен у резолвера работающего sing-box — того самого, к
 // которому ходят клиенты, — и отдаёт адреса записей A.
 //
@@ -312,11 +353,13 @@ func (c *Client) ResolveA(ctx context.Context, name string) ([]netip.Addr, error
 	case http.StatusBadRequest:
 		return nil, fmt.Errorf("%w: домен %q не принят рантаймом: %s", ErrBadResponse, name, detail(body))
 	default:
-		// 500 отдаётся, когда резолв не удался: это ответ о домене, а не сбой API.
+		// Сюда попадает 500: рантайм не смог выполнить запрос вовсе. Обычный
+		// отказ резолва так не выглядит — он приезжает кодом 200, см. ниже.
 		return nil, fmt.Errorf("%w: %s", ErrResolveFailed, detail(body))
 	}
 
 	var out struct {
+		Status int `json:"Status"`
 		Answer []struct {
 			Type uint16 `json:"type"`
 			Data string `json:"data"`
@@ -324,6 +367,13 @@ func (c *Client) ResolveA(ctx context.Context, name string) ([]netip.Addr, error
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("%w: ответ резолвера по %q: %w", ErrBadResponse, name, err)
+	}
+	// Отказ резолва — это `Status` в теле, а не код HTTP: проверено на стенде с
+	// sing-box 1.12.25, где несуществующий домен и домен под правилом `reject`
+	// оба приезжают с кодом 200. Ветка по коду выше остаётся: 500 означает, что
+	// рантайм не дошёл до резолва вовсе.
+	if out.Status != rcodeSuccess {
+		return nil, &ResolveError{Code: out.Status}
 	}
 	var addrs []netip.Addr
 	for _, a := range out.Answer {

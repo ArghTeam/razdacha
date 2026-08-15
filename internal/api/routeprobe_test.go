@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ArghTeam/razdacha/internal/clash"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -137,7 +138,7 @@ func TestRouteProbeListRuleIsCandidate(t *testing.T) {
 	fakeCore{
 		rules: `{"rules":[
 			{"type":"default","payload":"rule_set=[list-youtube]","proxy":"route(tun-x)"},
-			{"type":"default","payload":"rule_set=[list-block]","proxy":"reject(default)"}]}`,
+			{"type":"default","payload":"rule_set=[list-block]","proxy":"reject"}]}`,
 		answer: `{"Status":0,"Answer":[{"name":"youtube.com.","type":1,"TTL":60,"data":"198.18.0.9"}]}`,
 	}.start(t, ts)
 
@@ -271,5 +272,198 @@ func TestNormalizeProbeDomain(t *testing.T) {
 		if got := normalizeProbeDomain(in); got != want {
 			t.Errorf("normalizeProbeDomain(%q) = %q, ожидалось %q", in, got, want)
 		}
+	}
+}
+
+/* --- дефекты, найденные на живом стенде (sing-box 1.12.25) ---------------- */
+
+// Д1. Правило, у которого единственное условие — не скачавшийся список, в
+// конфиг не попадает, и расхождением это не является: применять там нечего.
+// Счёт по `Enabled` объявлял непримененной правкой ровно тот сценарий со
+// сломанным списком, ради которого задача и заводилась.
+func TestRouteProbeDivergenceIgnoresRuleOutOfConfig(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	own, _ := probeRules(t, ts)
+	ctx := context.Background()
+	// Список не .srs и не .json — его качает демон, а он не скачался: набора у
+	// правила нет, условий не остаётся, правило мимо конфига.
+	if _, err := ts.st.CreateRule(ctx, store.Rule{
+		Name: "Только сломанный список", Action: store.ActionTunnel, TunnelID: own.TunnelID,
+		Enabled: true, RemoteLists: []string{"https://no-such-host-149.invalid/list.lst"},
+		PeerScope: store.ScopeAll,
+	}); err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+	// Плюс правило со списком, который скачался: оно в конфиге есть.
+	plain, err := ts.st.CreateRule(ctx, store.Rule{
+		Name: "Скачавшийся список", Action: store.ActionTunnel, TunnelID: own.TunnelID,
+		Enabled: true, RemoteLists: []string{"https://example.com/ok.lst"}, PeerScope: store.ScopeAll,
+	})
+	if err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+	ts.plainLists = func(url string) (singbox.PlainList, bool) {
+		if url == "https://example.com/ok.lst" {
+			return singbox.PlainList{Domains: []string{"mylist149.example"}}, true
+		}
+		return singbox.PlainList{}, false
+	}
+
+	fakeCore{
+		rules: `{"rules":[
+			{"type":"default","payload":"rule_set=rule-` + own.ID + `","proxy":"route(tun-x)"},
+			{"type":"default","payload":"rule_set=[list-youtube]","proxy":"route(tun-x)"},
+			{"type":"default","payload":"rule_set=rule-` + plain.ID + `-plain-0","proxy":"route(tun-x)"}]}`,
+		answer: `{"Status":0,"Answer":[{"name":"bank.ru.","type":1,"TTL":60,"data":"203.0.113.7"}]}`,
+	}.start(t, ts)
+
+	got := decodeProbe(t, runProbe(t, ts, cookie, "bank.ru"))
+	if got.CoreRules != 3 {
+		t.Fatalf("правил в ядре %d, ожидалось 3", got.CoreRules)
+	}
+	if got.Diverged {
+		t.Errorf("расхождение объявлено там, где применять нечего: %q", got.Verdict)
+	}
+}
+
+// Д1, обратная сторона: правило, которое в конфиг попадает, но до ядра не
+// доехало, — это и есть непримененная правка.
+func TestRouteProbeDivergenceSeesUnappliedRule(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	own, _ := probeRules(t, ts)
+
+	fakeCore{
+		rules:  `{"rules":[{"type":"default","payload":"rule_set=rule-` + own.ID + `","proxy":"route(tun-x)"}]}`,
+		answer: `{"Status":0,"Answer":[{"name":"bank.ru.","type":1,"TTL":60,"data":"203.0.113.7"}]}`,
+	}.start(t, ts)
+
+	got := decodeProbe(t, runProbe(t, ts, cookie, "bank.ru"))
+	if !got.Diverged {
+		t.Errorf("непримененное правило не замечено: %q", got.Verdict)
+	}
+}
+
+// Д3. Настоящий адрес от резолвера — доказательство ядра: правило с туннелем не
+// сработало, иначе был бы FakeIP. Кандидат снимается, а не висит предположением.
+func TestRouteProbeRealAddressDropsTunnelCandidates(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	_, withList := probeRules(t, ts)
+
+	fakeCore{
+		rules: `{"rules":[
+			{"type":"default","payload":"rule_set=[list-youtube]","proxy":"route(tun-x)"}]}`,
+		answer: `{"Status":0,"Answer":[{"name":"example.org.","type":1,"TTL":60,"data":"93.184.216.34"}]}`,
+	}.start(t, ts)
+
+	got := decodeProbe(t, runProbe(t, ts, cookie, "example.org"))
+	if got.Rule != nil || len(got.Candidates) != 0 {
+		t.Fatalf("правило «%s» осталось кандидатом вопреки настоящему адресу: %+v",
+			withList.Name, got)
+	}
+	if !strings.Contains(got.Verdict, "Ни одно правило") {
+		t.Errorf("вердикт = %q, ожидалось «ни одно правило»", got.Verdict)
+	}
+}
+
+// Д3. Достоверное совпадение побеждает «может быть»: домен лежит в plain-списке
+// правила, которое демон видит целиком, — победителем должно быть оно, а не
+// стоящее выше правило со списком, состав которого ведёт ядро.
+func TestRouteProbeCertainBeatsCandidate(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	_, withList := probeRules(t, ts)
+	ctx := context.Background()
+	direct, err := ts.st.CreateRule(ctx, store.Rule{
+		Name: "Мой список напрямую", Action: store.ActionDirect, Enabled: true,
+		RemoteLists: []string{"https://example.com/ok.lst"}, PeerScope: store.ScopeAll,
+	})
+	if err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+	ts.plainLists = func(url string) (singbox.PlainList, bool) {
+		if url == "https://example.com/ok.lst" {
+			return singbox.PlainList{Domains: []string{"mylist149.example"}}, true
+		}
+		return singbox.PlainList{}, false
+	}
+
+	fakeCore{
+		rules: `{"rules":[
+			{"type":"default","payload":"rule_set=[list-youtube]","proxy":"route(tun-x)"},
+			{"type":"default","payload":"rule_set=rule-` + direct.ID + `-plain-0","proxy":"route(direct)"}]}`,
+		answer: `{"Status":0,"Answer":[{"name":"mylist149.example.","type":1,"TTL":60,"data":"203.0.113.9"}]}`,
+	}.start(t, ts)
+
+	got := decodeProbe(t, runProbe(t, ts, cookie, "mylist149.example"))
+	if got.Rule == nil || got.Rule.ID != direct.ID {
+		t.Fatalf("победителем названо не «%s», а %+v (кандидаты %+v)",
+			direct.Name, got.Rule, got.Candidates)
+	}
+	if got.Rule.Outbound != "route(direct)" {
+		t.Errorf("outbound = %q, ожидался route(direct)", got.Rule.Outbound)
+	}
+	// Правило со списком выше по порядку отсеяно настоящим адресом: FakeIP ему
+	// не выдали, значит оно не совпало.
+	if len(got.Candidates) != 0 {
+		t.Errorf("кандидаты остались вопреки доказательству ядра: %+v (правило «%s»)",
+			got.Candidates, withList.Name)
+	}
+}
+
+// Д3. Отказ резолвера ничего не отсеивает: он как раз и означает, что сработало
+// правило с отказом. Кандидаты остаются, домыслов нет.
+func TestRouteProbeRefusedKeepsCandidates(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	probeRules(t, ts)
+
+	fakeCore{
+		rules: `{"rules":[
+			{"type":"default","payload":"rule_set=[list-youtube]","proxy":"reject"}]}`,
+		answer: `{"Status":5,"Question":[{"Name":"youtube.com."}],"RA":false}`,
+	}.start(t, ts)
+
+	got := decodeProbe(t, runProbe(t, ts, cookie, "youtube.com"))
+	if !got.Refused {
+		t.Fatalf("отказ по правилу не опознан: %+v", got)
+	}
+	if got.Rule != nil || len(got.Candidates) != 1 {
+		t.Fatalf("кандидат снят при отказе резолвера: %+v", got)
+	}
+	if !strings.Contains(got.ResolveError, "REFUSED") {
+		t.Errorf("resolve_error = %q, ожидалось про REFUSED", got.ResolveError)
+	}
+	if strings.Contains(got.Verdict, "вопрос к DNS") {
+		t.Errorf("отказ по правилу назван вопросом к DNS: %q", got.Verdict)
+	}
+}
+
+// Д2. Несуществующий домен: sing-box 1.12.25 отвечает кодом 200 и Status 3.
+// Разбор по HTTP-коду это молча пропускал, и resolve_error не заполнялся никогда.
+func TestRouteProbeNXDomainFromBody(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	own, _ := probeRules(t, ts)
+
+	fakeCore{
+		rules:  `{"rules":[{"type":"default","payload":"rule_set=rule-` + own.ID + `","proxy":"route(tun-x)"}]}`,
+		answer: `{"Status":3,"Question":[{"Name":"nowhere149.example."}],"Authority":[{"name":"example.","type":6}]}`,
+	}.start(t, ts)
+
+	got := decodeProbe(t, runProbe(t, ts, cookie, "nowhere149.example"))
+	if got.ResolveError == "" {
+		t.Fatal("resolve_error пуст, хотя резолвер ответил NXDOMAIN")
+	}
+	if !strings.Contains(got.ResolveError, "NXDOMAIN") {
+		t.Errorf("resolve_error = %q, ожидалось про NXDOMAIN", got.ResolveError)
+	}
+	if got.Refused {
+		t.Error("NXDOMAIN принят за отказ по правилу")
+	}
+	if len(got.Addresses) != 0 {
+		t.Errorf("адреса = %v, а их нет", got.Addresses)
 	}
 }
