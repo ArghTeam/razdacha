@@ -11,6 +11,9 @@
 **New surface:** `FakeIPRange()`, `RuleInConfig(rule, plain)`.
 **Beware:** `TestRuleInConfigAgreesWithGenerator` — сторож против расхождения с генератором.
 
+### #153 — тип пула больше не хардкодится в разборе
+**Changed:** `parseCatalogURL` в `internal/singbox/parse.go` больше не проставляет `Type` — у `Source: pool` он всегда пуст, тип назначает драйвер каталога.
+
 ## 2026-07-28
 
 ### #128 — ключ из каталога не отключает проверку сертификата

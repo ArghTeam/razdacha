@@ -10,6 +10,10 @@
 **Changed:** `Fetcher.Update` возвращает `Refreshed{List, FetchedAt, Stale}`, `Parse` стал обёрткой над ним; появился `SourceState{URL, UpdatedAt, FailedAt, Err, Cached}` и `Manager.States()`.
 **Beware:** раньше `Parse` глотал ошибку загрузки при живом кэше — теперь она видна через `States()`, а не молчит.
 
+### #153 — каталог пула переехал на outlinekeys
+**Changed:** `vpnkeys.go` удалён (источник умер); `pool_outlinekeys.go` — драйвер outlinekeys, `DefaultPoolCatalogURL` указывает на его страницу outline; `PoolCatalogRetired` хранит закрывшиеся хосты для переезда живых установок.
+**Beware:** ручной `POST /refresh` и такт расписания могут обойти каталог одновременно — до 210 запросов вместо 105 на боевой длине пула.
+
 ## 2026-07-29
 
 ### #121 — обновление пула само доезжает до sing-box
