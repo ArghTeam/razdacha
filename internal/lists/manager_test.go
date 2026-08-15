@@ -228,3 +228,65 @@ func TestManagerDefaults(t *testing.T) {
 		t.Errorf("нулевой интервал не должен применяться: %s", got)
 	}
 }
+
+// TestManagerStates — три состояния источника, которые нельзя схлопывать в два:
+// обновился, не обновился с причиной, ни разу не обновлялся. Плюс четвёртое,
+// самое коварное: источник не ответил, но список работает на прошлой версии из
+// кэша — выглядеть удачным обновлением он не должен (issue #149).
+func TestManagerStates(t *testing.T) {
+	var fail bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/dead.lst":
+			http.Error(w, "boom", http.StatusNotFound)
+		case r.URL.Path == "/flaky.lst" && fail:
+			http.Error(w, "boom", http.StatusInternalServerError)
+		default:
+			_, _ = w.Write([]byte("1.1.1.0/24\nexample.com\n"))
+		}
+	}))
+	srv.Config.ErrorLog = quietLogger()
+	defer srv.Close()
+
+	m := NewManager(ManagerOptions{Fetcher: newFetcher(t, srv), Logger: quietSlog()})
+	m.SetSources([]Source{
+		{URL: srv.URL + "/flaky.lst", Format: FormatPlain},
+		{URL: srv.URL + "/dead.lst", Format: FormatPlain},
+	})
+
+	// Источник, до которого прогон ещё не дошёл, записи не имеет вовсе:
+	// «ни разу не обновлялся» — это отсутствие записи, а не нулевое время.
+	if got := m.States(); len(got) != 0 {
+		t.Fatalf("до прогона есть состояния: %+v", got)
+	}
+
+	_ = m.Refresh(context.Background())
+	states := m.States()
+
+	ok := states[srv.URL+"/flaky.lst"]
+	if ok.UpdatedAt.IsZero() || ok.Err != "" || !ok.Cached {
+		t.Errorf("удачный источник = %+v, ожидалось время обновления без ошибки", ok)
+	}
+	dead := states[srv.URL+"/dead.lst"]
+	if dead.Err == "" || !dead.UpdatedAt.IsZero() || dead.Cached {
+		t.Errorf("недоступный источник = %+v, ожидалась ошибка без времени обновления", dead)
+	}
+
+	// Второй прогон: источник отвалился, но кэш цел. Список работает, а
+	// состояние обязано показывать отказ и прошлое время успеха.
+	fail = true
+	_ = m.Refresh(context.Background())
+	stale := m.States()[srv.URL+"/flaky.lst"]
+	if stale.Err == "" {
+		t.Error("отказ источника при живом кэше выглядит удачным обновлением")
+	}
+	if !stale.UpdatedAt.Equal(ok.UpdatedAt) {
+		t.Errorf("время прошлого успеха = %v, ожидалось %v", stale.UpdatedAt, ok.UpdatedAt)
+	}
+	if !stale.Cached {
+		t.Error("содержимое из кэша потеряно")
+	}
+	if l, ok := m.List(srv.URL + "/flaky.lst"); !ok || len(l.Subnets) != 1 {
+		t.Errorf("прошлая версия списка выпала из памяти: %+v", l)
+	}
+}
