@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-15
+
+### #60 — публичный вывод показывает внешний адрес
+
+**Changed:** в `RAZDACHA_PUBLIC=1` установщик печатает внешний адрес первым, `10.8.0.1` вторым как VPN-адрес; берёт `Installer.Result.ExternalAddr` (тот же, что в SAN), не детектит заново.
+**Beware:** при неудачной детекции панель всё равно слушает `0.0.0.0:443` и отвечает 200 снаружи — неизвестен только адрес для показа; воспроизводится `ip route add blackhole 1.1.1.1/32`, SSH цел.
+
 ## 2026-07-28
 
 ### #33 — коммит сборки через линкер
