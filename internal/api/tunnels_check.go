@@ -26,6 +26,22 @@ type tunnelCheck struct {
 	LatencyMS *int
 	At        time.Time
 	Detail    string
+	// OKAt — когда туннель отвечал в последний раз. Заполняет [checkCache.put],
+	// а не тот, кто проверял: отметка переживает неудачные круги и потому
+	// принадлежит кэшу, а не отдельному наблюдению.
+	OKAt time.Time
+}
+
+// okStamp — отметка удачной проверки; нулевое время означает «в этот раз не
+// дозвались». `slow` считается удачей: туннель отвечает, пусть и еле-еле, и
+// «последний раз отвечал» про него — правда.
+func okStamp(res tunnelCheck) time.Time {
+	switch res.Status {
+	case tunnelUp, tunnelSlow:
+		return res.At
+	default:
+		return time.Time{}
+	}
 }
 
 // checkCache — результаты проверок, сделанных с момента запуска демона.
@@ -43,9 +59,19 @@ func newCheckCache() *checkCache {
 	return &checkCache{last: make(map[string]tunnelCheck)}
 }
 
+// put кладёт результат очередной проверки, сохраняя отметку последнего удачного
+// ответа: неудачная проверка отвечает на вопрос «работает ли сейчас», а не
+// стирает знание о том, когда туннель отвечал в последний раз.
 func (c *checkCache) put(id string, res tunnelCheck) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if ok := okStamp(res); !ok.IsZero() {
+		res.OKAt = ok
+	} else if res.OKAt.IsZero() {
+		// Поднятая из БД отметка приходит прямо в res и своё берёт: затирать её
+		// пустым кэшем на старте демона нельзя.
+		res.OKAt = c.last[id].OKAt
+	}
 	c.last[id] = res
 }
 
@@ -79,6 +105,10 @@ func (s *Server) withCheck(t tunnelResponse) tunnelResponse {
 	t.Status = &status
 	t.LatencyMS = res.LatencyMS
 	t.LastCheck = &at
+	if !res.OKAt.IsZero() {
+		ok := res.OKAt.UTC()
+		t.LastOK = &ok
+	}
 	return t
 }
 
