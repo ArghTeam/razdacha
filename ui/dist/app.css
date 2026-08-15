@@ -768,8 +768,13 @@ textarea.bad { border-color: color-mix(in srgb, var(--err) 55%, var(--line-stron
 .pool-srv:first-child { border-top: 0; }
 .pool-srv.current { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .pool-srv-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.pool-srv-country { color: var(--fg-dim); }
 .pool-srv-name { font-family: var(--mono); font-size: 13px; }
+/* Страна сервера пула — подпись карточки каталога, не проверенный факт
+   (issue #161): пунктирное подчёркивание и курсор-подсказка отличают её от
+   измеренных величин рядом, не превращая список в справку. */
+.pool-country {
+  color: var(--fg-dim); border-bottom: 1px dotted var(--fg-faint); cursor: help;
+}
 
 /* --- версия в шапке ---
    Блок дописан в конец файла по той же причине, что и «ход проверки»: правила

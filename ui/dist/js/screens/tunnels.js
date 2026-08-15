@@ -62,6 +62,15 @@ function poolServers(pool, off) {
   return `<span class="badge ${alive ? 'ok' : 'err'}">живых ${alive} из ${total}</span>`;
 }
 
+/** Страна сервера пула — подпись карточки каталога, не измерение и не сверка:
+    проверка нашла расхождение на одном ключе из пяти (issue #161). Метка
+    держится в одном месте и переиспользуется везде, где показана страна пула,
+    чтобы её нельзя было принять за проверенный факт. */
+function poolCountryLabel(country) {
+  return `<span class="pool-country" title="Страна — со слов каталога, мы её не проверяли">${
+    esc(country)}</span>`;
+}
+
 /** Сервер, через который пул идёт прямо сейчас.
     Страна показывается всегда, даже если каталог уже вписал её в имя: по названию
     вроде «VLESS (Germany) 11293» это угадывается, а по «11293» — нет. */
@@ -69,10 +78,10 @@ function poolCurrent(pool, off) {
   const cur = pool.current || {};
   if (off || !cur.name) return '';
   const parts = [];
-  if (cur.country) parts.push(String(cur.country));
-  parts.push(String(cur.name));
-  if (cur.latency_ms != null) parts.push(`${cur.latency_ms} мс`);
-  return `<div class="row-meta pool-now">Сейчас: ${esc(parts.join(' · '))}</div>`;
+  if (cur.country) parts.push(poolCountryLabel(cur.country));
+  parts.push(esc(String(cur.name)));
+  if (cur.latency_ms != null) parts.push(`${esc(cur.latency_ms)} мс`);
+  return `<div class="row-meta pool-now">Сейчас: ${parts.join(' · ')}</div>`;
 }
 
 /** Расписание каталога. Следующего обновления у выключенного пула не будет —
@@ -115,7 +124,7 @@ function poolSchedule(pool, off) {
 /** Один сервер строкой: страна · имя · задержка. */
 function poolServerRow(s, { current } = {}) {
   const parts = [];
-  if (s.country) parts.push(`<span class="pool-srv-country">${esc(s.country)}</span>`);
+  if (s.country) parts.push(poolCountryLabel(s.country));
   parts.push(`<span class="pool-srv-name">${esc(s.title || '—')}</span>`);
 
   let dot = 'off';
@@ -159,7 +168,10 @@ function poolCountries(list) {
   }
   return [...byCountry.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'))
-    .map(([country, n]) => `<span class="chip">${esc(country)} — ${n}</span>`)
+    .map(([country, n]) => {
+      const hint = country === 'без страны' ? '' : ' title="Страна — со слов каталога, мы её не проверяли"';
+      return `<span class="chip"${hint}>${esc(country)} — ${n}</span>`;
+    })
     .join('');
 }
 
