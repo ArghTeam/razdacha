@@ -178,8 +178,8 @@ func probeVerdict(p probeResponse) string {
 	var b strings.Builder
 	switch {
 	case p.Rule != nil:
-		b.WriteString(fmt.Sprintf("Домен ловит правило «%s», ядро отправляет его в %s.",
-			p.Rule.Name, p.Rule.Outbound))
+		fmt.Fprintf(&b, "Домен ловит правило «%s», ядро отправляет его в %s.",
+			p.Rule.Name, p.Rule.Outbound)
 	case len(p.Candidates) > 0:
 		names := make([]string, 0, len(p.Candidates))
 		for _, c := range p.Candidates {

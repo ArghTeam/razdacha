@@ -307,9 +307,9 @@ func (c *Client) ResolveA(ctx context.Context, name string) ([]netip.Addr, error
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case status == http.StatusOK:
-	case status == http.StatusBadRequest:
+	switch status {
+	case http.StatusOK:
+	case http.StatusBadRequest:
 		return nil, fmt.Errorf("%w: домен %q не принят рантаймом: %s", ErrBadResponse, name, detail(body))
 	default:
 		// 500 отдаётся, когда резолв не удался: это ответ о домене, а не сбой API.
