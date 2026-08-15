@@ -166,6 +166,77 @@ func TestSummaryPanelModeUnknown(t *testing.T) {
 	}
 }
 
+// TestSummaryPublicExternalAddr — в публичном режиме первым назван внешний
+// адрес, вторым — 10.8.0.1 с пометкой для тех, кто уже в VPN; оба режима
+// печатают, как переключиться (issue #60).
+func TestSummaryPublicExternalAddr(t *testing.T) {
+	out, err := summary{
+		PanelURL:          "https://10.8.0.1",
+		ExternalPanelURL:  "https://203.0.113.7",
+		WGPort:            51820,
+		PanelPublic:       true,
+		PanelModeInferred: true,
+	}.Render()
+	if err != nil {
+		t.Fatalf("сборка вывода: %v", err)
+	}
+	extIdx := strings.Index(out, "https://203.0.113.7")
+	vpnIdx := strings.Index(out, "https://10.8.0.1")
+	if extIdx < 0 || vpnIdx < 0 {
+		t.Fatalf("в выводе нет одного из адресов:\n%s", out)
+	}
+	if extIdx > vpnIdx {
+		t.Fatalf("внешний адрес назван не первым:\n%s", out)
+	}
+	if !strings.Contains(out, "уже подключён к VPN") {
+		t.Fatalf("нет пометки про адрес VPN:\n%s", out)
+	}
+}
+
+// TestSummaryPublicExternalAddrUnknown — если внешний адрес не определён,
+// вывод честно говорит об этом, а не подставляет адрес.
+func TestSummaryPublicExternalAddrUnknown(t *testing.T) {
+	out, err := summary{
+		PanelURL:    "https://10.8.0.1",
+		WGPort:      51820,
+		PanelPublic: true,
+	}.Render()
+	if err != nil {
+		t.Fatalf("сборка вывода: %v", err)
+	}
+	if !strings.Contains(out, "Внешний адрес сервера не определён") {
+		t.Fatalf("нет честной формулировки о неопределённом адресе:\n%s", out)
+	}
+	if strings.Contains(out, "203.0.113") {
+		t.Fatalf("в выводе оказался выдуманный адрес:\n%s", out)
+	}
+}
+
+// TestSummarySwitchHint — переключатель режима называется всегда, даже когда
+// этот запуск режим не менял и не выводил из конфига: пользователь узнаёт про
+// RAZDACHA_PUBLIC именно сейчас, а не заранее.
+func TestSummarySwitchHint(t *testing.T) {
+	private, err := summary{PanelURL: "https://10.8.0.1", WGPort: 51820}.Render()
+	if err != nil {
+		t.Fatalf("сборка вывода: %v", err)
+	}
+	if !strings.Contains(private, "RAZDACHA_PUBLIC=1") || !strings.Contains(private, "RAZDACHA_PUBLIC=0") {
+		t.Fatalf("нет строки про переключение режима:\n%s", private)
+	}
+
+	public, err := summary{
+		PanelURL:    "https://10.8.0.1",
+		WGPort:      51820,
+		PanelPublic: true,
+	}.Render()
+	if err != nil {
+		t.Fatalf("сборка вывода: %v", err)
+	}
+	if !strings.Contains(public, "RAZDACHA_PUBLIC=1") || !strings.Contains(public, "RAZDACHA_PUBLIC=0") {
+		t.Fatalf("нет строки про переключение режима:\n%s", public)
+	}
+}
+
 // TestSummaryColor — на терминале QR раскрашивается, иначе его не прочитает
 // сканер в тёмной теме.
 func TestSummaryColor(t *testing.T) {
