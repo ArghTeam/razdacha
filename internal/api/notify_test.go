@@ -14,7 +14,16 @@ import (
 // участвует, проверяется поведение панели вокруг него.
 type fakeSender struct {
 	sent []string
+	docs []fakeDocument
 	err  error
+}
+
+// fakeDocument — отправленный файл: имя, содержимое и подпись. Содержимое
+// нужно тестам копии состояния — по первым байтам видно, зашифрован ли файл.
+type fakeDocument struct {
+	name    string
+	data    []byte
+	caption string
 }
 
 func (f *fakeSender) Send(_ context.Context, text string) error {
@@ -22,6 +31,14 @@ func (f *fakeSender) Send(_ context.Context, text string) error {
 		return f.err
 	}
 	f.sent = append(f.sent, text)
+	return nil
+}
+
+func (f *fakeSender) SendDocument(_ context.Context, name string, data []byte, caption string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.docs = append(f.docs, fakeDocument{name: name, data: data, caption: caption})
 	return nil
 }
 

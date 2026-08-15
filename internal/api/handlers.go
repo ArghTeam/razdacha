@@ -55,6 +55,11 @@ func (s *Server) routes() http.Handler {
 	s.protect(mux, "PUT /api/notify", s.handleUpdateNotify)
 	s.protect(mux, "POST /api/notify/test", s.handleNotifyTest)
 
+	s.protect(mux, "GET /api/backup", s.handleBackup)
+	s.protect(mux, "PUT /api/backup", s.handleUpdateBackup)
+	s.protect(mux, "GET /api/backup/download", s.handleBackupDownload)
+	s.protect(mux, "POST /api/backup/send", s.handleBackupSend)
+
 	s.protect(mux, "POST /api/apply", s.handleApply)
 
 	s.protect(mux, "GET /api/version", s.handleVersion)

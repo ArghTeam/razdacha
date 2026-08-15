@@ -134,3 +134,85 @@ func TestSendErrorDoesNotLeakToken(t *testing.T) {
 		t.Errorf("токен утёк в текст ошибки: %q", err)
 	}
 }
+
+// Файл уезжает тем же ботом и в тот же чат: копия состояния — не второй канал
+// наружу, а другой метод того же (ADR 0016).
+func TestSendDocumentDeliversFile(t *testing.T) {
+	var gotPath, gotChat, gotName, gotCaption string
+	var gotData []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("разбор multipart: %v", err)
+			return
+		}
+		gotChat = r.FormValue("chat_id")
+		gotCaption = r.FormValue("caption")
+		file, head, err := r.FormFile("document")
+		if err != nil {
+			t.Errorf("файл не пришёл: %v", err)
+			return
+		}
+		defer func() { _ = file.Close() }()
+		gotName = head.Filename
+		gotData, _ = io.ReadAll(file)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	tg := NewTelegram(Options{Token: "123:ABC", ChatID: "-1001", Base: srv.URL})
+	err := tg.SendDocument(context.Background(), "state.db.enc", []byte("зашифровано"), "подпись")
+	if err != nil {
+		t.Fatalf("SendDocument: %v", err)
+	}
+	if gotPath != "/bot123:ABC/sendDocument" {
+		t.Errorf("путь = %q", gotPath)
+	}
+	if gotChat != "-1001" || gotName != "state.db.enc" || gotCaption != "подпись" {
+		t.Errorf("чат %q, имя %q, подпись %q", gotChat, gotName, gotCaption)
+	}
+	if string(gotData) != "зашифровано" {
+		t.Errorf("содержимое = %q", gotData)
+	}
+}
+
+// Отказ телеграма объясняется по-русски и не тащит с собой URL, в котором лежит
+// токен.
+func TestSendDocumentExplainsRefusal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":403,"description":"bot was blocked"}`))
+	}))
+	defer srv.Close()
+
+	tg := NewTelegram(Options{Token: "123:ABC", ChatID: "-1001", Base: srv.URL})
+	err := tg.SendDocument(context.Background(), "state.db.enc", []byte("данные"), "")
+	if err == nil {
+		t.Fatal("отказ телеграма не стал ошибкой")
+	}
+	if !strings.Contains(err.Error(), "бот заблокирован") {
+		t.Errorf("текст ошибки = %q", err)
+	}
+	if strings.Contains(err.Error(), "123:ABC") {
+		t.Error("токен попал в текст ошибки")
+	}
+}
+
+// Файл больше потолка телеграма не отправляется: узнать об отказе лучше до
+// того, как он уедет наполовину.
+func TestSendDocumentRefusesOversized(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	defer srv.Close()
+
+	tg := NewTelegram(Options{Token: "123:ABC", ChatID: "-1001", Base: srv.URL})
+	err := tg.SendDocument(context.Background(), "state.db.enc", make([]byte, MaxDocumentSize+1), "")
+	if err == nil {
+		t.Fatal("файл сверх потолка принят")
+	}
+	if called {
+		t.Error("запрос ушёл к API")
+	}
+}

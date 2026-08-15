@@ -74,11 +74,42 @@ export async function modalSettings() {
       <label style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <input type="checkbox" id="s-ntf-on"> Присылать оповещения</label>
       <button class="btn" data-act="test-notify" style="margin-top:8px">Отправить тестовое</button></div>
+    <div class="field"><label>Резервная копия состояния</label>
+      <div class="hint" style="margin-bottom:6px">В файле лежит всё: настройки, туннели,
+        правила и <b>приватные ключи всех пиров</b> — то есть доступ ко всему VPN.
+        Храните его как пароль.</div>
+      <a class="btn" href="${esc(api.backup.DOWNLOAD_PATH)}" download>Скачать состояние</a>
+      <div class="hint" style="margin-top:10px">Копия может уезжать в тот же чат телеграма
+        по расписанию. Наружу она уходит только зашифрованной — задайте фразу.</div>
+      <input type="password" id="s-bak-phrase" placeholder="Парольная фраза" style="margin-top:6px">
+      <div class="hint"><b>Забудете фразу — копия бесполезна.</b> Расшифровать её нечем:
+        ключ считается из фразы и больше нигде не хранится. Запишите её отдельно от чата,
+        куда приходят копии.</div>
+      <select id="s-bak-int" style="margin-top:8px">${backupOpts(0)}</select>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <input type="checkbox" id="s-bak-on"> Присылать копию в телеграм</label>
+      <button class="btn" data-act="send-backup" style="margin-top:8px">Отправить сейчас</button>
+      <div class="hint" id="s-bak-last"></div></div>
     <div class="parse-result idle">Остальное живёт в config.yaml: пул адресов, тип DNS,
       WAN-интерфейс, уровень логов.</div>`,
   `<button class="btn" data-act="close-modal">Отмена</button>
      <button class="btn btn-primary" data-act="save-settings">Сохранить</button>`,
-  ), fillNotify);
+  ), fillSecrets);
+}
+
+/* Копия состояния — рядом с оповещениями: канал у них один, и настраивают их
+   в один заход. Интервалы редкие: каждая отправка кладёт в чат файл со всеми
+   ключами пиров, и «каждый час» здесь не то, что стоит предлагать первым. */
+const BACKUP_INTERVALS = [
+  [6, 'каждые 6 часов'],
+  [24, 'раз в сутки'],
+  [168, 'раз в неделю'],
+];
+
+function backupOpts(hours) {
+  const cur = Number(hours) || 24;
+  return BACKUP_INTERVALS.map(([v, label]) =>
+    `<option value="${v}" ${cur === v ? 'selected' : ''}>${label}</option>`).join('');
 }
 
 /* Настройки оповещений приезжают отдельным запросом: они лежат вне
@@ -98,6 +129,74 @@ async function fillNotify() {
   on.checked = !!notifyCfg.enabled;
   // Пустое поле с подсказкой «сохранён» честнее звёздочек: значения у нас нет.
   token.placeholder = notifyCfg.token_set ? 'Токен сохранён — оставьте пустым' : 'Токен бота';
+}
+
+/* Обе секретные секции заполняются одним заходом после открытия модалки: у них
+   свои ручки, и обе отдают только признаки «сохранено», а не значения. */
+async function fillSecrets() {
+  await fillNotify();
+  await fillBackup();
+}
+
+let backupCfg = null;
+
+async function fillBackup() {
+  try {
+    backupCfg = await api.backup.get();
+  } catch (err) {
+    if (!err.missing) toastError(err);
+    return;
+  }
+  const phrase = $('#s-bak-phrase');
+  const interval = $('#s-bak-int');
+  const on = $('#s-bak-on');
+  const last = $('#s-bak-last');
+  if (!phrase || !interval || !on) return;
+  on.checked = !!backupCfg.enabled;
+  interval.innerHTML = backupOpts(backupCfg.interval_hours);
+  // Пустое поле с подсказкой «сохранена» честнее звёздочек: значения у нас нет.
+  phrase.placeholder = backupCfg.passphrase_set
+    ? 'Фраза сохранена — оставьте пустым' : 'Парольная фраза';
+  if (last) last.innerHTML = backupStatus(backupCfg);
+}
+
+/* Пустота не заполняется выдумкой: копию ещё не отправляли — так и говорим. */
+function backupStatus(cfg) {
+  if (!cfg) return '';
+  const parts = [];
+  parts.push(cfg.last_sent_at
+    ? `Последняя копия ушла ${esc(new Date(cfg.last_sent_at).toLocaleString())}.`
+    : 'Копию ещё не отправляли.');
+  if (cfg.last_error) parts.push(`Последняя ошибка: ${esc(cfg.last_error)}`);
+  if (!cfg.telegram_ready) parts.push('Бот телеграма не настроен — отправлять некуда.');
+  return parts.join(' ');
+}
+
+async function saveBackup() {
+  const phrase = $('#s-bak-phrase');
+  const interval = $('#s-bak-int');
+  const on = $('#s-bak-on');
+  if (!phrase || !interval || !on) return;
+  const body = { enabled: on.checked, interval_hours: Number(interval.value) };
+  // Пустую фразу не шлём вовсе: на сервере «не прислали» означает «оставить».
+  if (phrase.value.trim()) body.passphrase = phrase.value.trim();
+  backupCfg = await api.backup.save(body);
+}
+
+async function sendBackup() {
+  const btn = $('#modal [data-act="send-backup"]');
+  btn.disabled = true;
+  try {
+    // Сначала сохраняем: отправлять то, чего сервер ещё не видел, бессмысленно.
+    await saveBackup();
+    await api.backup.send();
+    toast('Копия отправлена в телеграм');
+    await fillBackup();
+  } catch (err) {
+    toastError(err);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* Сохранение оповещений отделено от сохранения настроек: у них разные ручки, и
@@ -141,9 +240,10 @@ async function saveSettings() {
   const btn = $('#modal [data-act="save-settings"]');
   btn.disabled = true;
   try {
-    // Оповещения лежат за своей ручкой, но кнопка «Сохранить» одна: не
-    // сохранить их отсюда значило бы соврать пользователю.
+    // Оповещения и копия лежат за своими ручками, но кнопка «Сохранить» одна:
+    // не сохранить их отсюда значило бы соврать пользователю.
     await saveNotify();
+    await saveBackup();
     const res = await api.settings.update(body);
     state.settings = res && res.wg_listen_port ? res : { ...s, ...body };
     closeModal();
@@ -164,4 +264,5 @@ async function saveSettings() {
 export const actions = {
   'save-settings': saveSettings,
   'test-notify': testNotify,
+  'send-backup': sendBackup,
 };

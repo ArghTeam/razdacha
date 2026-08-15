@@ -26,6 +26,7 @@ const usage = `razdacha — управление установкой селек
 
 Команды:
   setup       установить или обновить: sing-box, файлы, юниты, первый пир
+  restore     поднять состояние из резервной копии
   uninstall   снять razdacha и вернуть систему в исходное состояние
   version     показать версию
 
@@ -51,6 +52,8 @@ func run() int {
 	switch cmd := os.Args[1]; cmd {
 	case "setup":
 		err = runSetup(ctx, os.Args[2:])
+	case "restore":
+		err = runRestore(ctx, os.Args[2:])
 	case "uninstall":
 		err = runUninstall(ctx, os.Args[2:])
 	case "version", "-version", "--version":

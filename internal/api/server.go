@@ -171,9 +171,12 @@ type Server struct {
 	build Build
 }
 
-// notifySender — то, что слою api нужно от отправителя оповещений.
+// notifySender — то, что слою api нужно от отправителя оповещений: текст
+// событий и файл копии состояния. Транспорт один и тот же — второго канала
+// наружу у демона нет (ADR 0016).
 type notifySender interface {
 	Send(ctx context.Context, text string) error
+	SendDocument(ctx context.Context, filename string, data []byte, caption string) error
 }
 
 // New собирает сервер и проверяет условия запуска.
@@ -270,6 +273,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	go s.sweep(ctx)
 	go s.watchTunnels(ctx)
+	go s.watchBackup(ctx)
 
 	errc := make(chan error, 1)
 	go func() {
