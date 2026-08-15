@@ -340,7 +340,9 @@ func tunnelType(res singbox.ParseResult, raw string) (store.TunnelType, error) {
 	}
 	typ, err := lists.PoolKeyType(raw)
 	if err != nil {
-		return "", fmt.Errorf("Каталог ключей не поддерживается: %w", err)
+		// Текст показывается пользователю как есть, поэтому идёт наружу целиком:
+		// в нём и хост, и причина — закрылся источник или разборщика не было вовсе.
+		return "", fmt.Errorf("ключи из этого каталога брать нечем: %w", err)
 	}
 	return typ, nil
 }
