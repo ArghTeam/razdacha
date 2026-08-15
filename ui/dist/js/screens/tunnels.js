@@ -169,8 +169,16 @@ function poolCountries(list) {
   return [...byCountry.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'))
     .map(([country, n]) => {
-      const hint = country === 'без страны' ? '' : ' title="Страна — со слов каталога, мы её не проверяли"';
-      return `<span class="chip"${hint}>${esc(country)} — ${n}</span>`;
+      // Тот же смысл, что у страны в строке сервера и в «Сейчас:» — подпись
+      // каталога, не факт, — обязан выглядеть так же заметно: пунктирная
+      // рамка вместо сплошной, как уже отличает «остывший» чип списка
+      // (`.chip.list-cold`), плюс тот же `title`, что и там. Бакету «без
+      // страны» подсказку не даём — атрибутировать источнику нечего.
+      if (country === 'без страны') {
+        return `<span class="chip">${esc(country)} — ${n}</span>`;
+      }
+      return `<span class="chip pool-country" title="Страна — со слов каталога, мы её не проверяли">${
+        esc(country)} — ${n}</span>`;
     })
     .join('');
 }
