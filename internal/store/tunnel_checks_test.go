@@ -26,7 +26,7 @@ func TestTunnelCheckRoundTrip(t *testing.T) {
 	}
 
 	at := time.Date(2026, 7, 27, 6, 40, 0, 0, time.UTC)
-	if err := s.SaveTunnelCheck(ctx, tun.ID, "down", at); err != nil {
+	if err := s.SaveTunnelCheck(ctx, tun.ID, "down", at, time.Time{}); err != nil {
 		t.Fatalf("SaveTunnelCheck: %v", err)
 	}
 
@@ -37,15 +37,55 @@ func TestTunnelCheckRoundTrip(t *testing.T) {
 	if got.Status != "down" || !got.CheckedAt.Equal(at) {
 		t.Errorf("сохранено %+v, ожидалось down в %v", got, at)
 	}
+	// Удачных ответов не было — время остаётся нулевым, а не 1970 годом.
+	if !got.OKAt.IsZero() {
+		t.Errorf("OKAt = %v, ожидалось нулевое время", got.OKAt)
+	}
 
 	// Повторная запись обновляет ту же строку, а не заводит вторую.
 	later := at.Add(2 * time.Minute)
-	if err := s.SaveTunnelCheck(ctx, tun.ID, "up", later); err != nil {
+	if err := s.SaveTunnelCheck(ctx, tun.ID, "up", later, later); err != nil {
 		t.Fatalf("SaveTunnelCheck: %v", err)
 	}
 	got, _ = savedCheck(t, s, ctx, tun.ID)
 	if got.Status != "up" || !got.CheckedAt.Equal(later) {
 		t.Errorf("после обновления %+v, ожидалось up в %v", got, later)
+	}
+	if !got.OKAt.Equal(later) {
+		t.Errorf("OKAt = %v, ожидалось %v", got.OKAt, later)
+	}
+}
+
+// Неудачная проверка не стирает отметку удачного ответа: без неё панель не может
+// сказать, с какого момента туннель молчит (issue #152).
+func TestTunnelCheckKeepsLastOK(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	tun, err := s.CreateTunnel(ctx, sampleTunnel("Нидерланды"))
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+
+	okAt := time.Date(2026, 8, 15, 14, 30, 0, 0, time.UTC)
+	if err := s.SaveTunnelCheck(ctx, tun.ID, "up", okAt, okAt); err != nil {
+		t.Fatalf("SaveTunnelCheck: %v", err)
+	}
+	for i := 1; i <= 3; i++ {
+		down := okAt.Add(time.Duration(i) * 2 * time.Minute)
+		if err := s.SaveTunnelCheck(ctx, tun.ID, "down", down, time.Time{}); err != nil {
+			t.Fatalf("SaveTunnelCheck: %v", err)
+		}
+	}
+
+	got, _ := savedCheck(t, s, ctx, tun.ID)
+	if got.Status != "down" {
+		t.Errorf("статус = %q, ожидался down", got.Status)
+	}
+	if !got.OKAt.Equal(okAt) {
+		t.Errorf("OKAt = %v, ожидалось %v — неудачные круги её не трогают", got.OKAt, okAt)
+	}
+	if !got.CheckedAt.After(got.OKAt) {
+		t.Errorf("CheckedAt = %v, ожидалось время позже OKAt %v", got.CheckedAt, got.OKAt)
 	}
 }
 
@@ -59,7 +99,7 @@ func TestTunnelCheckCascadesOnDelete(t *testing.T) {
 		t.Fatalf("CreateTunnel: %v", err)
 	}
 
-	if err := s.SaveTunnelCheck(ctx, tun.ID, "up", time.Now()); err != nil {
+	if err := s.SaveTunnelCheck(ctx, tun.ID, "up", time.Now(), time.Now()); err != nil {
 		t.Fatalf("SaveTunnelCheck: %v", err)
 	}
 	if err := s.DeleteTunnel(ctx, tun.ID); err != nil {
@@ -74,7 +114,7 @@ func TestTunnelCheckCascadesOnDelete(t *testing.T) {
 // убрать, и она всплыла бы на туннеле с тем же идентификатором.
 func TestTunnelCheckRejectsUnknownTunnel(t *testing.T) {
 	s := open(t)
-	err := s.SaveTunnelCheck(context.Background(), "нет-такого", "up", time.Now())
+	err := s.SaveTunnelCheck(context.Background(), "нет-такого", "up", time.Now(), time.Now())
 	if err == nil {
 		t.Fatal("ожидалась ошибка на неизвестный туннель")
 	}
@@ -82,7 +122,7 @@ func TestTunnelCheckRejectsUnknownTunnel(t *testing.T) {
 
 func TestTunnelCheckRejectsEmpty(t *testing.T) {
 	s := open(t)
-	err := s.SaveTunnelCheck(context.Background(), "", "up", time.Now())
+	err := s.SaveTunnelCheck(context.Background(), "", "up", time.Now(), time.Now())
 	if !errors.Is(err, ErrInvalid) {
 		t.Errorf("ошибка = %v, ожидалась ErrInvalid", err)
 	}

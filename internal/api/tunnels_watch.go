@@ -73,7 +73,9 @@ func (s *Server) loadChecks(ctx context.Context) {
 		return
 	}
 	for id, c := range saved {
-		s.checks.put(id, tunnelCheck{Status: c.Status, At: c.CheckedAt})
+		// OKAt поднимается вместе со статусом: иначе после перезапуска панель
+		// не смогла бы сказать, с какого момента туннель молчит.
+		s.checks.put(id, tunnelCheck{Status: c.Status, At: c.CheckedAt, OKAt: c.OKAt})
 	}
 	if len(saved) > 0 {
 		s.log.Debug("подняты сохранённые проверки туннелей", "количество", len(saved))
@@ -126,7 +128,7 @@ func (s *Server) refreshChecks(ctx context.Context) error {
 			continue
 		}
 		s.checks.put(t.ID, res)
-		if err := s.store.SaveTunnelCheck(ctx, t.ID, res.Status, res.At); err != nil {
+		if err := s.store.SaveTunnelCheck(ctx, t.ID, res.Status, res.At, okStamp(res)); err != nil {
 			s.log.Error("запись проверки туннеля", "туннель", t.ID, "ошибка", err)
 			// Без записи проверки некуда писать и сообщённый статус: пропускаем
 			// круг по этому туннелю, чтобы не разъехаться с БД.
