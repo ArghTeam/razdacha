@@ -419,10 +419,14 @@ func (s *Server) countInConfig(rules []store.Rule) int {
 // sing-box) и `resolve_real_ip` (там клиенту нужен настоящий адрес). Всё
 // остальное — туннель, блокировка, недоступный туннель — в DNS видно.
 func dnsRuled(r store.Rule) bool {
-	if r.Action == store.ActionDirect {
+	switch {
+	case r.Action == store.ActionDirect:
 		return false
+	case r.Action == store.ActionTunnel && r.ResolveRealIP:
+		return false
+	default:
+		return true
 	}
-	return !(r.Action == store.ActionTunnel && r.ResolveRealIP)
 }
 
 // ruleCatches отвечает, ловит ли правило домен. Второе значение — уверенность:
