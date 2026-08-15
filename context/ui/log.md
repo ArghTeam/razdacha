@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-15
+
+### #149 — отказ правила виден в панели
+
+**Changed:** строка правила красится в `rule-dead` с бейджем «⚠» при недоступном туннеле (выключен, удалён, пул мёртв, выключено второе звено); панель пробника `probeView` над списком правил.
+**New surface:** `api.route.test` в `api.js`.
+**Beware:** `servers_alive: null` — «неизвестно», строку не красит. Опрос молчит, пока курсор в `input`/`textarea` — перерисовка сносит набранное.
+
 ## 2026-07-29
 
 ### #135 — адрес на карточке туннеля

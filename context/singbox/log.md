@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-15
+
+### #149 — отказ правила виден в панели
+
+**Changed:** экспортированы `FakeIPRange()` и `RuleInConfig(rule, plain)` в `internal/singbox/ruleset.go` — второй считает через тот же `buildRuleSets`, что генератор.
+**New surface:** `FakeIPRange()`, `RuleInConfig(rule, plain)`.
+**Beware:** `TestRuleInConfigAgreesWithGenerator` — сторож против расхождения с генератором.
+
 ## 2026-07-28
 
 ### #128 — ключ из каталога не отключает проверку сертификата

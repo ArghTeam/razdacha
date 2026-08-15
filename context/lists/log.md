@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-15
+
+### #149 — отказ правила виден в панели
+
+**Changed:** `Fetcher.Update` возвращает `Refreshed{List, FetchedAt, Stale}`, `Parse` стал обёрткой над ним; появился `SourceState{URL, UpdatedAt, FailedAt, Err, Cached}` и `Manager.States()`.
+**Beware:** раньше `Parse` глотал ошибку загрузки при живом кэше — теперь она видна через `States()`, а не молчит.
+
 ## 2026-07-29
 
 ### #121 — обновление пула само доезжает до sing-box

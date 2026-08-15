@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-15
+
+### #149 — отказ правила виден в панели
+
+**Changed:** `GET /api/rules` возвращает `lists_status` по спискам правила; `POST /api/route/test` резолвит домен через живое ядро.
+**New surface:** `POST /api/route/test`; `ruleResponse.lists_status`.
+**Beware:** победитель — только достоверное совпадение: настоящий адрес без ошибки резолва снимает недостоверных кандидатов, REFUSED сам подтверждает срабатывание, ничего не снимая.
+
 ## 2026-07-29
 
 ### #135 — адрес туннеля отдельной парой полей
