@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-15
+
+### #152 — молчащий туннель отличим от мёртвого
+**Changed:** миграция 10 — колонка `ok_at` в `tunnel_checks`; пятый аргумент `SaveTunnelCheck` `okAt`, нулевое значение хранит прежнюю отметку через `CASE` в upsert.
+**New surface:** `TunnelCheck.OKAt`.
+**Beware:** что считать удачей решает вызывающий, хранилище статусы не толкует; старая версия демона не стартует на БД версии 10 — откат требует восстановления копии БД.
+
 ## 2026-07-29
 
 ### #142 — правило без условий совпадения не сохраняется
