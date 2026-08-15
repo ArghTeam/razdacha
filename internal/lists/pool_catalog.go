@@ -28,6 +28,12 @@ const DefaultPoolCatalogURL = "https://outlinekeys.com/protocols/outline/"
 // умершего каталога, и ей же отвечает панель на попытку вписать чужой сайт.
 var ErrNoPoolDriver = errors.New("каталог не поддерживается")
 
+// ErrPoolCrawlBusy — этот каталог уже обходится, второй обход не запускался.
+//
+// Сентинел, а не текст: по нему расписание отличает подавленный такт от неудачи и не
+// уходит в ретраи, а ручка API отвечает пользовательским кодом вместо `502`.
+var ErrPoolCrawlBusy = errors.New("обход каталога уже идёт")
+
 // Ограничения обхода. Общие для всех драйверов: вежливость к чужому бесплатному
 // сайту — обязанность слоя, а не каждого разборщика по отдельности (ADR 0015).
 const (
@@ -179,6 +185,38 @@ type PoolCatalog struct {
 	// исправная до первой пробы. Пустое означает «не проверять» — так каталог
 	// разбирается в тестах слоя.
 	CheckKey func(rawURL string) error
+
+	// crawlsMu и crawls держат по одному идущему обходу на каталог.
+	//
+	// Входов в обход два — кнопка «Обновить» в панели и такт расписания, — и они
+	// совпадают по времени: на стенде такое совпадение стоило 210 запросов к чужому
+	// бесплатному сайту вместо 105 (issue #156). Ключ — разобранный адрес каталога,
+	// а не туннель: два пула с одним каталогом бьют по одному сайту и обязаны друг
+	// друга ждать, два пула с разными источниками — нет.
+	crawlsMu sync.Mutex
+	crawls   map[string]bool
+}
+
+// beginCrawl занимает каталог под обход. false означает, что обход по этому адресу
+// уже идёт и второй запускать нельзя.
+func (c *PoolCatalog) beginCrawl(key string) bool {
+	c.crawlsMu.Lock()
+	defer c.crawlsMu.Unlock()
+	if c.crawls[key] {
+		return false
+	}
+	if c.crawls == nil {
+		c.crawls = make(map[string]bool)
+	}
+	c.crawls[key] = true
+	return true
+}
+
+// endCrawl освобождает каталог.
+func (c *PoolCatalog) endCrawl(key string) {
+	c.crawlsMu.Lock()
+	delete(c.crawls, key)
+	c.crawlsMu.Unlock()
 }
 
 func (c *PoolCatalog) log() *slog.Logger {
@@ -230,6 +268,18 @@ func (c *PoolCatalog) Servers(ctx context.Context, catalogURL string) ([]store.P
 	if err != nil {
 		return nil, err
 	}
+
+	// Второй обход того же каталога не запускается: он стоил бы сотни запросов к
+	// чужому сайту ради того же результата (issue #156). Отказ, а не ожидание, —
+	// ждать нечего: идущий обход запишет свежий состав в БД сам, и тот, кто нажал
+	// кнопку, получил бы то же самое двумя минутами позже. Молча пропустить нельзя:
+	// без строки в логе удвоенный обход и подавленный выглядят одинаково — никак.
+	key := u.String()
+	if !c.beginCrawl(key) {
+		c.log().Info("каталог уже обходится, второй обход не запущен", "каталог", key)
+		return nil, fmt.Errorf("%w: %s", ErrPoolCrawlBusy, key)
+	}
+	defer c.endCrawl(key)
 
 	crawl := &poolCrawl{
 		fetch:    c.page,

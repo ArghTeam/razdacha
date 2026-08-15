@@ -1,10 +1,12 @@
 package lists
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -301,6 +304,131 @@ func (fakePoolDriver) Name() string              { return "fake" }
 func (fakePoolDriver) KeyType() store.TunnelType { return store.TunnelSOCKS }
 func (fakePoolDriver) Servers(context.Context, *poolCrawl, *url.URL) ([]store.PoolServer, error) {
 	return []store.PoolServer{{URL: "socks://198.51.100.1:1080"}}, nil
+}
+
+// blockingDriver — драйвер, застревающий посреди обхода, пока тест его не отпустит.
+// Совпадение двух обходов иначе не воспроизводится: настоящий обход слишком быстр.
+type blockingDriver struct {
+	started chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+}
+
+func newBlockingDriver() *blockingDriver {
+	return &blockingDriver{started: make(chan struct{}, 1), release: make(chan struct{})}
+}
+
+func (d *blockingDriver) Name() string              { return "blocking" }
+func (d *blockingDriver) KeyType() store.TunnelType { return store.TunnelSOCKS }
+
+func (d *blockingDriver) Servers(context.Context, *poolCrawl, *url.URL) ([]store.PoolServer, error) {
+	d.calls.Add(1)
+	d.started <- struct{}{}
+	<-d.release
+	return []store.PoolServer{{URL: "socks://198.51.100.1:1080", Title: "заглушка"}}, nil
+}
+
+// logged — каталог, чей лог можно прочитать: подавленный обход обязан быть виден.
+func logged(buf *bytes.Buffer) *PoolCatalog {
+	return &PoolCatalog{Log: slog.New(slog.NewTextHandler(buf, nil)), Pause: -1}
+}
+
+// Второй обход того же каталога не запускается: ручная кнопка и такт расписания,
+// совпавшие по времени, стоили сотни лишних запросов к чужому сайту (issue #156).
+// Отказ приходит сразу и виден в логе — молча проглатывать его нельзя.
+func TestPoolCatalogSuppressesConcurrentCrawl(t *testing.T) {
+	d := newBlockingDriver()
+	defer RegisterPoolDriver("keys.example", d)()
+
+	var logs bytes.Buffer
+	c := logged(&logs)
+	const catalog = "https://keys.example/catalog"
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.Servers(context.Background(), catalog)
+		done <- err
+	}()
+	<-d.started
+
+	if _, err := c.Servers(context.Background(), catalog); !errors.Is(err, ErrPoolCrawlBusy) {
+		t.Fatalf("второй обход получил %v, ожидалась ErrPoolCrawlBusy", err)
+	}
+	close(d.release)
+	if err := <-done; err != nil {
+		t.Fatalf("первый обход: %v", err)
+	}
+	if got := d.calls.Load(); got != 1 {
+		t.Errorf("каталог обойден %d раза, ожидался один", got)
+	}
+	if !strings.Contains(logs.String(), "каталог уже обходится") {
+		t.Errorf("подавленный обход не виден в логе: %s", logs.String())
+	}
+
+	// Обход кончился — каталог свободен: замок не должен переживать свой обход.
+	d.release = make(chan struct{})
+	close(d.release)
+	if _, err := c.Servers(context.Background(), catalog); err != nil {
+		t.Fatalf("обход после освобождения каталога: %v", err)
+	}
+}
+
+// Подавляется совпадение обходов одного каталога, а не обходов вообще: два пула с
+// разными источниками бьют по разным сайтам и мешать друг другу не должны.
+func TestPoolCatalogCrawlsDifferentCatalogsAtOnce(t *testing.T) {
+	first, second := newBlockingDriver(), newBlockingDriver()
+	defer RegisterPoolDriver("one.example", first)()
+	defer RegisterPoolDriver("two.example", second)()
+
+	c := &PoolCatalog{Log: quietSlog(), Pause: -1}
+	done := make(chan error, 2)
+	for _, addr := range []string{"https://one.example/c", "https://two.example/c"} {
+		go func() {
+			_, err := c.Servers(context.Background(), addr)
+			done <- err
+		}()
+	}
+
+	// Оба обхода дошли до драйвера — значит, второй не ждал первого.
+	<-first.started
+	<-second.started
+	close(first.release)
+	close(second.release)
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatalf("обход каталога: %v", err)
+		}
+	}
+}
+
+// Расписание, наткнувшееся на идущий обход, не считает это неудачей и в ретраи не
+// уходит; кнопка «Обновить» на том же каталоге получает внятный отказ.
+func TestPoolManagerSkipsBusyCatalog(t *testing.T) {
+	d := newBlockingDriver()
+	defer RegisterPoolDriver("keys.example", d)()
+
+	var logs bytes.Buffer
+	c := logged(&logs)
+	m := NewPoolManager(PoolManagerOptions{Catalog: c, Writer: &poolWriter{}, Logger: c.Log})
+	tun := PoolTunnel{ID: "pppp", Name: "пул", CatalogURL: "https://keys.example/catalog", Enabled: true}
+	m.SetTunnels([]PoolTunnel{tun})
+
+	go func() { _, _ = c.Servers(context.Background(), tun.CatalogURL) }()
+	<-d.started
+
+	if err := m.Refresh(context.Background()); err != nil {
+		t.Fatalf("такт расписания на занятом каталоге: %v", err)
+	}
+	if _, err := m.RefreshPool(context.Background(), tun); !errors.Is(err, ErrPoolCrawlBusy) {
+		t.Fatalf("обход по требованию получил %v, ожидалась ErrPoolCrawlBusy", err)
+	}
+	close(d.release)
+	if got := d.calls.Load(); got != 1 {
+		t.Errorf("каталог обойден %d раза, ожидался один", got)
+	}
+	if !strings.Contains(logs.String(), "такт расписания пропущен") {
+		t.Errorf("пропущенный такт не виден в логе: %s", logs.String())
+	}
 }
 
 // catalogStub — каталог на своей разметке: тот же драйвер, но страницы задаёт тест.

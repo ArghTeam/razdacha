@@ -260,6 +260,64 @@ func TestRefreshPoolBeforeScheduleKnowsIt(t *testing.T) {
 	}
 }
 
+// Каталог без драйвера — ошибка пользователя, а не сбой демона: адрес вписал человек.
+// Запись того же адреса отвечает `400` с этим же текстом, и обход обязан сходиться с
+// ней (issue #156). Текст ошибки при этом не меняется — он и раньше был верным.
+func TestRefreshPoolUnknownCatalogIsBadRequest(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 4, true)
+
+	ts.pools = &fakeRefresher{err: fmt.Errorf("каталог пула %q: %w: разборщика для example.com нет",
+		tun.Name, lists.ErrNoPoolDriver)}
+
+	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+tun.ID+"/refresh", "")
+	requireCode(t, resp, http.StatusBadRequest)
+
+	var got errorResponse
+	decodeJSONBody(t, resp, &got)
+	if got.Code != codeBadRequest {
+		t.Errorf("код ошибки %q, ожидался %q", got.Code, codeBadRequest)
+	}
+	if !strings.Contains(got.Error, "разборщика для example.com нет") ||
+		!strings.HasPrefix(got.Error, "Не удалось обойти каталог: ") {
+		t.Errorf("текст ошибки изменился: %q", got.Error)
+	}
+}
+
+// Идущий обход того же каталога — `409`, а не `502`: демон исправен, а состав пула
+// обновит тот обход, который уже идёт.
+func TestRefreshPoolBusyCatalogIsConflict(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 4, true)
+
+	ts.pools = &fakeRefresher{err: fmt.Errorf("каталог пула %q: %w: https://keys.example/c",
+		tun.Name, lists.ErrPoolCrawlBusy)}
+
+	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+tun.ID+"/refresh", "")
+	requireCode(t, resp, http.StatusConflict)
+
+	var got errorResponse
+	decodeJSONBody(t, resp, &got)
+	if got.Code != codeConflict {
+		t.Errorf("код ошибки %q, ожидался %q", got.Code, codeConflict)
+	}
+}
+
+// Сбой обхода, не названный сентинелом, остаётся сбоем: `502`, а не пользовательский
+// отказ. Иначе оборванная сеть выглядела бы как ошибка того, кто нажал кнопку.
+func TestRefreshPoolCrawlFailureStaysBadGateway(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 4, true)
+
+	ts.pools = &fakeRefresher{err: fmt.Errorf("каталог пула %q: соединение оборвано", tun.Name)}
+
+	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+tun.ID+"/refresh", "")
+	requireCode(t, resp, http.StatusBadGateway)
+}
+
 // Обновление каталога у обычного туннеля — 400, а не молчаливый успех.
 func TestRefreshPoolRejectsPlainTunnel(t *testing.T) {
 	ts := newTestServer(t)

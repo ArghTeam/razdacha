@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sort"
 	"time"
@@ -315,8 +316,7 @@ func (s *Server) handleRefreshPool(w http.ResponseWriter, r *http.Request) {
 	// БД раз в полминуты, значит отвечать отказом на пуле, который только что
 	// появился, — и отказ этот выглядел бы как «туннеля нет» (issue #74).
 	if _, err := s.pools.RefreshPool(r.Context(), lists.PoolTunnelFrom(t)); err != nil {
-		writeError(w, s.log, http.StatusBadGateway, codeInternal,
-			"Не удалось обойти каталог: "+err.Error())
+		s.poolCrawlError(w, err)
 		return
 	}
 
@@ -330,6 +330,29 @@ func (s *Server) handleRefreshPool(w http.ResponseWriter, r *http.Request) {
 	res := s.withCheck(newTunnelResponse(fresh, s.poolInterval()))
 	s.withPoolState(r.Context(), []tunnelResponse{res}, map[string]store.Tunnel{id: fresh})
 	writeJSON(w, s.log, http.StatusOK, res)
+}
+
+// poolCrawlError переводит отказ обхода каталога в код ответа.
+//
+// Устроен как [Server.storeError]: сентинелы означают решение пользователя, всё
+// остальное — сбой. Каталог без драйвера — это адрес, который вписал человек, и
+// `502 internal` про него врал про сбой демона; запись того же адреса отвечает `400`
+// (см. `tunnelType`), и два пути к одной ошибке обязаны сходиться (issue #156). Текст
+// при этом идёт наружу как есть — он и раньше был верным.
+func (s *Server) poolCrawlError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, lists.ErrPoolCrawlBusy):
+		// Свой текст, а не сырая ошибка: пользователю важно не то, что каталог
+		// занят, а то, что делать ничего не нужно — состав обновится сам.
+		writeError(w, s.log, http.StatusConflict, codeConflict,
+			"Каталог уже обходится — состав пула обновится сам")
+	case errors.Is(err, lists.ErrNoPoolDriver), errors.Is(err, store.ErrInvalid):
+		writeError(w, s.log, http.StatusBadRequest, codeBadRequest,
+			"Не удалось обойти каталог: "+err.Error())
+	default:
+		writeError(w, s.log, http.StatusBadGateway, codeInternal,
+			"Не удалось обойти каталог: "+err.Error())
+	}
 }
 
 // poolInterval — период обхода каталога, от которого считается next_update_at.

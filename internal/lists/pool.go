@@ -265,12 +265,17 @@ func (m *PoolManager) Refresh(ctx context.Context) error {
 		}
 
 		ok, err := m.refreshOne(ctx, t)
-		if err != nil {
+		switch {
+		case errors.Is(err, ErrPoolCrawlBusy):
+			// Каталог уже обходит кто-то другой — чаще всего кнопка «Обновить» в
+			// панели, нажатая в ту же секунду. Это не неудача: уходить в ретраи
+			// незачем, свежий состав запишет идущий обход (issue #156).
+			m.log.Info("каталог пула уже обходится, такт расписания пропущен",
+				"туннель", t.Name, "каталог", t.CatalogURL)
+		case err != nil:
 			errs = append(errs, err)
 			m.log.Warn("пул не обновлён", "туннель", t.Name, "err", err)
-			continue
-		}
-		if ok {
+		case ok:
 			changed = true
 		}
 	}
@@ -299,6 +304,9 @@ func (m *PoolManager) Refresh(ctx context.Context) error {
 // Выключенный пул обновляется и здесь: в отличие от расписания, за него попросил
 // человек, и отказ выглядел бы поломкой кнопки. В конфиг он всё равно не попадёт,
 // пока выключен.
+//
+// Идущий обход того же каталога отказывает [ErrPoolCrawlBusy] — сразу, а не через две
+// минуты ожидания: результат у обоих обходов один и тот же, и его запишет идущий.
 func (m *PoolManager) RefreshPool(ctx context.Context, t PoolTunnel) (bool, error) {
 	changed, err := m.refreshOne(ctx, t)
 	if err != nil {
