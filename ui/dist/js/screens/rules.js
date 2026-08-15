@@ -317,8 +317,59 @@ export function view() {
     : '';
 
   return head() + probeView() + `
-    <div class="card">${rows || '<div class="empty">Правил пока нет — весь трафик идёт напрямую.</div>'}</div>
+    <div class="card">${rows || emptyView()}</div>
     ${listsNote}`;
+}
+
+/* --- пустой экран ---------------------------------------------------------
+   Пустой список правил — законное состояние, а не ошибка: так выглядит и
+   свежая установка, и сервер, где правила удалили осознанно. Поэтому первая
+   строка говорит, что происходит без правил, и только потом предлагает
+   стартовый набор — предложением, от которого ничего не меняется, пока его не
+   приняли (ADR 0014).
+
+   Состав пресета приходит из каталога полем `in_preset`: своего списка ключей
+   у панели нет, иначе он разъезжался бы с каталогом демона. */
+
+/** Списки стартового пресета в порядке каталога. Пусто — каталог не пришёл. */
+const presetLists = () => state.communityLists.filter((l) => l.in_preset);
+
+/** Туннели, в которые правило довезёт трафик прямо сейчас. Выключенный не
+    подходит: правило с ним не работает, а отбрасывает трафик (ADR 0013), и
+    предлагать его как цель стартового правила значит предлагать блокировку. */
+const liveTunnels = () => state.tunnels.filter((t) => t.enabled);
+
+function emptyView() {
+  const lead = `<div class="empty-lead">Правил пока нет — весь трафик идёт напрямую,
+    с адреса сервера. Так и задумано, пока вы не решите иначе.</div>`;
+
+  const preset = presetLists();
+  if (!preset.length) {
+    /* Каталог не пришёл — состав предлагать нечем, и выдумывать его панель не
+       станет. Про сам каталог экран уже говорит отдельной строкой. */
+    return `<div class="empty empty-start">${lead}</div>`;
+  }
+
+  const names = preset.map((l) => l.title).join(', ');
+
+  if (!liveTunnels().length) {
+    return `<div class="empty empty-start">${lead}
+      <div class="empty-offer">
+        <div class="empty-offer-text">Направлять пока некуда: ни одного включённого туннеля.
+          Стартовый набор (${esc(names)}) можно собрать одной кнопкой, но сперва нужен туннель —
+          правило с выключенным туннелем не пускает трафик напрямую, а отбрасывает его.</div>
+        <button class="btn" data-act="go-tunnels">Перейти к туннелям</button>
+      </div></div>`;
+  }
+
+  return `<div class="empty empty-start">${lead}
+    <div class="empty-offer">
+      <div class="empty-offer-text">Если начинать не с нуля: стартовый набор отправит в туннель
+        ${esc(names)}. Форма откроется заполненной — туннель выбираете вы, лишнее снимаете,
+        название меняете. Правило получится обычным: его можно выключить, поправить и удалить,
+        и в силу оно войдёт после «Применить».</div>
+      <button class="btn btn-primary" data-act="preset-rule">Собрать стартовое правило</button>
+    </div></div>`;
 }
 
 /* --- пробник маршрута -----------------------------------------------------
@@ -426,12 +477,16 @@ function rulesAbove(id) {
   return i < 0 ? state.rules.slice() : state.rules.slice(0, i);
 }
 
-function modalRule(id) {
+/** Форма правила. `seed` заполняет поля нового правила заранее — так открывается
+    стартовый пресет: правило создаёт тот же «Сохранить», что и у заведённого
+    руками, и отличить его потом будет нечем (ADR 0014). */
+function modalRule(id, seed = null) {
   const r = id ? state.rules.find((x) => x.id === id) : {
     id: null, name: '', action: 'tunnel', tunnel_id: (state.tunnels[0] || {}).id || null,
     via_tunnel_id: '', enabled: true,
     community_lists: [], domains: [], subnets: [], remote_lists: [],
     peer_scope: 'all', peer_ids: [], resolve_real_ip: false,
+    ...(seed || {}),
   };
 
   const above = rulesAbove(id);
@@ -761,6 +816,25 @@ async function move(id, delta) {
 export const actions = {
   'probe-run': () => runProbe(),
   'add-rule': () => modalRule(null),
+
+  /* Стартовый пресет: не создаёт правило, а открывает обычную форму с
+     отмеченными списками. Цель выбирает пользователь — по умолчанию
+     подставляется первый включённый туннель, а не первый попавшийся. */
+  'preset-rule': () => {
+    const preset = presetLists();
+    const target = liveTunnels()[0];
+    if (!preset.length || !target) {
+      toast('Стартовый набор сейчас собрать не из чего', 'err');
+      return;
+    }
+    modalRule(null, {
+      name: 'Стартовый набор',
+      tunnel_id: target.id,
+      community_lists: preset.map((l) => l.key),
+    });
+  },
+
+  'go-tunnels': () => { location.hash = 'tunnels'; },
   'edit-rule': (id) => modalRule(id),
   'save-rule': (id) => saveRule(id || null),
   'rule-up': (id) => move(id, -1),

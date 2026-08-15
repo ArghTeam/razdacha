@@ -468,6 +468,18 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 
 .empty { padding: 28px 16px; text-align: center; color: var(--fg-faint); font-size: 14px; }
 
+/* Пустой экран правил с предложением стартового набора. Предложение отделено
+   от строки о текущем положении дел и не выглядит ни ошибкой, ни требованием:
+   рамка обычная, тревожных цветов нет — правил может не быть намеренно. */
+.empty-start { text-align: left; max-width: 640px; margin: 0 auto; }
+.empty-lead { color: var(--fg-dim); font-size: 14px; }
+.empty-offer {
+  margin-top: 16px; padding: 14px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--bg-sunken);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
+}
+.empty-offer-text { color: var(--fg-dim); font-size: 13px; line-height: 1.5; }
+
 /* --- мобильная раскладка --- */
 @media (max-width: 620px) {
   .topbar-inner { flex-wrap: wrap; gap: 8px; }

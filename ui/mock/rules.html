@@ -22,6 +22,11 @@
   не отвечает» (жёлтый, `◌`) не должны выглядеть одинаково, а рабочее правило —
   ни тем, ни другим.
 
+  И два состояния пустого экрана из issue #150: предложение стартового набора и
+  тот же экран на сервере без единого включённого туннеля, где предлагать
+  нечего и кнопка ведёт к туннелям. Переключаются полосой сверху — на живом
+  сервере эти три состояния рядом не поставить.
+
   Почему здесь, а не в `ui/dist`: `go:embed` забирает только `dist`, поэтому в
   бинарник демона этот файл не попадает.
 
@@ -32,7 +37,18 @@
 -->
 
 <div id="app">
+  <div class="screen" style="padding-bottom:0">
+    <div class="empty-offer" style="flex-direction:row;align-items:center;flex-wrap:wrap">
+      <span class="empty-offer-text">Состояние экрана:</span>
+      <button class="btn btn-sm" data-mock="rules">правила</button>
+      <button class="btn btn-sm" data-mock="empty">пусто, туннели есть</button>
+      <button class="btn btn-sm" data-mock="empty-no-tunnels">пусто, туннелей нет</button>
+    </div>
+  </div>
   <main id="screen" class="screen"></main>
+  <!-- Полоса «Применить» на стенде не показывается, но существует: её ищет
+       markDirty() после сохранения правила. -->
+  <div id="apply-bar" hidden></div>
 </div>
 
 <div class="modal-backdrop" id="modal-backdrop" hidden>
@@ -48,10 +64,16 @@ import * as rules from '../dist/js/screens/rules.js';
 
 const hoursAgo = (h) => new Date(Date.now() - h * 3600_000).toISOString();
 
+/* Каталог: три списка из старых сценариев плюс состав стартового пресета —
+   панель берёт его из поля `in_preset`, своего списка ключей у неё нет. */
 state.communityLists = [
+  { key: 'russia_inside', title: 'Россия — внутренние сервисы', has_subnets: false, in_preset: true },
   { key: 'youtube', title: 'YouTube', has_subnets: false },
+  { key: 'google_ai', title: 'Google AI', has_subnets: false, in_preset: true },
+  { key: 'discord', title: 'Discord', has_subnets: true, in_preset: true },
+  { key: 'meta', title: 'Meta (Facebook, Instagram)', has_subnets: true, in_preset: true },
+  { key: 'twitter', title: 'Twitter (X)', has_subnets: true, in_preset: true },
   { key: 'telegram', title: 'Telegram', has_subnets: true },
-  { key: 'discord', title: 'Discord', has_subnets: true },
 ];
 
 state.tunnels = [
@@ -222,6 +244,34 @@ api.route.test = async (domain) => {
       + 'только если адрес есть в nft-сете подсетей.',
   };
 };
+
+/* Правило, сохранённое на стенде, никуда не уезжает: сервера здесь нет, а
+   реальный `POST /api/rules` ответил бы 404 и превратил бы проверку формы
+   пресета в проверку обработки ошибки. */
+api.rules.create = async (rule) => {
+  state.rules = state.rules.concat([{ ...rule, id: `mock-${state.rules.length + 1}`, lists_status: [] }]);
+  return state.rules[state.rules.length - 1];
+};
+api.rules.list = async () => state.rules;
+
+/* Сценарии экрана. Пустой список правил — не «данных нет», а рабочее
+   состояние: с туннелями панель предлагает стартовый набор, без включённых
+   туннелей ведёт их заводить (issue #150). */
+const fullRules = state.rules.slice();
+const fullTunnels = state.tunnels.slice();
+const offTunnels = fullTunnels.map((t) => ({ ...t, enabled: false }));
+
+function setScenario(name) {
+  if (name === 'rules') { state.rules = fullRules.slice(); state.tunnels = fullTunnels; }
+  if (name === 'empty') { state.rules = []; state.tunnels = fullTunnels; }
+  if (name === 'empty-no-tunnels') { state.rules = []; state.tunnels = offTunnels; }
+  render();
+}
+
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-mock]');
+  if (btn) setScenario(btn.dataset.mock);
+});
 
 const render = () => { document.querySelector('#screen').innerHTML = rules.view(); };
 document.addEventListener('razdacha:render', render);
