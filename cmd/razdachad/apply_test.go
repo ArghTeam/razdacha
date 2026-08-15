@@ -256,7 +256,7 @@ func TestWatchPoolsAppliesFreshServers(t *testing.T) {
 	st, _ := openStore(t)
 	srv, _ := poolCatalogServer(t)
 	sink := &logSink{}
-	tn := createPool(t, st, "пул", srv.URL+"/protocol/vless", true)
+	tn := createPool(t, st, "пул", poolCatalogAddr(srv), true)
 
 	base, err := st.Snapshot(context.Background())
 	if err != nil {
@@ -270,7 +270,7 @@ func TestWatchPoolsAppliesFreshServers(t *testing.T) {
 	g := newApplyGate(f, base, sink.logger())
 
 	m := lists.NewPoolManager(lists.PoolManagerOptions{
-		Catalog: &lists.PoolCatalog{Client: srv.Client(), Log: sink.logger()},
+		Catalog: &lists.PoolCatalog{Client: srv.Client(), Log: sink.logger(), Pause: -1},
 		Writer:  st,
 		Logger:  sink.logger(),
 	})

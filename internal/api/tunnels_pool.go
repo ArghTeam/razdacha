@@ -134,14 +134,18 @@ type poolServersResponse struct {
 
 // poolServerResponse — один сервер каталога.
 //
-// Ссылки `vless://` здесь нет намеренно: в ней UUID ключа, а на экране от него пользы
-// нет. Alive и LatencyMS — указатели, потому что осмысленны они только для серверов в
-// ротации: остальных никто не проверял, и false был бы утверждением о непроверенном
-// сервере, а ноль — «ноль миллисекунд».
+// Ссылки на серверы здесь нет намеренно: в ней UUID или пароль ключа, а на экране от
+// неё пользы нет. Alive и LatencyMS — указатели, потому что осмысленны они только для
+// серверов в ротации: остальных никто не проверял, и false был бы утверждением о
+// непроверенном сервере, а ноль — «ноль миллисекунд».
+//
+// PingMS — тоже указатель: пинг перестал быть обязательным. Прежний каталог показывал
+// его на карточке, outlinekeys не измеряет задержку вовсе (ADR 0015), и ноль в этом
+// поле читался бы как «ноль миллисекунд», а не «неизвестно».
 type poolServerResponse struct {
 	Title      string `json:"title"`
 	Country    string `json:"country"`
-	PingMS     int    `json:"ping_ms"`
+	PingMS     *int   `json:"ping_ms"`
 	InRotation bool   `json:"in_rotation"`
 	Alive      *bool  `json:"alive"`
 	LatencyMS  *int   `json:"latency_ms"`
@@ -214,9 +218,13 @@ func (s *Server) poolServers(ctx context.Context, t store.Tunnel) []poolServerRe
 		item := poolServerResponse{
 			Title:      srv.Title,
 			Country:    srv.Country,
-			PingMS:     srv.PingMS,
 			InRotation: inRotation,
 			Current:    inRotation && tag == current,
+		}
+		// Нулевой пинг в БД означает «источник его не дал», а не «ноль миллисекунд».
+		if srv.PingMS > 0 {
+			ping := srv.PingMS
+			item.PingMS = &ping
 		}
 		if p, ok := proxies[tag]; inRotation && ok {
 			ms, up := p.Latency()
@@ -269,12 +277,12 @@ func poolLatencyRank(s poolServerResponse) int {
 	}
 }
 
-// poolPingRank: пинг карточки, где ноль означает «карточка его не показала».
-func poolPingRank(ping int) int {
-	if ping <= 0 {
+// poolPingRank: пинг карточки, где отсутствие означает «источник его не даёт».
+func poolPingRank(ping *int) int {
+	if ping == nil || *ping <= 0 {
 		return 1 << 20
 	}
-	return ping
+	return *ping
 }
 
 // handleRefreshPool — `POST /api/tunnels/{id}/refresh`.

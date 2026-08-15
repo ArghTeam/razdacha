@@ -198,7 +198,11 @@ type BuiltinPoolResult struct {
 // Идемпотентность держится на признаке в колонке, а не на имени и не на каталоге:
 // имя пользователь может переименовать, каталог — сменить, и по ним повторный старт
 // завёл бы второй пул.
-func (s *Store) EnsureBuiltinPool(ctx context.Context, name, catalogURL string) (BuiltinPoolResult, error) {
+// Тип пула передаётся, а не берётся константой: протокол ключей знает драйвер
+// каталога, а не хранилище (ADR 0015).
+func (s *Store) EnsureBuiltinPool(ctx context.Context, name, catalogURL string, typ TunnelType) (
+	BuiltinPoolResult, error,
+) {
 	var out BuiltinPoolResult
 	err := s.tx(ctx, func(tx *sql.Tx) error {
 		found, err := adoptBuiltinPool(ctx, tx, &out)
@@ -209,7 +213,7 @@ func (s *Store) EnsureBuiltinPool(ctx context.Context, name, catalogURL string) 
 			t := Tunnel{
 				ID:        newID(),
 				Name:      name,
-				Type:      TunnelVLESS,
+				Type:      typ,
 				Source:    SourcePool,
 				Raw:       catalogURL,
 				Enabled:   false,
@@ -242,6 +246,34 @@ func (s *Store) EnsureBuiltinPool(ctx context.Context, name, catalogURL string) 
 		return BuiltinPoolResult{}, err
 	}
 	return out, nil
+}
+
+// RetargetBuiltinPool переводит встроенный пул на другой каталог: адрес, протокол
+// ключей и — обязательно — пустой состав серверов.
+//
+// Нужен установкам, которые пережили смерть источника: адрес каталога лежит в БД у
+// самого туннеля, и у всех, кто поставил razdacha до ADR 0015, там мёртвый
+// vpnkeys.me. Такой пул обязан переехать, а не остаться молча пустым (issue #153).
+//
+// Состав чистится вместе с адресом, а не остаётся «пока не обойдём новый каталог»:
+// в нём ключи чужого протокола с умершего сайта, и до первого обхода они уезжали бы
+// в конфиг под видом состава нового каталога.
+//
+// Только встроенный пул: каталог, вписанный человеком, — его решение, и подменять
+// его молча нельзя. Переезд обязан быть виден снаружи, поэтому вызывающий пишет о
+// нём в лог.
+func (s *Store) RetargetBuiltinPool(ctx context.Context, id, catalogURL string, typ TunnelType) error {
+	if catalogURL == "" {
+		return fmt.Errorf("%w: у пула %s пустой адрес каталога", ErrInvalid, id)
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE tunnels SET raw = ?, type = ?, pool = '[]', pool_updated_at = 0
+		 WHERE id = ? AND source = ? AND builtin = 1`,
+		catalogURL, string(typ), id, string(SourcePool))
+	if err != nil {
+		return fmt.Errorf("смена каталога пула %s: %w", id, err)
+	}
+	return checkAffected(res, fmt.Sprintf("встроенный туннель-пул %s", id))
 }
 
 // adoptBuiltinPool ищет в БД встроенный пул, а если его нет — самый старый обычный

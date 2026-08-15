@@ -82,7 +82,7 @@ func poolTunnel(t *testing.T, st *store.Store, name string, n int, enabled bool)
 func TestPoolBlockFromStore(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
-	tun := poolTunnel(t, ts.st, "Бесплатные VLESS", 20, true)
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 20, true)
 
 	list := listTunnels(t, ts, cookie)
 	if len(list) != 1 {
@@ -122,7 +122,7 @@ func TestPoolBlockFromStore(t *testing.T) {
 func TestPoolLiveStateFromClash(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
-	tun := poolTunnel(t, ts.st, "Бесплатные VLESS", 20, true)
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 20, true)
 
 	members := singbox.PoolMembers(tun)
 	if len(members) == 0 {
@@ -198,7 +198,7 @@ func TestPoolDisabledHasNoLiveState(t *testing.T) {
 func TestPoolClashUnavailableKeepsList(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
-	poolTunnel(t, ts.st, "Бесплатные VLESS", 20, true)
+	poolTunnel(t, ts.st, "Бесплатные ключи", 20, true)
 
 	ts.poolProxies = &fakeProxies{err: clash.ErrUnavailable}
 
@@ -219,7 +219,7 @@ func TestPoolClashUnavailableKeepsList(t *testing.T) {
 func TestRefreshPool(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
-	tun := poolTunnel(t, ts.st, "Бесплатные VLESS", 20, true)
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 20, true)
 
 	fake := &fakeRefresher{changed: true}
 	ts.pools = fake
@@ -251,7 +251,7 @@ func TestRefreshPoolBeforeScheduleKnowsIt(t *testing.T) {
 	// Расписание уже поднято и знает про другой пул — но не про этот.
 	fake := &fakeRefresher{}
 	ts.pools = fake
-	fresh := poolTunnel(t, ts.st, "Бесплатные VLESS", 4, false)
+	fresh := poolTunnel(t, ts.st, "Бесплатные ключи", 4, false)
 
 	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+fresh.ID+"/refresh", "")
 	requireCode(t, resp, http.StatusOK)
@@ -282,7 +282,7 @@ func TestRefreshPoolRejectsPlainTunnel(t *testing.T) {
 func TestRefreshPoolWithoutSchedule(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
-	tun := poolTunnel(t, ts.st, "Бесплатные VLESS", 4, true)
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 4, true)
 
 	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+tun.ID+"/refresh", "")
 	requireCode(t, resp, http.StatusServiceUnavailable)
@@ -328,7 +328,7 @@ func poolServers(t *testing.T, ts *testServer, cookie *http.Cookie, id string) (
 func TestPoolServersRotationAndRest(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
-	tun := poolTunnel(t, ts.st, "Бесплатные VLESS", 20, true)
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 20, true)
 
 	members := singbox.PoolMembers(tun)
 	// Двух участников объявляем живыми, один из них выбран группой; остальные
@@ -416,7 +416,7 @@ func TestPoolServersRotationAndRest(t *testing.T) {
 func TestPoolServersWithoutClash(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
-	tun := poolTunnel(t, ts.st, "Бесплатные VLESS", 20, true)
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 20, true)
 	ts.poolProxies = &fakeProxies{err: clash.ErrUnavailable}
 
 	got, _ := poolServers(t, ts, cookie, tun.ID)
@@ -468,7 +468,7 @@ func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
 	cookie := ts.login(t)
 
 	res, err := ts.st.EnsureBuiltinPool(context.Background(),
-		"Бесплатные VLESS", lists.DefaultPoolCatalogURL)
+		"Бесплатные ключи", lists.DefaultPoolCatalogURL, store.TunnelShadowsocks)
 	if err != nil || !res.Created {
 		t.Fatalf("EnsureBuiltinPool: %v (%+v)", err, res)
 	}
@@ -521,16 +521,31 @@ func TestParsePreviewShowsPool(t *testing.T) {
 	cookie := ts.login(t)
 
 	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/parse",
-		`{"raw":"https://vpnkeys.me/protocol/vless"}`)
+		`{"raw":"`+lists.DefaultPoolCatalogURL+`"}`)
 	requireCode(t, resp, http.StatusOK)
 
 	var got parsePreview
 	decodeJSONBody(t, resp, &got)
-	if got.Source != store.SourcePool || got.Type != store.TunnelVLESS {
+	// Протокол в превью — от драйвера каталога, а не от схемы ссылки (ADR 0015).
+	if got.Source != store.SourcePool || got.Type != store.TunnelShadowsocks {
 		t.Fatalf("превью: type=%q source=%q", got.Type, got.Source)
 	}
 	if len(got.Warnings) != 0 {
 		t.Errorf("превью пула ругается: %v", got.Warnings)
+	}
+}
+
+// Каталог, для которого драйвера нет, — внятный отказ ещё в превью, а не пул,
+// который заведётся и молча останется пустым (issue #153).
+func TestParsePreviewRejectsUnknownCatalog(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+
+	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels/parse",
+		`{"raw":"https://vpnkeys.me/protocol/vless"}`)
+	requireCode(t, resp, http.StatusBadRequest)
+	if !strings.Contains(resp.body, "vpnkeys.me") {
+		t.Errorf("отказ не называет каталог: %s", resp.body)
 	}
 }
 
