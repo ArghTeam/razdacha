@@ -28,7 +28,13 @@ const head = () => `
 /* --- мёртвая цель ---------------------------------------------------------
    После ADR 0013 правило с недоступным туннелем не исчезает и не течёт — оно
    отказывает. Отказ обязан быть виден в строке: снаружи «туннель выключен» и
-   «всё работает» выглядят одинаково — ресурс просто не открывается. */
+   «всё работает» выглядят одинаково — ресурс просто не открывается.
+
+   Состояний строки три, и схлопывать их нельзя. Кроме отказа есть случай
+   слабее: туннель включён и применён, а последняя проверка вернула `down`.
+   Правило при этом работает — оно остаётся в конфиге обычным маршрутом и
+   отправляет трафик, тот просто не доходит. `reject` не наступает, и фраза
+   «трафик отбрасывается» здесь была бы ложью (issue #152). */
 
 /** Почему туннель не довезёт трафик. Пустая строка — довезёт.
     Ложных срабатываний быть не должно: `servers_alive` у пула бывает null,
@@ -41,15 +47,72 @@ function tunnelTrouble(t) {
   return '';
 }
 
+/** Туннель включён, но последняя проверка до цели не дошла. Возвращает время
+    последнего удачного ответа (`last_ok`, может быть пустым) либо null, если
+    молчания нет. `status: null` — «не проверяли», а не «не отвечает»: признаком
+    он не является, ровно как `servers_alive: null` у пула. */
+function tunnelSilent(t) {
+  if (!t || !t.enabled || t.status !== 'down') return null;
+  return { okAt: t.last_ok || '' };
+}
+
 /** Что не так с целью правила целиком, включая второе звено цепи: выключенное
-    второе звено роняет правило так же, как выключенный первый туннель. */
+    второе звено роняет правило так же, как выключенный первый туннель.
+    Возвращает null либо `{ level, text, okAt }`, где level — `dead` (трафик
+    отбрасывается) или `silent` (канал не отвечает).
+
+    Отказ ищется по всей цепи раньше молчания: если первое звено недоступно, до
+    второго трафик не дойдёт вовсе, и говорить про его канал нечего. */
 function ruleTrouble(r) {
-  if (r.action !== 'tunnel') return '';
-  const first = tunnelTrouble(tunnelById(r.tunnel_id));
-  if (first) return first;
-  if (!r.via_tunnel_id) return '';
-  const via = tunnelTrouble(tunnelById(r.via_tunnel_id));
-  return via ? `второе звено цепи: ${via}` : '';
+  if (r.action !== 'tunnel') return null;
+  const links = [{
+    t: tunnelById(r.tunnel_id),
+    dead: (why) => why,
+    silent: 'Канал не отвечает',
+  }];
+  if (r.via_tunnel_id) {
+    links.push({
+      t: tunnelById(r.via_tunnel_id),
+      dead: (why) => `второе звено цепи: ${why}`,
+      silent: 'Канал второго звена цепи не отвечает',
+    });
+  }
+  for (const link of links) {
+    const why = tunnelTrouble(link.t);
+    if (why) return { level: 'dead', text: link.dead(why), okAt: '' };
+  }
+  for (const link of links) {
+    const silent = tunnelSilent(link.t);
+    if (silent) return { level: 'silent', text: link.silent, okAt: silent.okAt };
+  }
+  return null;
+}
+
+/** Подпись под строкой правила: почему оно не работает или работает вхолостую.
+    Тексты разные не для красоты — «отбрасывается» и «уходит и теряется» это
+    разные вещи, и путать их значит врать про утечку. */
+function troubleNote(trouble) {
+  if (!trouble) return '';
+  if (trouble.level === 'dead') {
+    return `
+      <div class="rule-dead-note">
+        <span>⚠</span>
+        <span>Правило не работает: ${esc(trouble.text)}. Трафик по нему отбрасывается,
+        а не уходит напрямую — так утечка не подменяет туннель (ADR 0013).</span>
+      </div>`;
+  }
+  /* Времени нет — так и пишем: выдуманная дата хуже её отсутствия. Пустым
+     `last_ok` выглядит и туннель, который не отвечал ни разу. */
+  const when = trouble.okAt
+    ? `Последний раз он отвечал ${esc(stamp(trouble.okAt))} — ${esc(since(trouble.okAt))}.`
+    : 'Когда он отвечал в последний раз, сказать нечем: удачных проверок по нему не записано.';
+  return `
+    <div class="rule-quiet-note">
+      <span>◌</span>
+      <span>${esc(trouble.text)}: последняя проверка туннеля до цели не дошла. ${when}
+      Правило при этом работает — трафик уходит в туннель и теряется уже там,
+      а не идёт напрямую и не отбрасывается.</span>
+    </div>`;
 }
 
 /* --- состояние списков ----------------------------------------------------
@@ -164,13 +227,17 @@ export function view() {
       : '';
     /* Недоступная цель красится прямо в строке: правило с ней не течёт мимо
        туннеля, а отбрасывает трафик (ADR 0013), и снаружи это выглядит как
-       «ничего не открывается» без единой подсказки почему. */
-    const trouble = r.enabled ? ruleTrouble(r) : '';
+       «ничего не открывается» без единой подсказки почему. Молчащий канал
+       красится слабее и другим знаком: это не отказ. */
+    const trouble = r.enabled ? ruleTrouble(r) : null;
+    const dead = trouble && trouble.level === 'dead';
+    const troubleMark = dead ? '⚠ ' : (trouble ? '◌ ' : '');
+    const troubleTone = dead ? 'err' : (trouble ? 'warn' : 'accent');
     const dest = r.action === 'direct'
       ? '<span class="badge">напрямую</span>'
       : r.action === 'block'
         ? '<span class="badge err">блокировать</span>'
-        : `<span class="badge ${trouble ? 'err' : 'accent'}">${trouble ? '⚠ ' : ''}→ ${
+        : `<span class="badge ${troubleTone}">${troubleMark}→ ${
           esc((tunnelById(r.tunnel_id) || {}).name || 'туннель удалён')}${via}</span>`;
 
     const states = listStates(r);
@@ -207,12 +274,7 @@ export function view() {
     : '. Содержимого нет вовсе — эти условия правило сейчас не ловит.'}</span>
       </div>` : '';
 
-    const deadNote = trouble ? `
-      <div class="rule-dead-note">
-        <span>⚠</span>
-        <span>Правило не работает: ${esc(trouble)}. Трафик по нему отбрасывается,
-        а не уходит напрямую — так утечка не подменяет туннель (ADR 0013).</span>
-      </div>` : '';
+    const troubleLine = troubleNote(trouble);
 
     const scope = r.peer_scope === 'selected'
       ? (r.peer_ids || []).map((id) => (peerById(id) || {}).name || '?').join(', ')
@@ -227,7 +289,8 @@ export function view() {
       </div>` : '';
 
     return `
-      <div class="row${r.enabled ? '' : ' dim'}${trouble ? ' rule-dead' : ''}">
+      <div class="row${r.enabled ? '' : ' dim'}${dead ? ' rule-dead' : ''}${
+  trouble && !dead ? ' rule-quiet' : ''}">
         <div class="rule-order">
           <button class="ord-btn" data-act="rule-up" data-id="${esc(r.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Выше">▲</button>
           <button class="ord-btn" data-act="rule-down" data-id="${esc(r.id)}" ${i === state.rules.length - 1 ? 'disabled' : ''} aria-label="Ниже">▼</button>
@@ -237,7 +300,7 @@ export function view() {
           <div class="row-title">${esc(r.name)} ${dest}</div>
           <div class="row-meta">${esc(scope)}${r.resolve_real_ip ? ' · реальный IP' : ''}</div>
           <div class="chips">${chips || '<span class="chip">условий нет — правило не попадёт в конфиг</span>'}</div>
-          ${deadNote}${listNote}${note}
+          ${troubleLine}${listNote}${note}
         </div>
         <div class="row-actions">
           <button class="toggle" role="switch" aria-checked="${Boolean(r.enabled)}" data-act="toggle-rule" data-id="${esc(r.id)}" aria-label="Включено"></button>

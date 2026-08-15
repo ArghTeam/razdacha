@@ -16,6 +16,12 @@
   сходятся редко и не сразу — выключенный туннель, пул без живых серверов и
   список, который не обновился. Стенд рисует их рядом одним прогоном.
 
+  Сюда же добавлено третье состояние строки из issue #152: туннель включён и
+  применён, а последняя проверка вернула `status: "down"`. Смотреть надо именно
+  рядом — весь смысл в том, что «трафик отбрасывается» (красный, `⚠`) и «канал
+  не отвечает» (жёлтый, `◌`) не должны выглядеть одинаково, а рабочее правило —
+  ни тем, ни другим.
+
   Почему здесь, а не в `ui/dist`: `go:embed` забирает только `dist`, поэтому в
   бинарник демона этот файл не попадает.
 
@@ -60,6 +66,24 @@ state.tunnels = [
     // такое правило нельзя — это ложное срабатывание.
     id: 'pool-2', name: 'Пул без связи с ядром', type: 'vless', source: 'pool', builtin: true,
     enabled: true, status: null, pool: { servers_total: 24, servers_alive: null },
+  },
+  {
+    // Включён, применён, а проверка не дошла: отказа нет, правило работает и
+    // отправляет трафик — тот теряется в туннеле (issue #152).
+    id: 'wg-silent', name: 'Германия', type: 'wireguard', source: 'wg_conf',
+    enabled: true, status: 'down', last_check: hoursAgo(0.02), last_ok: hoursAgo(3),
+  },
+  {
+    // То же молчание, но удачных проверок по туннелю не записано вовсе:
+    // времени нет — вместо выдуманной даты панель говорит это словами.
+    id: 'wg-never', name: 'Токио', type: 'wireguard', source: 'wg_conf',
+    enabled: true, status: 'down', last_check: hoursAgo(0.02), last_ok: null,
+  },
+  {
+    // Второе звено цепи молчит: первое отвечает, но адрес ресурсу показывает
+    // второе, и без него правило работает вхолостую.
+    id: 'warp-silent', name: 'WARP', type: 'wireguard', source: 'warp',
+    enabled: true, status: 'down', last_check: hoursAgo(0.02), last_ok: hoursAgo(26),
   },
 ];
 
@@ -106,13 +130,35 @@ state.rules = [
     peer_scope: 'all', peer_ids: [], lists_status: [],
   },
   {
-    id: 'r6', name: 'Банки напрямую', action: 'direct', enabled: true, priority: 6,
+    id: 'r6', name: 'Через молчащий туннель', action: 'tunnel', tunnel_id: 'wg-silent', enabled: true,
+    priority: 6, community_lists: [], domains: ['silent.example'], subnets: [], remote_lists: [],
+    peer_scope: 'all', peer_ids: [], lists_status: [],
+  },
+  {
+    id: 'r7', name: 'Молчит, а когда отвечал — неизвестно', action: 'tunnel', tunnel_id: 'wg-never',
+    enabled: true, priority: 7, community_lists: [], domains: ['never.example'], subnets: [],
+    remote_lists: [], peer_scope: 'all', peer_ids: [], lists_status: [],
+  },
+  {
+    id: 'r8', name: 'Цепь, где молчит второе звено', action: 'tunnel', tunnel_id: 'wg-1',
+    via_tunnel_id: 'warp-silent', enabled: true, priority: 8, community_lists: [],
+    domains: ['chain.example'], subnets: [], remote_lists: [], peer_scope: 'all',
+    peer_ids: [], lists_status: [],
+  },
+  {
+    id: 'r9', name: 'Цепь, где второе звено выключено', action: 'tunnel', tunnel_id: 'wg-silent',
+    via_tunnel_id: 'wg-off', enabled: true, priority: 9, community_lists: [],
+    domains: ['dead-chain.example'], subnets: [], remote_lists: [], peer_scope: 'all',
+    peer_ids: [], lists_status: [],
+  },
+  {
+    id: 'r10', name: 'Банки напрямую', action: 'direct', enabled: true, priority: 10,
     community_lists: [], domains: ['sberbank.ru'], subnets: [], remote_lists: [],
     peer_scope: 'all', peer_ids: [], lists_status: [],
   },
   {
-    id: 'r7', name: 'Выключенное правило', action: 'tunnel', tunnel_id: 'wg-off', enabled: false,
-    priority: 7, community_lists: [], domains: ['off.example'], subnets: [], remote_lists: [],
+    id: 'r11', name: 'Выключенное правило', action: 'tunnel', tunnel_id: 'wg-off', enabled: false,
+    priority: 11, community_lists: [], domains: ['off.example'], subnets: [], remote_lists: [],
     peer_scope: 'all', peer_ids: [], lists_status: [],
   },
 ];

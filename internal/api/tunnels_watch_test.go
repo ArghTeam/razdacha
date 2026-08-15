@@ -191,6 +191,87 @@ func TestRefreshChecksPersistStatusWithoutLatency(t *testing.T) {
 	}
 }
 
+// Отметка последнего удачного ответа переживает и неудачные круги, и перезапуск
+// демона: без неё панель не может сказать, с какого момента туннель молчит, —
+// «упал минуту назад» и «мёртв со вчера» это разные новости (issue #152).
+func TestRefreshChecksKeepsLastOK(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	tun := createTunnel(t, ts, cookie, "Нидерланды")
+	tag := singbox.TunnelTag(tun.ID)
+	ctx := context.Background()
+
+	list := proxiesBody(t, map[string]any{tag: map[string]any{"name": tag, "type": "socks"}})
+	clashRoutes(t, ts, list, 42, nil)
+	if err := ts.refreshChecks(ctx); err != nil {
+		t.Fatalf("refreshChecks: %v", err)
+	}
+	okAt := ts.clock()
+
+	// Три круга подряд туннель не отвечает: отметка удачи остаётся прежней.
+	clashRoutes(t, ts, list, -1, nil)
+	for range 3 {
+		ts.advance(2 * time.Minute)
+		if err := ts.refreshChecks(ctx); err != nil {
+			t.Fatalf("refreshChecks: %v", err)
+		}
+	}
+
+	// Свежий кэш, как после перезапуска демона.
+	ts.checks = newCheckCache()
+	ts.loadChecks(ctx)
+	res, ok := ts.checks.get(tun.ID)
+	if !ok {
+		t.Fatal("сохранённая проверка не поднялась в кэш")
+	}
+	if res.Status != tunnelDown {
+		t.Errorf("статус = %q, ожидался %q", res.Status, tunnelDown)
+	}
+	if !res.OKAt.Equal(okAt) {
+		t.Errorf("OKAt = %v, ожидалось %v", res.OKAt, okAt)
+	}
+
+	var out []tunnelResponse
+	decodeJSONBody(t, ts.auth(t, cookie, http.MethodGet, "/api/tunnels", ""), &out)
+	if len(out) != 1 {
+		t.Fatalf("туннелей в ответе = %d, ожидался один", len(out))
+	}
+	if out[0].LastOK == nil {
+		t.Fatal("last_ok = null, ожидалось время последнего удачного ответа")
+	}
+	if !out[0].LastOK.Equal(okAt) {
+		t.Errorf("last_ok = %v, ожидалось %v", *out[0].LastOK, okAt)
+	}
+	if out[0].LastCheck == nil || !out[0].LastCheck.After(*out[0].LastOK) {
+		t.Errorf("last_check = %v, ожидалось время позже last_ok", out[0].LastCheck)
+	}
+}
+
+// Туннель, который не отвечал ни разу, отдаёт `last_ok` пустым: выдуманной даты
+// вместо «удачных проверок не записано» быть не должно.
+func TestRefreshChecksNeverOKLeavesLastOKNull(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	tun := createTunnel(t, ts, cookie, "Резервный")
+	tag := singbox.TunnelTag(tun.ID)
+
+	clashRoutes(t, ts, proxiesBody(t, map[string]any{
+		tag: map[string]any{"name": tag, "type": "socks"},
+	}), -1, nil)
+	if err := ts.refreshChecks(context.Background()); err != nil {
+		t.Fatalf("refreshChecks: %v", err)
+	}
+
+	var out []tunnelResponse
+	decodeJSONBody(t, ts.auth(t, cookie, http.MethodGet, "/api/tunnels", ""), &out)
+	if len(out) != 1 || out[0].Status == nil || *out[0].Status != tunnelDown {
+		t.Fatalf("ответ = %+v, ожидался один туннель со статусом down", out)
+	}
+	if out[0].LastOK != nil {
+		t.Errorf("last_ok = %v, ожидался null", *out[0].LastOK)
+	}
+}
+
 // sing-box не отвечает — о туннелях не известно ничего. Прежний результат с
 // его отметкой времени честнее, чем «down» от несостоявшейся проверки.
 func TestRefreshChecksKeepsPreviousWhenClashDown(t *testing.T) {

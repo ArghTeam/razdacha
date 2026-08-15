@@ -107,9 +107,11 @@ func TestMigrationMarksPastedWARP(t *testing.T) {
 	// Вместе с версией откатывается и таблица правил: шаг 8 добавляет колонку
 	// via_tunnel_id, и на таблице, где она уже есть, повторный ALTER упал бы.
 	// Правил в этом тесте нет, поэтому таблица пересоздаётся пустой. По той же
-	// причине убирается таблица регистраций WARP — её создаёт шаг 9.
+	// причине убирается таблица регистраций WARP — её создаёт шаг 9, — и
+	// колонка ok_at у проверок: её добавляет шаг 10.
 	if _, err := s.db.ExecContext(ctx, `
 DROP TABLE warp_registrations;
+ALTER TABLE tunnel_checks DROP COLUMN ok_at;
 DROP TABLE rules;
 CREATE TABLE rules (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, action TEXT NOT NULL,
