@@ -8,6 +8,8 @@ type CommunityService struct {
 	Title      string `json:"title"`
 	HasDomains bool   `json:"has_domains"`
 	HasSubnets bool   `json:"has_subnets"`
+	// InPreset — сервис входит в стартовый пресет ([presetKeys]).
+	InPreset bool `json:"in_preset"`
 }
 
 // communityCatalog — сервисы allow-domains в том же составе и порядке, что у
@@ -46,6 +48,65 @@ var communityCatalog = []struct {
 	{"roblox", "Roblox"},
 }
 
+// presetKeys — стартовый пресет: набор ключей каталога, который панель
+// предлагает кнопкой на пустом экране правил (ADR 0014). Ни туннелей, ни
+// адресов списков здесь нет и быть не может — пресет обязан пережить сервер с
+// другим набором того и другого.
+//
+// Направление у пресета одно — «в туннель». Строк «напрямую» нет: route.final и
+// так прямой выход, и правило direct ничего не меняет, пока выше нет широкого
+// правила в туннель.
+//
+// Состав держится на двух ограничениях Podkop, оба проверены грепом:
+// региональные списки взаимно исключают друг друга (REGIONAL_OPTIONS,
+// luci-app-podkop/htdocs/luci-static/resources/view/podkop/main.js:875), а
+// russia_inside — надмножество почти всего каталога: при его выборе Podkop
+// снимает все ключи, кроме перечисленных в ALLOWED_WITH_RUSSIA_INSIDE (там же,
+// строка 880; снятие — section.js:344), потому что остальные уже внутри него.
+//
+// Отсюда раскладка: базой берётся russia_inside — ровно то, что Podkop кладёт в
+// дефолтный конфиг (podkop/files/etc/config/podkop:29), — а сверху только
+// сервисы, которых в нём нет.
+//
+// Чего в пресете нет и почему:
+//   - russia_outside, ukraine_inside — второй региональный список рядом с первым
+//     Podkop снимает; выбор региона за пользователем, пресет один;
+//   - telegram, google_play — в России работают, гнать их в туннель по умолчанию
+//     значит утяжелять его без повода;
+//   - cloudflare, cloudfront, hetzner, ovh, digitalocean — списки подсетей целых
+//     ASN: за ними лежит половина интернета, включая российские сайты, и
+//     селективный шлюз превратился бы в сплошной;
+//   - porn, news, anime, roblox, hodca — вкусовые наборы, их добавляют галочкой
+//     в той же форме;
+//   - block, geoblock — уже внутри russia_inside (их нет в
+//     ALLOWED_WITH_RUSSIA_INSIDE), отдельной строкой это был бы дубль.
+//
+// Срез, а не карта: порядок задаёт порядок перечисления в панели.
+var presetKeys = []string{
+	"russia_inside",
+	"meta",
+	"twitter",
+	"discord",
+	"google_ai",
+}
+
+// presetSet — те же ключи для проверки принадлежности.
+var presetSet = func() map[string]bool {
+	m := make(map[string]bool, len(presetKeys))
+	for _, k := range presetKeys {
+		m[k] = true
+	}
+	return m
+}()
+
+// Preset — ключи стартового пресета в порядке перечисления. Копия: состав
+// каталога наружу не редактируется.
+func Preset() []string {
+	out := make([]string, len(presetKeys))
+	copy(out, presetKeys)
+	return out
+}
+
 // Catalog — доступные сервисы. Домены есть у каждого: `.srs` собирается на
 // каждый ключ (podkop/files/usr/bin/podkop:1002); подсети — только у тех, что
 // перечислены в [communitySubnets], и признак берётся оттуда, чтобы каталог и
@@ -61,6 +122,7 @@ func Catalog() []CommunityService {
 			Title:      s.title,
 			HasDomains: true,
 			HasSubnets: communitySubnets[s.key],
+			InPreset:   presetSet[s.key],
 		})
 	}
 	return out
