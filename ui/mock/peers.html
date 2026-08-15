@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>razdacha — экран «Клиенты» на замоканном ответе</title>
+  <link rel="stylesheet" href="../dist/app.css">
+</head>
+<body>
+
+<!--
+  Стенд экрана «Клиенты» на замоканном `GET /api/peers` (#104).
+
+  Зачем: строка пира собирается из четырёх разных сочетаний enabled/online/
+  last_handshake, и живой сервер разом их не покажет — на стенде нужен один
+  прогон, а не сессия с четырьмя устройствами в разных состояниях руками.
+
+  Почему здесь, а не в `ui/dist`: `go:embed` забирает только `dist`, поэтому в
+  бинарник демона этот файл не попадает и мокапный ответ в продакшн-путь не
+  протаскивается.
+
+  Запуск (любой статический сервер, из корня репозитория):
+
+      python3 -m http.server 8123 --directory ui
+      # открыть http://localhost:8123/mock/peers.html
+-->
+
+<div id="app">
+  <main id="screen" class="screen"></main>
+  <div class="apply-bar" id="apply-bar" hidden>
+    <div class="apply-inner"><span class="apply-text">Есть непримененные изменения</span></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" id="modal"></div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module">
+import { state, closeMenu, closeModal, toastError } from '../dist/js/shell.js';
+import * as peers from '../dist/js/screens/peers.js';
+
+const hoursAgo = (h) => new Date(Date.now() - h * 3600_000).toISOString();
+const minutesAgo = (m) => new Date(Date.now() - m * 60_000).toISOString();
+
+/* Форма ответа — `internal/api/peers.go:newPeerResponse`/`withStat`: производные
+   поля (online, last_handshake, rx_bytes, tx_bytes, endpoint) — указатели, null
+   значит «данных нет», а не ноль. Четыре строки ниже — не четыре пира, которых
+   завели бы вместе, а четыре состояния одного экрана (#104):
+   онлайн с трафиком, офлайн с трафиком, выключенный, ни разу не подключавшийся. */
+state.peers = [
+  {
+    id: 'p-online', name: 'iPhone Ромы', address: '10.8.0.5', enabled: true,
+    created_at: hoursAgo(400),
+    online: true, last_handshake: minutesAgo(1),
+    rx_bytes: 192_837_465, tx_bytes: 12_582_912,
+    endpoint: '198.51.100.20:41230',
+  },
+  {
+    // Забил канал и отключился — ровно случай, ради которого заведена #104:
+    // трафик остаётся виден, счётчики берутся с wg0, а не с текущего сеанса.
+    id: 'p-offline', name: 'MacBook', address: '10.8.0.6', enabled: true,
+    created_at: hoursAgo(4000),
+    online: false, last_handshake: hoursAgo(76),
+    rx_bytes: 2_254_857_830, tx_bytes: 365_003_200,
+    endpoint: null,
+  },
+  {
+    // Выключен — демон снял пира с wg0, и данных для него больше нет вовсе:
+    // rx_bytes/tx_bytes/online/last_handshake остаются null.
+    id: 'p-disabled', name: 'Телевизор', address: '10.8.0.7', enabled: false,
+    created_at: hoursAgo(1000),
+    online: null, last_handshake: null, rx_bytes: null, tx_bytes: null, endpoint: null,
+  },
+  {
+    // Ни разу не подключался: пир на wg0 есть (создан и включён), счётчики
+    // честный ноль, хендшейка не было ни разу.
+    id: 'p-fresh', name: 'Ноутбук гостя', address: '10.8.0.9', enabled: true,
+    created_at: minutesAgo(5),
+    online: false, last_handshake: null, rx_bytes: 0, tx_bytes: 0, endpoint: null,
+  },
+];
+
+const render = () => { document.querySelector('#screen').innerHTML = peers.view(); };
+document.addEventListener('razdacha:render', render);
+
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-act]');
+  if (!btn) { closeMenu(); return; }
+  if (!btn.dataset.act.startsWith('menu-')) closeMenu();
+  const fn = { ...peers.actions, 'close-modal': closeModal }[btn.dataset.act];
+  if (!fn) return;
+  const res = fn(btn.dataset.id || '', btn);
+  if (res && typeof res.catch === 'function') res.catch((err) => toastError(err));
+});
+
+render();
+</script>
+
+</body>
+</html>
