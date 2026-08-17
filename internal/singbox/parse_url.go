@@ -216,11 +216,18 @@ func (u proxyURL) vlessOutbound() (store.TunnelType, *option.Outbound, error) {
 	if enc := u.param("encryption"); enc != "" && enc != "none" {
 		return "", nil, fmt.Errorf("%w: шифрование vless %q не поддерживается", ErrParse, enc)
 	}
+	// sing-box держит только "" и xtls-rprx-vision: чужая подписка приносит легаси-значения
+	// (xtls-rprx-vision-udp443 и прочие), а один такой ключ иначе роняет весь конфиг —
+	// генерация всё-или-ничего, битый outbound не соединится и не должен попасть в пул.
+	flow := u.param("flow")
+	if flow != "" && flow != "xtls-rprx-vision" {
+		return "", nil, fmt.Errorf("%w: flow vless %q не поддерживается", ErrParse, flow)
+	}
 
 	opts := &option.VLESSOutboundOptions{
 		ServerOptions: server,
 		UUID:          u.userinfo,
-		Flow:          u.param("flow"),
+		Flow:          flow,
 	}
 	if pe := u.param("packetEncoding"); pe != "" {
 		opts.PacketEncoding = &pe
