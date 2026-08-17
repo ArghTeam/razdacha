@@ -525,12 +525,18 @@ func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
 
-	res, err := ts.st.EnsureBuiltinPool(context.Background(),
-		"Бесплатные ключи", lists.DefaultPoolCatalogURL, store.TunnelShadowsocks)
-	if err != nil || !res.Created {
-		t.Fatalf("EnsureBuiltinPool: %v (%+v)", err, res)
+	pool, err := ts.st.CreateTunnel(context.Background(), store.Tunnel{
+		Name:    "🇳🇱 Нидерланды",
+		Type:    store.TunnelShadowsocks,
+		Source:  store.SourcePool,
+		Raw:     lists.DefaultPoolCatalogURL,
+		Country: "NL",
+		Enabled: false,
+		Builtin: true,
+	})
+	if err != nil {
+		t.Fatalf("заведение встроенного пула: %v", err)
 	}
-	pool := res.Tunnel
 
 	resp := ts.auth(t, cookie, http.MethodDelete, "/api/tunnels/"+pool.ID, "")
 	requireCode(t, resp, http.StatusConflict)

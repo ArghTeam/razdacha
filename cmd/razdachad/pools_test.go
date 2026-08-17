@@ -280,74 +280,93 @@ func TestSyncPoolTunnelsRefreshesOnSetChange(t *testing.T) {
 	}
 }
 
-// Установка, пережившая смерть источника: в БД лежит встроенный пул с адресом
-// vpnkeys.me и составом vless-ключей. Старт демона обязан перевести его на живой
-// каталог, а не оставить молча пустым (issue #153).
-func TestEnsureBuiltinPoolRetargetsDeadCatalog(t *testing.T) {
+// Свежая установка: демон заводит семь выключенных страновых пулов (ADR 0017) и
+// сообщает об этом в лог.
+func TestEnsureBuiltinPoolSeedsCountryPools(t *testing.T) {
 	ctx := context.Background()
 	st, _ := openStore(t)
 	sink := &logSink{}
 
-	res, err := st.EnsureBuiltinPool(ctx, retiredBuiltinPoolName,
-		"https://vpnkeys.me/protocol/vless", store.TunnelVLESS)
-	if err != nil || !res.Created {
-		t.Fatalf("заведение старого пула: %v (%+v)", err, res)
-	}
-	stale := []store.PoolServer{{URL: "vless://a@1.2.3.4:443", PingMS: 42}}
-	if err := st.UpdateTunnelPool(ctx, res.Tunnel.ID, stale, time.Now().UTC()); err != nil {
-		t.Fatalf("запись состава: %v", err)
-	}
-
 	ensureBuiltinPool(ctx, st, sink.logger())
 
-	got, err := st.Tunnel(ctx, res.Tunnel.ID)
+	list, err := st.Tunnels(ctx)
 	if err != nil {
-		t.Fatalf("чтение пула: %v", err)
+		t.Fatalf("Tunnels: %v", err)
 	}
-	if got.Raw != lists.DefaultPoolCatalogURL {
-		t.Errorf("каталог остался прежним: %q", got.Raw)
+	pools := 0
+	for _, tn := range list {
+		if tn.Builtin && tn.Country != "" {
+			pools++
+			if tn.Enabled {
+				t.Errorf("пул %s заведён включённым", tn.Country)
+			}
+			if tn.Raw != igareckCatalogURL {
+				t.Errorf("у пула %s каталог %q, ожидался общий igareck", tn.Country, tn.Raw)
+			}
+		}
 	}
-	if got.Type != store.TunnelShadowsocks {
-		t.Errorf("протокол пула %q, а драйвер нового каталога отдаёт shadowsocks", got.Type)
+	if pools != len(store.CountryPools()) {
+		t.Fatalf("страновых пулов %d, ожидалось %d", pools, len(store.CountryPools()))
 	}
-	if len(got.Pool) != 0 {
-		t.Errorf("ключи закрывшегося сайта уцелели: %d", len(got.Pool))
+	if sink.count("заведены встроенные страновые пулы") == 0 {
+		t.Error("заведение пулов не видно в логе")
 	}
-	if got.Name != builtinPoolName {
-		t.Errorf("имя пула %q, ожидалось %q", got.Name, builtinPoolName)
-	}
-	if sink.count("каталог встроенного пула закрылся") == 0 {
-		t.Error("переезд каталога не виден в логе")
-	}
-	// Второй старт ничего не меняет: пул уже на живом каталоге.
+
+	// Второй старт ничего не заводит и молчит.
 	ensureBuiltinPool(ctx, st, sink.logger())
-	if got := sink.count("каталог встроенного пула закрылся"); got != 1 {
-		t.Errorf("переезд повторился %d раз", got)
+	if got := sink.count("заведены встроенные страновые пулы"); got != 1 {
+		t.Errorf("заведение объявлено %d раз", got)
 	}
 }
 
-// Имя, которое поменял пользователь, при переезде каталога остаётся его.
-func TestRetargetKeepsUserRenamedPool(t *testing.T) {
+// Установка с прошлых версий: в БД лежит старый единственный встроенный пул, на него
+// ссылается правило. Старт демона удаляет пул, отвязывает и выключает правило и
+// сообщает об этом в лог (ADR 0013 — отвязка первого звена делает правило видимо
+// нерабочим, а не тихо утекающим).
+func TestEnsureBuiltinPoolRemovesLegacy(t *testing.T) {
 	ctx := context.Background()
 	st, _ := openStore(t)
 	sink := &logSink{}
 
-	res, err := st.EnsureBuiltinPool(ctx, "Мой пул",
-		"https://vpnkeys.me/protocol/vless", store.TunnelVLESS)
-	if err != nil || !res.Created {
-		t.Fatalf("заведение старого пула: %v (%+v)", err, res)
+	legacy, err := st.CreateTunnel(ctx, store.Tunnel{
+		Name:    "Бесплатные ключи",
+		Type:    store.TunnelShadowsocks,
+		Source:  store.SourcePool,
+		Raw:     "https://vpnkeys.me/protocol/vless",
+		Enabled: true,
+		Builtin: true,
+	})
+	if err != nil {
+		t.Fatalf("заведение старого пула: %v", err)
+	}
+	rule, err := st.CreateRule(ctx, store.Rule{
+		Name:      "В старый пул",
+		Action:    store.ActionTunnel,
+		TunnelID:  legacy.ID,
+		Enabled:   true,
+		Domains:   []string{"example.org"},
+		PeerScope: store.ScopeAll,
+	})
+	if err != nil {
+		t.Fatalf("CreateRule: %v", err)
 	}
 
 	ensureBuiltinPool(ctx, st, sink.logger())
 
-	got, err := st.Tunnel(ctx, res.Tunnel.ID)
+	if _, err := st.Tunnel(ctx, legacy.ID); err == nil {
+		t.Error("старый пул не удалён")
+	}
+	got, err := st.Rule(ctx, rule.ID)
 	if err != nil {
-		t.Fatalf("чтение пула: %v", err)
+		t.Fatalf("Rule: %v", err)
 	}
-	if got.Name != "Мой пул" {
-		t.Errorf("имя пользователя перебито на %q", got.Name)
+	if got.TunnelID != "" || got.Enabled {
+		t.Errorf("правило не отвязано/не выключено: %+v", got)
 	}
-	if got.Raw != lists.DefaultPoolCatalogURL {
-		t.Errorf("каталог не переехал: %q", got.Raw)
+	if sink.count("старый единственный встроенный пул удалён") == 0 {
+		t.Error("удаление старого пула не видно в логе")
+	}
+	if sink.count("правило ссылалось на удалённый пул и выключено") == 0 {
+		t.Error("отвязка правила не видна в логе")
 	}
 }
