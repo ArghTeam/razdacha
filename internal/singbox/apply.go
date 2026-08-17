@@ -146,60 +146,82 @@ func (a *Applier) reloader() Reloader {
 //  5. reload сервиса.
 //
 // Отказ на шаге 3 оставляет рабочий конфиг нетронутым, а временный файл
-// удаляется.
+// удаляется. Единственное исключение — когда `check` споткнулся об участника
+// пула (ADR 0019): его выкидывают из состояния, конфиг генерируют и проверяют
+// заново. Незнакомый рантайму ключ из чужого каталога не должен ронять весь пул,
+// но конфиг по-прежнему генерируется и проверяется целиком, меняется лишь состав
+// пула. Терпимость строго к членам пула: ручной туннель, не прошедший `check`,
+// по-прежнему валит применение целиком.
 func (a *Applier) Apply(ctx context.Context, snap store.Snapshot) (ApplyResult, error) {
 	res := ApplyResult{Path: a.path()}
 
-	opts, err := Generate(snap, a.PlainLists)
-	if err != nil {
-		return res, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
-	}
-	data, err := Marshal(opts)
-	if err != nil {
-		return res, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
-	}
+	// Потолок выкидываний: отвергнуть можно не больше, чем есть серверов в пулах,
+	// а каждый проход убирает ровно один — цикл обязан закончиться (ADR 0019).
+	maxDrops := poolServerCount(snap)
 
-	same, err := sameOnDisk(res.Path, data)
-	if err != nil {
-		return res, err
-	}
-	if same {
-		a.log().Debug("конфиг sing-box не изменился", "путь", res.Path)
+	for drop := 0; ; drop++ {
+		opts, err := Generate(snap, a.PlainLists)
+		if err != nil {
+			return res, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
+		}
+		data, err := Marshal(opts)
+		if err != nil {
+			return res, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
+		}
+
+		same, err := sameOnDisk(res.Path, data)
+		if err != nil {
+			return res, err
+		}
+		if same {
+			a.log().Debug("конфиг sing-box не изменился", "путь", res.Path)
+			return res, nil
+		}
+
+		dir := filepath.Dir(res.Path)
+		if err := os.MkdirAll(dir, configDirMode); err != nil {
+			return res, fmt.Errorf("создание каталога %s: %w", dir, err)
+		}
+
+		tmp, err := writeTemp(res.Path, data)
+		if err != nil {
+			return res, err
+		}
+
+		if err := a.checker().Check(ctx, tmp); err != nil {
+			// Временный файл в любом исходе не переживает итерацию: успешный
+			// rename его уносит сам, отказ — убираем здесь.
+			_ = os.Remove(tmp)
+			// Виноват участник пула — выкидываем ровно его и пересобираем
+			// конфиг (ADR 0019). Всё прочее (ручной туннель, второе звено,
+			// не-pool outbound) — отказ как прежде: прежний конфиг остаётся.
+			if m, ok := rejectedPoolMember(opts, snap, err); ok && drop < maxDrops {
+				a.log().Warn("участник пула отвергнут рантаймом, выкинут из конфига",
+					"туннель", m.tunnelName, "адрес", m.addr, "причина", rejectReason(err))
+				snap = withoutPoolServer(snap, m.tunnelID, m.url)
+				continue
+			}
+			a.log().Error("конфиг sing-box отклонён рантаймом", "ошибка", err)
+			return ApplyResult{Path: res.Path}, err
+		}
+
+		if err := os.Rename(tmp, res.Path); err != nil {
+			_ = os.Remove(tmp)
+			return res, fmt.Errorf("запись конфига sing-box в %s: %w", res.Path, err)
+		}
+		res.Changed = true
+		a.log().Info("записан конфиг sing-box", "путь", res.Path, "байт", len(data))
+
+		if err := a.reloader().Reload(ctx); err != nil {
+			// Конфиг уже на диске и валиден: следующий старт сервиса его
+			// подхватит. Поэтому это ошибка применения, а не повод откатывать
+			// файл.
+			return res, err
+		}
+		res.Reloaded = true
+		a.log().Info("sing-box перезагружен")
 		return res, nil
 	}
-	res.Changed = true
-
-	dir := filepath.Dir(res.Path)
-	if err := os.MkdirAll(dir, configDirMode); err != nil {
-		return res, fmt.Errorf("создание каталога %s: %w", dir, err)
-	}
-
-	tmp, err := writeTemp(res.Path, data)
-	if err != nil {
-		return res, err
-	}
-	// Временный файл удаляется в любом исходе: после успешного rename его уже
-	// нет, и os.Remove просто вернёт «не найден».
-	defer func() { _ = os.Remove(tmp) }()
-
-	if err := a.checker().Check(ctx, tmp); err != nil {
-		a.log().Error("конфиг sing-box отклонён рантаймом", "ошибка", err)
-		return ApplyResult{Path: res.Path}, err
-	}
-
-	if err := os.Rename(tmp, res.Path); err != nil {
-		return res, fmt.Errorf("запись конфига sing-box в %s: %w", res.Path, err)
-	}
-	a.log().Info("записан конфиг sing-box", "путь", res.Path, "байт", len(data))
-
-	if err := a.reloader().Reload(ctx); err != nil {
-		// Конфиг уже на диске и валиден: следующий старт сервиса его подхватит.
-		// Поэтому это ошибка применения, а не повод откатывать файл.
-		return res, err
-	}
-	res.Reloaded = true
-	a.log().Info("sing-box перезагружен")
-	return res, nil
 }
 
 // sameOnDisk отвечает, лежит ли по пути ровно тот же конфиг. Отсутствие файла —
