@@ -5,6 +5,11 @@
 
 ## 2026-08-17
 
+### #170 — источник igareck и раскладка пулов по странам
+
+**Changed:** драйвер `igareck` (3 подписки, зеркало+резерв, страна geoip); `Refresh` — fetch-once-partition, `poolServersForCountry` фильтрует по стране пула.
+**Beware:** vmess отсеивается (Parse не берёт); пустая страна = вся выдача.
+
 ### #168 — офлайн-страна по IP (пакет internal/geoip)
 
 **Changed:** новый пакет `internal/geoip` — `Country(ip) string` из встроенной DB-IP Country Lite, чистый Go, без сети. Фундамент страновых пулов (#167, ADR 0017).
