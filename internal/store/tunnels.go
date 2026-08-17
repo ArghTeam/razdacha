@@ -319,38 +319,14 @@ func removeLegacyBuiltinPools(ctx context.Context, tx *sql.Tx, out *CountryPools
 // ссылавшееся лишь вторым звеном цепи, теряет цепь, но остаётся включённым и
 // маршрутизирует первым звеном.
 func detachRulesFromTunnel(ctx context.Context, tx *sql.Tx, tunnelID string, out *CountryPoolsResult) error {
-	rows, err := tx.QueryContext(ctx,
-		`SELECT id, name, tunnel_id, via_tunnel_id FROM rules
-		 WHERE tunnel_id = ? OR via_tunnel_id = ? ORDER BY priority`,
-		tunnelID, tunnelID)
+	// Сбор ссылок и обнуление разнесены намеренно: курсор чтения обязан закрыться
+	// до UPDATE'ов — SQLite не пишет, пока по той же транзакции открыт read-курсор.
+	// Поэтому чтение живёт в отдельной функции с `defer rows.Close()`, а изменения
+	// идут уже по собранному срезу.
+	refs, err := ruleRefsForTunnel(ctx, tx, tunnelID)
 	if err != nil {
-		return fmt.Errorf("поиск правил пула %s: %w", tunnelID, err)
+		return err
 	}
-	type ref struct {
-		id, name        string
-		primary, viaHit bool
-	}
-	var refs []ref
-	for rows.Next() {
-		var (
-			id, name string
-			tid, via sql.NullString
-		)
-		if err := rows.Scan(&id, &name, &tid, &via); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("поиск правил пула %s: %w", tunnelID, err)
-		}
-		refs = append(refs, ref{
-			id: id, name: name,
-			primary: tid.Valid && tid.String == tunnelID,
-			viaHit:  via.Valid && via.String == tunnelID,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return fmt.Errorf("поиск правил пула %s: %w", tunnelID, err)
-	}
-	_ = rows.Close()
 
 	for _, r := range refs {
 		if r.primary {
@@ -373,6 +349,47 @@ func detachRulesFromTunnel(ctx context.Context, tx *sql.Tx, tunnelID string, out
 		out.DetachedRules = append(out.DetachedRules, DetachedRule{Name: r.name, Disabled: false})
 	}
 	return nil
+}
+
+// ruleRef — ссылка правила на туннель: каким звеном оно за него держится.
+type ruleRef struct {
+	id, name string
+	// primary — правило ссылается первым звеном (tunnel_id). Иначе оно держится
+	// только вторым звеном цепи (via_tunnel_id).
+	primary bool
+}
+
+// ruleRefsForTunnel собирает правила, ссылающиеся на туннель любым звеном, и
+// закрывает курсор до возврата: вызывающий пишет по той же транзакции, а SQLite
+// не допускает запись при открытом read-курсоре.
+func ruleRefsForTunnel(ctx context.Context, tx *sql.Tx, tunnelID string) ([]ruleRef, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id, name, tunnel_id FROM rules
+		 WHERE tunnel_id = ? OR via_tunnel_id = ? ORDER BY priority`,
+		tunnelID, tunnelID)
+	if err != nil {
+		return nil, fmt.Errorf("поиск правил пула %s: %w", tunnelID, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var refs []ruleRef
+	for rows.Next() {
+		var (
+			id, name string
+			tid      sql.NullString
+		)
+		if err := rows.Scan(&id, &name, &tid); err != nil {
+			return nil, fmt.Errorf("поиск правил пула %s: %w", tunnelID, err)
+		}
+		refs = append(refs, ruleRef{
+			id: id, name: name,
+			primary: tid.Valid && tid.String == tunnelID,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("поиск правил пула %s: %w", tunnelID, err)
+	}
+	return refs, nil
 }
 
 // ruleNamesByTunnel отдаёт имена правил, ссылающихся на туннель — любым из двух
