@@ -62,24 +62,11 @@ function poolServers(pool, off) {
   return `<span class="badge ${alive ? 'ok' : 'err'}">живых ${alive} из ${total}</span>`;
 }
 
-/** Страна сервера пула — подпись карточки каталога, не измерение и не сверка:
-    проверка нашла расхождение на одном ключе из пяти (issue #161). Метка
-    держится в одном месте и переиспользуется везде, где показана страна пула,
-    чтобы её нельзя было принять за проверенный факт. */
-function poolCountryLabel(country) {
-  return `<span class="pool-country" title="Страна — со слов каталога, мы её не проверяли">${
-    esc(country)}</span>`;
-}
-
-/** Сервер, через который пул идёт прямо сейчас.
-    Страна показывается всегда, даже если каталог уже вписал её в имя: по названию
-    вроде «VLESS (Germany) 11293» это угадывается, а по «11293» — нет. */
+/** Сервер, через который пул идёт прямо сейчас. */
 function poolCurrent(pool, off) {
   const cur = pool.current || {};
   if (off || !cur.name) return '';
-  const parts = [];
-  if (cur.country) parts.push(poolCountryLabel(cur.country));
-  parts.push(esc(String(cur.name)));
+  const parts = [esc(String(cur.name))];
   if (cur.latency_ms != null) parts.push(`${esc(cur.latency_ms)} мс`);
   return `<div class="row-meta pool-now">Сейчас: ${parts.join(' · ')}</div>`;
 }
@@ -121,11 +108,9 @@ function poolSchedule(pool, off) {
    `latency_ms` приходят null, и вместо выдуманного «не отвечает» говорится
    «не проверялся». */
 
-/** Один сервер строкой: страна · имя · задержка. */
+/** Один сервер строкой: имя · задержка. */
 function poolServerRow(s, { current } = {}) {
-  const parts = [];
-  if (s.country) parts.push(poolCountryLabel(s.country));
-  parts.push(`<span class="pool-srv-name">${esc(s.title || '—')}</span>`);
+  const parts = [`<span class="pool-srv-name">${esc(s.title || '—')}</span>`];
 
   let dot = 'off';
   let badge = '';
@@ -156,31 +141,6 @@ function poolServerRow(s, { current } = {}) {
       ${badge}
       ${current ? '<span class="badge accent">сейчас</span>' : ''}
     </div>`;
-}
-
-/** Страны с количеством: флагов нет, в каталоге есть только название страны,
-    а угадывать эмодзи по названию — выдумывать данные. */
-function poolCountries(list) {
-  const byCountry = new Map();
-  for (const s of list) {
-    const key = s.country || 'без страны';
-    byCountry.set(key, (byCountry.get(key) || 0) + 1);
-  }
-  return [...byCountry.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'))
-    .map(([country, n]) => {
-      // Тот же смысл, что у страны в строке сервера и в «Сейчас:» — подпись
-      // каталога, не факт, — обязан выглядеть так же заметно: пунктирная
-      // рамка вместо сплошной, как уже отличает «остывший» чип списка
-      // (`.chip.list-cold`), плюс тот же `title`, что и там. Бакету «без
-      // страны» подсказку не даём — атрибутировать источнику нечего.
-      if (country === 'без страны') {
-        return `<span class="chip">${esc(country)} — ${n}</span>`;
-      }
-      return `<span class="chip pool-country" title="Страна — со слов каталога, мы её не проверяли">${
-        esc(country)} — ${n}</span>`;
-    })
-    .join('');
 }
 
 /** Свёрнутый блок: раскрывается по клику, закрыт по умолчанию — мёртвые и
@@ -227,7 +187,6 @@ function poolDetailsHTML(t, data) {
     ${poolFold('Остальные — вне ротации', rest.length,
     `<div class="hint">Проверяются только серверы в ротации — в конфиг попадают лучшие
        по пингу каталога. Об остальных известно лишь то, что было на карточке.</div>
-     <div class="chips">${poolCountries(rest)}</div>
      <div class="pool-list">${rest.map((s) => poolServerRow(s)).join('')}</div>`)}`;
 }
 
@@ -260,13 +219,7 @@ async function loadPoolDetails(id) {
   }
 }
 
-/* Страновой пул узнаётся по паре «встроенный + пул»: имя ему завёл демон
-   (флаг + страна, `store.Country.PoolName`), и он идёт в раздел дефолтных, а не
-   к пользовательским туннелям. Признак — флаг `builtin`, а не разбор имени:
-   имя пользователь переименовывает, а `builtin` демон ставит раз при заведении. */
-const isCountryPool = (t) => Boolean(t.builtin) && Boolean(tunnelPool(t));
-
-/** Одна строка списка туннелей — общая для дефолтных пулов и своих туннелей. */
+/** Одна строка списка туннелей — общая для встроенного пула и своих туннелей. */
 function tunnelRow(t) {
   // Правило считается использующим туннель обоими звеньями цепи: вторым
   // звеном туннель держится так же, и удалить его сервер не даст (ADR 0012).
@@ -317,28 +270,14 @@ export function view() {
     return head() + `<div class="card">${notImplemented('Туннели')}</div>`;
   }
 
-  // Свои туннели — сверху: их заводят и трогают чаще, чем дефолтные. Страновые
-  // пулы идут ниже своим разделом: их завёл сервер, выбор выхода по стране это
-  // выбор одного из них. Порядок пулов задаёт сервер (набор стран, ADR 0017) —
-  // панель его не пересобирает.
-  const pools = state.tunnels.filter(isCountryPool);
-  const rest = state.tunnels.filter((t) => !isCountryPool(t));
+  // Встроенный общий пул рисуется как один туннель в общем списке (ADR 0018):
+  // отдельного раздела «по странам» больше нет. Свой ряд пул отличает выделением
+  // строки и набором данных — каталог вместо адреса, живые серверы, текущий выбор.
+  const empty = '<div class="empty">Туннелей пока нет.</div>';
+  const listCard = `<div class="card">${
+    state.tunnels.map(tunnelRow).join('') || empty}</div>`;
 
-  const poolsCard = pools.length
-    ? `<h2 class="screen-section">Дефолтные туннели по странам</h2>
-       <p class="screen-sub">Пул на страну: сервер сам держится за живой ключ и
-         переключается без перезапуска. Выключены, пока не включите — до этого за
-         ключами наружу никто не ходит.</p>
-       <div class="card">${pools.map(tunnelRow).join('')}</div>`
-    : '';
-
-  const restEmpty = pools.length
-    ? '<div class="empty">Своих туннелей пока нет — добавьте кнопкой «+ Добавить».</div>'
-    : '<div class="empty">Туннелей пока нет.</div>';
-  const restCard = `${pools.length ? '<h2 class="screen-section">Свои туннели</h2>' : ''}
-    <div class="card">${rest.map(tunnelRow).join('') || restEmpty}</div>`;
-
-  return head() + restCard + poolsCard + `
+  return head() + listCard + `
     <p class="screen-sub" style="margin-top:10px">
       Тип определяется по вставленному конфигу — выбирать его руками не нужно.
       Исходящие WireGuard-туннели поднимаются в userspace внутри sing-box.
@@ -347,9 +286,9 @@ export function view() {
 
 /* --- форма туннеля -------------------------------------------------------- */
 
-/* Ссылки https:// на каталог ключей в подсказке нет намеренно: пулы заводит
-   демон — по одному на страну (ADR 0017), руками их не создают, и такой ввод
-   получает отказ (#71). Предлагать то, что не сработает, — обещать несуществующее. */
+/* Ссылки https:// на каталог ключей в подсказке нет намеренно: пул заводит
+   демон — один общий (ADR 0018), руками его не создают, и такой ввод получает
+   отказ (#71). Предлагать то, что не сработает, — обещать несуществующее. */
 const IDLE_HINT = 'Вставьте ссылку vless://, ss://, trojan://, hysteria2://, socks5://, '
   + 'конфиг WireGuard или JSON outbound.';
 
@@ -523,13 +462,13 @@ export const actions = {
   /* Меню строки. Наборов ровно два.
 
      У пула — «Детали» (состав серверов вместо формы конфига) и включение.
-     «Изменить» нет: править нечего, кроме каталога. «Удалить» нет: страновые пулы
-     заводит демон (ADR 0017), и API удалить встроенный не даёт — прятать кнопку,
-     оставляя разрешение в API, значит расходиться с самим собой.
+     «Изменить» нет: править нечего, кроме каталога. «Удалить» нет: встроенный пул
+     заводит демон (ADR 0018), и API удалить его не даёт — прятать кнопку, оставляя
+     разрешение в API, значит расходиться с самим собой.
 
      Набор меню выбирается по тому, что это пул, а не по флагу builtin: у пула
      править нечего, кроме каталога, поэтому «Изменить» и «Удалить» не показываем
-     ни у странового встроенного, ни у редкого пула из ручной правки БД. */
+     ни у встроенного пула, ни у редкого пула из ручной правки БД. */
   'menu-tunnel': (id, btn) => {
     const t = tunnelById(id);
     const toggle = { act: 'toggle-tunnel', id, label: t.enabled === false ? 'Включить' : 'Выключить' };

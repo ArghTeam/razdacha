@@ -5,7 +5,6 @@ go 1.23.1
 require (
 	github.com/google/nftables v0.2.1-0.20240414091927-5e242ec57806
 	github.com/google/uuid v1.6.0
-	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/sagernet/sing v0.7.18
 	github.com/sagernet/sing-box v1.12.25
 	github.com/vishvananda/netlink v1.3.1

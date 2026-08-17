@@ -39,14 +39,6 @@ type tunnelResponse struct {
 	// с самим собой.
 	Builtin bool `json:"builtin"`
 
-	// Country — ISO-код страны встроенного пула (ADR 0017). Заполнен только у
-	// страновых builtin-пулов и различает их между собой; у остальных туннелей
-	// пусто (`omitempty`). Имя пула уже несёт флаг и название страны
-	// ([store.Country.PoolName]) — код отдаётся отдельно, чтобы панель могла
-	// отделить дефолтные страновые пулы от пользовательских туннелей, не разбирая
-	// имя обратно.
-	Country string `json:"country,omitempty"`
-
 	// Host и Port — адрес туннеля для карточки: у vless/ss/trojan/hysteria2 это
 	// сервер и порт, у wireguard и WARP — endpoint первого пира. Два поля, а не
 	// строка `host:port`: та же форма, что уже отдаёт `POST /api/tunnels/parse`,
@@ -99,7 +91,6 @@ func newTunnelResponse(t store.Tunnel, poolEvery time.Duration) tunnelResponse {
 		Source:    t.Source,
 		Enabled:   t.Enabled,
 		Builtin:   t.Builtin,
-		Country:   t.Country,
 		CreatedAt: t.CreatedAt.UTC(),
 	}
 }
@@ -184,15 +175,15 @@ func (s *Server) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
 		s.parseError(w, err)
 		return
 	}
-	// Пулы заводит демон — по одному встроенному на страну
-	// ([store.Store.EnsureBuiltinCountryPools], ADR 0017). Руками их не создают:
-	// свой пул означал бы ещё один обход каталога и ещё одну группу urltest в
-	// конфиге, а выбор выхода — это выбор готового странового пула в правиле.
-	// Поэтому ссылка на каталог здесь — отказ, а не создание. Разбор при этом
-	// остаётся: битая ссылка получает свои 400 выше, а не общий отказ.
+	// Пул заводит демон — один встроенный общий
+	// ([store.Store.EnsureBuiltinPool], ADR 0018). Руками его не создают: ещё один
+	// пул означал бы ещё один обход каталога и ещё одну группу urltest в конфиге, а
+	// клиентов на пул вешают правилами по пирам. Поэтому ссылка на каталог здесь —
+	// отказ, а не создание. Разбор при этом остаётся: битая ссылка получает свои 400
+	// выше, а не общий отказ.
 	if res.Source == store.SourcePool {
 		writeError(w, s.log, http.StatusConflict, codeConflict,
-			"Пулы бесплатных ключей заводит сервер по странам — включите нужный в списке туннелей")
+			"Пул бесплатных ключей заводит сервер — включите встроенный в списке туннелей")
 		return
 	}
 

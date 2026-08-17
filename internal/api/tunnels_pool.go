@@ -45,7 +45,6 @@ type poolResponse struct {
 // poolCurrentServer — сервер, который группа выбрала прямо сейчас.
 type poolCurrentServer struct {
 	Name      string `json:"name"`
-	Country   string `json:"country"`
 	LatencyMS *int   `json:"latency_ms"`
 }
 
@@ -115,7 +114,7 @@ func (s *Server) withPoolState(ctx context.Context, out []tunnelResponse, byID m
 		if !ok {
 			continue
 		}
-		cur := &poolCurrentServer{Name: srv.Title, Country: srv.Country}
+		cur := &poolCurrentServer{Name: srv.Title}
 		if ms, up := proxies[group.Now].Latency(); up {
 			v := int(ms / time.Millisecond)
 			cur.LatencyMS = &v
@@ -145,7 +144,6 @@ type poolServersResponse struct {
 // поле читался бы как «ноль миллисекунд», а не «неизвестно».
 type poolServerResponse struct {
 	Title      string `json:"title"`
-	Country    string `json:"country"`
 	PingMS     *int   `json:"ping_ms"`
 	InRotation bool   `json:"in_rotation"`
 	Alive      *bool  `json:"alive"`
@@ -218,7 +216,6 @@ func (s *Server) poolServers(ctx context.Context, t store.Tunnel) []poolServerRe
 		tag, inRotation := tagByURL[srv.URL]
 		item := poolServerResponse{
 			Title:      srv.Title,
-			Country:    srv.Country,
 			InRotation: inRotation,
 			Current:    inRotation && tag == current,
 		}
@@ -243,8 +240,8 @@ func (s *Server) poolServers(ctx context.Context, t store.Tunnel) []poolServerRe
 }
 
 // sortPoolServers ставит ротацию впереди: сначала она по измеренной задержке, затем
-// остальные по стране. Порядок задаёт сервер, а не панель — иначе каждая отрисовка
-// пересобирала бы его своей сортировкой.
+// остальные по пингу карточки. Порядок задаёт сервер, а не панель — иначе каждая
+// отрисовка пересобирала бы его своей сортировкой.
 func sortPoolServers(v []poolServerResponse) {
 	sort.SliceStable(v, func(i, j int) bool {
 		a, b := v[i], v[j]
@@ -255,8 +252,6 @@ func sortPoolServers(v []poolServerResponse) {
 			if la, lb := poolLatencyRank(a), poolLatencyRank(b); la != lb {
 				return la < lb
 			}
-		} else if a.Country != b.Country {
-			return a.Country < b.Country
 		}
 		if pa, pb := poolPingRank(a.PingMS), poolPingRank(b.PingMS); pa != pb {
 			return pa < pb

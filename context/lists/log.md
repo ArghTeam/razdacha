@@ -5,6 +5,11 @@
 
 ## 2026-08-17
 
+### #181 — igareck без geo-IP, единый пул
+
+**Changed:** драйвер `igareck` отдаёт все ключи одним списком; `poolServersForCountry`, `PoolTunnel.Country`, разбор хоста и geoip убраны; `refreshGroup` применяет выдачу целиком (ADR 0018).
+**Beware:** `PoolServer.Country` igareck больше не заполняет; пакет `internal/geoip` удалён.
+
 ### #170 — источник igareck и раскладка пулов по странам
 
 **Changed:** драйвер `igareck` (3 подписки, зеркало+резерв, страна geoip); `Refresh` — fetch-once-partition, `poolServersForCountry` фильтрует по стране пула.

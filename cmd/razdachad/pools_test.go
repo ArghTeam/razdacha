@@ -280,9 +280,9 @@ func TestSyncPoolTunnelsRefreshesOnSetChange(t *testing.T) {
 	}
 }
 
-// Свежая установка: демон заводит семь выключенных страновых пулов (ADR 0017) и
-// сообщает об этом в лог.
-func TestEnsureBuiltinPoolSeedsCountryPools(t *testing.T) {
+// Свежая установка: демон заводит один выключенный общий пул (ADR 0018) и сообщает
+// об этом в лог.
+func TestEnsureBuiltinPoolSeedsOne(t *testing.T) {
 	ctx := context.Background()
 	st, _ := openStore(t)
 	sink := &logSink{}
@@ -295,54 +295,59 @@ func TestEnsureBuiltinPoolSeedsCountryPools(t *testing.T) {
 	}
 	pools := 0
 	for _, tn := range list {
-		if tn.Builtin && tn.Country != "" {
+		if tn.Builtin && tn.Source == store.SourcePool {
 			pools++
 			if tn.Enabled {
-				t.Errorf("пул %s заведён включённым", tn.Country)
+				t.Error("пул заведён включённым")
 			}
 			if tn.Raw != igareckCatalogURL {
-				t.Errorf("у пула %s каталог %q, ожидался общий igareck", tn.Country, tn.Raw)
+				t.Errorf("у пула каталог %q, ожидался igareck", tn.Raw)
 			}
 		}
 	}
-	if pools != len(store.CountryPools()) {
-		t.Fatalf("страновых пулов %d, ожидалось %d", pools, len(store.CountryPools()))
+	if pools != 1 {
+		t.Fatalf("встроенных пулов %d, ожидался один", pools)
 	}
-	if sink.count("заведены встроенные страновые пулы") == 0 {
-		t.Error("заведение пулов не видно в логе")
+	if sink.count("заведён встроенный общий пул") == 0 {
+		t.Error("заведение пула не видно в логе")
 	}
 
 	// Второй старт ничего не заводит и молчит.
 	ensureBuiltinPool(ctx, st, sink.logger())
-	if got := sink.count("заведены встроенные страновые пулы"); got != 1 {
+	if got := sink.count("заведён встроенный общий пул"); got != 1 {
 		t.Errorf("заведение объявлено %d раз", got)
 	}
 }
 
-// Установка с прошлых версий: в БД лежит старый единственный встроенный пул, на него
-// ссылается правило. Старт демона удаляет пул, отвязывает и выключает правило и
-// сообщает об этом в лог (ADR 0013 — отвязка первого звена делает правило видимо
+// Установка с версии со странами: в БД лежат страновые встроенные пулы, на один из них
+// ссылается правило. Старт демона сворачивает их в один, отвязывает и выключает правило
+// и сообщает об этом в лог (ADR 0013 — отвязка первого звена делает правило видимо
 // нерабочим, а не тихо утекающим).
-func TestEnsureBuiltinPoolRemovesLegacy(t *testing.T) {
+func TestEnsureBuiltinPoolCollapsesCountryPools(t *testing.T) {
 	ctx := context.Background()
 	st, _ := openStore(t)
 	sink := &logSink{}
 
-	legacy, err := st.CreateTunnel(ctx, store.Tunnel{
-		Name:    "Бесплатные ключи",
-		Type:    store.TunnelShadowsocks,
-		Source:  store.SourcePool,
-		Raw:     "https://vpnkeys.me/protocol/vless",
-		Enabled: true,
-		Builtin: true,
+	base := time.Now().Add(-time.Hour)
+	// Выживет самый ранний; правило вешаем на более поздний, чтобы проверить отвязку.
+	if _, err := st.CreateTunnel(ctx, store.Tunnel{
+		Name: "🇳🇱 Нидерланды", Type: store.TunnelVLESS, Source: store.SourcePool,
+		Raw: igareckCatalogURL, Country: "NL", Enabled: true, Builtin: true, CreatedAt: base,
+	}); err != nil {
+		t.Fatalf("заведение странового пула: %v", err)
+	}
+	extra, err := st.CreateTunnel(ctx, store.Tunnel{
+		Name: "🇩🇪 Германия", Type: store.TunnelVLESS, Source: store.SourcePool,
+		Raw: igareckCatalogURL, Country: "DE", Enabled: true, Builtin: true,
+		CreatedAt: base.Add(time.Minute),
 	})
 	if err != nil {
-		t.Fatalf("заведение старого пула: %v", err)
+		t.Fatalf("заведение странового пула: %v", err)
 	}
 	rule, err := st.CreateRule(ctx, store.Rule{
-		Name:      "В старый пул",
+		Name:      "В страновой пул",
 		Action:    store.ActionTunnel,
-		TunnelID:  legacy.ID,
+		TunnelID:  extra.ID,
 		Enabled:   true,
 		Domains:   []string{"example.org"},
 		PeerScope: store.ScopeAll,
@@ -353,8 +358,8 @@ func TestEnsureBuiltinPoolRemovesLegacy(t *testing.T) {
 
 	ensureBuiltinPool(ctx, st, sink.logger())
 
-	if _, err := st.Tunnel(ctx, legacy.ID); err == nil {
-		t.Error("старый пул не удалён")
+	if _, err := st.Tunnel(ctx, extra.ID); err == nil {
+		t.Error("лишний пул не свёрнут")
 	}
 	got, err := st.Rule(ctx, rule.ID)
 	if err != nil {
@@ -363,10 +368,10 @@ func TestEnsureBuiltinPoolRemovesLegacy(t *testing.T) {
 	if got.TunnelID != "" || got.Enabled {
 		t.Errorf("правило не отвязано/не выключено: %+v", got)
 	}
-	if sink.count("старый единственный встроенный пул удалён") == 0 {
-		t.Error("удаление старого пула не видно в логе")
+	if sink.count("страновой встроенный пул свёрнут в общий") == 0 {
+		t.Error("сворачивание пула не видно в логе")
 	}
-	if sink.count("правило ссылалось на удалённый пул и выключено") == 0 {
+	if sink.count("правило ссылалось на свёрнутый пул и выключено") == 0 {
 		t.Error("отвязка правила не видна в логе")
 	}
 }

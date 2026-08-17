@@ -112,68 +112,15 @@ type Tunnel struct {
 	PoolUpdatedAt time.Time `json:"pool_updated_at,omitempty"`
 
 	// Builtin — запись завёл демон, а не пользователь
-	// ([Store.EnsureBuiltinCountryPools]). Такую не удаляют, а выключают: см.
+	// ([Store.EnsureBuiltinPool]). Такую не удаляют, а выключают: см.
 	// [Store.DeleteTunnel]. Ставится один раз при заведении, [Store.UpdateTunnel]
 	// его не трогает.
 	Builtin bool `json:"builtin"`
 
-	// Country — ISO-код страны встроенного пула (ADR 0017). Заполнен только у
-	// страновых встроенных пулов и различает их между собой: демон держит по
-	// одному пулу на страну. У остальных туннелей пусто. Как и Builtin,
-	// ставится при заведении и [Store.UpdateTunnel] его не трогает — иначе
-	// пользователь правкой через панель сбил бы идемпотентность заведения.
+	// Country — не используется с ADR 0018: единый общий пул страну выхода не
+	// различает, а geo-IP убран. Колонка оставлена в схеме (в SQLite её не роняют
+	// без нужды), но источник её больше не заполняет — поле всегда пусто.
 	Country string `json:"country,omitempty"`
-}
-
-// Country — страна встроенного пула: ISO-код и человекочитаемое имя. Набор из семи
-// стран захардкожен (ADR 0017), см. [CountryPools].
-type Country struct {
-	// Code — ISO 3166-1 alpha-2, ложится в колонку country и различает пулы.
-	Code string
-	// Name — имя для человека, идёт в имя пула вместе с флагом ([Country.PoolName]).
-	Name string
-}
-
-// PoolName — имя встроенного пула этой страны: флаг и название. Видно
-// пользователю в панели, поэтому по-русски; уникально по стране — колонка
-// tunnels.name под UNIQUE.
-func (c Country) PoolName() string {
-	return flagEmoji(c.Code) + " " + c.Name
-}
-
-// countryPools — семь стран встроенных пулов (ADR 0017). Порядок фиксирован: в нём
-// пулы заводятся, и он же задаёт порядок в панели.
-var countryPools = []Country{
-	{Code: "NL", Name: "Нидерланды"},
-	{Code: "DE", Name: "Германия"},
-	{Code: "US", Name: "США"},
-	{Code: "FR", Name: "Франция"},
-	{Code: "GB", Name: "Великобритания"},
-	{Code: "FI", Name: "Финляндия"},
-	{Code: "KZ", Name: "Казахстан"},
-}
-
-// CountryPools отдаёт копию набора стран встроенных пулов. Копия, а не сам срез:
-// вызывающий не должен переставлять порядок, от которого зависит вид панели.
-func CountryPools() []Country {
-	return slices.Clone(countryPools)
-}
-
-// flagEmoji собирает флаг-эмодзи из ISO-кода страны: две буквы кода переводятся в
-// пару Regional Indicator Symbols (U+1F1E6…U+1F1FF). Пустой или неполный код даёт
-// пустую строку — без флага, но и без мусора в имени.
-func flagEmoji(code string) string {
-	if len(code) != 2 {
-		return ""
-	}
-	var out []rune
-	for _, r := range code {
-		if r < 'A' || r > 'Z' {
-			return ""
-		}
-		out = append(out, 0x1F1E6+(r-'A'))
-	}
-	return string(out)
 }
 
 // Rule — правило маршрутизации: «эти ресурсы — в этот туннель».
@@ -281,8 +228,8 @@ func (t *Tunnel) validate() error {
 		return fmt.Errorf("%w: встроенным бывает только туннель-пул, а не форма %q",
 			ErrInvalid, t.Source)
 	}
-	// Страна осмысленна только у пула: она различает встроенные страновые пулы
-	// (ADR 0017), а у обычного туннеля означала бы поле без применения.
+	// Country с ADR 0018 не используется и всегда пуста; исторически её ставили
+	// только пулу, и этот запрет остаётся дешёвой страховкой от мусора в колонке.
 	if t.Country != "" && t.Source != SourcePool {
 		return fmt.Errorf("%w: страна задаётся только туннелю-пулу, а не форме %q",
 			ErrInvalid, t.Source)
