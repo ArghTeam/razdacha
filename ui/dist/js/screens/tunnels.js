@@ -317,10 +317,10 @@ export function view() {
     return head() + `<div class="card">${notImplemented('Туннели')}</div>`;
   }
 
-  // Дефолтные страновые пулы — сверху отдельным разделом: их завёл сервер, выбор
-  // выхода по стране это выбор одного из них. Свои туннели идут ниже своим
-  // разделом. Порядок пулов задаёт сервер (набор стран, ADR 0017) — панель его не
-  // пересобирает.
+  // Свои туннели — сверху: их заводят и трогают чаще, чем дефолтные. Страновые
+  // пулы идут ниже своим разделом: их завёл сервер, выбор выхода по стране это
+  // выбор одного из них. Порядок пулов задаёт сервер (набор стран, ADR 0017) —
+  // панель его не пересобирает.
   const pools = state.tunnels.filter(isCountryPool);
   const rest = state.tunnels.filter((t) => !isCountryPool(t));
 
@@ -338,7 +338,7 @@ export function view() {
   const restCard = `${pools.length ? '<h2 class="screen-section">Свои туннели</h2>' : ''}
     <div class="card">${rest.map(tunnelRow).join('') || restEmpty}</div>`;
 
-  return head() + poolsCard + restCard + `
+  return head() + restCard + poolsCard + `
     <p class="screen-sub" style="margin-top:10px">
       Тип определяется по вставленному конфигу — выбирать его руками не нужно.
       Исходящие WireGuard-туннели поднимаются в userspace внутри sing-box.
