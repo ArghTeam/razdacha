@@ -157,6 +157,15 @@ input[type="password"] {
 .screen-head .spacer { flex: 1; }
 .screen-sub { color: var(--fg-dim); font-size: 13px; width: 100%; margin-top: -4px; }
 
+/* Заголовок раздела внутри экрана: отделяет дефолтные страновые пулы от своих
+   туннелей (#171). Первый идёт без верхнего отступа — под ним уже шапка экрана. */
+.screen-section {
+  font-size: 15px; font-weight: 640; color: var(--fg);
+  margin: 22px 0 10px;
+}
+.screen-section + .screen-sub { margin: -6px 0 10px; }
+.screen-head + .screen-section { margin-top: 4px; }
+
 /* --- карточка/список --- */
 .card {
   background: var(--bg-elev);

@@ -260,31 +260,33 @@ async function loadPoolDetails(id) {
   }
 }
 
-export function view() {
-  if (state.missing.has('tunnels')) {
-    return head() + `<div class="card">${notImplemented('Туннели')}</div>`;
-  }
+/* Страновой пул узнаётся по паре «встроенный + пул»: имя ему завёл демон
+   (флаг + страна, `store.Country.PoolName`), и он идёт в раздел дефолтных, а не
+   к пользовательским туннелям. Признак — флаг `builtin`, а не разбор имени:
+   имя пользователь переименовывает, а `builtin` демон ставит раз при заведении. */
+const isCountryPool = (t) => Boolean(t.builtin) && Boolean(tunnelPool(t));
 
-  const rows = state.tunnels.map((t) => {
-    // Правило считается использующим туннель обоими звеньями цепи: вторым
-    // звеном туннель держится так же, и удалить его сервер не даст (ADR 0012).
-    const used = state.rules.filter((r) => r.tunnel_id === t.id || r.via_tunnel_id === t.id).length;
-    const pool = tunnelPool(t);
-    const off = t.enabled === false;
-    const st = t.enabled === false
-      ? { cls: 'off', badge: '', label: 'выключен' }
-      : t.status === 'up'
-        ? { cls: 'on', badge: `<span class="badge ok">${esc(t.latency_ms)} мс</span>`, label: '' }
-        // Медленный туннель рабочий, но не годится для видео и звонков —
-        // показываем цифру и отличаем цветом, а не прячем среди зелёных.
-        : t.status === 'slow'
-          ? { cls: 'warn', badge: `<span class="badge warn">${esc(t.latency_ms)} мс, медленно</span>`, label: '' }
-          : t.status === 'down'
-            ? { cls: 'bad', badge: '<span class="badge err">нет ответа</span>', label: '' }
-            : t.status === 'not_applied'
-              ? { cls: 'off', badge: '<span class="badge">не применён</span>', label: '' }
-              : { cls: 'off', badge: '<span class="badge">не проверялся</span>', label: '' };
-    return `
+/** Одна строка списка туннелей — общая для дефолтных пулов и своих туннелей. */
+function tunnelRow(t) {
+  // Правило считается использующим туннель обоими звеньями цепи: вторым
+  // звеном туннель держится так же, и удалить его сервер не даст (ADR 0012).
+  const used = state.rules.filter((r) => r.tunnel_id === t.id || r.via_tunnel_id === t.id).length;
+  const pool = tunnelPool(t);
+  const off = t.enabled === false;
+  const st = t.enabled === false
+    ? { cls: 'off', badge: '', label: 'выключен' }
+    : t.status === 'up'
+      ? { cls: 'on', badge: `<span class="badge ok">${esc(t.latency_ms)} мс</span>`, label: '' }
+      // Медленный туннель рабочий, но не годится для видео и звонков —
+      // показываем цифру и отличаем цветом, а не прячем среди зелёных.
+      : t.status === 'slow'
+        ? { cls: 'warn', badge: `<span class="badge warn">${esc(t.latency_ms)} мс, медленно</span>`, label: '' }
+        : t.status === 'down'
+          ? { cls: 'bad', badge: '<span class="badge err">нет ответа</span>', label: '' }
+          : t.status === 'not_applied'
+            ? { cls: 'off', badge: '<span class="badge">не применён</span>', label: '' }
+            : { cls: 'off', badge: '<span class="badge">не проверялся</span>', label: '' };
+  return `
       <div class="row${pool ? ' pool' : ''}${off ? ' dim' : ''}">
         <span class="dot ${st.cls}"></span>
         <div class="row-main">
@@ -308,10 +310,35 @@ export function view() {
           </div>
         </div>
       </div>`;
-  }).join('');
+}
 
-  return head() + `
-    <div class="card">${rows || '<div class="empty">Туннелей пока нет.</div>'}</div>
+export function view() {
+  if (state.missing.has('tunnels')) {
+    return head() + `<div class="card">${notImplemented('Туннели')}</div>`;
+  }
+
+  // Дефолтные страновые пулы — сверху отдельным разделом: их завёл сервер, выбор
+  // выхода по стране это выбор одного из них. Свои туннели идут ниже своим
+  // разделом. Порядок пулов задаёт сервер (набор стран, ADR 0017) — панель его не
+  // пересобирает.
+  const pools = state.tunnels.filter(isCountryPool);
+  const rest = state.tunnels.filter((t) => !isCountryPool(t));
+
+  const poolsCard = pools.length
+    ? `<h2 class="screen-section">Дефолтные туннели по странам</h2>
+       <p class="screen-sub">Пул на страну: сервер сам держится за живой ключ и
+         переключается без перезапуска. Выключены, пока не включите — до этого за
+         ключами наружу никто не ходит.</p>
+       <div class="card">${pools.map(tunnelRow).join('')}</div>`
+    : '';
+
+  const restEmpty = pools.length
+    ? '<div class="empty">Своих туннелей пока нет — добавьте кнопкой «+ Добавить».</div>'
+    : '<div class="empty">Туннелей пока нет.</div>';
+  const restCard = `${pools.length ? '<h2 class="screen-section">Свои туннели</h2>' : ''}
+    <div class="card">${rest.map(tunnelRow).join('') || restEmpty}</div>`;
+
+  return head() + poolsCard + restCard + `
     <p class="screen-sub" style="margin-top:10px">
       Тип определяется по вставленному конфигу — выбирать его руками не нужно.
       Исходящие WireGuard-туннели поднимаются в userspace внутри sing-box.
@@ -320,9 +347,9 @@ export function view() {
 
 /* --- форма туннеля -------------------------------------------------------- */
 
-/* Ссылки https:// на каталог ключей в подсказке нет намеренно: пул в системе один,
-   его заводит демон, и такой ввод получает отказ (#71). Предлагать то, что не
-   сработает, — обещать несуществующее. */
+/* Ссылки https:// на каталог ключей в подсказке нет намеренно: пулы заводит
+   демон — по одному на страну (ADR 0017), руками их не создают, и такой ввод
+   получает отказ (#71). Предлагать то, что не сработает, — обещать несуществующее. */
 const IDLE_HINT = 'Вставьте ссылку vless://, ss://, trojan://, hysteria2://, socks5://, '
   + 'конфиг WireGuard или JSON outbound.';
 
@@ -496,13 +523,13 @@ export const actions = {
   /* Меню строки. Наборов ровно два.
 
      У пула — «Детали» (состав серверов вместо формы конфига) и включение.
-     «Изменить» нет: править нечего, кроме каталога. «Удалить» нет: пул в системе
-     один, его заводит демон, и API удалить его не даёт — прятать кнопку, оставляя
-     разрешение в API, значит расходиться с самим собой.
+     «Изменить» нет: править нечего, кроме каталога. «Удалить» нет: страновые пулы
+     заводит демон (ADR 0017), и API удалить встроенный не даёт — прятать кнопку,
+     оставляя разрешение в API, значит расходиться с самим собой.
 
-     У остальных туннелей меню прежнее. Признак — то, что это пул, а не флаг
-     builtin: пул, не помеченный встроенным, бывает только следом ручной правки БД,
-     и «Изменить» с «Удалить» у него означали бы, что пулов заводят несколько. */
+     Набор меню выбирается по тому, что это пул, а не по флагу builtin: у пула
+     править нечего, кроме каталога, поэтому «Изменить» и «Удалить» не показываем
+     ни у странового встроенного, ни у редкого пула из ручной правки БД. */
   'menu-tunnel': (id, btn) => {
     const t = tunnelById(id);
     const toggle = { act: 'toggle-tunnel', id, label: t.enabled === false ? 'Включить' : 'Выключить' };
