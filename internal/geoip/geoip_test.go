@@ -27,7 +27,7 @@ func TestCountryKnownIPs(t *testing.T) {
 // сеть, nil и некорректный ввод. Ожидается пустая строка, а не паника.
 func TestCountryUnknown(t *testing.T) {
 	cases := []net.IP{
-		net.ParseIP("10.0.0.1"),   // приватная сеть
+		net.ParseIP("10.0.0.1"),    // приватная сеть
 		net.ParseIP("192.168.1.1"), // приватная сеть
 		nil,                        // nil-адрес
 	}
