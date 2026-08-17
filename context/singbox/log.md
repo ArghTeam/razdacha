@@ -3,6 +3,12 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-18
+
+### #183 — reality без fp получает uTLS chrome
+
+**Changed:** `parse_url.go`: при включённом `Reality` ставится `uTLS` (fp из ссылки или `chrome`) — без uTLS sing-box валит весь конфиг, и один такой ключ блокировал общий пул #181 (класс #176).
+
 ## 2026-08-17
 
 ### #176 — неподдерживаемый flow отбраковывается разбором

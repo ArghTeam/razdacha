@@ -446,6 +446,12 @@ func (u proxyURL) tls() (*option.OutboundTLSOptions, error) {
 			PublicKey: pbk,
 			ShortID:   u.param("sid"),
 		}
+		// sing-box требует uTLS для reality-клиента: без него инициализация падает
+		// «uTLS is required by reality client» и роняет весь конфиг целиком. Если fp
+		// в ссылке не задан — ставим chrome по умолчанию (reality без uTLS невалиден).
+		if tls.UTLS == nil {
+			tls.UTLS = &option.OutboundUTLSOptions{Enabled: true, Fingerprint: "chrome"}
+		}
 	}
 	return tls, nil
 }

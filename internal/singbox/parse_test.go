@@ -104,6 +104,20 @@ func TestParseProxyURLFields(t *testing.T) {
 			                          "short_id":"f6"}}}`,
 		},
 		{
+			name: "vless tcp reality без fp — uTLS chrome по умолчанию",
+			raw: "vless://e95163dc-905e-480a-afe5-20b146288679@127.0.0.1:16399?type=tcp" +
+				"&encryption=none&security=reality&pbk=tqhSkeDR6jsqC-BYCnZWBrdL33g705ba8tV5-ZboWTM" +
+				"&sni=google.com&sid=f6#vless-reality-no-fp",
+			typ: store.TunnelVLESS,
+			want: `{"type":"vless","server":"127.0.0.1","server_port":16399,
+			        "uuid":"e95163dc-905e-480a-afe5-20b146288679",
+			        "tls":{"enabled":true,"server_name":"google.com",
+			               "utls":{"enabled":true,"fingerprint":"chrome"},
+			               "reality":{"enabled":true,
+			                          "public_key":"tqhSkeDR6jsqC-BYCnZWBrdL33g705ba8tV5-ZboWTM",
+			                          "short_id":"f6"}}}`,
+		},
+		{
 			name: "vless tcp reality с flow xtls-rprx-vision",
 			raw: "vless://e95163dc-905e-480a-afe5-20b146288679@127.0.0.1:16399?type=tcp" +
 				"&encryption=none&flow=xtls-rprx-vision&security=reality" +
