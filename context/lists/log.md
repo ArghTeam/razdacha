@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-17
+
+### #168 — офлайн-страна по IP (пакет internal/geoip)
+
+**Changed:** новый пакет `internal/geoip` — `Country(ip) string` из встроенной DB-IP Country Lite, чистый Go, без сети. Фундамент страновых пулов (#167, ADR 0017).
+**New surface:** `geoip.Country`, `geoip.Attribution`.
+**Beware:** база заморожена на релизе, обновляется только с razdacha; порча базы → `Country` даёт `""`, страна не течёт.
+
 ## 2026-08-15
 
 ### #149 — отказ правила виден в панели
@@ -17,13 +25,13 @@
 ### #156 — сериализация обхода каталога пула
 **Changed:** `PoolCatalog.Servers` теперь занимает каталог по адресу (`u.String()`) через `beginCrawl`/`endCrawl` на время обхода; второй обход того же адреса отказывает сразу `ErrPoolCrawlBusy`.
 **New surface:** Новый сентинел `lists.ErrPoolCrawlBusy`.
-**Beware:** Замок — по адресу каталога, не по туннелю; такт расписания, попавший на занятый каталог, пишет INFO и неудачей не считается; обрыв клиентского соединения отпускает замок.
+**Beware:** замок — по адресу каталога, не по туннелю; такт на занятом каталоге пишет INFO и неудачей не считается.
 
 ### #150 — состав стартового набора правил
 
-**Changed:** `presetKeys`, `Preset()` и поле `InPreset`/`in_preset` в `CommunityService`; состав — `russia_inside`, `google_ai`, `discord`, `meta`, `twitter`.
-**New surface:** `CommunityService.Preset()`, поле `InPreset` в ответе каталога.
-**Beware:** ASN-списки (`cloudflare`, `cloudfront`, `hetzner`, `ovh`, `digitalocean`) намеренно не входят — с ними пресет перестаёт быть селективным; `TestPreset` проверяет, что ключи существуют в каталоге и не конфликтуют.
+**Changed:** `presetKeys`, `Preset()`, поле `InPreset` в `CommunityService`; состав — `russia_inside`, `google_ai`, `discord`, `meta`, `twitter`.
+**New surface:** `CommunityService.Preset()`.
+**Beware:** ASN-списки (`cloudflare`, `cloudfront`, `hetzner`, `ovh`, `digitalocean`) не входят — иначе пресет не селективен.
 
 ### #161 — страна сервера пула помечена как подпись источника
 

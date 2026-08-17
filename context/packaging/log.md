@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-17
+
+### #168 — база geo-IP в бинарнике
+
+**Changed:** `internal/geoip/dbip-country-lite.mmdb` (~8.3 МБ, сборка 2026-08-01) уезжает в бинарник через `go:embed`; зависимость `oschwald/maxminddb-golang`, CGO не нужен.
+**Beware:** DB-IP Country Lite под CC-BY-4.0 — атрибуция обязательна: константа `geoip.Attribution` в бинарнике (печатается в лог при загрузке) и секция в `NOTICE.md`. Убрать атрибуцию — нарушить лицензию.
+
 ## 2026-08-15
 
 ### #60 — публичный вывод показывает внешний адрес
