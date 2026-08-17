@@ -3,6 +3,12 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-18
+
+### #185 — адрес сервера в title вкладки
+
+**Changed:** `shell.js` — `applyDocTitle()` ставит `document.title` = `<endpoint_host> · razdacha`; зовётся из `app.js` (loadAll) и `settings.js` (после сохранения). Нет адреса — «razdacha».
+
 ## 2026-08-17
 
 ### #181 — встроенный пул одной строкой

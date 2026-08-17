@@ -4,7 +4,7 @@
 import * as api from '../api.js';
 import {
   state, toast, toastError, openModal, closeModal, modalShell,
-  notice, refresh, markDirty,
+  notice, refresh, markDirty, applyDocTitle,
 } from '../shell.js';
 import { $, esc, intervalSeconds } from '../util.js';
 
@@ -146,6 +146,7 @@ async function saveSettings() {
     await saveNotify();
     const res = await api.settings.update(body);
     state.settings = res && res.wg_listen_port ? res : { ...s, ...body };
+    applyDocTitle();
     closeModal();
     markDirty();
     refresh();

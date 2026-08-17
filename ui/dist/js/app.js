@@ -7,7 +7,7 @@
 
 import * as api from './api.js';
 import {
-  state, toast, toastError, closeModal, closeMenu, modalOpen, loading,
+  state, toast, toastError, closeModal, closeMenu, modalOpen, loading, applyDocTitle,
 } from './shell.js';
 import { $, $$, compareVersions, versionLabel } from './util.js';
 
@@ -177,6 +177,7 @@ async function loadAll() {
   ]);
   state.version = version;
   state.settings = settings;
+  applyDocTitle();
   state.peers = peers || [];
   state.tunnels = tunnels || [];
   state.rules = rules || [];
