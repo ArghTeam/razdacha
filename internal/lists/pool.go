@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -35,12 +34,6 @@ type PoolTunnel struct {
 	Name       string
 	CatalogURL string
 	Enabled    bool
-	// Country — ISO-код страны встроенного пула (ADR 0017) или пусто у обычного пула.
-	// По нему из общей выдачи каталога отбирается страновой срез: семь встроенных
-	// пулов делят один источник, и раскладку по странам ведёт слой обновления
-	// ([poolServersForCountry]), а не отдельный обход на каждую страну. Пустой Country
-	// означает «взять всё, что дал каталог» — так работает обычный пул (outlinekeys).
-	Country string
 	// Servers — состав, лежащий в БД сейчас, в порядке приоритета отбора. С ним
 	// сводится свежий обход ([MergePool]): ничего не изменилось — в БД не пишем и
 	// конфиг не перегенерируем.
@@ -98,7 +91,6 @@ func PoolTunnelFrom(t store.Tunnel) PoolTunnel {
 		Name:       t.Name,
 		CatalogURL: t.Raw,
 		Enabled:    t.Enabled,
-		Country:    t.Country,
 		Servers:    t.Pool,
 	}
 }
@@ -249,13 +241,14 @@ func (m *PoolManager) currentInterval() time.Duration {
 	return m.interval
 }
 
-// Refresh обходит каталоги всех включённых пулов и раскладывает выдачу по странам.
+// Refresh обходит каталоги всех включённых пулов.
 //
-// Пулы с общим каталогом обходятся один раз на группу, а не по разу на пул: семь
-// страновых пулов делят источник igareck, и обойти его семь раз нельзя ни по
-// вежливости к источнику, ни по устройству дедупа обхода — `beginCrawl` отдал бы ключи
-// только первому пулу (ADR 0017, fetch-once-partition). Ошибка одной группы не отменяет
-// остальные и не выбрасывает прошлый состав пула из БД: устаревший список лучше пустого.
+// Пулы с общим каталогом обходятся один раз на группу, а не по разу на пул: обойти
+// один и тот же файл дважды нельзя ни по вежливости к источнику, ни по устройству
+// дедупа обхода — `beginCrawl` отдал бы ключи только первому пулу. Встроенный пул
+// один (ADR 0018), но группировка остаётся общей защитой от совпавших обходов одного
+// каталога. Ошибка одной группы не отменяет остальные и не выбрасывает прошлый состав
+// пула из БД: устаревший список лучше пустого.
 func (m *PoolManager) Refresh(ctx context.Context) error {
 	m.mu.RLock()
 	tunnels := append([]PoolTunnel(nil), m.tunnels...)
@@ -348,10 +341,9 @@ func (m *PoolManager) RefreshPool(ctx context.Context, t PoolTunnel) (bool, erro
 	return changed, nil
 }
 
-// refreshGroup обходит общий каталог группы один раз и раскладывает выдачу по странам
-// её пулов (fetch-once-partition, ADR 0017). Первое значение — изменился ли состав хоть
-// у одного пула группы. Ошибка обхода — общая для группы; ошибка записи одного пула не
-// мешает остальным.
+// refreshGroup обходит общий каталог группы один раз и применяет выдачу к каждому её
+// пулу целиком (ADR 0018). Первое значение — изменился ли состав хоть у одного пула
+// группы. Ошибка обхода — общая для группы; ошибка записи одного пула не мешает остальным.
 func (m *PoolManager) refreshGroup(ctx context.Context, group []PoolTunnel) (bool, error) {
 	servers, err := m.catalog.Servers(ctx, group[0].CatalogURL)
 	if err != nil {
@@ -363,7 +355,7 @@ func (m *PoolManager) refreshGroup(ctx context.Context, group []PoolTunnel) (boo
 		changed bool
 	)
 	for _, t := range group {
-		ok, werr := m.applyServers(ctx, t, poolServersForCountry(servers, t.Country))
+		ok, werr := m.applyServers(ctx, t, servers)
 		if werr != nil {
 			errs = append(errs, werr)
 			m.log.Warn("пул не обновлён", "туннель", t.Name, "err", werr)
@@ -376,19 +368,18 @@ func (m *PoolManager) refreshGroup(ctx context.Context, group []PoolTunnel) (boo
 	return changed, errors.Join(errs...)
 }
 
-// refreshOne обходит каталог одного пула и раскладывает выдачу по его стране. Первое
-// значение — изменился ли состав. Используется обходом по требованию ([RefreshPool]):
-// один пул — один обход, страна фильтрует результат.
+// refreshOne обходит каталог одного пула. Первое значение — изменился ли состав.
+// Используется обходом по требованию ([RefreshPool]): один пул — один обход.
 func (m *PoolManager) refreshOne(ctx context.Context, t PoolTunnel) (bool, error) {
 	servers, err := m.catalog.Servers(ctx, t.CatalogURL)
 	if err != nil {
 		return false, fmt.Errorf("каталог пула %q: %w", t.Name, err)
 	}
-	return m.applyServers(ctx, t, poolServersForCountry(servers, t.Country))
+	return m.applyServers(ctx, t, servers)
 }
 
-// applyServers сводит переданный (уже отобранный по стране) состав с тем, что лежит в
-// БД, и пишет, если он изменился. Первое значение — изменился ли состав.
+// applyServers сводит переданный состав с тем, что лежит в БД, и пишет, если он
+// изменился. Первое значение — изменился ли состав.
 func (m *PoolManager) applyServers(ctx context.Context, t PoolTunnel, servers []store.PoolServer) (bool, error) {
 	merged, changed := MergePool(t.Servers, servers)
 	if !changed {
@@ -399,26 +390,9 @@ func (m *PoolManager) applyServers(ctx context.Context, t PoolTunnel, servers []
 		return false, fmt.Errorf("запись состава пула %q: %w", t.Name, err)
 	}
 	m.log.Info("состав пула обновлён",
-		"туннель", t.Name, "страна", t.Country, "было", len(t.Servers), "стало", len(merged),
+		"туннель", t.Name, "было", len(t.Servers), "стало", len(merged),
 		"в_каталоге", len(servers))
 	return true, nil
-}
-
-// poolServersForCountry отбирает из общей выдачи каталога серверы страны пула. Пустой
-// country означает обычный (нестрановой) пул — он берёт всю выдачу без отбора, как было
-// до страновых пулов. Страна сравнивается без учёта регистра: у igareck это ISO-код
-// geoip, у прочих источников — что каталог дал.
-func poolServersForCountry(servers []store.PoolServer, country string) []store.PoolServer {
-	if country == "" {
-		return servers
-	}
-	out := make([]store.PoolServer, 0, len(servers))
-	for _, s := range servers {
-		if strings.EqualFold(s.Country, country) {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // poolMissesBeforeDrop — сколько обходов подряд ссылка должна не попасться, чтобы

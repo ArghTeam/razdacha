@@ -48,7 +48,7 @@ func (s *Store) CreateTunnel(ctx context.Context, t Tunnel) (Tunnel, error) {
 }
 
 // insertTunnelSQL и tunnelArgs — одна вставка для [Store.CreateTunnel] и
-// [Store.EnsureBuiltinCountryPools]: второй нужна та же запись, но внутри транзакции.
+// [Store.EnsureBuiltinPool]: второй нужна та же запись, но внутри транзакции.
 const insertTunnelSQL = `INSERT INTO tunnels (` + tunnelColumns +
 	`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
@@ -103,8 +103,8 @@ func tunnels(ctx context.Context, q querier) ([]Tunnel, error) {
 // UpdateTunnel перезаписывает туннель целиком. CreatedAt, Builtin и Country не
 // меняются: первое — история записи, второе — то, кем она заведена, и снимать флаг
 // правкой через панель означало бы обходить запрет на удаление встроенного; третье —
-// признак страны пула, от которого зависит идемпотентность заведения (ADR 0017).
-// Все три в списке SET ниже отсутствуют намеренно и потому переживают обновление.
+// колонка, не используемая с ADR 0018 и остающаяся пустой. Все три в списке SET ниже
+// отсутствуют намеренно и потому переживают обновление.
 func (s *Store) UpdateTunnel(ctx context.Context, t Tunnel) error {
 	if err := t.validate(); err != nil {
 		return err
@@ -170,21 +170,25 @@ func (s *Store) DeleteTunnel(ctx context.Context, id string) error {
 	})
 }
 
-// CountryPoolsResult — что сделал [Store.EnsureBuiltinCountryPools], для лога демона.
-// Заведение недостающих стран, удаление старого единственного пула и отвязку его
-// правил разводим по полям: снаружи правку БД ничем иначе не увидеть, а молча
-// удалять чужие ссылки нельзя.
-type CountryPoolsResult struct {
-	// Created — коды стран, чьи пулы завели прямо сейчас. Пусто на повторном старте.
-	Created []string
-	// RemovedLegacy — имена удалённых старых пулов без страны (обычно один, ноль на
-	// свежей установке): их заменяют страновые.
-	RemovedLegacy []string
-	// DetachedRules — правила, которые ссылались на удалённый пул и потому отвязаны.
+// builtinPoolName — имя встроенного общего пула (ADR 0018). Видно пользователю,
+// поэтому по-русски; уникально — колонка tunnels.name под UNIQUE.
+const builtinPoolName = "Общий пул"
+
+// BuiltinPoolResult — что сделал [Store.EnsureBuiltinPool], для лога демона.
+// Заведение пула, сворачивание лишних встроенных пулов и отвязку их правил разводим
+// по полям: снаружи правку БД ничем иначе не увидеть, а молча удалять чужие ссылки
+// нельзя.
+type BuiltinPoolResult struct {
+	// Created — завели ли встроенный пул прямо сейчас. false на повторном старте.
+	Created bool
+	// RemovedExtra — имена свёрнутых лишних встроенных пулов (семь страновых после
+	// апгрейда с ADR 0017; обычно пусто).
+	RemovedExtra []string
+	// DetachedRules — правила, которые ссылались на свёрнутый пул и потому отвязаны.
 	DetachedRules []DetachedRule
 }
 
-// DetachedRule — правило, отвязанное от удалённого старого пула.
+// DetachedRule — правило, отвязанное от свёрнутого встроенного пула.
 type DetachedRule struct {
 	// Name — имя правила для лога.
 	Name string
@@ -196,48 +200,43 @@ type DetachedRule struct {
 	Disabled bool
 }
 
-// EnsureBuiltinCountryPools приводит БД к состоянию «ровно семь страновых
-// встроенных пулов» (ADR 0017): по одному на страну из countries, каждый
+// EnsureBuiltinPool приводит БД к состоянию «ровно один встроенный пул» (ADR 0018):
 // source=pool, builtin=1, выключенным (свежая установка не должна сама пойти на
-// чужой сайт за ключами — включение через PATCH), country проставлен, каталог
-// общий — catalogURL.
+// чужой сайт за ключами — включение через PATCH), каталог — catalogURL.
 //
-// Идемпотентно по (builtin, country): пул страны, который уже есть, не трогается и
-// не дублируется. Признак — колонка country, а не имя (пользователь переименовывает)
-// и не каталог (адрес у всех стран общий): по ним повторный старт завёл бы второй.
+// Идемпотентно по (builtin, source=pool): встроенный пул, который уже есть, не
+// трогается и не дублируется — признак флаг, а не имя (пользователь переименовывает)
+// и не каталог (адрес меняется между релизами).
 //
-// Старый единственный встроенный пул (country пустой), заведённый до этой версии,
-// удаляется — его заменяют страновые. Удаление молчаливым быть не может: на пул
-// могли ссылаться правила, а схема держит их `ON DELETE RESTRICT`. Поэтому сначала
-// правила отвязываются (ссылки в NULL, правило первого звена ещё и выключается), о
-// каждом сообщается в [CountryPoolsResult], и только потом пул удаляется — всё в
-// одной транзакции, чтобы прерывание не оставило пул без правил или наоборот.
+// Апгрейд с версии со странами (ADR 0017) сворачивает семь страновых пулов в один:
+// первый по порядку заведения оставляется, остальные удаляются. Удаление молчаливым
+// быть не может: на пул могли ссылаться правила, а схема держит их `ON DELETE
+// RESTRICT`. Поэтому сначала правила отвязываются (ссылки в NULL, правило первого
+// звена ещё и выключается) по ADR 0013, о каждом сообщается в [BuiltinPoolResult], и
+// только потом пул удаляется — всё в одной транзакции, чтобы прерывание не оставило
+// пул без правил или наоборот. Выживший пул нормализуется: имя — [builtinPoolName],
+// колонка country очищается (наследие ADR 0017, с 0018 не используется).
 //
 // Тип пула косметичен (участники группы urltest разбираются каждый по своей ссылке,
 // ADR 0010/0015) и передаётся, а не берётся константой.
-func (s *Store) EnsureBuiltinCountryPools(ctx context.Context, catalogURL string,
-	countries []Country, typ TunnelType,
-) (CountryPoolsResult, error) {
+func (s *Store) EnsureBuiltinPool(ctx context.Context, catalogURL string, typ TunnelType,
+) (BuiltinPoolResult, error) {
 	if catalogURL == "" {
-		return CountryPoolsResult{}, fmt.Errorf("%w: пустой адрес каталога для встроенных пулов", ErrInvalid)
+		return BuiltinPoolResult{}, fmt.Errorf("%w: пустой адрес каталога для встроенного пула", ErrInvalid)
 	}
-	var out CountryPoolsResult
+	var out BuiltinPoolResult
 	err := s.tx(ctx, func(tx *sql.Tx) error {
-		have, err := builtinPoolCountries(ctx, tx)
+		pools, err := builtinPools(ctx, tx)
 		if err != nil {
 			return err
 		}
-		for _, c := range countries {
-			if have[c.Code] {
-				continue
-			}
+		if len(pools) == 0 {
 			t := Tunnel{
 				ID:        newID(),
-				Name:      c.PoolName(),
+				Name:      builtinPoolName,
 				Type:      typ,
 				Source:    SourcePool,
 				Raw:       catalogURL,
-				Country:   c.Code,
 				Enabled:   false,
 				Builtin:   true,
 				CreatedAt: time.Now(),
@@ -248,65 +247,68 @@ func (s *Store) EnsureBuiltinCountryPools(ctx context.Context, catalogURL string
 			if _, err := tx.ExecContext(ctx, insertTunnelSQL, tunnelArgs(t, "[]")...); err != nil {
 				if isUniqueViolation(err) {
 					return fmt.Errorf("%w: имя %q занято другим туннелем — освободите его, "+
-						"чтобы демон завёл пул для страны %s", ErrInvalid, t.Name, c.Code)
+						"чтобы демон завёл встроенный пул", ErrInvalid, t.Name)
 				}
 				return fmt.Errorf("заведение встроенного пула %q: %w", t.Name, err)
 			}
-			out.Created = append(out.Created, c.Code)
+			out.Created = true
+			return nil
 		}
 
-		return removeLegacyBuiltinPools(ctx, tx, &out)
+		return collapseBuiltinPools(ctx, tx, pools, &out)
 	})
 	if err != nil {
-		return CountryPoolsResult{}, err
+		return BuiltinPoolResult{}, err
 	}
 	return out, nil
 }
 
-// builtinPoolCountries отдаёт множество стран, для которых встроенный пул уже есть.
-// Пустая страна сюда не попадает: это старый единственный пул, его не считают за
-// страновой, а удаляют.
-func builtinPoolCountries(ctx context.Context, tx *sql.Tx) (map[string]bool, error) {
-	rows, err := tx.QueryContext(ctx,
-		`SELECT country FROM tunnels WHERE builtin = 1 AND source = ? AND country <> ''`,
-		string(SourcePool))
+// builtinPools отдаёт встроенные пулы в порядке заведения. Порядок значим:
+// [collapseBuiltinPools] оставляет первый, а остальные сворачивает.
+func builtinPools(ctx context.Context, tx *sql.Tx) ([]Tunnel, error) {
+	all, err := tunnels(ctx, tx)
 	if err != nil {
-		return nil, fmt.Errorf("поиск страновых пулов: %w", err)
+		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-
-	have := make(map[string]bool)
-	for rows.Next() {
-		var code string
-		if err := rows.Scan(&code); err != nil {
-			return nil, fmt.Errorf("поиск страновых пулов: %w", err)
+	var pools []Tunnel
+	for _, t := range all {
+		if t.Builtin && t.Source == SourcePool {
+			pools = append(pools, t)
 		}
-		have[code] = true
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("поиск страновых пулов: %w", err)
-	}
-	return have, nil
+	return pools, nil
 }
 
-// removeLegacyBuiltinPools удаляет старые встроенные пулы без страны, отвязав от
-// них правила. Работает внутри транзакции [Store.EnsureBuiltinCountryPools].
-func removeLegacyBuiltinPools(ctx context.Context, tx *sql.Tx, out *CountryPoolsResult) error {
-	legacy, err := tunnels(ctx, tx)
-	if err != nil {
-		return err
-	}
-	for _, t := range legacy {
-		if !t.Builtin || t.Country != "" {
-			continue
-		}
+// collapseBuiltinPools сворачивает набор встроенных пулов в один: первый остаётся,
+// остальные удаляются с отвязкой правил по ADR 0013. Выживший нормализуется —
+// пустеет колонка country, имя приводится к [builtinPoolName], если оно свободно.
+// Работает внутри транзакции [Store.EnsureBuiltinPool].
+func collapseBuiltinPools(ctx context.Context, tx *sql.Tx, pools []Tunnel, out *BuiltinPoolResult) error {
+	survivor := pools[0]
+	for _, t := range pools[1:] {
 		if err := detachRulesFromTunnel(ctx, tx, t.ID, out); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM tunnels WHERE id = ?`, t.ID); err != nil {
-			return fmt.Errorf("удаление старого встроенного пула %q: %w", t.Name, err)
+			return fmt.Errorf("сворачивание встроенного пула %q: %w", t.Name, err)
 		}
-		out.RemovedLegacy = append(out.RemovedLegacy, t.Name)
+		out.RemovedExtra = append(out.RemovedExtra, t.Name)
+	}
+	if survivor.Country != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE tunnels SET country = '' WHERE id = ?`, survivor.ID); err != nil {
+			return fmt.Errorf("очистка страны встроенного пула %q: %w", survivor.Name, err)
+		}
+	}
+	// Переименовываем только при реальном сворачивании (были лишние пулы): иначе
+	// единственный пул, который пользователь переименовал сам, на каждом старте
+	// возвращал бы имя [builtinPoolName]. Имя занято туннелем пользователя —
+	// оставляем прежнее: признак пула флаг, а не имя, идемпотентности расхождение не
+	// мешает.
+	if len(out.RemovedExtra) > 0 && survivor.Name != builtinPoolName {
+		if _, err := tx.ExecContext(ctx, `UPDATE tunnels SET name = ? WHERE id = ?`,
+			builtinPoolName, survivor.ID); err != nil && !isUniqueViolation(err) {
+			return fmt.Errorf("переименование встроенного пула %q: %w", survivor.Name, err)
+		}
 	}
 	return nil
 }
@@ -318,7 +320,7 @@ func removeLegacyBuiltinPools(ctx context.Context, tx *sql.Tx, out *CountryPools
 // tunnel_id для генератора — не «недоступен», а «состояние повреждено»). Правило,
 // ссылавшееся лишь вторым звеном цепи, теряет цепь, но остаётся включённым и
 // маршрутизирует первым звеном.
-func detachRulesFromTunnel(ctx context.Context, tx *sql.Tx, tunnelID string, out *CountryPoolsResult) error {
+func detachRulesFromTunnel(ctx context.Context, tx *sql.Tx, tunnelID string, out *BuiltinPoolResult) error {
 	// Сбор ссылок и обнуление разнесены намеренно: курсор чтения обязан закрыться
 	// до UPDATE'ов — SQLite не пишет, пока по той же транзакции открыт read-курсор.
 	// Поэтому чтение живёт в отдельной функции с `defer rows.Close()`, а изменения

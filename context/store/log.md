@@ -5,6 +5,11 @@
 
 ## 2026-08-17
 
+### #181 — единый общий пул вместо 7 страновых
+
+**Changed:** `EnsureBuiltinPool` вместо `EnsureBuiltinCountryPools`; `collapseBuiltinPools` сворачивает 7→1 по ADR 0013; `CountryPools`/`PoolName`/`flagEmoji`/тип `Country`/`CountryPoolsResult` убраны.
+**Beware:** колонка `country` осталась в схеме, но пуста; выживший переименовывается лишь при реальном сворачивании (ADR 0018).
+
 ### #169 — 7 страновых встроенных пулов вместо одного
 
 **Changed:** миграция 11 `tunnels.country`; `EnsureBuiltinCountryPools` — 7 страновых пулов вместо `EnsureBuiltinPool`; старый пул без страны удалён.

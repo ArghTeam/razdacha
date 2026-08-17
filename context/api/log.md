@@ -5,6 +5,11 @@
 
 ## 2026-08-17
 
+### #181 — API отдаёт один общий пул
+
+**Changed:** `tunnelResponse.Country` и per-server `country` (в `poolServerResponse`/`poolCurrentServer`) убраны; отказ на создание пула ссылкой — про встроенный пул, не про страны (ADR 0018).
+**Beware:** `sortPoolServers` без тай-брейка по стране — только ротация/пинг.
+
 ### #171 — API отдаёт 7 страновых пулов вместо одного
 
 **Changed:** `tunnelResponse.Country` (ISO-код, `omitempty`) из `Tunnel.Country`; отказ на создание пула ссылкой переформулирован под набор стран (ADR 0017).

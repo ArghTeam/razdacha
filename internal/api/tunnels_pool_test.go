@@ -360,7 +360,7 @@ func TestCreatePoolFromCatalogURLIsRejected(t *testing.T) {
 	body := `{"name":"Свой пул","raw":"https://vpnkeys.me/protocol/vless"}`
 	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels", body)
 	requireCode(t, resp, http.StatusConflict)
-	if !strings.Contains(resp.body, "включите нужный") {
+	if !strings.Contains(resp.body, "включите встроенный") {
 		t.Errorf("отказ не говорит, что делать вместо создания: %s", resp.body)
 	}
 
@@ -560,70 +560,49 @@ func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
 	}
 }
 
-// Семь страновых пулов видны в списке и заперты как встроенные (ADR 0017, #171).
-// Каждый отдаётся своим кодом страны и именем-флагом, создать восьмой ссылкой на
-// каталог нельзя, удалить любой из них нельзя, а включить и обновить — можно.
-func TestCountryPoolsListedAndBuiltinLocked(t *testing.T) {
+// Встроенный общий пул виден в списке и заперт как встроенный (ADR 0018). Второй пул
+// ссылкой на каталог не завести, удалить встроенный нельзя, а включить и обновить —
+// можно.
+func TestBuiltinPoolListedAndLocked(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
 	ts.pools = &fakeRefresher{changed: true}
 
-	countries := store.CountryPools()
-	if _, err := ts.st.EnsureBuiltinCountryPools(context.Background(),
-		lists.DefaultPoolCatalogURL, countries, store.TunnelShadowsocks); err != nil {
-		t.Fatalf("EnsureBuiltinCountryPools: %v", err)
+	if _, err := ts.st.EnsureBuiltinPool(context.Background(),
+		lists.DefaultPoolCatalogURL, store.TunnelShadowsocks); err != nil {
+		t.Fatalf("EnsureBuiltinPool: %v", err)
 	}
 
 	list := listTunnels(t, ts, cookie)
-	if len(list) != len(countries) {
-		t.Fatalf("туннелей в списке %d, ожидалось %d страновых пулов", len(list), len(countries))
+	if len(list) != 1 {
+		t.Fatalf("туннелей в списке %d, ожидался один встроенный пул", len(list))
+	}
+	pool := list[0]
+	if !pool.Builtin {
+		t.Errorf("пул %q не помечен встроенным", pool.Name)
+	}
+	if pool.Source != store.SourcePool {
+		t.Errorf("пул %q формы %q, ожидался pool", pool.Name, pool.Source)
+	}
+	if pool.Enabled {
+		t.Errorf("пул %q заведён включённым: свежая установка сама пошла бы за ключами", pool.Name)
 	}
 
-	byCountry := make(map[string]tunnelResponse, len(list))
-	for _, got := range list {
-		if !got.Builtin {
-			t.Errorf("пул %q не помечен встроенным", got.Name)
-		}
-		if got.Source != store.SourcePool {
-			t.Errorf("пул %q формы %q, ожидался pool", got.Name, got.Source)
-		}
-		if got.Country == "" {
-			t.Errorf("у пула %q пустой код страны — панель не отличит его от прочих", got.Name)
-		}
-		if got.Enabled {
-			t.Errorf("пул %q заведён включённым: свежая установка сама пошла бы за ключами", got.Name)
-		}
-		byCountry[got.Country] = got
-	}
-
-	// Каждая страна из набора представлена ровно одним пулом с именем «флаг + страна».
-	for _, c := range countries {
-		got, ok := byCountry[c.Code]
-		if !ok {
-			t.Errorf("страна %s не попала в список туннелей", c.Code)
-			continue
-		}
-		if got.Name != c.PoolName() {
-			t.Errorf("имя пула %s = %q, ожидалось %q", c.Code, got.Name, c.PoolName())
-		}
-	}
-
-	// Восьмой пул ссылкой на каталог не завести — пулы заводит демон.
+	// Второй пул ссылкой на каталог не завести — пул заводит демон.
 	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels",
 		`{"name":"Свой пул","raw":"`+lists.DefaultPoolCatalogURL+`"}`)
 	requireCode(t, resp, http.StatusConflict)
 
-	// Ни один страновой пул не удаляется, но включается и обновляется.
-	nl := byCountry["NL"]
-	requireCode(t, ts.auth(t, cookie, http.MethodDelete, "/api/tunnels/"+nl.ID, ""),
+	// Встроенный пул не удаляется, но включается и обновляется.
+	requireCode(t, ts.auth(t, cookie, http.MethodDelete, "/api/tunnels/"+pool.ID, ""),
 		http.StatusConflict)
-	requireCode(t, ts.auth(t, cookie, http.MethodPatch, "/api/tunnels/"+nl.ID, `{"enabled":true}`),
+	requireCode(t, ts.auth(t, cookie, http.MethodPatch, "/api/tunnels/"+pool.ID, `{"enabled":true}`),
 		http.StatusOK)
-	requireCode(t, ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+nl.ID+"/refresh", ""),
+	requireCode(t, ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+pool.ID+"/refresh", ""),
 		http.StatusOK)
 
-	if list := listTunnels(t, ts, cookie); len(list) != len(countries) {
-		t.Fatalf("после действий над пулами их стало %d, ожидалось %d", len(list), len(countries))
+	if list := listTunnels(t, ts, cookie); len(list) != 1 {
+		t.Fatalf("после действий над пулом их стало %d, ожидался один", len(list))
 	}
 }
 

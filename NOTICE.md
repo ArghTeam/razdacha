@@ -20,21 +20,6 @@ razdacha не использует это имя, его вариации или
 продуктом Podkop или производным от него по названию. Указание происхождения носит
 исключительно описательный характер.
 
-## DB-IP Country Lite
-
-Определение страны сервера по IP работает офлайн, по встроенной в бинарник базе
-[DB-IP Country Lite](https://db-ip.com/db/download/ip-to-country-lite)
-(© [DB-IP](https://db-ip.com)). База распространяется под лицензией
-[CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/) и требует атрибуции:
-
-> IP Geolocation by DB-IP (https://db-ip.com)
-
-Атрибуция также вшита в бинарник (`internal/geoip`, константа `Attribution`) и
-печатается в лог при первой загрузке базы. Файл базы — `internal/geoip/dbip-country-lite.mmdb`,
-уезжает в бинарник через `go:embed` ([ADR 0017](docs/decisions/0017-country-default-tunnels.md)).
-Ридер — чистый Go [oschwald/maxminddb-golang](https://github.com/oschwald/maxminddb-golang)
-(© Gregory Oschwald, ISC), совместимый с `CGO_ENABLED=0`.
-
 ## Прочее
 
 - [sing-box](https://github.com/SagerNet/sing-box) (© SagerNet, GPL-3.0-or-later) —

@@ -16,33 +16,6 @@ import (
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
-// stubGeo — geoip-заглушка: страна по адресу задаётся картой, чтобы тест не зависел
-// от встроенной базы и её обновлений.
-func stubGeo(m map[string]string) func(net.IP) string {
-	return func(ip net.IP) string { return m[ip.String()] }
-}
-
-// igareckGeo — общая раскладка адресов по странам для фикстур ниже.
-func igareckGeo() func(net.IP) string {
-	return stubGeo(map[string]string{
-		"10.0.0.1": "NL", "10.0.0.2": "DE", "10.0.0.3": "NL",
-		"10.0.0.4": "DE", "10.0.0.5": "NL", "10.0.0.6": "RU",
-	})
-}
-
-// igareckResolve — резолвер-заглушка: единственный домен фикстуры даёт NL-адрес.
-func igareckResolve(_ context.Context, name string) ([]net.IP, error) {
-	if name == "nl.example.com" {
-		return []net.IP{net.ParseIP("10.0.0.3")}, nil
-	}
-	return nil, fmt.Errorf("нет записи для %s", name)
-}
-
-// igareckDriver — драйвер с подменённой сетью: ни DNS, ни geoip настоящих не трогает.
-func igareckDriver() igareck {
-	return igareck{resolve: igareckResolve, country: igareckGeo()}
-}
-
 // igareckCheckKey повторяет поведение настоящей проверки (`singbox.Parse`) в пределах,
 // нужных тесту: vmess генератор конфига не берёт, значит такой ключ отсеивается.
 // Импортировать singbox слой lists не может (инвариант), поэтому проверка — заглушка.
@@ -105,15 +78,13 @@ func igareckStub(t *testing.T, subs map[string]string) (string, *int) {
 	// raw.githubusercontent.com в тесте трогать нельзя, а так падение основного (если
 	// оно случится) остаётся внутри httptest.
 	host := srv.Listener.Addr().(*net.TCPAddr).IP.String()
-	drv := igareckDriver()
-	drv.fallback = srv.Listener.Addr().(*net.TCPAddr).String()
+	drv := igareck{fallback: srv.Listener.Addr().(*net.TCPAddr).String()}
 	t.Cleanup(RegisterPoolDriver(host, drv))
 	return srv.URL + "/igareck/vpn-configs-for-russia/main/", &requests
 }
 
-// Драйвер отдаёт все серверы с проставленной страной exit-адреса: IP — напрямую,
-// домен — через резолв. Дубль ключа между файлами схлопывается, vmess отсеивается
-// нашим парсером.
+// Драйвер отдаёт все прошедшие парсер серверы одним списком, без страны. Дубль ключа
+// между файлами схлопывается, vmess отсеивается нашим парсером.
 func TestIgareckServers(t *testing.T) {
 	catalog, requests := igareckStub(t, igareckSubs())
 	c := &PoolCatalog{Log: quietSlog(), Pause: -1, CheckKey: igareckCheckKey}
@@ -127,31 +98,25 @@ func TestIgareckServers(t *testing.T) {
 		t.Errorf("сделано %d запросов, ожидалось 3", *requests)
 	}
 
-	byCountry := map[string]int{}
 	for _, s := range servers {
-		byCountry[s.Country]++
 		if s.PingMS != 0 {
 			t.Errorf("у %q взялся пинг, источник его не даёт", s.URL)
 		}
+		if s.Country != "" {
+			t.Errorf("у %q проставлена страна, geo-IP убран (ADR 0018): %q", s.URL, s.Country)
+		}
 	}
-	// NL: uuid-1(10.0.0.1), uuid-3(домен nl→10.0.0.3), ss(10.0.0.5) = 3.
-	// DE: uuid-2(10.0.0.2), trojan(10.0.0.4) = 2. vmess отсеян парсером, дубль
+	// uuid-1, uuid-2, uuid-3(домен), trojan, ss = 5. vmess отсеян парсером, дубль
 	// uuid-1 схлопнут.
-	if byCountry["NL"] != 3 {
-		t.Errorf("NL серверов %d, ожидалось 3: %v", byCountry["NL"], byCountry)
-	}
-	if byCountry["DE"] != 2 {
-		t.Errorf("DE серверов %d, ожидалось 2: %v", byCountry["DE"], byCountry)
-	}
 	if len(servers) != 5 {
 		t.Errorf("всего серверов %d, ожидалось 5 (vmess отсеян, дубль схлопнут): %v",
 			len(servers), servers)
 	}
 }
 
-// Один обход общего источника наполняет несколько страновых пулов — каждый только
-// серверами своей страны (fetch-once-partition, ADR 0017).
-func TestIgareckFetchOncePartition(t *testing.T) {
+// Пулы с общим каталогом обходятся один раз на группу: два пула на одном источнике —
+// один обход (три файла), и каждый получает всю выдачу целиком (ADR 0018).
+func TestIgareckFetchOnce(t *testing.T) {
 	catalog, requests := igareckStub(t, igareckSubs())
 	w := newWriterByID()
 	m := NewPoolManager(PoolManagerOptions{
@@ -160,35 +125,21 @@ func TestIgareckFetchOncePartition(t *testing.T) {
 		Logger:  quietSlog(),
 	})
 	m.SetTunnels([]PoolTunnel{
-		{ID: "nl", Name: "🇳🇱 Нидерланды", CatalogURL: catalog, Enabled: true, Country: "NL"},
-		{ID: "de", Name: "🇩🇪 Германия", CatalogURL: catalog, Enabled: true, Country: "DE"},
-		{ID: "fr", Name: "🇫🇷 Франция", CatalogURL: catalog, Enabled: true, Country: "FR"},
+		{ID: "a", Name: "Пул A", CatalogURL: catalog, Enabled: true},
+		{ID: "b", Name: "Пул B", CatalogURL: catalog, Enabled: true},
 	})
 
 	if err := m.Refresh(context.Background()); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
-	// Три пула на общем каталоге — один обход, три файла. Не девять.
+	// Два пула на общем каталоге — один обход, три файла. Не шесть.
 	if *requests != 3 {
 		t.Fatalf("сделано %d запросов, ожидалось 3 (один обход на группу)", *requests)
 	}
 
-	if got := len(w.get("nl")); got != 3 {
-		t.Errorf("в пул NL легло %d серверов, ожидалось 3", got)
-	}
-	if got := len(w.get("de")); got != 2 {
-		t.Errorf("в пул DE легло %d серверов, ожидалось 2", got)
-	}
-	// У FR своих серверов нет — пустой пул в БД не пишется вовсе (MergePool не увидел
-	// изменения), а чужими серверами не наполняется.
-	if w.wrote("fr") {
-		t.Errorf("пустой пул FR записан: %v", w.get("fr"))
-	}
-	for _, id := range []string{"nl", "de"} {
-		for _, s := range w.get(id) {
-			if !strings.EqualFold(s.Country, id) {
-				t.Errorf("в пул %s попал сервер страны %s: %q", id, s.Country, s.URL)
-			}
+	for _, id := range []string{"a", "b"} {
+		if got := len(w.get(id)); got != 5 {
+			t.Errorf("в пул %s легло %d серверов, ожидалось 5", id, got)
 		}
 	}
 }
@@ -203,7 +154,7 @@ func TestIgareckSkipsDisabled(t *testing.T) {
 		Logger:  quietSlog(),
 	})
 	m.SetTunnels([]PoolTunnel{
-		{ID: "nl", Name: "NL", CatalogURL: catalog, Enabled: false, Country: "NL"},
+		{ID: "nl", Name: "NL", CatalogURL: catalog, Enabled: false},
 	})
 	if err := m.Refresh(context.Background()); err != nil {
 		t.Fatalf("Refresh: %v", err)
@@ -239,7 +190,7 @@ func TestIgareckMirrorFallback(t *testing.T) {
 		},
 	}
 
-	body, err := igareckDriver().fetchSubscription(context.Background(), c, catalog, "BLACK_VLESS_RUS.txt")
+	body, err := igareck{}.fetchSubscription(context.Background(), c, catalog, "BLACK_VLESS_RUS.txt")
 	if err != nil {
 		t.Fatalf("fetchSubscription: %v", err)
 	}
@@ -262,7 +213,7 @@ func TestIgareckMirrorFallback(t *testing.T) {
 }
 
 // Оба зеркала недоступны — подписка пропускается, но обход остальных файлов не
-// срывается: страны из уцелевших файлов наполняются.
+// срывается: ключи из уцелевших файлов собираются.
 func TestIgareckSubscriptionFailureDoesNotStopCrawl(t *testing.T) {
 	subs := igareckSubs()
 	delete(subs, "BLACK_VLESS_RUS.txt") // этот файл сервер отдаст 404 с обоих «зеркал»
@@ -276,36 +227,16 @@ func TestIgareckSubscriptionFailureDoesNotStopCrawl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Servers: %v", err)
 	}
-	// Без BLACK_VLESS_RUS.txt пропали uuid-3(NL-домен), trojan(DE-2) и дубль. Остаётся
-	// NL: uuid-1, ss = 2; DE: uuid-2 = 1. Всего 3.
+	// Без BLACK_VLESS_RUS.txt пропали uuid-3(домен), trojan и дубль. Остаётся
+	// uuid-1, ss = 2; uuid-2 = 1. Всего 3.
 	if len(servers) != 3 {
 		t.Fatalf("собрано %d серверов, ожидалось 3 после падения одной подписки: %v",
 			len(servers), servers)
 	}
 }
 
-// poolKeyHost достаёт хост из ссылок разных схем.
-func TestPoolKeyHost(t *testing.T) {
-	ssSIP002 := "ss://" + base64.StdEncoding.EncodeToString([]byte("aes-256-gcm:pass")) + "@203.0.113.7:8388#tag"
-	ssLegacy := "ss://" + base64.StdEncoding.EncodeToString([]byte("aes-256-gcm:pass@203.0.113.8:8388")) + "#tag"
-	vmess := "vmess://" + base64.StdEncoding.EncodeToString([]byte(`{"add":"203.0.113.9","port":"443"}`))
-	cases := []struct{ raw, host string }{
-		{"vless://uuid@198.51.100.1:443?security=reality#x", "198.51.100.1"},
-		{"trojan://pass@example.org:443#y", "example.org"},
-		{ssSIP002, "203.0.113.7"},
-		{ssLegacy, "203.0.113.8"},
-		{vmess, "203.0.113.9"},
-		{"мусор без схемы", ""},
-	}
-	for _, c := range cases {
-		if got := poolKeyHost(c.raw); got != c.host {
-			t.Errorf("poolKeyHost(%.30q) = %q, ожидалось %q", c.raw, got, c.host)
-		}
-	}
-}
-
 // writerByID — запись состава пула с разбивкой по идентификатору туннеля: нужно
-// проверить, что каждый пул получил именно свой страновой срез.
+// проверить, что каждый пул получил выдачу.
 type writerByID struct {
 	mu      sync.Mutex
 	written map[string][]store.PoolServer
