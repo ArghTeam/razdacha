@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-17
+
+### #176 — неподдерживаемый flow отбраковывается разбором
+
+**Changed:** `parse_url.go` (vless) валидирует `flow` — только `""` и `xtls-rprx-vision`, иное → `ErrParse` (как `encryption`).
+**Beware:** легаси-flow из подписки (`xtls-rprx-vision-udp443`) иначе ронял весь конфиг и блокировал 5 из 7 страновых пулов.
+
 ## 2026-08-15
 
 ### #149 — отказ правила виден в панели
