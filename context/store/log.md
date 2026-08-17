@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-17
+
+### #169 — 7 страновых встроенных пулов вместо одного
+
+**Changed:** миграция 11 `tunnels.country`; `EnsureBuiltinCountryPools` — 7 страновых пулов вместо `EnsureBuiltinPool`; старый пул без страны удалён.
+**New surface:** `store.CountryPools()`, `Tunnel.Country`, `CountryPoolsResult`.
+**Beware:** идемпотентность по (builtin, country); отвязка правил — в инвариантах (ADR 0017).
+
 ## 2026-08-15
 
 ### #152 — молчащий туннель отличим от мёртвого
