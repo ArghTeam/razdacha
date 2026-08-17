@@ -273,20 +273,20 @@ function tunnelRow(t) {
   const used = state.rules.filter((r) => r.tunnel_id === t.id || r.via_tunnel_id === t.id).length;
   const pool = tunnelPool(t);
   const off = t.enabled === false;
-    const st = t.enabled === false
-      ? { cls: 'off', badge: '', label: 'выключен' }
-      : t.status === 'up'
-        ? { cls: 'on', badge: `<span class="badge ok">${esc(t.latency_ms)} мс</span>`, label: '' }
-        // Медленный туннель рабочий, но не годится для видео и звонков —
-        // показываем цифру и отличаем цветом, а не прячем среди зелёных.
-        : t.status === 'slow'
-          ? { cls: 'warn', badge: `<span class="badge warn">${esc(t.latency_ms)} мс, медленно</span>`, label: '' }
-          : t.status === 'down'
-            ? { cls: 'bad', badge: '<span class="badge err">нет ответа</span>', label: '' }
-            : t.status === 'not_applied'
-              ? { cls: 'off', badge: '<span class="badge">не применён</span>', label: '' }
-              : { cls: 'off', badge: '<span class="badge">не проверялся</span>', label: '' };
-    return `
+  const st = t.enabled === false
+    ? { cls: 'off', badge: '', label: 'выключен' }
+    : t.status === 'up'
+      ? { cls: 'on', badge: `<span class="badge ok">${esc(t.latency_ms)} мс</span>`, label: '' }
+      // Медленный туннель рабочий, но не годится для видео и звонков —
+      // показываем цифру и отличаем цветом, а не прячем среди зелёных.
+      : t.status === 'slow'
+        ? { cls: 'warn', badge: `<span class="badge warn">${esc(t.latency_ms)} мс, медленно</span>`, label: '' }
+        : t.status === 'down'
+          ? { cls: 'bad', badge: '<span class="badge err">нет ответа</span>', label: '' }
+          : t.status === 'not_applied'
+            ? { cls: 'off', badge: '<span class="badge">не применён</span>', label: '' }
+            : { cls: 'off', badge: '<span class="badge">не проверялся</span>', label: '' };
+  return `
       <div class="row${pool ? ' pool' : ''}${off ? ' dim' : ''}">
         <span class="dot ${st.cls}"></span>
         <div class="row-main">
