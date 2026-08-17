@@ -705,6 +705,7 @@ func TestPoolTunnelFieldsGuard(t *testing.T) {
 		"Name":       false, // переименование каталога не меняет
 		"CatalogURL": true,
 		"Enabled":    true,
+		"Country":    false, // неизменен для пула, ID и так различает; отбор среза, не набор
 		"Servers":    false, // меняется после каждого обхода, сверку не ведёт
 	}
 

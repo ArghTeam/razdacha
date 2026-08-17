@@ -79,6 +79,11 @@ var (
 	poolDriversMu sync.RWMutex
 	poolDrivers   = map[string]PoolDriver{
 		outlineKeysHost: outlineKeys{},
+		// Один драйвер igareck на оба зеркала: каталог заведён на основном
+		// (raw.githack.com), но если у пользователя в БД окажется резервный хост —
+		// разбор тот же (ADR 0017).
+		igareckPrimaryHost:  igareck{},
+		igareckFallbackHost: igareck{},
 	}
 )
 
