@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-17
+
+### #171 — API отдаёт 7 страновых пулов вместо одного
+
+**Changed:** `tunnelResponse.Country` (ISO-код, `omitempty`) из `Tunnel.Country`; отказ на создание пула ссылкой переформулирован под набор стран (ADR 0017).
+**Beware:** страновые пулы builtin — API их не создаёт и не удаляет; enable/disable/refresh доступны у каждого.
+
 ## 2026-08-15
 
 ### #149 — отказ правила виден в панели
