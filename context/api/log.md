@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-18
+
+### #192 (фаза 0) — проба доступности домена по запросу
+
+**Changed:** `reachprobe.go` — прямая проба геоблока.
+**New surface:** `POST /api/domain/reachability` → `{status,class,verdict}`, классы `reachable`/`geoblock_suspect`/`unreachable`.
+**Beware:** резолв `net/http` с сервера = реальный IP, НЕ Clash `/dns/query` (тот отдаёт FakeIP). Через-туннель — Фаза 1.
+
 ## 2026-08-17
 
 ### #181 — API отдаёт один общий пул
