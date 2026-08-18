@@ -5,6 +5,11 @@
 
 ## 2026-08-18
 
+### #194 — окно urltest 16 → 64
+
+**Changed:** `PoolConfigServers` 16 → 64. Каталог igareck живость не отражает, мёртвые держали слоты вечно; широкое окно даёт urltest живой резерв.
+**Beware:** держится равным `singbox.poolMaxServers`, сверяется `TestPoolConfigWindowAgrees`. Стенд: 2 живых из 16 → 17 из 64.
+
 ### #189 — имя члена пула из фрагмента ссылки
 
 **Changed:** `igareck` заполняет `Title` из фрагмента `#…` (флаг, страна, город), fallback на хост; `MergePool` backfill'ит пустой `Title`/`Country` из свежего обхода.

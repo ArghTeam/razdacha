@@ -5,6 +5,10 @@
 
 ## 2026-08-18
 
+### #194 — потолок пула 16 → 64
+
+**Changed:** `poolMaxServers` 16 → 64 (равен `lists.PoolConfigServers`, `TestPoolConfigWindowAgrees`). Цена — 64 outbound'а и 64 пробы каждые `PoolTestInterval`, внутри процесса.
+
 ### #187 — пул терпит битого участника
 
 **Changed:** `apply.go` цикл: `check` упал на участнике пула → его выкидывают, конфиг пересобирается, окно доберётся (ADR 0019); `pool_reject.go` — `outbound[N]`→тег→сервер.
