@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"time"
 )
@@ -112,6 +113,90 @@ func (t *Telegram) Send(ctx context.Context, text string) error {
 		return nil
 	}
 	return fmt.Errorf("телеграм отказал: %s", explain(out))
+}
+
+// MaxDocumentSize — потолок загрузки файла ботом в телеграм (50 МиБ). Больше
+// он не принимает, и узнать об этом лучше до того, как файл уедет наполовину.
+const MaxDocumentSize = 50 << 20
+
+// documentTimeout — потолок на загрузку файла. Отдельный от [defaultTimeout]:
+// десяти секунд на мегабайты по узкому каналу VPS не хватает, а копия
+// состояния — не сообщение, ради которого нельзя подождать.
+const documentTimeout = 2 * time.Minute
+
+// SendDocument отправляет файл в тот же чат.
+//
+// Тем же ботом и тем же транспортом, что и сообщения: второго канала наружу у
+// демона нет и не заводится (ADR 0016). Содержимое приезжает целиком в памяти —
+// его всё равно нужно шифровать целиком, а поток телеграму пришлось бы
+// пересчитывать в multipart руками.
+func (t *Telegram) SendDocument(ctx context.Context, filename string, data []byte, caption string) error {
+	if t.token == "" || t.chatID == "" {
+		return ErrNotConfigured
+	}
+	if len(data) > MaxDocumentSize {
+		return fmt.Errorf("файл больше %d МиБ — телеграм такой не примет", MaxDocumentSize>>20)
+	}
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	if err := mw.WriteField("chat_id", t.chatID); err != nil {
+		return fmt.Errorf("сборка сообщения: %w", err)
+	}
+	if caption != "" {
+		if err := mw.WriteField("caption", caption); err != nil {
+			return fmt.Errorf("сборка сообщения: %w", err)
+		}
+	}
+	part, err := mw.CreateFormFile("document", filename)
+	if err != nil {
+		return fmt.Errorf("сборка сообщения: %w", err)
+	}
+	if _, err := part.Write(data); err != nil {
+		return fmt.Errorf("сборка сообщения: %w", err)
+	}
+	if err := mw.Close(); err != nil {
+		return fmt.Errorf("сборка сообщения: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, documentTimeout)
+	defer cancel()
+
+	url := t.base + "/bot" + t.token + "/sendDocument"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &body)
+	if err != nil {
+		return fmt.Errorf("запрос к телеграму: %w", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	resp, err := t.client(documentTimeout).Do(req)
+	if err != nil {
+		// Текст ошибки транспорта содержит URL, а в URL лежит токен.
+		return fmt.Errorf("телеграм недоступен: проверьте сеть на сервере")
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var out telegramResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return fmt.Errorf("телеграм ответил непонятным (код %d)", resp.StatusCode)
+	}
+	if out.OK {
+		return nil
+	}
+	return fmt.Errorf("телеграм отказал: %s", explain(out))
+}
+
+// client отдаёт клиента с потолком не меньше требуемого. Потолок клиента
+// действует на весь запрос и перебивает контекст: с десятью секундами от
+// [defaultTimeout] загрузка файла обрывалась бы независимо от того, сколько
+// времени ей дали снаружи.
+func (t *Telegram) client(timeout time.Duration) *http.Client {
+	if t.hc.Timeout == 0 || t.hc.Timeout >= timeout {
+		return t.hc
+	}
+	clone := *t.hc
+	clone.Timeout = timeout
+	return &clone
 }
 
 // explain переводит отказ Bot API в подсказку, что чинить. Голое английское
