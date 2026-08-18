@@ -464,13 +464,17 @@ func MergePool(stored, fresh []store.PoolServer) ([]store.PoolServer, bool) {
 		alive := true
 		if inFresh[s.URL] {
 			s.Misses = 0
-			// Каталожная подпись — источник истины у свежего обхода. Старый состав
-			// мог лечь без неё (до #189 Title у igareck не заполнялся), поэтому
-			// присутствующему в каталоге серверу подтягиваем имя и страну заново.
-			// На конфиг sing-box и порядок окна это не влияет — поля косметические.
+			// Backfill каталожной подписи: старый состав мог лечь без неё (до #189
+			// Title у igareck не заполнялся), и в модалке оставался прочерк. Заполняем
+			// только пустое — перезаписывать имеющуюся подпись на каждом обходе нельзя:
+			// дрейф чужого каталога дёргал бы состав и перезапускал sing-box (issue #68).
 			f := freshByURL[s.URL]
-			s.Title = f.Title
-			s.Country = f.Country
+			if s.Title == "" {
+				s.Title = f.Title
+			}
+			if s.Country == "" {
+				s.Country = f.Country
+			}
 		} else {
 			s.Misses++
 			alive = s.Misses < poolMissesBeforeDrop
