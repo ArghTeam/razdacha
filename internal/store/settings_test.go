@@ -25,6 +25,21 @@ func TestSettingsDefaults(t *testing.T) {
 	if got.WGServerAddress != "10.8.0.1" {
 		t.Errorf("адрес сервера = %q, ожидался 10.8.0.1", got.WGServerAddress)
 	}
+	if got.PoolUpdateInterval != time.Hour {
+		t.Errorf("интервал пула по умолчанию = %s, ожидался 1ч", got.PoolUpdateInterval)
+	}
+}
+
+// Нижняя граница интервала пула допустима: диапазон отсекается ниже неё, а не на ней.
+func TestSettingsPoolIntervalFloor(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	v := DefaultSettings()
+	v.PoolUpdateInterval = MinPoolUpdateInterval
+	if err := s.SaveSettings(ctx, v); err != nil {
+		t.Fatalf("интервал пула %s отвергнут: %v", MinPoolUpdateInterval, err)
+	}
 }
 
 func TestSettingsRoundTrip(t *testing.T) {
@@ -37,6 +52,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	want.DNSType = "dot"
 	want.DNSUpstream = "one.one.one.one"
 	want.ListUpdateInterval = 6 * time.Hour
+	want.PoolUpdateInterval = 12 * time.Hour
 	want.LogLevel = "info"
 
 	if err := s.SaveSettings(ctx, want); err != nil {
@@ -88,6 +104,10 @@ func TestSettingsValidation(t *testing.T) {
 		"неизвестный DNS":     func(v *Settings) { v.DNSType = "quic" },
 		"неизвестный уровень": func(v *Settings) { v.LogLevel = "trace" },
 		"нулевой интервал":    func(v *Settings) { v.ListUpdateInterval = 0 },
+		"интервал пула ниже floor": func(v *Settings) {
+			v.PoolUpdateInterval = MinPoolUpdateInterval - time.Minute
+		},
+		"нулевой интервал пула": func(v *Settings) { v.PoolUpdateInterval = 0 },
 		// Опечатка в адресе доезжала до старта демона и не давала поднять шлюз
 		// (аудит от 2026-07, пункт 11).
 		"пул не подсеть":          func(v *Settings) { v.WGPool = "10.8.0.0" },

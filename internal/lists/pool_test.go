@@ -954,3 +954,12 @@ func TestOutlineKeysPageURL(t *testing.T) {
 		}
 	}
 }
+
+// Дефолт настройки интервала пула держится равным DefaultPoolInterval. Store не
+// может импортировать lists (это lists импортирует store), поэтому равенство
+// стережёт этот тест на стороне lists — разъедутся значения, и он загорится.
+func TestPoolIntervalDefaultAgrees(t *testing.T) {
+	if got := store.DefaultSettings().PoolUpdateInterval; got != DefaultPoolInterval {
+		t.Errorf("дефолт настройки пула = %s, DefaultPoolInterval = %s", got, DefaultPoolInterval)
+	}
+}

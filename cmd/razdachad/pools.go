@@ -73,6 +73,12 @@ func startPools(ctx context.Context, st *store.Store, log *slog.Logger) *lists.P
 		Logger:  log,
 	})
 
+	if settings, err := st.Settings(ctx); err != nil {
+		log.Error("чтение настроек для расписания пулов", "ошибка", err)
+	} else {
+		m.SetInterval(settings.PoolUpdateInterval)
+	}
+
 	tunnels := poolTunnels(ctx, st, log)
 	m.SetTunnels(tunnels)
 
@@ -123,6 +129,14 @@ func syncPoolTunnels(ctx context.Context, st *store.Store, m *lists.PoolManager,
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		}
+
+		// Интервал живёт в настройках и меняется через панель: подхватываем его на
+		// каждом такте, чтобы смена не требовала перезапуска демона.
+		if settings, err := st.Settings(ctx); err != nil {
+			log.Error("чтение настроек для расписания пулов", "ошибка", err)
+		} else {
+			m.SetInterval(settings.PoolUpdateInterval)
 		}
 
 		tunnels := poolTunnels(ctx, st, log)

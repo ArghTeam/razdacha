@@ -23,6 +23,14 @@ const (
 	MaxClientMTU = 1420
 )
 
+// MinPoolUpdateInterval — нижняя граница интервала обхода каталога пула.
+//
+// Полчаса не вкусовая цифра: выселение сервера из пула требует
+// `poolMissesBeforeDrop` пропусков подряд (три, слой lists), и floor в 30 минут
+// держит выселение не быстрее чем за полтора часа — churn состава и перезапуски
+// sing-box не растут, сколько бы пользователь ни ужимал интервал.
+const MinPoolUpdateInterval = 30 * time.Minute
+
 // Settings — единственная запись настроек. В БД лежит как key/value, чтобы добавление
 // поля не требовало миграции; отсутствующие ключи берутся из [DefaultSettings].
 type Settings struct {
@@ -35,6 +43,9 @@ type Settings struct {
 	DNSType            string        `json:"dns_type"`
 	WANInterface       string        `json:"wan_interface"`
 	ListUpdateInterval time.Duration `json:"list_update_interval"`
+	// PoolUpdateInterval — как часто расписание обходит каталог ключей пула.
+	// Дефолт 1 ч, нижняя граница [MinPoolUpdateInterval].
+	PoolUpdateInterval time.Duration `json:"pool_update_interval"`
 	// TunnelCheckInterval — как часто расписание опрашивает состояние туннелей.
 	TunnelCheckInterval time.Duration `json:"tunnel_check_interval"`
 	LogLevel            string        `json:"log_level"`
@@ -54,6 +65,10 @@ func DefaultSettings() Settings {
 		DNSType:            "udp",
 		WANInterface:       "",
 		ListUpdateInterval: 24 * time.Hour,
+		// Один час — тот же дефолт, что и `lists.DefaultPoolInterval`; держатся
+		// равными руками, потому что store не может импортировать lists (это он
+		// импортирует store). Разъедутся — расписание возьмёт свой fallback.
+		PoolUpdateInterval: 1 * time.Hour,
 		// Две минуты — компромисс: чаще означает лишние пробы через каждый
 		// обычный туннель, реже — что падение замечается слишком поздно, а
 		// подтверждение перехода тремя проверками растягивается на полчаса.
@@ -73,6 +88,7 @@ const (
 	keyDNSType             = "dns_type"
 	keyWANInterface        = "wan_interface"
 	keyListUpdateInterval  = "list_update_interval"
+	keyPoolUpdateInterval  = "pool_update_interval"
 	keyTunnelCheckInterval = "tunnel_check_interval"
 	keyLogLevel            = "log_level"
 )
@@ -135,6 +151,7 @@ func (v Settings) values() map[string]string {
 		keyDNSType:            v.DNSType,
 		keyWANInterface:       v.WANInterface,
 		keyListUpdateInterval: strconv.FormatInt(int64(v.ListUpdateInterval/time.Second), 10),
+		keyPoolUpdateInterval: strconv.FormatInt(int64(v.PoolUpdateInterval/time.Second), 10),
 		keyTunnelCheckInterval: strconv.FormatInt(
 			int64(v.TunnelCheckInterval/time.Second), 10),
 		keyLogLevel: v.LogLevel,
@@ -164,6 +181,12 @@ func (v *Settings) set(key, value string) error {
 			return err
 		}
 		v.ListUpdateInterval = time.Duration(seconds) * time.Second
+	case keyPoolUpdateInterval:
+		var seconds int
+		if err := number(&seconds); err != nil {
+			return err
+		}
+		v.PoolUpdateInterval = time.Duration(seconds) * time.Second
 	case keyTunnelCheckInterval:
 		var seconds int
 		if err := number(&seconds); err != nil {
@@ -233,6 +256,10 @@ func (v Settings) validate() error {
 	}
 	if v.ListUpdateInterval <= 0 {
 		return fmt.Errorf("%w: интервал обновления списков должен быть положительным", ErrInvalid)
+	}
+	// Нижняя граница держит churn состава пула в узде — см. MinPoolUpdateInterval.
+	if v.PoolUpdateInterval < MinPoolUpdateInterval {
+		return fmt.Errorf("%w: интервал обновления пула меньше %s", ErrInvalid, MinPoolUpdateInterval)
 	}
 	// Нижняя граница не вкусовая: каждый прогон пробивает обычные туннели
 	// настоящим запросом, и секундный интервал превратил бы проверку в нагрузку.
