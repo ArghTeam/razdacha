@@ -3,6 +3,41 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-18
+
+### #196 — интервал обхода пула 12 ч → 1 ч
+
+**Changed:** `DefaultPoolInterval` 12 ч → 1 ч. Источник igareck обновляется ~каждые 3 мин; обход дёшев — reload только при смене окна.
+**Beware:** `poolMissesBeforeDrop` не тронут — 3 обхода × 1 ч = 3 ч на выселение.
+
+### #194 — окно urltest 16 → 64
+
+**Changed:** `PoolConfigServers` 16 → 64. Каталог igareck живость не отражает, мёртвые держали слоты вечно; широкое окно даёт urltest живой резерв.
+**Beware:** держится равным `singbox.poolMaxServers`, сверяется `TestPoolConfigWindowAgrees`. Стенд: 2 живых из 16 → 17 из 64.
+
+### #189 — имя члена пула из фрагмента ссылки
+
+**Changed:** `igareck` заполняет `Title` из фрагмента `#…` (флаг, страна, город), fallback на хост; `MergePool` backfill'ит пустой `Title`/`Country` из свежего обхода.
+**Beware:** backfill только для пустого поля — перезапись на каждом обходе дала бы churn конфига (#68). Title косметичен: на окно и теги не влияет. Проверено на стенде.
+
+## 2026-08-17
+
+### #181 — igareck без geo-IP, единый пул
+
+**Changed:** драйвер `igareck` отдаёт все ключи одним списком; `poolServersForCountry`, `PoolTunnel.Country`, разбор хоста и geoip убраны; `refreshGroup` применяет выдачу целиком (ADR 0018).
+**Beware:** `PoolServer.Country` igareck больше не заполняет; пакет `internal/geoip` удалён.
+
+### #170 — источник igareck и раскладка пулов по странам
+
+**Changed:** драйвер `igareck` (3 подписки, зеркало+резерв, страна geoip); `Refresh` — fetch-once-partition, `poolServersForCountry` фильтрует по стране пула.
+**Beware:** vmess отсеивается (Parse не берёт); пустая страна = вся выдача.
+
+### #168 — офлайн-страна по IP (пакет internal/geoip)
+
+**Changed:** новый пакет `internal/geoip` — `Country(ip) string` из встроенной DB-IP Country Lite, чистый Go, без сети. Фундамент страновых пулов (#167, ADR 0017).
+**New surface:** `geoip.Country`, `geoip.Attribution`.
+**Beware:** база заморожена на релизе, обновляется только с razdacha; порча базы → `Country` даёт `""`, страна не течёт.
+
 ## 2026-08-15
 
 ### #149 — отказ правила виден в панели
@@ -17,13 +52,18 @@
 ### #156 — сериализация обхода каталога пула
 **Changed:** `PoolCatalog.Servers` теперь занимает каталог по адресу (`u.String()`) через `beginCrawl`/`endCrawl` на время обхода; второй обход того же адреса отказывает сразу `ErrPoolCrawlBusy`.
 **New surface:** Новый сентинел `lists.ErrPoolCrawlBusy`.
-**Beware:** Замок — по адресу каталога, не по туннелю; такт расписания, попавший на занятый каталог, пишет INFO и неудачей не считается; обрыв клиентского соединения отпускает замок.
+**Beware:** замок — по адресу каталога, не по туннелю; такт на занятом каталоге пишет INFO и неудачей не считается.
 
 ### #150 — состав стартового набора правил
 
-**Changed:** `presetKeys`, `Preset()` и поле `InPreset`/`in_preset` в `CommunityService`; состав — `russia_inside`, `google_ai`, `discord`, `meta`, `twitter`.
-**New surface:** `CommunityService.Preset()`, поле `InPreset` в ответе каталога.
-**Beware:** ASN-списки (`cloudflare`, `cloudfront`, `hetzner`, `ovh`, `digitalocean`) намеренно не входят — с ними пресет перестаёт быть селективным; `TestPreset` проверяет, что ключи существуют в каталоге и не конфликтуют.
+**Changed:** `presetKeys`, `Preset()`, поле `InPreset` в `CommunityService`; состав — `russia_inside`, `google_ai`, `discord`, `meta`, `twitter`.
+**New surface:** `CommunityService.Preset()`.
+**Beware:** ASN-списки (`cloudflare`, `cloudfront`, `hetzner`, `ovh`, `digitalocean`) не входят — иначе пресет не селективен.
+
+### #161 — страна сервера пула помечена как подпись источника
+
+**Changed:** у `outlineKeysCountry` комментарий: это заголовок чужой карточки, не измерение. Поведение разбора не менялось, `store.PoolServer.Country` остался тем же полем.
+**Beware:** подпись врёт — сверка пяти ключей дала одно расхождение (карточка «Scotland», реестр — Гонконг, geo — Лос-Анджелес). Подтверждение географии в задачу не входило и остаётся открытым.
 
 ## 2026-07-29
 

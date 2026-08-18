@@ -147,6 +147,9 @@ type Server struct {
 	plainLists singbox.PlainLists
 	listStates func() map[string]ListState
 	clash      *clash.Client
+	// reach ходит к домену напрямую для пробы доступности. Подменяется в
+	// тестах: настоящая сеть в них не участвует. Пустой означает реальный поход.
+	reach reachProber
 	// checks — результаты проверок туннелей с момента запуска демона,
 	// источник производных полей в `GET /api/tunnels`.
 	checks *checkCache
@@ -242,6 +245,9 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	}
 	s.throttle = newThrottle(s.now)
 	s.sleep = wait
+	if s.reach == nil {
+		s.reach = probeReachability
+	}
 	// Порядок важен: statusWriter создаётся в logging, а recoverer по нему
 	// понимает, ушёл ли заголовок ответа до паники.
 	s.handler = s.logging(s.recoverer(s.routes()))

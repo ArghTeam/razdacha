@@ -111,10 +111,16 @@ type Tunnel struct {
 	// означает, что обхода ещё не было и пул пока пуст.
 	PoolUpdatedAt time.Time `json:"pool_updated_at,omitempty"`
 
-	// Builtin — запись завёл демон, а не пользователь ([Store.EnsureBuiltinPool]).
-	// Такую не удаляют, а выключают: см. [Store.DeleteTunnel]. Ставится один раз
-	// при заведении, [Store.UpdateTunnel] его не трогает.
+	// Builtin — запись завёл демон, а не пользователь
+	// ([Store.EnsureBuiltinPool]). Такую не удаляют, а выключают: см.
+	// [Store.DeleteTunnel]. Ставится один раз при заведении, [Store.UpdateTunnel]
+	// его не трогает.
 	Builtin bool `json:"builtin"`
+
+	// Country — не используется с ADR 0018: единый общий пул страну выхода не
+	// различает, а geo-IP убран. Колонка оставлена в схеме (в SQLite её не роняют
+	// без нужды), но источник её больше не заполняет — поле всегда пусто.
+	Country string `json:"country,omitempty"`
 }
 
 // Rule — правило маршрутизации: «эти ресурсы — в этот туннель».
@@ -220,6 +226,12 @@ func (t *Tunnel) validate() error {
 	// форм флаг означал бы неудаляемый туннель, которого никто не заводил.
 	if t.Builtin && t.Source != SourcePool {
 		return fmt.Errorf("%w: встроенным бывает только туннель-пул, а не форма %q",
+			ErrInvalid, t.Source)
+	}
+	// Country с ADR 0018 не используется и всегда пуста; исторически её ставили
+	// только пулу, и этот запрет остаётся дешёвой страховкой от мусора в колонке.
+	if t.Country != "" && t.Source != SourcePool {
+		return fmt.Errorf("%w: страна задаётся только туннелю-пулу, а не форме %q",
 			ErrInvalid, t.Source)
 	}
 	if t.Raw == "" {

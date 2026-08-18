@@ -4,7 +4,7 @@
 import * as api from '../api.js';
 import {
   state, toast, toastError, openModal, closeModal, modalShell,
-  notice, refresh, markDirty,
+  notice, refresh, markDirty, applyDocTitle,
 } from '../shell.js';
 import { $, esc, intervalSeconds } from '../util.js';
 
@@ -13,6 +13,18 @@ const INTERVALS = [
   [21600, 'каждые 6 часов'],
   [86400, 'раз в сутки'],
   [604800, 'раз в неделю'],
+];
+
+/* Обход каталога пула — не то же, что списки: нижняя граница в 30 минут стоит в
+   демоне (store.MinPoolUpdateInterval), потому что чаще нет смысла — выселение
+   мёртвого ключа требует трёх пропусков подряд, а частый обход зря дёргает
+   состав. Дефолт — час (lists.DefaultPoolInterval). */
+const POOL_INTERVALS = [
+  [1800, 'каждые 30 минут'],
+  [3600, 'каждый час'],
+  [21600, 'каждые 6 часов'],
+  [43200, 'каждые 12 часов'],
+  [86400, 'раз в сутки'],
 ];
 
 /* Проверка туннелей — не то же самое, что обновление списков: тут единицы —
@@ -44,6 +56,10 @@ export async function modalSettings() {
   const opts = INTERVALS.map(([v, label]) =>
     `<option value="${v}" ${interval === v ? 'selected' : ''}>${label}</option>`).join('');
 
+  const poolEvery = Number(s.pool_update_interval) || 3600;
+  const poolOpts = POOL_INTERVALS.map(([v, label]) =>
+    `<option value="${v}" ${poolEvery === v ? 'selected' : ''}>${label}</option>`).join('');
+
   const checkEvery = Number(s.tunnel_check_interval) || 120;
   const checkOpts = CHECK_INTERVALS.map(([v, label]) =>
     `<option value="${v}" ${checkEvery === v ? 'selected' : ''}>${label}</option>`).join('');
@@ -63,6 +79,9 @@ export async function modalSettings() {
     </div>
     <div class="field"><label for="s-int">Обновление списков</label>
       <select id="s-int">${opts}</select></div>
+    <div class="field"><label for="s-pool">Обновление пула</label>
+      <select id="s-pool">${poolOpts}</select>
+      <div class="hint">Как часто демон обходит каталог ключей встроенного пула.</div></div>
     <div class="field"><label for="s-check">Проверка туннелей</label>
       <select id="s-check">${checkOpts}</select>
       <div class="hint">Как часто демон сам опрашивает состояние туннелей.</div></div>
@@ -235,6 +254,7 @@ async function saveSettings() {
     client_mtu: Number($('#s-mtu').value) || s.client_mtu,
     dns_upstream: $('#s-dns').value.trim() || s.dns_upstream,
     list_update_interval: Number($('#s-int').value),
+    pool_update_interval: Number($('#s-pool').value),
     tunnel_check_interval: Number($('#s-check').value),
   };
   const btn = $('#modal [data-act="save-settings"]');
@@ -246,6 +266,7 @@ async function saveSettings() {
     await saveBackup();
     const res = await api.settings.update(body);
     state.settings = res && res.wg_listen_port ? res : { ...s, ...body };
+    applyDocTitle();
     closeModal();
     markDirty();
     refresh();

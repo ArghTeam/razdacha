@@ -104,6 +104,36 @@ func TestParseProxyURLFields(t *testing.T) {
 			                          "short_id":"f6"}}}`,
 		},
 		{
+			name: "vless tcp reality без fp — uTLS chrome по умолчанию",
+			raw: "vless://e95163dc-905e-480a-afe5-20b146288679@127.0.0.1:16399?type=tcp" +
+				"&encryption=none&security=reality&pbk=tqhSkeDR6jsqC-BYCnZWBrdL33g705ba8tV5-ZboWTM" +
+				"&sni=google.com&sid=f6#vless-reality-no-fp",
+			typ: store.TunnelVLESS,
+			want: `{"type":"vless","server":"127.0.0.1","server_port":16399,
+			        "uuid":"e95163dc-905e-480a-afe5-20b146288679",
+			        "tls":{"enabled":true,"server_name":"google.com",
+			               "utls":{"enabled":true,"fingerprint":"chrome"},
+			               "reality":{"enabled":true,
+			                          "public_key":"tqhSkeDR6jsqC-BYCnZWBrdL33g705ba8tV5-ZboWTM",
+			                          "short_id":"f6"}}}`,
+		},
+		{
+			name: "vless tcp reality с flow xtls-rprx-vision",
+			raw: "vless://e95163dc-905e-480a-afe5-20b146288679@127.0.0.1:16399?type=tcp" +
+				"&encryption=none&flow=xtls-rprx-vision&security=reality" +
+				"&pbk=tqhSkeDR6jsqC-BYCnZWBrdL33g705ba8tV5-ZboWTM" +
+				"&fp=chrome&sni=google.com&sid=f6&spx=%2F#vless-flow",
+			typ: store.TunnelVLESS,
+			want: `{"type":"vless","server":"127.0.0.1","server_port":16399,
+			        "uuid":"e95163dc-905e-480a-afe5-20b146288679",
+			        "flow":"xtls-rprx-vision",
+			        "tls":{"enabled":true,"server_name":"google.com",
+			               "utls":{"enabled":true,"fingerprint":"chrome"},
+			               "reality":{"enabled":true,
+			                          "public_key":"tqhSkeDR6jsqC-BYCnZWBrdL33g705ba8tV5-ZboWTM",
+			                          "short_id":"f6"}}}`,
+		},
+		{
 			name: "vless ws tls insecure",
 			raw: "vless://599e8659-e2ef-47d9-bf72-2f9b4b673474@127.0.0.1:36567?type=ws" +
 				"&encryption=none&path=%2Fwspath&host=google.com&security=tls&fp=chrome" +
@@ -372,6 +402,7 @@ func TestParseInvalid(t *testing.T) {
 		{"vless с транспортом mKCP", "vless://uuid@127.0.0.1:443?type=kcp&seed=abc"},
 		{"vless с транспортом xhttp", "vless://uuid@127.0.0.1:443?type=xhttp"},
 		{"vless с шифрованием", "vless://uuid@127.0.0.1:443?encryption=aes-128-gcm"},
+		{"vless с неизвестным flow", "vless://uuid@127.0.0.1:443?flow=xtls-rprx-vision-udp443"},
 		{"ss с битым base64", "ss://!!!не-base64!!!@127.0.0.1:8388"},
 		{"ss без метода и пароля", "ss://127.0.0.1:8388"},
 		{"ss с base64 без двоеточия", "ss://YWJjZGVm@127.0.0.1:8388"},

@@ -280,6 +280,9 @@ func TestSettingsPatch(t *testing.T) {
 	if out.ListUpdateInterval != 86400 {
 		t.Errorf("list_update_interval = %d, ожидались секунды (86400)", out.ListUpdateInterval)
 	}
+	if out.PoolUpdateInterval != 3600 {
+		t.Errorf("pool_update_interval = %d, ожидались секунды (3600)", out.PoolUpdateInterval)
+	}
 	if out.RequiresClientReconfig {
 		t.Error("смена апстрима DNS не требует перевыдачи клиентских конфигов")
 	}

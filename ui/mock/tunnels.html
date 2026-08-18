@@ -84,7 +84,9 @@ state.tunnels = [
       catalog_url: 'https://vpnkeys.me/protocol/vless',
       servers_total: 24,
       servers_alive: 19,
-      current: { name: '11225', country: 'Canada', latency_ms: 190 },
+      // Без страны: карточка каталога её не дала — «Сейчас:» не выдумывает то,
+      // чего нет (issue #161).
+      current: { name: '11225', country: '', latency_ms: 190 },
       updated_at: hoursAgo(30),
       next_update_at: hoursFromNow(6),
     },
@@ -144,13 +146,16 @@ function mockPoolServers(id) {
   const rotation = Math.min(16, total);
   const servers = [];
   for (let i = 0; i < total; i++) {
-    const country = COUNTRIES[i % COUNTRIES.length];
+    // Каждый седьмой сервер — без подписи страны: карточка каталога иногда её
+    // не даёт вовсе (issue #161), и стенд обязан показывать оба случая рядом.
+    const withoutCountry = i % 7 === 6;
+    const country = withoutCountry ? '' : COUNTRIES[i % COUNTRIES.length];
     const inRotation = i < rotation;
     // Живость: пул выключен — про неё сказать нечего вовсе.
     const known = inRotation && t.enabled !== false;
     const alive = known ? i % 5 !== 3 : null;
     servers.push({
-      title: `VLESS (${country}) ${11000 + i * 7}`,
+      title: country ? `VLESS (${country}) ${11000 + i * 7}` : `VLESS ${11000 + i * 7}`,
       country,
       ping_ms: i % 9 === 0 ? 0 : 30 + i * 3,
       in_rotation: inRotation,

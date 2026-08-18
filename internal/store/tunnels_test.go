@@ -263,205 +263,226 @@ func TestDeleteUnknownTunnel(t *testing.T) {
 	}
 }
 
-// catalogURL — каталог ключей, с которым заводится встроенный пул. Туннель-пул в
-// обход [Store.EnsureBuiltinPool] заводит samplePool: так выглядит установка, где пул
-// завели руками, пока это было можно.
-const catalogURL = "https://outlinekeys.com/protocols/outline/"
+// catalogURL — каталог ключей встроенного общего пула (ADR 0018).
+const catalogURL = "https://raw.githack.com/igareck/vpn-configs-for-russia/main/"
 
-// deadCatalogURL — каталог, которого больше нет. Так выглядит адрес пула у всех
-// установок, поставленных до ADR 0015.
-const deadCatalogURL = "https://vpnkeys.me/protocol/vless"
+// builtinCountryPool заводит встроенный страновой пул — так выглядит установка,
+// поставленная на версии со странами (ADR 0017). Через [Store.EnsureBuiltinPool]
+// такой уже не появляется, но у обновляющихся их семь, и сворачивание в один надо
+// проверять. createdAt задаётся явно: [collapseBuiltinPools] оставляет самый ранний,
+// и порядок должен быть детерминирован.
+func builtinCountryPool(t *testing.T, s *Store, name, country string, createdAt time.Time) Tunnel {
+	t.Helper()
+	tun, err := s.CreateTunnel(context.Background(), Tunnel{
+		Name:      name,
+		Type:      TunnelVLESS,
+		Source:    SourcePool,
+		Raw:       catalogURL,
+		Country:   country,
+		Enabled:   true,
+		Builtin:   true,
+		CreatedAt: createdAt,
+	})
+	if err != nil {
+		t.Fatalf("заведение странового встроенного пула %q: %v", name, err)
+	}
+	return tun
+}
 
-// Встроенный пул заводится один раз: повторный вызов (то есть повторный старт
-// демона) отдаёт ту же запись, а не заводит вторую.
-func TestEnsureBuiltinPoolIsIdempotent(t *testing.T) {
+// theBuiltinPool находит единственный встроенный пул в списке.
+func theBuiltinPool(t *testing.T, list []Tunnel) Tunnel {
+	t.Helper()
+	var found []Tunnel
+	for _, tn := range list {
+		if tn.Builtin && tn.Source == SourcePool {
+			found = append(found, tn)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("встроенных пулов %d, ожидался один: %+v", len(found), found)
+	}
+	return found[0]
+}
+
+// Свежая БД: заводится ровно один встроенный пул — выключенный, встроенный,
+// source=pool, с именем [builtinPoolName] и общим каталогом. Повторный вызов ничего
+// не плодит.
+func TestEnsureBuiltinPoolSeedsOne(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 
-	first, err := s.EnsureBuiltinPool(ctx, "Бесплатные ключи", catalogURL, TunnelShadowsocks)
+	res, err := s.EnsureBuiltinPool(ctx, catalogURL, TunnelVLESS)
 	if err != nil {
 		t.Fatalf("EnsureBuiltinPool: %v", err)
 	}
-	if !first.Created {
-		t.Fatal("первый вызов не создал встроенный пул")
+	if !res.Created {
+		t.Fatalf("на свежей БД пул не заведён: %+v", res)
 	}
-	if !first.Tunnel.Builtin || first.Tunnel.Source != SourcePool || first.Tunnel.Type != TunnelShadowsocks {
-		t.Errorf("встроенный пул заведён как %+v", first.Tunnel)
-	}
-	// Выключенным: свежая установка не должна сама пойти на чужой сайт за ключами.
-	if first.Tunnel.Enabled {
-		t.Error("встроенный пул заведён включённым")
-	}
-
-	second, err := s.EnsureBuiltinPool(ctx, "Бесплатные ключи", catalogURL, TunnelShadowsocks)
-	if err != nil {
-		t.Fatalf("повторный EnsureBuiltinPool: %v", err)
-	}
-	if second.Created || second.Adopted {
-		t.Errorf("повторный вызов завёл вторую запись: %+v", second)
-	}
-	if second.Tunnel.ID != first.Tunnel.ID {
-		t.Errorf("повторный вызов отдал другой пул: %s вместо %s", second.Tunnel.ID, first.Tunnel.ID)
-	}
-	if second.OtherPools != 0 {
-		t.Errorf("помимо встроенного насчитано %d пулов", second.OtherPools)
+	if len(res.RemovedExtra) != 0 || len(res.DetachedRules) != 0 {
+		t.Errorf("на свежей БД что-то свёрнуто/отвязано: %+v", res)
 	}
 
 	list, err := s.Tunnels(ctx)
 	if err != nil {
 		t.Fatalf("Tunnels: %v", err)
 	}
-	if len(list) != 1 {
-		t.Fatalf("туннелей в БД %d, ожидался один", len(list))
+	pool := theBuiltinPool(t, list)
+	if pool.Enabled {
+		t.Errorf("пул заведён включённым: %+v", pool)
 	}
+	if pool.Type != TunnelVLESS || pool.Raw != catalogURL || pool.Country != "" {
+		t.Errorf("пул заведён с неверными полями: %+v", pool)
+	}
+	if pool.Name != builtinPoolName {
+		t.Errorf("имя пула %q, ожидалось %q", pool.Name, builtinPoolName)
+	}
+
+	// Идемпотентность: второй старт ничего не заводит, число не растёт.
+	again, err := s.EnsureBuiltinPool(ctx, catalogURL, TunnelVLESS)
+	if err != nil {
+		t.Fatalf("повторный EnsureBuiltinPool: %v", err)
+	}
+	if again.Created || len(again.RemovedExtra) != 0 {
+		t.Errorf("повторный вызов что-то менял: %+v", again)
+	}
+	list, err = s.Tunnels(ctx)
+	if err != nil {
+		t.Fatalf("Tunnels: %v", err)
+	}
+	theBuiltinPool(t, list) // всё ещё ровно один
 }
 
-// Признак встроенного держится на колонке, а не на имени и каталоге: переименованный
-// и переключённый на другой каталог пул остаётся тем же встроенным.
+// Признак держится на флаге builtin, а не на имени: переименованный пользователем
+// пул на следующем старте не плодит второй.
 func TestEnsureBuiltinPoolSurvivesRename(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 
-	first, err := s.EnsureBuiltinPool(ctx, "Бесплатные ключи", catalogURL, TunnelShadowsocks)
-	if err != nil {
+	if _, err := s.EnsureBuiltinPool(ctx, catalogURL, TunnelVLESS); err != nil {
 		t.Fatalf("EnsureBuiltinPool: %v", err)
 	}
-
-	tun := first.Tunnel
-	tun.Name = "Мой пул"
-	tun.Raw = "https://example.org/keys"
-	tun.Enabled = true
-	if err := s.UpdateTunnel(ctx, tun); err != nil {
+	list, err := s.Tunnels(ctx)
+	if err != nil {
+		t.Fatalf("Tunnels: %v", err)
+	}
+	pool := theBuiltinPool(t, list)
+	pool.Name = "Мой любимый пул"
+	pool.Enabled = true
+	if err := s.UpdateTunnel(ctx, pool); err != nil {
 		t.Fatalf("UpdateTunnel: %v", err)
 	}
 
-	got, err := s.Tunnel(ctx, tun.ID)
-	if err != nil {
-		t.Fatalf("Tunnel: %v", err)
-	}
-	if !got.Builtin {
-		t.Error("правка сняла признак встроенного — запрет на удаление обходится через PATCH")
-	}
-
-	same, err := s.EnsureBuiltinPool(ctx, "Бесплатные ключи", catalogURL, TunnelShadowsocks)
-	if err != nil {
+	if _, err := s.EnsureBuiltinPool(ctx, catalogURL, TunnelVLESS); err != nil {
 		t.Fatalf("повторный EnsureBuiltinPool: %v", err)
 	}
-	if same.Created || same.Tunnel.ID != tun.ID {
-		t.Errorf("после переименования завёлся второй пул: %+v", same)
+	list, err = s.Tunnels(ctx)
+	if err != nil {
+		t.Fatalf("Tunnels: %v", err)
+	}
+	got := theBuiltinPool(t, list)
+	if got.ID != pool.ID || got.Name != "Мой любимый пул" {
+		t.Errorf("пул подменён или переименован обратно: %+v", got)
+	}
+	if !got.Builtin {
+		t.Errorf("правка сбила признак встроенного: %+v", got)
 	}
 }
 
-// Пул, заведённый руками до того, как пулы стали встроенными, признаётся встроенным,
-// а не дублируется вторым: пул в системе один.
-func TestEnsureBuiltinPoolAdoptsExisting(t *testing.T) {
+// Апгрейд с версии со странами: семь встроенных пулов сворачиваются в один. Выживает
+// самый ранний, лишние удаляются, а ссылавшиеся правила отвязываются по ADR 0013 —
+// первое звено с выключением правила, второе звено цепи с сохранением. Всё видно в
+// результате, чтобы демон написал об этом в лог.
+func TestEnsureBuiltinPoolCollapsesCountryPools(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 
-	existing, err := s.CreateTunnel(ctx, samplePool("Бесплатные VLESS (встроенный)"))
+	base := time.Now().Add(-time.Hour)
+	survivor := builtinCountryPool(t, s, "🇳🇱 Нидерланды", "NL", base)
+	extra := builtinCountryPool(t, s, "🇩🇪 Германия", "DE", base.Add(time.Minute))
+
+	// Правило, у которого лишний пул — первое (основное) звено.
+	primary, err := s.CreateRule(ctx, sampleRule("В пул напрямую", extra.ID))
+	if err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+	// Правило, у которого лишний пул — второе звено цепи, а первое — обычный туннель.
+	head, err := s.CreateTunnel(ctx, sampleTunnel("голова цепи"))
 	if err != nil {
 		t.Fatalf("CreateTunnel: %v", err)
 	}
+	chained := sampleRule("Через цепь", head.ID)
+	chained.ViaTunnelID = extra.ID
+	chained, err = s.CreateRule(ctx, chained)
+	if err != nil {
+		t.Fatalf("CreateRule (цепь): %v", err)
+	}
 
-	res, err := s.EnsureBuiltinPool(ctx, "Бесплатные ключи", catalogURL, TunnelShadowsocks)
+	res, err := s.EnsureBuiltinPool(ctx, catalogURL, TunnelVLESS)
 	if err != nil {
 		t.Fatalf("EnsureBuiltinPool: %v", err)
 	}
 	if res.Created {
-		t.Fatal("рядом с существующим пулом заведён второй")
+		t.Errorf("при сворачивании пул не заводится заново: %+v", res)
 	}
-	if !res.Adopted || res.Tunnel.ID != existing.ID || !res.Tunnel.Builtin {
-		t.Fatalf("существующий пул не признан встроенным: %+v", res)
+	if len(res.RemovedExtra) != 1 || res.RemovedExtra[0] != extra.Name {
+		t.Fatalf("лишний пул не свёрнут из результата: %+v", res.RemovedExtra)
 	}
-	// Имя не трогается: на работающей установке пул уже называется как называется.
-	if res.Tunnel.Name != existing.Name {
-		t.Errorf("пул переименован в %q", res.Tunnel.Name)
-	}
-	// Включённость тоже: выключать работающий пул при обновлении незачем.
-	if !res.Tunnel.Enabled {
-		t.Error("работающий пул выключен при признании встроенным")
+	if len(res.DetachedRules) != 2 {
+		t.Fatalf("отвязано правил %d, ожидалось 2: %+v", len(res.DetachedRules), res.DetachedRules)
 	}
 
+	// Лишнего пула в БД нет, выживший остался и переименован в общий, страна очищена.
+	if _, err := s.Tunnel(ctx, extra.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("лишний пул уцелел: %v", err)
+	}
 	list, err := s.Tunnels(ctx)
 	if err != nil {
 		t.Fatalf("Tunnels: %v", err)
 	}
-	if len(list) != 1 {
-		t.Fatalf("туннелей в БД %d, ожидался один", len(list))
+	got := theBuiltinPool(t, list)
+	if got.ID != survivor.ID {
+		t.Errorf("выжил не самый ранний пул: %+v", got)
 	}
-}
+	if got.Name != builtinPoolName || got.Country != "" {
+		t.Errorf("выживший пул не нормализован: %+v", got)
+	}
 
-// Пулов в БД несколько (ручная правка, старая установка): встроенным становится один
-// и тот же — самый старый, — а остальные остаются обычными туннелями. Их число
-// возвращается наружу, чтобы демону было о чём написать в лог.
-func TestEnsureBuiltinPoolPicksOneOfMany(t *testing.T) {
-	ctx := context.Background()
-	s := open(t)
-
-	older := samplePool("Первый пул")
-	older.CreatedAt = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	first, err := s.CreateTunnel(ctx, older)
+	// Правило первого звена отвязано и выключено, иначе генератор упал бы на пустом туннеле.
+	gotPrimary, err := s.Rule(ctx, primary.ID)
 	if err != nil {
-		t.Fatalf("CreateTunnel: %v", err)
+		t.Fatalf("Rule: %v", err)
 	}
-	newer := samplePool("Второй пул")
-	newer.CreatedAt = time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	if _, err := s.CreateTunnel(ctx, newer); err != nil {
-		t.Fatalf("CreateTunnel: %v", err)
+	if gotPrimary.TunnelID != "" || gotPrimary.Enabled {
+		t.Errorf("правило первого звена не отвязано/не выключено: %+v", gotPrimary)
 	}
 
-	res, err := s.EnsureBuiltinPool(ctx, "Бесплатные ключи", catalogURL, TunnelShadowsocks)
+	// Правило цепи потеряло второе звено, но осталось включённым и маршрутизирует первым.
+	gotChained, err := s.Rule(ctx, chained.ID)
 	if err != nil {
-		t.Fatalf("EnsureBuiltinPool: %v", err)
+		t.Fatalf("Rule: %v", err)
 	}
-	if !res.Adopted || res.Tunnel.ID != first.ID {
-		t.Fatalf("встроенным стал не самый старый пул: %+v", res)
+	if gotChained.ViaTunnelID != "" {
+		t.Errorf("второе звено цепи не отвязано: %+v", gotChained)
 	}
-	if res.OtherPools != 1 {
-		t.Errorf("остальных пулов насчитано %d, ожидался один", res.OtherPools)
+	if !gotChained.Enabled || gotChained.TunnelID != head.ID {
+		t.Errorf("правило цепи задето сверх второго звена: %+v", gotChained)
 	}
 
-	// Выбор одинаков на каждом старте: иначе признак перескакивал бы с записи на запись.
-	again, err := s.EnsureBuiltinPool(ctx, "Бесплатные ключи", catalogURL, TunnelShadowsocks)
+	// Повторный старт сворачивать уже нечего.
+	again, err := s.EnsureBuiltinPool(ctx, catalogURL, TunnelVLESS)
 	if err != nil {
 		t.Fatalf("повторный EnsureBuiltinPool: %v", err)
 	}
-	if again.Tunnel.ID != first.ID || again.Created || again.Adopted {
-		t.Errorf("повторный вызов выбрал другой пул: %+v", again)
-	}
-
-	// Остальные не тронуты: они работают как работали.
-	list, err := s.Tunnels(ctx)
-	if err != nil {
-		t.Fatalf("Tunnels: %v", err)
-	}
-	builtin := 0
-	for _, tun := range list {
-		if tun.Builtin {
-			builtin++
-		}
-	}
-	if len(list) != 2 || builtin != 1 {
-		t.Fatalf("туннелей %d, встроенных среди них %d", len(list), builtin)
+	if again.Created || len(again.RemovedExtra) != 0 || len(again.DetachedRules) != 0 {
+		t.Errorf("повторный вызов снова что-то менял: %+v", again)
 	}
 }
 
-// Имя занято туннелем пользователя, и это не пул: пул не заводится, но отказ внятный —
-// демон пишет его в лог, а установка остаётся работать без пула.
-func TestEnsureBuiltinPoolReportsTakenName(t *testing.T) {
-	ctx := context.Background()
+// Пустой адрес каталога — отказ: пул без источника бесполезен.
+func TestEnsureBuiltinPoolRejectsEmptyCatalog(t *testing.T) {
 	s := open(t)
-
-	if _, err := s.CreateTunnel(ctx, sampleTunnel("Бесплатные ключи")); err != nil {
-		t.Fatalf("CreateTunnel: %v", err)
-	}
-
-	_, err := s.EnsureBuiltinPool(ctx, "Бесплатные ключи", catalogURL, TunnelShadowsocks)
-	if !errors.Is(err, ErrInvalid) {
+	if _, err := s.EnsureBuiltinPool(context.Background(), "", TunnelVLESS); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
-	}
-	if !strings.Contains(err.Error(), "Бесплатные ключи") {
-		t.Errorf("ошибка не называет занятое имя: %v", err)
 	}
 }
 
@@ -471,11 +492,14 @@ func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
 
-	res, err := s.EnsureBuiltinPool(ctx, "Бесплатные ключи", catalogURL, TunnelShadowsocks)
-	if err != nil {
+	if _, err := s.EnsureBuiltinPool(ctx, catalogURL, TunnelVLESS); err != nil {
 		t.Fatalf("EnsureBuiltinPool: %v", err)
 	}
-	pool := res.Tunnel
+	list, err := s.Tunnels(ctx)
+	if err != nil {
+		t.Fatalf("Tunnels: %v", err)
+	}
+	pool := theBuiltinPool(t, list)
 
 	err = s.DeleteTunnel(ctx, pool.ID)
 	if !errors.Is(err, ErrInUse) {
@@ -500,50 +524,13 @@ func TestBuiltinOnlyForPool(t *testing.T) {
 	}
 }
 
-// Пул с умершим каталогом переезжает на живой: адрес, протокол и — обязательно —
-// пустой состав. Ключи закрывшегося сайта чужого протокола в конфиг попасть не
-// должны (issue #153).
-func TestRetargetBuiltinPool(t *testing.T) {
-	ctx := context.Background()
+// Страна осмысленна только у пула: у обычного туннеля она означала бы поле без
+// применения.
+func TestCountryOnlyForPool(t *testing.T) {
 	s := open(t)
-
-	res, err := s.EnsureBuiltinPool(ctx, "Бесплатные ключи", deadCatalogURL, TunnelVLESS)
-	if err != nil || !res.Created {
-		t.Fatalf("EnsureBuiltinPool: %v (%+v)", err, res)
-	}
-	servers := []PoolServer{{URL: "vless://a@1.2.3.4:443", Country: "Германия"}}
-	if err := s.UpdateTunnelPool(ctx, res.Tunnel.ID, servers, time.Now().UTC()); err != nil {
-		t.Fatalf("запись состава: %v", err)
-	}
-
-	if err := s.RetargetBuiltinPool(ctx, res.Tunnel.ID, catalogURL, TunnelShadowsocks); err != nil {
-		t.Fatalf("RetargetBuiltinPool: %v", err)
-	}
-
-	got, err := s.Tunnel(ctx, res.Tunnel.ID)
-	if err != nil {
-		t.Fatalf("чтение пула: %v", err)
-	}
-	if got.Raw != catalogURL || got.Type != TunnelShadowsocks {
-		t.Errorf("пул остался на прежнем каталоге: raw=%q type=%q", got.Raw, got.Type)
-	}
-	if len(got.Pool) != 0 || !got.PoolUpdatedAt.IsZero() {
-		t.Errorf("состав умершего каталога уцелел: %d серверов, обход %v",
-			len(got.Pool), got.PoolUpdatedAt)
-	}
-}
-
-// Пул, заведённый человеком, переезда не получает: каталог в нём — его решение.
-func TestRetargetSkipsUserPool(t *testing.T) {
-	ctx := context.Background()
-	s := open(t)
-
-	own, err := s.CreateTunnel(ctx, samplePool("свой пул"))
-	if err != nil {
-		t.Fatalf("CreateTunnel: %v", err)
-	}
-	err = s.RetargetBuiltinPool(ctx, own.ID, catalogURL, TunnelShadowsocks)
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("ожидалась ErrNotFound, получено: %v", err)
+	tun := sampleTunnel("резерв")
+	tun.Country = "NL"
+	if _, err := s.CreateTunnel(context.Background(), tun); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("ожидалась ErrInvalid, получено: %v", err)
 	}
 }

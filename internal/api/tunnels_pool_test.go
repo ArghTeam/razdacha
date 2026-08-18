@@ -346,13 +346,13 @@ func TestRefreshPoolWithoutSchedule(t *testing.T) {
 	requireCode(t, resp, http.StatusServiceUnavailable)
 }
 
-// Пул в системе один и его заводит демон: ссылка на каталог в `POST /api/tunnels` —
-// отказ, а не второй пул.
+// Пулы заводит демон — по одному на страну (ADR 0017): ссылка на каталог в
+// `POST /api/tunnels` — отказ, а не свой пул.
 //
 // Раньше этот тест закреплял обратное: пул создавался ровно этим путём (issue #66).
-// Уточнение объёма #71 отменило создание пулов руками, и от прежнего теста осталось
-// то, ради чего он писался — что разбор ссылки на каталог никуда не делся: ответ
-// говорит про уже существующий пул, а не «конфиг не разобран».
+// Уточнение объёма #71 отменило создание пулов руками, а #171 снял и допущение
+// «пул один» — но разбор ссылки на каталог никуда не делся: ответ говорит про
+// готовые пулы, а не «конфиг не разобран».
 func TestCreatePoolFromCatalogURLIsRejected(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
@@ -360,7 +360,7 @@ func TestCreatePoolFromCatalogURLIsRejected(t *testing.T) {
 	body := `{"name":"Свой пул","raw":"https://vpnkeys.me/protocol/vless"}`
 	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels", body)
 	requireCode(t, resp, http.StatusConflict)
-	if !strings.Contains(resp.body, "включите его") {
+	if !strings.Contains(resp.body, "включите встроенный") {
 		t.Errorf("отказ не говорит, что делать вместо создания: %s", resp.body)
 	}
 
@@ -386,7 +386,9 @@ func poolServers(t *testing.T, ts *testServer, cookie *http.Cookie, id string) (
 func TestPoolServersRotationAndRest(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
-	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 20, true)
+	// Каталог заведомо шире окна: тогда есть и ротация (окно), и остаток за ней.
+	total := lists.PoolConfigServers + 4
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", total, true)
 
 	members := singbox.PoolMembers(tun)
 	// Двух участников объявляем живыми, один из них выбран группой; остальные
@@ -421,8 +423,8 @@ func TestPoolServersRotationAndRest(t *testing.T) {
 	if got.UpdatedAt == nil {
 		t.Error("время обхода каталога не отдано")
 	}
-	if len(got.Servers) != 20 {
-		t.Fatalf("серверов в ответе %d, ожидалось 20 — весь каталог", len(got.Servers))
+	if len(got.Servers) != total {
+		t.Fatalf("серверов в ответе %d, ожидалось %d — весь каталог", len(got.Servers), total)
 	}
 	if strings.Contains(body, "vless://") {
 		t.Error("в ответе есть ссылки vless:// — наружу уехал UUID ключа")
@@ -525,12 +527,18 @@ func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
 
-	res, err := ts.st.EnsureBuiltinPool(context.Background(),
-		"Бесплатные ключи", lists.DefaultPoolCatalogURL, store.TunnelShadowsocks)
-	if err != nil || !res.Created {
-		t.Fatalf("EnsureBuiltinPool: %v (%+v)", err, res)
+	pool, err := ts.st.CreateTunnel(context.Background(), store.Tunnel{
+		Name:    "🇳🇱 Нидерланды",
+		Type:    store.TunnelShadowsocks,
+		Source:  store.SourcePool,
+		Raw:     lists.DefaultPoolCatalogURL,
+		Country: "NL",
+		Enabled: false,
+		Builtin: true,
+	})
+	if err != nil {
+		t.Fatalf("заведение встроенного пула: %v", err)
 	}
-	pool := res.Tunnel
 
 	resp := ts.auth(t, cookie, http.MethodDelete, "/api/tunnels/"+pool.ID, "")
 	requireCode(t, resp, http.StatusConflict)
@@ -551,6 +559,52 @@ func TestDeleteBuiltinPoolIsRejected(t *testing.T) {
 	after := listTunnels(t, ts, cookie)[0]
 	if !after.Enabled || !after.Builtin {
 		t.Errorf("включение встроенного пула не сработало: %+v", after)
+	}
+}
+
+// Встроенный общий пул виден в списке и заперт как встроенный (ADR 0018). Второй пул
+// ссылкой на каталог не завести, удалить встроенный нельзя, а включить и обновить —
+// можно.
+func TestBuiltinPoolListedAndLocked(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	ts.pools = &fakeRefresher{changed: true}
+
+	if _, err := ts.st.EnsureBuiltinPool(context.Background(),
+		lists.DefaultPoolCatalogURL, store.TunnelShadowsocks); err != nil {
+		t.Fatalf("EnsureBuiltinPool: %v", err)
+	}
+
+	list := listTunnels(t, ts, cookie)
+	if len(list) != 1 {
+		t.Fatalf("туннелей в списке %d, ожидался один встроенный пул", len(list))
+	}
+	pool := list[0]
+	if !pool.Builtin {
+		t.Errorf("пул %q не помечен встроенным", pool.Name)
+	}
+	if pool.Source != store.SourcePool {
+		t.Errorf("пул %q формы %q, ожидался pool", pool.Name, pool.Source)
+	}
+	if pool.Enabled {
+		t.Errorf("пул %q заведён включённым: свежая установка сама пошла бы за ключами", pool.Name)
+	}
+
+	// Второй пул ссылкой на каталог не завести — пул заводит демон.
+	resp := ts.auth(t, cookie, http.MethodPost, "/api/tunnels",
+		`{"name":"Свой пул","raw":"`+lists.DefaultPoolCatalogURL+`"}`)
+	requireCode(t, resp, http.StatusConflict)
+
+	// Встроенный пул не удаляется, но включается и обновляется.
+	requireCode(t, ts.auth(t, cookie, http.MethodDelete, "/api/tunnels/"+pool.ID, ""),
+		http.StatusConflict)
+	requireCode(t, ts.auth(t, cookie, http.MethodPatch, "/api/tunnels/"+pool.ID, `{"enabled":true}`),
+		http.StatusOK)
+	requireCode(t, ts.auth(t, cookie, http.MethodPost, "/api/tunnels/"+pool.ID+"/refresh", ""),
+		http.StatusOK)
+
+	if list := listTunnels(t, ts, cookie); len(list) != 1 {
+		t.Fatalf("после действий над пулом их стало %d, ожидался один", len(list))
 	}
 }
 

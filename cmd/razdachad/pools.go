@@ -17,108 +17,47 @@ import (
 // и то же значение, что у listSourcesInterval.
 const poolTunnelsInterval = 30 * time.Second
 
-// builtinPoolName — имя встроенного пула. Видно пользователю, поэтому по-русски и
-// без слова «встроенный»: то, что запись заведена демоном, панель показывает сама.
-//
-// Протокола в имени нет: он теперь свойство каталога, а не пула (ADR 0015), и
-// «Бесплатные VLESS» на shadowsocks-пуле было бы враньём.
-const builtinPoolName = "Бесплатные ключи"
+// igareckCatalogURL — источник ключей встроенного общего пула (ADR 0018). Пул один,
+// без раскладки по странам: драйвер слоя lists отдаёт все прошедшие парсер ключи
+// целиком. Базовый адрес — зеркало CDN githack поверх репозитория
+// igareck/vpn-configs-for-russia; точные файлы и разбор — за драйвером, хранилищу
+// достаточно строки, чтобы пул был засеян.
+const igareckCatalogURL = "https://raw.githack.com/igareck/vpn-configs-for-russia/main/"
 
-// retiredBuiltinPoolName — имя, под которым встроенный пул заводился до ADR 0015.
-//
-// Переименовывается только оно: имя, которое пользователь поменял сам, — его, и
-// трогать его демон не вправе.
-const retiredBuiltinPoolName = "Бесплатные VLESS"
+// poolCatalogType — тип встроенного пула. Косметичен: участники группы urltest
+// разбираются каждый по своей ссылке (ADR 0010/0015), настоящий протокол ключа
+// приходит из каталога. Разумный дефолт — vless: конфиги igareck в основном vless.
+const poolCatalogType = store.TunnelVLESS
 
-// ensureBuiltinPool приводит БД к состоянию «встроенный пул бесплатных ключей есть».
-//
-// Заведён он будет выключенным: свежая установка не должна сама начинать ходить на
-// чужой сайт за ключами. Пул, заведённый руками до этой версии, признаётся встроенным,
-// а не дублируется вторым — про это и пишется в лог, потому что снаружи такая правка
-// БД ничем себя не проявляет.
+// ensureBuiltinPool приводит БД к состоянию «встроенный общий пул есть» (ADR 0018).
+// Заведён он выключенным: свежая установка не должна сама ходить на чужой сайт за
+// ключами. После апгрейда с версии со странами (ADR 0017) семь страновых пулов
+// сворачиваются в один, а ссылавшиеся на удалённые правила отвязываются — про каждое
+// пишется в лог, потому что снаружи такая правка БД ничем себя не проявляет.
 //
 // Неудача демон не останавливает: без пула панель работает, а сообщение в логе
-// объясняет, почему его нет (например, имя занято туннелем пользователя).
+// объясняет, почему его нет (например, имя пула занято туннелем пользователя).
 func ensureBuiltinPool(ctx context.Context, st *store.Store, log *slog.Logger) {
-	typ, err := lists.PoolKeyType(lists.DefaultPoolCatalogURL)
-	if err != nil {
-		log.Error("у каталога по умолчанию нет драйвера", "каталог",
-			lists.DefaultPoolCatalogURL, "ошибка", err)
-		return
-	}
-
-	res, err := st.EnsureBuiltinPool(ctx, builtinPoolName, lists.DefaultPoolCatalogURL, typ)
+	res, err := st.EnsureBuiltinPool(ctx, igareckCatalogURL, poolCatalogType)
 	if err != nil {
 		if ctx.Err() == nil {
 			log.Warn("встроенный пул не заведён", "ошибка", err)
 		}
 		return
 	}
-	retargetDeadCatalog(ctx, st, res.Tunnel, typ, log)
-	switch {
-	case res.Created:
-		log.Info("заведён встроенный пул бесплатных ключей",
-			"туннель", res.Tunnel.Name, "каталог", res.Tunnel.Raw, "включён", res.Tunnel.Enabled)
-	case res.Adopted:
-		log.Info("существующий пул признан встроенным",
-			"туннель", res.Tunnel.Name, "каталог", res.Tunnel.Raw)
+	if res.Created {
+		log.Info("заведён встроенный общий пул", "каталог", igareckCatalogURL)
 	}
-	// Пул в системе один. Остальные — след ручной правки БД или старой установки:
-	// они остаются обычными туннелями и работают как работали, но молчать о том,
-	// что встроенным стал один из нескольких, нельзя.
-	if res.OtherPools > 0 {
-		log.Warn("туннелей-пулов в БД больше одного, встроенным считается один",
-			"встроенный", res.Tunnel.Name, "остальных", res.OtherPools)
+	for _, name := range res.RemovedExtra {
+		log.Warn("страновой встроенный пул свёрнут в общий (ADR 0018)", "туннель", name)
 	}
-}
-
-// retargetDeadCatalog переводит встроенный пул с умершего каталога на живой.
-//
-// Адрес каталога лежит в БД у самого туннеля, поэтому обновление демона его не
-// меняет: у всех, кто поставил razdacha до ADR 0015, там остался мёртвый
-// vpnkeys.me — обход упирается в несуществующий хост, а пул стоит пустым. Молча
-// пустой пул недопустим (issue #153), поэтому адрес и протокол переписываются, а
-// состав чистится: в нём ключи чужого протокола с закрывшегося сайта.
-//
-// Только каталог из списка закрывшихся и только у встроенного пула: адрес, который
-// вписал человек, — его решение, и подменять его нельзя. Каталог живого, но
-// неизвестного нам сайта останется как есть и получит внятную ошибку при обходе.
-//
-// Заодно переименовывается запись, если имя осталось прежним, — протокол пула
-// перестал быть vless, и «Бесплатные VLESS» на shadowsocks было бы враньём. Имя,
-// поменянное пользователем, остаётся его.
-func retargetDeadCatalog(ctx context.Context, st *store.Store, t store.Tunnel,
-	typ store.TunnelType, log *slog.Logger,
-) {
-	if !t.Builtin || !lists.PoolCatalogRetired(t.Raw) {
-		return
-	}
-	if err := st.RetargetBuiltinPool(ctx, t.ID, lists.DefaultPoolCatalogURL, typ); err != nil {
-		if ctx.Err() == nil {
-			log.Warn("каталог встроенного пула не переведён на живой источник",
-				"туннель", t.Name, "каталог", t.Raw, "ошибка", err)
+	for _, r := range res.DetachedRules {
+		if r.Disabled {
+			log.Warn("правило ссылалось на свёрнутый пул и выключено", "правило", r.Name)
+		} else {
+			log.Warn("у правила отвязано второе звено цепи на свёрнутый пул", "правило", r.Name)
 		}
-		return
 	}
-	log.Warn("каталог встроенного пула закрылся, пул переведён на новый источник",
-		"туннель", t.Name, "было", t.Raw, "стало", lists.DefaultPoolCatalogURL,
-		"протокол", typ, "серверов_сброшено", len(t.Pool))
-
-	if t.Name != retiredBuiltinPoolName {
-		return
-	}
-	t.Name, t.Raw, t.Type, t.Pool, t.PoolUpdatedAt = builtinPoolName,
-		lists.DefaultPoolCatalogURL, typ, nil, time.Time{}
-	if err := st.UpdateTunnel(ctx, t); err != nil {
-		// Имя могло быть занято чужим туннелем — это не повод шуметь ошибкой:
-		// пул уже переехал, а название осталось прежним.
-		if ctx.Err() == nil {
-			log.Info("встроенный пул не переименован", "туннель", t.Name, "ошибка", err)
-		}
-		return
-	}
-	log.Info("встроенный пул переименован", "было", retiredBuiltinPoolName,
-		"стало", builtinPoolName)
 }
 
 // startPools поднимает расписание обновления туннелей-пулов.
@@ -133,6 +72,12 @@ func startPools(ctx context.Context, st *store.Store, log *slog.Logger) *lists.P
 		Writer:  st,
 		Logger:  log,
 	})
+
+	if settings, err := st.Settings(ctx); err != nil {
+		log.Error("чтение настроек для расписания пулов", "ошибка", err)
+	} else {
+		m.SetInterval(settings.PoolUpdateInterval)
+	}
 
 	tunnels := poolTunnels(ctx, st, log)
 	m.SetTunnels(tunnels)
@@ -184,6 +129,14 @@ func syncPoolTunnels(ctx context.Context, st *store.Store, m *lists.PoolManager,
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		}
+
+		// Интервал живёт в настройках и меняется через панель: подхватываем его на
+		// каждом такте, чтобы смена не требовала перезапуска демона.
+		if settings, err := st.Settings(ctx); err != nil {
+			log.Error("чтение настроек для расписания пулов", "ошибка", err)
+		} else {
+			m.SetInterval(settings.PoolUpdateInterval)
 		}
 
 		tunnels := poolTunnels(ctx, st, log)

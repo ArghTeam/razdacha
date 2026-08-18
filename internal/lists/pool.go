@@ -14,13 +14,15 @@ import (
 
 // DefaultPoolInterval — как часто обходится каталог ключей.
 //
-// Двенадцать часов, потому что обновление дорого: изменившийся набор серверов
-// переписывает конфиг, а перезагрузка идёт через `systemctl reload-or-restart`,
-// то есть перезапускает sing-box и рвёт соединения во всех туннелях. Ротация внутри
-// пула к этому отношения не имеет — её ведёт `urltest` внутри процесса каждые
-// несколько минут (ADR 0010). Сам сайт объявляет тот же период в заголовке
-// `profile-update-interval: 12`.
-const DefaultPoolInterval = 12 * time.Hour
+// Один час. Источник igareck обновляется практически непрерывно (проверено —
+// ~3 минуты между коммитами), и двенадцатичасовой снимок держал в БД мёртвые ключи,
+// не добирая свежие. Частый обход при этом дёшев: перегенерация конфига (а с ней и
+// перезапуск sing-box) идёт только когда меняется окно из [PoolConfigServers] — а оно
+// меняется лишь при выселении или доборе. Свежие ключи ложатся в кандидаты за окном
+// без reload, а на живого участника `urltest` внутри процесса переключается сам каждые
+// три минуты (`singbox.PoolTestInterval`, ADR 0010). Сайт объявляет свой период в
+// заголовке `profile-update-interval: 12` — его мы не соблюдаем намеренно, обход чаще.
+const DefaultPoolInterval = 1 * time.Hour
 
 // PoolWriter — то, что расписание пула умеет менять в БД. Интерфейс, а не *store.Store:
 // в тестах записи проверяются без SQLite, а слой lists и без того не владеет БД.
@@ -46,8 +48,8 @@ type PoolTunnel struct {
 // Нужна для сверки набора с БД: изменился набор — каталоги надо обойти сразу, не дожидаясь
 // [DefaultPoolInterval]. Состав же серверов шевелится после каждого обхода (счётчики
 // пропусков, новые карточки), и сверка, которая его учитывает, объявляет набор
-// изменившимся всегда — каталог обходится на каждом такте сверки вместо раза в 12 часов
-// (issue #77).
+// изменившимся всегда — каталог обходится на каждом такте сверки вместо раза в
+// [DefaultPoolInterval] (issue #77).
 //
 // Тип отдельный, а не сравнение полей на месте: он перечисляет участвующие поля явно и
 // сравнивается через `==`, поэтому новое поле [PoolTunnel] попадает в сверку только когда
@@ -241,40 +243,55 @@ func (m *PoolManager) currentInterval() time.Duration {
 	return m.interval
 }
 
-// Refresh обходит каталоги всех включённых пулов один раз. Ошибка одного пула не
-// отменяет остальные и не выбрасывает его прошлый состав из БД: устаревший список
-// серверов лучше пустого.
+// Refresh обходит каталоги всех включённых пулов.
+//
+// Пулы с общим каталогом обходятся один раз на группу, а не по разу на пул: обойти
+// один и тот же файл дважды нельзя ни по вежливости к источнику, ни по устройству
+// дедупа обхода — `beginCrawl` отдал бы ключи только первому пулу. Встроенный пул
+// один (ADR 0018), но группировка остаётся общей защитой от совпавших обходов одного
+// каталога. Ошибка одной группы не отменяет остальные и не выбрасывает прошлый состав
+// пула из БД: устаревший список лучше пустого.
 func (m *PoolManager) Refresh(ctx context.Context) error {
 	m.mu.RLock()
 	tunnels := append([]PoolTunnel(nil), m.tunnels...)
 	m.mu.RUnlock()
 
-	var (
-		errs    []error
-		changed bool
-	)
+	// Включённые пулы группируются по каталогу; порядок каталогов и порядок пулов
+	// внутри группы сохраняются — от них зависит и предсказуемость лога, и порядок в
+	// панели. Выключенный пул в группу не входит: он не в конфиге, ходить за него на
+	// чужой сайт незачем.
+	var order []string
+	groups := make(map[string][]PoolTunnel)
 	for _, t := range tunnels {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		// Выключенный пул список не обновляет: он не в конфиге, и ходить за него
-		// на чужой сайт незачем.
 		if !t.Enabled {
 			m.log.Debug("пул выключен, каталог не обходим", "туннель", t.Name)
 			continue
 		}
+		if _, ok := groups[t.CatalogURL]; !ok {
+			order = append(order, t.CatalogURL)
+		}
+		groups[t.CatalogURL] = append(groups[t.CatalogURL], t)
+	}
 
-		ok, err := m.refreshOne(ctx, t)
+	var (
+		errs    []error
+		changed bool
+	)
+	for _, catalogURL := range order {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		ok, err := m.refreshGroup(ctx, groups[catalogURL])
 		switch {
 		case errors.Is(err, ErrPoolCrawlBusy):
 			// Каталог уже обходит кто-то другой — чаще всего кнопка «Обновить» в
 			// панели, нажатая в ту же секунду. Это не неудача: уходить в ретраи
 			// незачем, свежий состав запишет идущий обход (issue #156).
 			m.log.Info("каталог пула уже обходится, такт расписания пропущен",
-				"туннель", t.Name, "каталог", t.CatalogURL)
+				"каталог", catalogURL, "пулов", len(groups[catalogURL]))
 		case err != nil:
 			errs = append(errs, err)
-			m.log.Warn("пул не обновлён", "туннель", t.Name, "err", err)
+			m.log.Warn("каталог пулов обойдён не полностью", "каталог", catalogURL, "err", err)
 		case ok:
 			changed = true
 		}
@@ -326,13 +343,46 @@ func (m *PoolManager) RefreshPool(ctx context.Context, t PoolTunnel) (bool, erro
 	return changed, nil
 }
 
-// refreshOne обновляет один пул. Первое значение — изменился ли состав.
+// refreshGroup обходит общий каталог группы один раз и применяет выдачу к каждому её
+// пулу целиком (ADR 0018). Первое значение — изменился ли состав хоть у одного пула
+// группы. Ошибка обхода — общая для группы; ошибка записи одного пула не мешает остальным.
+func (m *PoolManager) refreshGroup(ctx context.Context, group []PoolTunnel) (bool, error) {
+	servers, err := m.catalog.Servers(ctx, group[0].CatalogURL)
+	if err != nil {
+		return false, fmt.Errorf("каталог пулов %q: %w", group[0].CatalogURL, err)
+	}
+
+	var (
+		errs    []error
+		changed bool
+	)
+	for _, t := range group {
+		ok, werr := m.applyServers(ctx, t, servers)
+		if werr != nil {
+			errs = append(errs, werr)
+			m.log.Warn("пул не обновлён", "туннель", t.Name, "err", werr)
+			continue
+		}
+		if ok {
+			changed = true
+		}
+	}
+	return changed, errors.Join(errs...)
+}
+
+// refreshOne обходит каталог одного пула. Первое значение — изменился ли состав.
+// Используется обходом по требованию ([RefreshPool]): один пул — один обход.
 func (m *PoolManager) refreshOne(ctx context.Context, t PoolTunnel) (bool, error) {
 	servers, err := m.catalog.Servers(ctx, t.CatalogURL)
 	if err != nil {
 		return false, fmt.Errorf("каталог пула %q: %w", t.Name, err)
 	}
+	return m.applyServers(ctx, t, servers)
+}
 
+// applyServers сводит переданный состав с тем, что лежит в БД, и пишет, если он
+// изменился. Первое значение — изменился ли состав.
+func (m *PoolManager) applyServers(ctx context.Context, t PoolTunnel, servers []store.PoolServer) (bool, error) {
 	merged, changed := MergePool(t.Servers, servers)
 	if !changed {
 		m.log.Debug("состав пула не изменился", "туннель", t.Name, "серверов", len(servers))
@@ -360,11 +410,19 @@ const poolMissesBeforeDrop = 3
 
 // PoolConfigServers — сколько первых серверов списка уходит в конфиг sing-box.
 //
+// Окно широкое намеренно. Каталог igareck живость ключа не отражает: ключ — строка в
+// подписке, она «присутствует» всегда, и мёртвый по urltest держит слот вечно (в отборе
+// окна `alive = Misses < poolMissesBeforeDrop` — это «не пропал из подписки», а не «жив»).
+// На стенде из 81 собранного в окне 16 отвечали лишь 2, а 65 кандидатов простаивали.
+// Поэтому окно делаем широким, чтобы живого нашёл сам urltest: он перепроверяет
+// участников каждые 3 минуты и переключается без reload (ADR 0010), нужно лишь дать ему
+// достаточно кандидатов.
+//
 // Держится равным `poolMaxServers` слоя singbox: слияние обязано знать границу окна,
 // иначе выбывший участник сдвинул бы позиции остальных, а позиция — это тег в конфиге.
 // Импортировать singbox слой lists не может (генератор читает списки, не наоборот),
 // поэтому число объявлено здесь и сверяется тестом `TestPoolConfigWindowAgrees`.
-const PoolConfigServers = 16
+const PoolConfigServers = 64
 
 // MergePool сводит состав пула, лежащий в БД, со свежим обходом каталога и говорит,
 // изменился ли он. Возвращённый список идёт в БД как есть.
@@ -390,9 +448,13 @@ const PoolConfigServers = 16
 // (ADR 0010).
 func MergePool(stored, fresh []store.PoolServer) ([]store.PoolServer, bool) {
 	inFresh := make(map[string]bool, len(fresh))
+	freshByURL := make(map[string]store.PoolServer, len(fresh))
 	for _, s := range fresh {
 		if s.URL != "" {
 			inFresh[s.URL] = true
+			if _, ok := freshByURL[s.URL]; !ok {
+				freshByURL[s.URL] = s
+			}
 		}
 	}
 
@@ -412,6 +474,17 @@ func MergePool(stored, fresh []store.PoolServer) ([]store.PoolServer, bool) {
 		alive := true
 		if inFresh[s.URL] {
 			s.Misses = 0
+			// Backfill каталожной подписи: старый состав мог лечь без неё (до #189
+			// Title у igareck не заполнялся), и в модалке оставался прочерк. Заполняем
+			// только пустое — перезаписывать имеющуюся подпись на каждом обходе нельзя:
+			// дрейф чужого каталога дёргал бы состав и перезапускал sing-box (issue #68).
+			f := freshByURL[s.URL]
+			if s.Title == "" {
+				s.Title = f.Title
+			}
+			if s.Country == "" {
+				s.Country = f.Country
+			}
 		} else {
 			s.Misses++
 			alive = s.Misses < poolMissesBeforeDrop

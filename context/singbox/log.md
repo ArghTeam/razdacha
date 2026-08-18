@@ -3,6 +3,28 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-18
+
+### #194 — потолок пула 16 → 64
+
+**Changed:** `poolMaxServers` 16 → 64 (равен `lists.PoolConfigServers`, `TestPoolConfigWindowAgrees`). Цена — 64 outbound'а и 64 пробы каждые `PoolTestInterval`, внутри процесса.
+
+### #187 — пул терпит битого участника
+
+**Changed:** `apply.go` цикл: `check` упал на участнике пула → его выкидывают, конфиг пересобирается, окно доберётся (ADR 0019); `pool_reject.go` — `outbound[N]`→тег→сервер.
+**Beware:** строго `source==pool`; ручной туннель валит применение; `endpoint[N]` пулу не принадлежит.
+
+### #183 — reality без fp получает uTLS chrome
+
+**Changed:** `parse_url.go`: при включённом `Reality` ставится `uTLS` (fp из ссылки или `chrome`) — без uTLS sing-box валит весь конфиг, и один такой ключ блокировал общий пул #181 (класс #176).
+
+## 2026-08-17
+
+### #176 — неподдерживаемый flow отбраковывается разбором
+
+**Changed:** `parse_url.go` (vless) валидирует `flow` — только `""` и `xtls-rprx-vision`, иное → `ErrParse` (как `encryption`).
+**Beware:** легаси-flow из подписки (`xtls-rprx-vision-udp443`) иначе ронял весь конфиг и блокировал 5 из 7 страновых пулов.
+
 ## 2026-08-15
 
 ### #149 — отказ правила виден в панели

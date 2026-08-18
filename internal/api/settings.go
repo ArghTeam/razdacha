@@ -25,6 +25,7 @@ type settingsResponse struct {
 	DNSType             string  `json:"dns_type"`
 	WANInterface        string  `json:"wan_interface"`
 	ListUpdateInterval  int     `json:"list_update_interval"`
+	PoolUpdateInterval  int     `json:"pool_update_interval"`
 	TunnelCheckInterval int     `json:"tunnel_check_interval"`
 	LogLevel            string  `json:"log_level"`
 	ServerPublicKey     *string `json:"server_public_key"`
@@ -45,6 +46,7 @@ func newSettingsResponse(v store.Settings, serverKey string) settingsResponse {
 		DNSType:             v.DNSType,
 		WANInterface:        v.WANInterface,
 		ListUpdateInterval:  int(v.ListUpdateInterval / time.Second),
+		PoolUpdateInterval:  int(v.PoolUpdateInterval / time.Second),
 		TunnelCheckInterval: int(v.TunnelCheckInterval / time.Second),
 		LogLevel:            v.LogLevel,
 	}
@@ -66,6 +68,7 @@ type settingsRequest struct {
 	DNSType             *string `json:"dns_type"`
 	WANInterface        *string `json:"wan_interface"`
 	ListUpdateInterval  *int    `json:"list_update_interval"`
+	PoolUpdateInterval  *int    `json:"pool_update_interval"`
 	TunnelCheckInterval *int    `json:"tunnel_check_interval"`
 	LogLevel            *string `json:"log_level"`
 }
@@ -98,6 +101,9 @@ func (req settingsRequest) apply(v store.Settings) store.Settings {
 	}
 	if req.ListUpdateInterval != nil {
 		v.ListUpdateInterval = time.Duration(*req.ListUpdateInterval) * time.Second
+	}
+	if req.PoolUpdateInterval != nil {
+		v.PoolUpdateInterval = time.Duration(*req.PoolUpdateInterval) * time.Second
 	}
 	if req.TunnelCheckInterval != nil {
 		v.TunnelCheckInterval = time.Duration(*req.TunnelCheckInterval) * time.Second

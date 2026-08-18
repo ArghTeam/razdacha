@@ -157,6 +157,15 @@ input[type="password"] {
 .screen-head .spacer { flex: 1; }
 .screen-sub { color: var(--fg-dim); font-size: 13px; width: 100%; margin-top: -4px; }
 
+/* Заголовок раздела внутри экрана: отделяет дефолтные страновые пулы от своих
+   туннелей (#171). Первый идёт без верхнего отступа — под ним уже шапка экрана. */
+.screen-section {
+  font-size: 15px; font-weight: 640; color: var(--fg);
+  margin: 22px 0 10px;
+}
+.screen-section + .screen-sub { margin: -6px 0 10px; }
+.screen-head + .screen-section { margin-top: 4px; }
+
 /* --- карточка/список --- */
 .card {
   background: var(--bg-elev);
@@ -308,6 +317,11 @@ input[type="password"] {
 .probe-domain { font-weight: 600; }
 .probe-rule { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 .probe-verdict { margin-top: 6px; color: var(--fg-dim); }
+/* Проба доступности напрямую красит вердикт по классу: геоблок — тревожно,
+   недоступен — приглушённо, открывается — спокойно. */
+.probe-verdict.err { color: var(--err); font-weight: 560; }
+.probe-verdict.warn { color: var(--warn); }
+.probe-verdict.accent { color: var(--accent); }
 .probe-addr { margin-top: 4px; color: var(--fg-faint); font-size: 12.5px; }
 /* Отказ по правилу — не молчание резолвера: это ответ о маршрутизации. */
 .probe-addr.refused { color: var(--err); }
@@ -768,8 +782,19 @@ textarea.bad { border-color: color-mix(in srgb, var(--err) 55%, var(--line-stron
 .pool-srv:first-child { border-top: 0; }
 .pool-srv.current { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .pool-srv-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.pool-srv-country { color: var(--fg-dim); }
 .pool-srv-name { font-family: var(--mono); font-size: 13px; }
+/* Страна сервера пула — подпись карточки каталога, не проверенный факт
+   (issue #161): пунктирное подчёркивание и курсор-подсказка отличают её от
+   измеренных величин рядом, не превращая список в справку. */
+.pool-country {
+  color: var(--fg-dim); border-bottom: 1px dotted var(--fg-faint); cursor: help;
+}
+/* Тот же смысл в чипе свёрнутого списка: подчёркивание там смотрелось бы
+   в довесок к собственной рамке чипа, поэтому вместо него — пунктирная
+   рамка вместо сплошной, тот же приём, что уже отличает «остывший» чип
+   списка (`.chip.list-cold`). Без этого правила у чипа был бы только
+   `title`, и заметить пометку можно было бы лишь случайно (issue #161). */
+.chip.pool-country { border-style: dashed; cursor: help; }
 
 /* --- версия в шапке ---
    Блок дописан в конец файла по той же причине, что и «ход проверки»: правила

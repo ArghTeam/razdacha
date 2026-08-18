@@ -173,6 +173,17 @@ CREATE TABLE warp_registrations (
 ALTER TABLE tunnel_checks ADD COLUMN ok_at INTEGER NOT NULL DEFAULT 0;
 `,
 	},
+	{
+		// Страна встроенного пула (ADR 0017). С ADR 0018 колонка больше не
+		// используется — единый общий пул страну выхода не различает, — но остаётся
+		// в схеме: колонки в SQLite без нужды не роняют. Заполненной она бывает
+		// только у страновых пулов, заведённых на версии со странами; апгрейд до
+		// 0018 их сворачивает и колонку очищает ([Store.EnsureBuiltinPool]).
+		version: 11,
+		stmts: `
+ALTER TABLE tunnels ADD COLUMN country TEXT NOT NULL DEFAULT '';
+`,
+	},
 }
 
 // schemaVersion — версия схемы, которую ожидает этот код.

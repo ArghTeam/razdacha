@@ -3,6 +3,30 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-18
+
+### #198 — интервал пула в настройках API
+
+**Changed:** `pool_update_interval` в `GET`/`PATCH /api/settings` (приём/отдача). Ниже 30 мин → 400 (валидация store).
+
+### #192 (фаза 0) — проба доступности домена по запросу
+
+**Changed:** `reachprobe.go` — прямая проба геоблока.
+**New surface:** `POST /api/domain/reachability` → `{status,class,verdict}`, классы `reachable`/`geoblock_suspect`/`unreachable`.
+**Beware:** резолв `net/http` с сервера = реальный IP, НЕ Clash `/dns/query` (тот отдаёт FakeIP). Через-туннель — Фаза 1.
+
+## 2026-08-17
+
+### #181 — API отдаёт один общий пул
+
+**Changed:** `tunnelResponse.Country` и per-server `country` (в `poolServerResponse`/`poolCurrentServer`) убраны; отказ на создание пула ссылкой — про встроенный пул, не про страны (ADR 0018).
+**Beware:** `sortPoolServers` без тай-брейка по стране — только ротация/пинг.
+
+### #171 — API отдаёт 7 страновых пулов вместо одного
+
+**Changed:** `tunnelResponse.Country` (ISO-код, `omitempty`) из `Tunnel.Country`; отказ на создание пула ссылкой переформулирован под набор стран (ADR 0017).
+**Beware:** страновые пулы builtin — API их не создаёт и не удаляет; enable/disable/refresh доступны у каждого.
+
 ## 2026-08-15
 
 ### #149 — отказ правила виден в панели

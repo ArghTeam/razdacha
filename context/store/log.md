@@ -3,6 +3,26 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-18
+
+### #198 — интервал обновления пула настройкой
+
+**Changed:** `Settings.PoolUpdateInterval` (ключ `pool_update_interval`), дефолт 1 ч, floor `MinPoolUpdateInterval = 30m` в `validate`.
+**Beware:** floor не вкусовой — выселение = `poolMissesBeforeDrop` × интервал; 30 мин держит churn в узде. Дефолт равен `lists.DefaultPoolInterval`, сверяется `TestPoolIntervalDefaultAgrees` (store не импортирует lists).
+
+## 2026-08-17
+
+### #181 — единый общий пул вместо 7 страновых
+
+**Changed:** `EnsureBuiltinPool` вместо `EnsureBuiltinCountryPools`; `collapseBuiltinPools` сворачивает 7→1 по ADR 0013; `CountryPools`/`PoolName`/`flagEmoji`/тип `Country`/`CountryPoolsResult` убраны.
+**Beware:** колонка `country` осталась в схеме, но пуста; выживший переименовывается лишь при реальном сворачивании (ADR 0018).
+
+### #169 — 7 страновых встроенных пулов вместо одного
+
+**Changed:** миграция 11 `tunnels.country`; `EnsureBuiltinCountryPools` — 7 страновых пулов вместо `EnsureBuiltinPool`; старый пул без страны удалён.
+**New surface:** `store.CountryPools()`, `Tunnel.Country`, `CountryPoolsResult`.
+**Beware:** идемпотентность по (builtin, country); отвязка правил — в инвариантах (ADR 0017).
+
 ## 2026-08-15
 
 ### #152 — молчащий туннель отличим от мёртвого

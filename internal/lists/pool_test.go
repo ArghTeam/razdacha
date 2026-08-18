@@ -829,9 +829,10 @@ func TestMergePoolFirstCrawlOrdersByPing(t *testing.T) {
 
 // Пинг и подпись известного сервера при обходе не перезаписываются, порядок не
 // пересчитывается: иначе отбор ехал бы от шума измерений чужого сайта, а с ним
-// менялся бы и конфиг (issue #68).
+// менялся бы и конфиг (issue #68). Пустую подпись каталог всё же подтягивает (#189),
+// но здесь она уже есть — значит трогать нечего.
 func TestMergePoolFreezesKnownCards(t *testing.T) {
-	cards := poolCards(20)
+	cards := poolCards(PoolConfigServers + 4)
 	stored, _ := MergePool(nil, poolWithout(cards))
 
 	merged, changed := MergePool(stored, poolWithout(cards))
@@ -848,10 +849,32 @@ func TestMergePoolFreezesKnownCards(t *testing.T) {
 	}
 }
 
+// Старый состав мог лечь без подписи (до #189 igareck не заполнял Title). Присутствующему
+// в свежем каталоге серверу имя и страну подтягиваем — иначе в модалке остаётся прочерк.
+func TestMergePoolBackfillsTitleFromCatalog(t *testing.T) {
+	url := "vless://key-00@10.0.0.1:443"
+	stored := []store.PoolServer{{URL: url}} // легло без Title/Country
+	fresh := []store.PoolServer{{URL: url, Title: "🇧🇬 Bulgaria, Sofia | [BL]", Country: "Болгария"}}
+
+	merged, changed := MergePool(stored, fresh)
+	if !changed {
+		t.Fatal("подтяжка подписи не сочлась изменением состава")
+	}
+	if len(merged) != 1 {
+		t.Fatalf("состав %d, ожидался 1", len(merged))
+	}
+	if merged[0].Title != "🇧🇬 Bulgaria, Sofia | [BL]" || merged[0].Country != "Болгария" {
+		t.Fatalf("подпись не подтянулась из каталога: %+v", merged[0])
+	}
+	if merged[0].Misses != 0 {
+		t.Errorf("Misses=%d, ожидался 0 у присутствующего в каталоге", merged[0].Misses)
+	}
+}
+
 // Новая карточка не выселяет из окна конфига живой сервер, даже если у неё пинг лучше
 // всех: смена окна стоит перезапуска sing-box, а работающему серверу замена не нужна.
 func TestMergePoolNewcomerWaitsBehindWindow(t *testing.T) {
-	cards := poolCards(20)
+	cards := poolCards(PoolConfigServers + 4)
 	stored, _ := MergePool(nil, poolWithout(cards))
 
 	newcomer := store.PoolServer{URL: "vless://новый@10.9.9.9:443", PingMS: 1}
@@ -872,7 +895,7 @@ func TestMergePoolNewcomerWaitsBehindWindow(t *testing.T) {
 // отдаёт часть карточек без ссылки почти на каждом запросе. Место она уступает только
 // после нескольких обходов подряд, и ровно своё — остальные не сдвигаются.
 func TestMergePoolReplacesOnlyAfterRepeatedMiss(t *testing.T) {
-	cards := poolCards(20)
+	cards := poolCards(PoolConfigServers + 4)
 	stored, _ := MergePool(nil, poolWithout(cards))
 	victim := stored[3]
 
@@ -929,5 +952,14 @@ func TestOutlineKeysPageURL(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("в адресе %q нет %q", got, want)
 		}
+	}
+}
+
+// Дефолт настройки интервала пула держится равным DefaultPoolInterval. Store не
+// может импортировать lists (это lists импортирует store), поэтому равенство
+// стережёт этот тест на стороне lists — разъедутся значения, и он загорится.
+func TestPoolIntervalDefaultAgrees(t *testing.T) {
+	if got := store.DefaultSettings().PoolUpdateInterval; got != DefaultPoolInterval {
+		t.Errorf("дефолт настройки пула = %s, DefaultPoolInterval = %s", got, DefaultPoolInterval)
 	}
 }
