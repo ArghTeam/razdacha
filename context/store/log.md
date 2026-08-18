@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-18
+
+### #198 — интервал обновления пула настройкой
+
+**Changed:** `Settings.PoolUpdateInterval` (ключ `pool_update_interval`), дефолт 1 ч, floor `MinPoolUpdateInterval = 30m` в `validate`.
+**Beware:** floor не вкусовой — выселение = `poolMissesBeforeDrop` × интервал; 30 мин держит churn в узде. Дефолт равен `lists.DefaultPoolInterval`, сверяется `TestPoolIntervalDefaultAgrees` (store не импортирует lists).
+
 ## 2026-08-17
 
 ### #181 — единый общий пул вместо 7 страновых
