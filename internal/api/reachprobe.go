@@ -143,7 +143,7 @@ func probeReachability(ctx context.Context, domain string) (int, []byte, error) 
 	if err != nil {
 		return 0, nil, fmt.Errorf("проба доступности %q: %w", domain, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Тело читаем ограниченно и его недочит не считаем провалом пробы: код
 	// ответа уже получен, а тело нужно лишь для детекта Cloudflare 1020.
