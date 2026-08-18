@@ -317,6 +317,11 @@ input[type="password"] {
 .probe-domain { font-weight: 600; }
 .probe-rule { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 .probe-verdict { margin-top: 6px; color: var(--fg-dim); }
+/* Проба доступности напрямую красит вердикт по классу: геоблок — тревожно,
+   недоступен — приглушённо, открывается — спокойно. */
+.probe-verdict.err { color: var(--err); font-weight: 560; }
+.probe-verdict.warn { color: var(--warn); }
+.probe-verdict.accent { color: var(--accent); }
 .probe-addr { margin-top: 4px; color: var(--fg-faint); font-size: 12.5px; }
 /* Отказ по правилу — не молчание резолвера: это ответ о маршрутизации. */
 .probe-addr.refused { color: var(--err); }
