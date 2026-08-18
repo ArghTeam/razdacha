@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-18
+
+### #189 — имя члена пула из фрагмента ссылки
+
+**Changed:** `igareck` заполняет `Title` из фрагмента `#…` (флаг, страна, город), fallback на хост; `MergePool` backfill'ит пустой `Title`/`Country` из свежего обхода.
+**Beware:** backfill только для пустого поля — перезапись на каждом обходе дала бы churn конфига (#68). Title косметичен: на окно и теги не влияет. Проверено на стенде.
+
 ## 2026-08-17
 
 ### #181 — igareck без geo-IP, единый пул
