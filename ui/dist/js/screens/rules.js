@@ -385,20 +385,49 @@ function emptyView() {
     опроса, и ответ, стёртый через пятнадцать секунд, читать некогда. */
 const probe = { domain: '', busy: false, result: null, error: '' };
 
+/** Проба доступности домена — сосед пробника маршрута, но вопрос другой: не
+    «куда уйдёт», а «открывается ли напрямую или отдаёт геоблок». Своё состояние,
+    чтобы ответ одной пробы не стирал ответ другой. */
+const reach = { busy: false, result: null, error: '' };
+
 function probeView() {
+  const busy = probe.busy || reach.busy;
   return `
     <div class="card probe">
       <div class="probe-bar">
-        <label for="probe-domain">Куда уйдёт домен</label>
+        <label for="probe-domain">Проверить домен</label>
         <input type="search" id="probe-domain" class="probe-input" autocomplete="off" spellcheck="false"
           placeholder="youtube.com" value="${esc(probe.domain)}" data-enter="probe-run"
           aria-label="Домен для проверки">
-        <button class="btn" data-act="probe-run" ${probe.busy ? 'disabled' : ''}>${
-  probe.busy ? 'Спрашиваю…' : 'Проверить'}</button>
+        <button class="btn" data-act="probe-run" ${busy ? 'disabled' : ''}>${
+  probe.busy ? 'Спрашиваю…' : 'Куда уйдёт'}</button>
+        <button class="btn" data-act="reach-run" ${busy ? 'disabled' : ''}>${
+  reach.busy ? 'Проверяю…' : 'Доступность напрямую'}</button>
       </div>
-      <div class="probe-hint">Отвечает работающий sing-box: его правила маршрутизации и его же
-        резолвер. Накопленные, но не применённые правки в ответ не попадают — на то он и живой.</div>
+      <div class="probe-hint"><b>Куда уйдёт</b> — отвечает работающий sing-box: его правила
+        маршрутизации и его же резолвер; непримененные правки в ответ не попадают.
+        <b>Доступность напрямую</b> — демон сам идёт к домену с адреса сервера и говорит, открывается
+        ли тот в лоб или отдаёт геоблок (403/451, Cloudflare 1020).</div>
       ${probeResult()}
+      ${reachResult()}
+    </div>`;
+}
+
+/* --- проба доступности напрямую -------------------------------------------
+   Вердикт приходит с сервера готовой русской фразой и показывается как есть.
+   Класс красит рамку: `geoblock_suspect` — тревожно, `unreachable` — приглушённо,
+   `reachable` — спокойно. Ничего от себя панель не добавляет: «похоже на геоблок»
+   сказал демон, и додумывать «а туннель починит» здесь нельзя (это Фаза 1). */
+function reachResult() {
+  if (reach.error) return `<div class="probe-out err">${esc(reach.error)}</div>`;
+  const p = reach.result;
+  if (!p) return '';
+  const tone = p.class === 'geoblock_suspect' ? 'err'
+    : p.class === 'unreachable' ? 'warn' : 'accent';
+  const code = p.status ? ` <span class="mono">HTTP ${esc(String(p.status))}</span>` : '';
+  return `<div class="probe-out">
+      <div class="probe-domain mono">${esc(p.domain)} — доступность напрямую${code}</div>
+      <div class="probe-verdict ${tone}">${esc(p.verdict)}</div>
     </div>`;
 }
 
@@ -450,6 +479,28 @@ async function runProbe() {
     probe.error = err.message;
   } finally {
     probe.busy = false;
+    refresh();
+  }
+}
+
+async function runReach() {
+  const field = $('#probe-domain');
+  probe.domain = field ? field.value.trim() : probe.domain;
+  if (!probe.domain) {
+    toast('Введите домен, например youtube.com', 'err');
+    if (field) field.focus();
+    return;
+  }
+  reach.busy = true;
+  reach.error = '';
+  refresh();
+  try {
+    reach.result = await api.domain.reachability(probe.domain);
+  } catch (err) {
+    reach.result = null;
+    reach.error = err.message;
+  } finally {
+    reach.busy = false;
     refresh();
   }
 }
@@ -815,6 +866,7 @@ async function move(id, delta) {
 
 export const actions = {
   'probe-run': () => runProbe(),
+  'reach-run': () => runReach(),
   'add-rule': () => modalRule(null),
 
   /* Стартовый пресет: не создаёт правило, а открывает обычную форму с

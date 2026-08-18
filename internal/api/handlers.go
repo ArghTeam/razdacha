@@ -46,6 +46,10 @@ func (s *Server) routes() http.Handler {
 	// он спрашивает работающее ядро, а не читает и не меняет правила в базе.
 	s.protect(mux, "POST /api/route/test", s.handleRouteTest)
 
+	// Проба доступности домена: сосед пробника маршрута, но вопрос другой —
+	// открывается ли домен напрямую, с адреса сервера, или отдаёт геоблок.
+	s.protect(mux, "POST /api/domain/reachability", s.handleReachability)
+
 	s.protect(mux, "GET /api/lists/community", s.handleCommunityLists)
 
 	s.protect(mux, "GET /api/settings", s.handleSettings)
