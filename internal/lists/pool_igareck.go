@@ -94,7 +94,7 @@ func (d igareck) Servers(ctx context.Context, c *poolCrawl, catalog *url.URL) (
 
 			// PingMS не заполняется: источник задержки не даёт, выдумывать её нельзя.
 			// Отбор живых ведёт `urltest` (ADR 0010).
-			out = append(out, store.PoolServer{URL: line})
+			out = append(out, store.PoolServer{URL: line, Title: igareckTitle(line)})
 		}
 	}
 	return out, nil
@@ -139,6 +139,38 @@ func (d igareck) mirrors(catalog *url.URL) []string {
 		mirrors = append(mirrors, fallback)
 	}
 	return mirrors
+}
+
+// igareckTitle — человекочитаемое имя члена пула из ссылки-ключа. Только отображение:
+// на конфиг sing-box не влияет, тег члена остаётся синтетическим (ADR 0010/0015).
+//
+// Имя берётся из фрагмента (часть после первого `#`), обычно «флаг страна, город»
+// в percent-encoding. Пустой фрагмент — fallback на хост:порт из ссылки; если и это
+// не разобралось — пустая строка (UI сам покажет прочерк).
+func igareckTitle(line string) string {
+	if _, frag, ok := strings.Cut(line, "#"); ok && frag != "" {
+		name, err := url.PathUnescape(frag)
+		if err != nil {
+			// Битый percent-encoding — отдаём сырой фрагмент, он всё же читаем.
+			name = frag
+		}
+		return strings.TrimSpace(name)
+	}
+	// Фрагмента нет — берём адрес сервера best-effort. Парсер тут строгий (net/url),
+	// но на нужное — хост:порт — ему хватает: shadowsocks с «/» в userinfo без
+	// фрагмента до этой ветки и не доходит.
+	if u, err := url.Parse(line); err == nil {
+		if host := u.Host; host != "" {
+			return strings.TrimSpace(host)
+		}
+		if h := u.Hostname(); h != "" {
+			if p := u.Port(); p != "" {
+				return strings.TrimSpace(h + ":" + p)
+			}
+			return strings.TrimSpace(h)
+		}
+	}
+	return ""
 }
 
 // igareckKeyLine — похожа ли строка на ссылку-ключ. Комментарии, пустые строки и
