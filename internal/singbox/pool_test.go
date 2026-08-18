@@ -433,7 +433,7 @@ func TestPoolApplyWithoutReloadOnCatalogDrift(t *testing.T) {
 	}
 }
 
-// Исчезнувший из каталога участник заменяется, и только он: остальные пятнадцать
+// Исчезнувший из каталога участник заменяется, и только он: остальные участники окна
 // остаются на своих тегах. Сдвиг тега — это другой конфиг, то есть тот же перезапуск.
 func TestPoolReplacesOnlyMissingServer(t *testing.T) {
 	catalog := poolServers(t, poolMaxServers+4)

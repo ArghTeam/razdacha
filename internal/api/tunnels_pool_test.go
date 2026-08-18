@@ -386,7 +386,9 @@ func poolServers(t *testing.T, ts *testServer, cookie *http.Cookie, id string) (
 func TestPoolServersRotationAndRest(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
-	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 20, true)
+	// Каталог заведомо шире окна: тогда есть и ротация (окно), и остаток за ней.
+	total := lists.PoolConfigServers + 4
+	tun := poolTunnel(t, ts.st, "Бесплатные ключи", total, true)
 
 	members := singbox.PoolMembers(tun)
 	// Двух участников объявляем живыми, один из них выбран группой; остальные
@@ -421,8 +423,8 @@ func TestPoolServersRotationAndRest(t *testing.T) {
 	if got.UpdatedAt == nil {
 		t.Error("время обхода каталога не отдано")
 	}
-	if len(got.Servers) != 20 {
-		t.Fatalf("серверов в ответе %d, ожидалось 20 — весь каталог", len(got.Servers))
+	if len(got.Servers) != total {
+		t.Fatalf("серверов в ответе %d, ожидалось %d — весь каталог", len(got.Servers), total)
 	}
 	if strings.Contains(body, "vless://") {
 		t.Error("в ответе есть ссылки vless:// — наружу уехал UUID ключа")

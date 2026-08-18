@@ -832,7 +832,7 @@ func TestMergePoolFirstCrawlOrdersByPing(t *testing.T) {
 // менялся бы и конфиг (issue #68). Пустую подпись каталог всё же подтягивает (#189),
 // но здесь она уже есть — значит трогать нечего.
 func TestMergePoolFreezesKnownCards(t *testing.T) {
-	cards := poolCards(20)
+	cards := poolCards(PoolConfigServers + 4)
 	stored, _ := MergePool(nil, poolWithout(cards))
 
 	merged, changed := MergePool(stored, poolWithout(cards))
@@ -874,7 +874,7 @@ func TestMergePoolBackfillsTitleFromCatalog(t *testing.T) {
 // Новая карточка не выселяет из окна конфига живой сервер, даже если у неё пинг лучше
 // всех: смена окна стоит перезапуска sing-box, а работающему серверу замена не нужна.
 func TestMergePoolNewcomerWaitsBehindWindow(t *testing.T) {
-	cards := poolCards(20)
+	cards := poolCards(PoolConfigServers + 4)
 	stored, _ := MergePool(nil, poolWithout(cards))
 
 	newcomer := store.PoolServer{URL: "vless://новый@10.9.9.9:443", PingMS: 1}
@@ -895,7 +895,7 @@ func TestMergePoolNewcomerWaitsBehindWindow(t *testing.T) {
 // отдаёт часть карточек без ссылки почти на каждом запросе. Место она уступает только
 // после нескольких обходов подряд, и ровно своё — остальные не сдвигаются.
 func TestMergePoolReplacesOnlyAfterRepeatedMiss(t *testing.T) {
-	cards := poolCards(20)
+	cards := poolCards(PoolConfigServers + 4)
 	stored, _ := MergePool(nil, poolWithout(cards))
 	victim := stored[3]
 
