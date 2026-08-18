@@ -438,9 +438,13 @@ const PoolConfigServers = 16
 // (ADR 0010).
 func MergePool(stored, fresh []store.PoolServer) ([]store.PoolServer, bool) {
 	inFresh := make(map[string]bool, len(fresh))
+	freshByURL := make(map[string]store.PoolServer, len(fresh))
 	for _, s := range fresh {
 		if s.URL != "" {
 			inFresh[s.URL] = true
+			if _, ok := freshByURL[s.URL]; !ok {
+				freshByURL[s.URL] = s
+			}
 		}
 	}
 
@@ -460,6 +464,17 @@ func MergePool(stored, fresh []store.PoolServer) ([]store.PoolServer, bool) {
 		alive := true
 		if inFresh[s.URL] {
 			s.Misses = 0
+			// Backfill каталожной подписи: старый состав мог лечь без неё (до #189
+			// Title у igareck не заполнялся), и в модалке оставался прочерк. Заполняем
+			// только пустое — перезаписывать имеющуюся подпись на каждом обходе нельзя:
+			// дрейф чужого каталога дёргал бы состав и перезапускал sing-box (issue #68).
+			f := freshByURL[s.URL]
+			if s.Title == "" {
+				s.Title = f.Title
+			}
+			if s.Country == "" {
+				s.Country = f.Country
+			}
 		} else {
 			s.Misses++
 			alive = s.Misses < poolMissesBeforeDrop
