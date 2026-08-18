@@ -827,9 +827,10 @@ func TestMergePoolFirstCrawlOrdersByPing(t *testing.T) {
 	}
 }
 
-// Пинг и подпись известного сервера при обходе не перезаписываются, порядок не
-// пересчитывается: иначе отбор ехал бы от шума измерений чужого сайта, а с ним
-// менялся бы и конфиг (issue #68).
+// Пинг известного сервера при обходе не перезаписывается, порядок не пересчитывается:
+// иначе отбор ехал бы от шума измерений чужого сайта, а с ним менялся бы и конфиг
+// (issue #68). Подпись каталог обновляет (она на порядок и конфиг не влияет, #189),
+// но при неизменном каталоге она та же — состав изменением не считается.
 func TestMergePoolFreezesKnownCards(t *testing.T) {
 	cards := poolCards(20)
 	stored, _ := MergePool(nil, poolWithout(cards))
@@ -845,6 +846,28 @@ func TestMergePoolFreezesKnownCards(t *testing.T) {
 		if s.PingMS != stored[i].PingMS || s.Title != stored[i].Title {
 			t.Fatalf("запись %d перезаписана: %+v, было %+v", i, s, stored[i])
 		}
+	}
+}
+
+// Старый состав мог лечь без подписи (до #189 igareck не заполнял Title). Присутствующему
+// в свежем каталоге серверу имя и страну подтягиваем — иначе в модалке остаётся прочерк.
+func TestMergePoolBackfillsTitleFromCatalog(t *testing.T) {
+	url := "vless://key-00@10.0.0.1:443"
+	stored := []store.PoolServer{{URL: url}} // легло без Title/Country
+	fresh := []store.PoolServer{{URL: url, Title: "🇧🇬 Bulgaria, Sofia | [BL]", Country: "Болгария"}}
+
+	merged, changed := MergePool(stored, fresh)
+	if !changed {
+		t.Fatal("подтяжка подписи не сочлась изменением состава")
+	}
+	if len(merged) != 1 {
+		t.Fatalf("состав %d, ожидался 1", len(merged))
+	}
+	if merged[0].Title != "🇧🇬 Bulgaria, Sofia | [BL]" || merged[0].Country != "Болгария" {
+		t.Fatalf("подпись не подтянулась из каталога: %+v", merged[0])
+	}
+	if merged[0].Misses != 0 {
+		t.Errorf("Misses=%d, ожидался 0 у присутствующего в каталоге", merged[0].Misses)
 	}
 }
 

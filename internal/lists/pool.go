@@ -438,9 +438,13 @@ const PoolConfigServers = 16
 // (ADR 0010).
 func MergePool(stored, fresh []store.PoolServer) ([]store.PoolServer, bool) {
 	inFresh := make(map[string]bool, len(fresh))
+	freshByURL := make(map[string]store.PoolServer, len(fresh))
 	for _, s := range fresh {
 		if s.URL != "" {
 			inFresh[s.URL] = true
+			if _, ok := freshByURL[s.URL]; !ok {
+				freshByURL[s.URL] = s
+			}
 		}
 	}
 
@@ -460,6 +464,13 @@ func MergePool(stored, fresh []store.PoolServer) ([]store.PoolServer, bool) {
 		alive := true
 		if inFresh[s.URL] {
 			s.Misses = 0
+			// Каталожная подпись — источник истины у свежего обхода. Старый состав
+			// мог лечь без неё (до #189 Title у igareck не заполнялся), поэтому
+			// присутствующему в каталоге серверу подтягиваем имя и страну заново.
+			// На конфиг sing-box и порядок окна это не влияет — поля косметические.
+			f := freshByURL[s.URL]
+			s.Title = f.Title
+			s.Country = f.Country
 		} else {
 			s.Misses++
 			alive = s.Misses < poolMissesBeforeDrop
