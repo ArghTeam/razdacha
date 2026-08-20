@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-20
+
+### #200 — руководство по роутеру переписано
+
+**Changed:** `docs/10-router-client.md` — policy routing вместо дефолтов в `main`, аварийная сеть первой, kill-switch правилом `unreachable`, таблица «где набили шишки».
+**Beware:** дефолт туннеля в `main` запирает NTP роутера в неподнявшемся туннеле: часы отстают, сервер режет хендшейк анти-реплеем. Свои файлы в `/etc/nftables.d` роняют ruleset fw4 и NAT.
+
+
 ## 2026-08-17
 
 ### #168 — база geo-IP в бинарнике
