@@ -124,7 +124,7 @@ func TestPoolLiveStateFromClash(t *testing.T) {
 	cookie := ts.login(t)
 	tun := poolTunnel(t, ts.st, "Бесплатные ключи", 20, true)
 
-	members := singbox.PoolMembers(tun)
+	members := singbox.PoolMembers(tun, store.PoolFilter{})
 	if len(members) == 0 {
 		t.Fatal("участников группы нет")
 	}
@@ -390,7 +390,7 @@ func TestPoolServersRotationAndRest(t *testing.T) {
 	total := lists.PoolConfigServers + 4
 	tun := poolTunnel(t, ts.st, "Бесплатные ключи", total, true)
 
-	members := singbox.PoolMembers(tun)
+	members := singbox.PoolMembers(tun, store.PoolFilter{})
 	// Двух участников объявляем живыми, один из них выбран группой; остальные
 	// проверены и не ответили.
 	var chosen string
@@ -675,5 +675,88 @@ func TestCreatePoolRejectsBadCatalogURL(t *testing.T) {
 		if resp.code != http.StatusBadRequest {
 			t.Errorf("%q: код %d, ожидался 400; тело %s", raw, resp.code, resp.body)
 		}
+	}
+}
+
+// Отбракованный сервер не участник пула: его нет ни в `servers`, ни в счётчике
+// `servers_total`. Но и не исчезает молча — уходит в `excluded` с причиной, иначе
+// похудевший пул выглядел бы поломкой каталога (ADR 0020, issue #202).
+func TestPoolServersExcludesBlocked(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	ctx := context.Background()
+
+	created, err := ts.st.CreateTunnel(ctx, store.Tunnel{
+		Name: "Бесплатные ключи", Type: store.TunnelVLESS, Source: store.SourcePool,
+		Raw: "https://raw.githack.com/igareck/vpn-configs-for-russia/main/", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+	// Состав лежит в БД с прошлой версии: обхода каталога в этом тесте нет вовсе.
+	servers := []store.PoolServer{
+		{URL: "vless://a@10.0.0.1:443?security=reality&pbk=abc", Title: "🇳🇱 Нидерланды, Амстердам"},
+		{URL: "vless://b@89.19.223.136:443?security=none", Title: "🇷🇺 Россия, Санкт-Петербург"},
+		{URL: "vless://c@10.0.0.3:443?security=reality&pbk=abc", Title: "🇷🇺 🇺🇸 anycast"},
+		{URL: "vless://d@10.0.0.4:443?security=none", Title: "🇩🇪 Германия, Франкфурт"},
+	}
+	if err := ts.st.UpdateTunnelPool(ctx, created.ID, servers, time.Now().UTC()); err != nil {
+		t.Fatalf("UpdateTunnelPool: %v", err)
+	}
+
+	got, body := poolServers(t, ts, cookie, created.ID)
+	if len(got.Servers) != 1 || got.Servers[0].Title != "🇳🇱 Нидерланды, Амстердам" {
+		t.Fatalf("в составе пула %+v, ожидалась одна нидерландская нода", got.Servers)
+	}
+	if strings.Contains(body, "89.19.223.136") {
+		t.Error("адрес отбракованной ноды уехал в ответ")
+	}
+	if len(got.Excluded) != 3 {
+		t.Fatalf("исключённых %d, ожидалось 3: %+v", len(got.Excluded), got.Excluded)
+	}
+	for _, e := range got.Excluded {
+		if e.Reason == "" {
+			t.Errorf("у исключённого %q нет причины", e.Title)
+		}
+	}
+
+	// В списке туннелей пул считает только годных, а число выброшенных называет.
+	list := listTunnels(t, ts, cookie)
+	if list[0].Pool.ServersTotal != 1 {
+		t.Errorf("servers_total = %d, ожидался 1", list[0].Pool.ServersTotal)
+	}
+	if list[0].Pool.ServersExcluded != 3 {
+		t.Errorf("servers_excluded = %d, ожидалось 3", list[0].Pool.ServersExcluded)
+	}
+}
+
+// Чёрный список правится через настройки: снятие RU возвращает ноды в пул без
+// перезапуска демона и без обхода каталога.
+func TestPoolServersFollowSettingsBlocklist(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	ctx := context.Background()
+
+	created, err := ts.st.CreateTunnel(ctx, store.Tunnel{
+		Name: "Бесплатные ключи", Type: store.TunnelVLESS, Source: store.SourcePool,
+		Raw: "https://raw.githack.com/igareck/vpn-configs-for-russia/main/", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateTunnel: %v", err)
+	}
+	servers := []store.PoolServer{
+		{URL: "vless://a@10.0.0.1:443?security=reality&pbk=abc", Title: "🇳🇱 NL"},
+		{URL: "vless://b@10.0.0.2:443?security=reality&pbk=abc", Title: "🇷🇺 Россия"},
+	}
+	if err := ts.st.UpdateTunnelPool(ctx, created.ID, servers, time.Now().UTC()); err != nil {
+		t.Fatalf("UpdateTunnelPool: %v", err)
+	}
+
+	requireCode(t, ts.auth(t, cookie, http.MethodPatch, "/api/settings",
+		`{"pool_country_blocklist":[]}`), http.StatusOK)
+
+	got, _ := poolServers(t, ts, cookie, created.ID)
+	if len(got.Servers) != 2 || len(got.Excluded) != 0 {
+		t.Fatalf("после снятия чёрного списка состав %+v, исключено %+v", got.Servers, got.Excluded)
 	}
 }

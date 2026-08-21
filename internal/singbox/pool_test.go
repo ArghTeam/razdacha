@@ -62,11 +62,18 @@ func corpusURLs(t *testing.T) []string {
 	if err != nil {
 		t.Fatalf("чтение корпуса ключей: %v", err)
 	}
+	// Корпус снят с живого каталога и содержит в том числе ключи без шифрования
+	// транспорта — их фильтр пула не пропускает (ADR 0020), и в наборе, на котором
+	// проверяются окно, порядок и теги, им делать нечего: эти тесты про отбор, а не
+	// про отбраковку. Саму отбраковку проверяют TestPoolFilter* отдельно.
+	pool := store.PoolFilter{}
 	var out []string
 	for _, line := range strings.Split(string(body), "\n") {
-		if s := strings.TrimSpace(line); s != "" {
-			out = append(out, s)
+		s := strings.TrimSpace(line)
+		if s == "" || !pool.Allows(store.PoolServer{URL: s}) {
+			continue
 		}
+		out = append(out, s)
 	}
 	return out
 }
@@ -170,7 +177,7 @@ func TestPoolSerializationIsStable(t *testing.T) {
 func TestPoolSelectsInStoredOrder(t *testing.T) {
 	servers := poolServers(t, poolMaxServers+9)
 
-	got := selectPoolServers(servers)
+	got := selectPoolServers(servers, store.PoolFilter{})
 	if len(got) != poolMaxServers {
 		t.Fatalf("отобрано %d серверов, потолок %d", len(got), poolMaxServers)
 	}
@@ -259,7 +266,7 @@ func TestPoolIgnoresInsecureFromCatalog(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(&buf, nil))
 	group, ok := buildPool(store.Tunnel{
 		ID: "pppp", Name: "Пул", Pool: []store.PoolServer{{URL: link, Title: "VLESS (NL) 1"}},
-	}, log)
+	}, store.PoolFilter{}, log)
 	if !ok {
 		t.Fatal("пул не собрался")
 	}
@@ -330,7 +337,7 @@ func TestPoolCorpusParses(t *testing.T) {
 
 	group, ok := buildPool(store.Tunnel{
 		ID: "pppp", Name: "Пул vless", Source: store.SourcePool, Pool: servers,
-	}, testLogger())
+	}, store.PoolFilter{}, testLogger())
 	if !ok {
 		t.Fatal("пул из корпуса ключей оказался пустым")
 	}
@@ -341,7 +348,7 @@ func TestPoolCorpusParses(t *testing.T) {
 
 	// Каждый отобранный ключ обязан разобраться: пропуск здесь означал бы, что
 	// потолок набирается не лучшими серверами, а первыми разобравшимися.
-	for _, s := range selectPoolServers(servers) {
+	for _, s := range selectPoolServers(servers, store.PoolFilter{}) {
 		if _, err := Parse(s.URL); err != nil {
 			t.Errorf("ключ корпуса не разобран: %s: %v", s.URL, err)
 		}
@@ -372,7 +379,7 @@ func crawl(servers []store.PoolServer, skip ...string) []store.PoolServer {
 // urlsByTag — какой сервер стоит за каждым тегом участника группы.
 func urlsByTag(t store.Tunnel) map[string]string {
 	out := make(map[string]string)
-	for tag, s := range PoolMembers(t) {
+	for tag, s := range PoolMembers(t, store.PoolFilter{}) {
 		out[tag] = s.URL
 	}
 	return out
@@ -389,7 +396,7 @@ func TestPoolApplyWithoutReloadOnCatalogDrift(t *testing.T) {
 	check, reload := &fakeChecker{}, &fakeReloader{}
 	a, _ := applier(t, check, reload)
 
-	stored, changed := lists.MergePool(nil, crawl(catalog))
+	stored, changed := lists.MergePool(nil, crawl(catalog), store.PoolFilter{})
 	if !changed || len(stored) != len(catalog) {
 		t.Fatalf("первый обход дал %d серверов, changed=%v", len(stored), changed)
 	}
@@ -413,7 +420,7 @@ func TestPoolApplyWithoutReloadOnCatalogDrift(t *testing.T) {
 	}
 	fresh := append(crawl(catalog, stored[len(stored)-1].URL), newcomer)
 
-	next, changed := lists.MergePool(stored, fresh)
+	next, changed := lists.MergePool(stored, fresh, store.PoolFilter{})
 	if !changed {
 		t.Fatal("новая ссылка каталога не попала в БД")
 	}
@@ -440,7 +447,7 @@ func TestPoolReplacesOnlyMissingServer(t *testing.T) {
 	check, reload := &fakeChecker{}, &fakeReloader{}
 	a, _ := applier(t, check, reload)
 
-	stored, _ := lists.MergePool(nil, crawl(catalog))
+	stored, _ := lists.MergePool(nil, crawl(catalog), store.PoolFilter{})
 	if _, err := a.Apply(context.Background(), poolFixture(stored)); err != nil {
 		t.Fatalf("первое применение: %v", err)
 	}
@@ -462,7 +469,7 @@ func TestPoolReplacesOnlyMissingServer(t *testing.T) {
 	// ссылки на каждом обходе. Замена приходит после нескольких обходов подряд.
 	var replaced bool
 	for i := 0; i < 10 && !replaced; i++ {
-		stored, _ = lists.MergePool(stored, crawl(catalog, victim.URL))
+		stored, _ = lists.MergePool(stored, crawl(catalog, victim.URL), store.PoolFilter{})
 		res, err := a.Apply(context.Background(), poolFixture(stored))
 		if err != nil {
 			t.Fatalf("обход %d: %v", i+1, err)
@@ -536,10 +543,10 @@ func TestPoolWarnHasNoKey(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, nil))
 
-	const link = "vless://@203.0.113.7:443#Тест" // без UUID: парсер такую не осилит
+	const link = "vless://@203.0.113.7:443?security=tls#Тест" // без UUID: парсер такую не осилит
 	_, ok := buildPool(store.Tunnel{
 		ID: "pppp", Name: "Пул", Pool: []store.PoolServer{{URL: link, Title: "VLESS (NL) 42"}},
-	}, log)
+	}, store.PoolFilter{}, log)
 	if ok {
 		t.Fatal("битая ссылка попала в конфиг")
 	}
@@ -571,5 +578,59 @@ func TestServerAddr(t *testing.T) {
 		if got := serverAddr(in); got != want {
 			t.Errorf("serverAddr(%q) = %q, ожидалось %q", in, got, want)
 		}
+	}
+}
+
+// Отбраковка стоит и на пути от БД к конфигу, а не только на обходе каталога.
+//
+// Случай не выдуманный: в БД работающей установки состав пула уже лежит, демон
+// собирает из него конфиг до первого успешного обхода, а при недоступном источнике
+// сохранённый состав живёт сколько угодно долго. Без фильтра здесь российская нода
+// оставалась бы в группе `urltest` после апгрейда неограниченно (ADR 0020, issue #202).
+func TestPoolConfigDropsStoredBlockedWithoutCrawl(t *testing.T) {
+	const (
+		nl    = "vless://a@10.0.0.1:443?security=reality&pbk=abc"
+		ru    = "vless://b@89.19.223.136:443?security=reality&pbk=abc"
+		plain = "vless://c@10.0.0.3:443?security=none"
+	)
+	snap := poolFixture([]store.PoolServer{
+		{URL: nl, Title: "🇳🇱 Нидерланды, Амстердам"},
+		{URL: ru, Title: "🇷🇺 Россия, Санкт-Петербург"},
+		{URL: plain, Title: "🇩🇪 Германия, Франкфурт"},
+	})
+	// Каталог не обходился ни разу: состав пришёл из БД как есть, обхода не было.
+	opts, err := Generate(snap, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	group := urltestOf(t, opts, "pppp")
+	if group == nil {
+		t.Fatal("группы пула в конфиге нет")
+	}
+	if len(group.Outbounds) != 1 {
+		t.Fatalf("в группе %d участников, ожидался один (NL): %v", len(group.Outbounds), group.Outbounds)
+	}
+
+	// И ни один outbound конфига не смотрит на отбракованные адреса.
+	raw, err := Marshal(opts)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	for _, addr := range []string{"89.19.223.136", "10.0.0.3"} {
+		if strings.Contains(string(raw), addr) {
+			t.Errorf("отбракованный сервер %s остался в конфиге", addr)
+		}
+	}
+
+	// Фильтр — из настроек снимка: пустой чёрный список пустил бы РФ-ноду обратно,
+	// а ключ без шифрования — нет, он отвергается всегда.
+	snap.Settings.PoolCountryBlocklist = nil
+	opts, err = Generate(snap, nil)
+	if err != nil {
+		t.Fatalf("Generate без чёрного списка: %v", err)
+	}
+	if group = urltestOf(t, opts, "pppp"); len(group.Outbounds) != 2 {
+		t.Fatalf("без чёрного списка в группе %d участников, ожидалось два",
+			len(group.Outbounds))
 	}
 }

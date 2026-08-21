@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/store"
@@ -30,6 +31,10 @@ type settingsResponse struct {
 	LogLevel            string  `json:"log_level"`
 	ServerPublicKey     *string `json:"server_public_key"`
 
+	// PoolCountryBlocklist — ISO-коды стран, ноды которых не берутся в пул
+	// (ADR 0020). Всегда массив, пустой означает «не отбраковывать по стране».
+	PoolCountryBlocklist []string `json:"pool_country_blocklist"`
+
 	// RequiresClientReconfig ставится только в ответе на изменение и означает,
 	// что клиентам нужно перевыдать конфиги.
 	RequiresClientReconfig bool `json:"requires_client_reconfig,omitempty"`
@@ -49,6 +54,9 @@ func newSettingsResponse(v store.Settings, serverKey string) settingsResponse {
 		PoolUpdateInterval:  int(v.PoolUpdateInterval / time.Second),
 		TunnelCheckInterval: int(v.TunnelCheckInterval / time.Second),
 		LogLevel:            v.LogLevel,
+		// Не nil: `null` в этом поле панель прочитала бы как «фильтра нет», а
+		// пустой список и отсутствие ключа — разные вещи (ADR 0020).
+		PoolCountryBlocklist: append([]string{}, v.PoolCountryBlocklist...),
 	}
 	if serverKey != "" {
 		out.ServerPublicKey = &serverKey
@@ -71,6 +79,10 @@ type settingsRequest struct {
 	PoolUpdateInterval  *int    `json:"pool_update_interval"`
 	TunnelCheckInterval *int    `json:"tunnel_check_interval"`
 	LogLevel            *string `json:"log_level"`
+	// Указатель на срез, а не срез: «не прислали» обязано отличаться от
+	// «прислали пустой список», иначе любой PATCH соседнего поля снимал бы
+	// чёрный список стран целиком (ADR 0020).
+	PoolCountryBlocklist *[]string `json:"pool_country_blocklist"`
 }
 
 // apply накладывает присланные поля на текущие настройки.
@@ -111,7 +123,23 @@ func (req settingsRequest) apply(v store.Settings) store.Settings {
 	if req.LogLevel != nil {
 		v.LogLevel = *req.LogLevel
 	}
+	if req.PoolCountryBlocklist != nil {
+		v.PoolCountryBlocklist = normalizeCountryCodes(*req.PoolCountryBlocklist)
+	}
 	return v
+}
+
+// normalizeCountryCodes приводит присланные коды к тому виду, в каком они хранятся:
+// верхний регистр, без пробелов и пустых элементов. Проверку на «две латинские буквы»
+// делает store — отказ обязан приходить оттуда же, откуда и остальные (ErrInvalid).
+func normalizeCountryCodes(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, code := range in {
+		if v := strings.ToUpper(strings.TrimSpace(code)); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // handleSettings — `GET /api/settings`. Хеш пароля панели сюда не попадает:

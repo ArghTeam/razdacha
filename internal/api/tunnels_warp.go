@@ -95,7 +95,7 @@ func (s *Server) handleAddWARP(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err, "Туннель не найден")
 		return
 	}
-	writeJSON(w, s.log, http.StatusCreated, newTunnelResponse(created, s.poolInterval()))
+	writeJSON(w, s.log, http.StatusCreated, newTunnelResponse(created, s.poolInterval(), s.poolFilter(r.Context())))
 }
 
 // unregisterWARP снимает устройство у Cloudflare после удаления туннеля.

@@ -77,6 +77,7 @@ func startPools(ctx context.Context, st *store.Store, log *slog.Logger) *lists.P
 		log.Error("чтение настроек для расписания пулов", "ошибка", err)
 	} else {
 		m.SetInterval(settings.PoolUpdateInterval)
+		m.SetFilter(store.PoolFilterFrom(settings))
 	}
 
 	tunnels := poolTunnels(ctx, st, log)
@@ -137,6 +138,10 @@ func syncPoolTunnels(ctx context.Context, st *store.Store, m *lists.PoolManager,
 			log.Error("чтение настроек для расписания пулов", "ошибка", err)
 		} else {
 			m.SetInterval(settings.PoolUpdateInterval)
+			// Чёрный список стран правится через панель: подхватываем его на том
+			// же такте, что и интервал, — смена настройки не требует перезапуска
+			// демона и применится следующим обходом (ADR 0020).
+			m.SetFilter(store.PoolFilterFrom(settings))
 		}
 
 		tunnels := poolTunnels(ctx, st, log)

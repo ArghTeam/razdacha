@@ -141,7 +141,7 @@ func TestChainFromPool(t *testing.T) {
 	snap.Tunnels = append(snap.Tunnels, store.Tunnel{
 		ID: "pppp", Name: "Пул", Type: store.TunnelVLESS,
 		Source: store.SourcePool, Raw: "https://example.org/keys", Enabled: true,
-		Pool: []store.PoolServer{{URL: "vless://00000000-0000-0000-0000-000000000000@1.1.1.1:443?security=none#a"}},
+		Pool: []store.PoolServer{{URL: "vless://00000000-0000-0000-0000-000000000000@1.1.1.1:443?security=tls&sni=a.example.org#a"}},
 	})
 	snap.Rules[0].TunnelID = "pppp"
 	snap.Rules[0].ViaTunnelID = "wwww"

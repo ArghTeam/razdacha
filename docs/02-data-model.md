@@ -52,8 +52,10 @@ WARP» (`POST /api/tunnels/warp`) либо пользователь вставл
 в БД; наружу миграция не ходит.
 
 **`builtin = 1`** — запись, которую демон заводит сам. Такая **одна** — общий встроенный
-пул, ротирующий бесплатные ключи всех стран из источника igareck
-([ADR 0018](decisions/0018-unified-pool.md)). Пул `source = pool`, `enabled = 0` по
+пул, ротирующий бесплатные ключи источника igareck
+([ADR 0018](decisions/0018-unified-pool.md)) — за вычетом стран из
+`pool_country_blocklist` и ключей без шифрования транспорта
+([ADR 0020](decisions/0020-pool-country-blocklist.md)). Пул `source = pool`, `enabled = 0` по
 умолчанию; снаружи это один туннель с одной группой `urltest`, ротация на живой-быстрый
 бесплатна ([ADR 0010](decisions/0010-tunnel-pool-urltest.md)). Конкретных клиентов на него
 вешают правилами по пирам (`peer_scope = selected`), чтобы не пускать сторонних на личные
@@ -171,6 +173,7 @@ WARP» (`POST /api/tunnels/warp`) либо пользователь вставл
 | `dns_type` | `udp` | `udp` \| `dot` \| `doh` |
 | `wan_interface` | автодетект | для masquerade |
 | `list_update_interval` | `1d` | |
+| `pool_country_blocklist` | `RU,BY` | страны, ноды которых не берутся в пул ([ADR 0020](decisions/0020-pool-country-blocklist.md)); ISO-коды через запятую, пустая строка отключает отбраковку по стране |
 | `tunnel_check_interval` | `2m` | как часто снимается состояние туннелей ([ADR 0011](decisions/0011-tunnel-check-schedule.md)); меньше 30 секунд не принимается |
 | `log_level` | `warn` | |
 

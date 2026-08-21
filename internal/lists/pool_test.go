@@ -102,7 +102,7 @@ func TestPoolCatalogServers(t *testing.T) {
 	srv, requests := catalogServer(t)
 	c := poolCatalog(srv)
 
-	servers, err := c.Servers(context.Background(), catalogAddr(srv))
+	servers, err := c.Servers(context.Background(), catalogAddr(srv), store.PoolFilter{})
 	if err != nil {
 		t.Fatalf("Servers: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestOutlineKeysRefusesTruncatedSections(t *testing.T) {
 	c := poolCatalog(srv)
 
 	for _, section := range []string{"/protocols/vless/", "/protocols/trojan/", "/"} {
-		_, err := c.Servers(context.Background(), srv.URL+section)
+		_, err := c.Servers(context.Background(), srv.URL+section, store.PoolFilter{})
 		if err == nil {
 			t.Fatalf("раздел %s принят", section)
 		}
@@ -202,7 +202,7 @@ func TestOutlineKeysSkipsForeignScheme(t *testing.T) {
 	defer srv.Close()
 	defer RegisterPoolDriver(srv.Listener.Addr().(*net.TCPAddr).IP.String(), outlineKeys{})()
 
-	_, err := poolCatalog(srv).Servers(context.Background(), catalogAddr(srv))
+	_, err := poolCatalog(srv).Servers(context.Background(), catalogAddr(srv), store.PoolFilter{})
 	if err == nil {
 		t.Fatal("страница с vless-ключом дала пул")
 	}
@@ -223,7 +223,7 @@ func TestPoolCatalogDropsUnparsedKeys(t *testing.T) {
 		return nil
 	}
 
-	servers, err := c.Servers(context.Background(), catalogAddr(srv))
+	servers, err := c.Servers(context.Background(), catalogAddr(srv), store.PoolFilter{})
 	if err != nil {
 		t.Fatalf("Servers: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestPoolCatalogRespectsLimit(t *testing.T) {
 	c := poolCatalog(srv)
 	c.Limit = 7
 
-	servers, err := c.Servers(context.Background(), catalogAddr(srv))
+	servers, err := c.Servers(context.Background(), catalogAddr(srv), store.PoolFilter{})
 	if err != nil {
 		t.Fatalf("Servers: %v", err)
 	}
@@ -346,12 +346,12 @@ func TestPoolCatalogSuppressesConcurrentCrawl(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.Servers(context.Background(), catalog)
+		_, err := c.Servers(context.Background(), catalog, store.PoolFilter{})
 		done <- err
 	}()
 	<-d.started
 
-	if _, err := c.Servers(context.Background(), catalog); !errors.Is(err, ErrPoolCrawlBusy) {
+	if _, err := c.Servers(context.Background(), catalog, store.PoolFilter{}); !errors.Is(err, ErrPoolCrawlBusy) {
 		t.Fatalf("второй обход получил %v, ожидалась ErrPoolCrawlBusy", err)
 	}
 	close(d.release)
@@ -368,7 +368,7 @@ func TestPoolCatalogSuppressesConcurrentCrawl(t *testing.T) {
 	// Обход кончился — каталог свободен: замок не должен переживать свой обход.
 	d.release = make(chan struct{})
 	close(d.release)
-	if _, err := c.Servers(context.Background(), catalog); err != nil {
+	if _, err := c.Servers(context.Background(), catalog, store.PoolFilter{}); err != nil {
 		t.Fatalf("обход после освобождения каталога: %v", err)
 	}
 }
@@ -384,7 +384,7 @@ func TestPoolCatalogCrawlsDifferentCatalogsAtOnce(t *testing.T) {
 	done := make(chan error, 2)
 	for _, addr := range []string{"https://one.example/c", "https://two.example/c"} {
 		go func() {
-			_, err := c.Servers(context.Background(), addr)
+			_, err := c.Servers(context.Background(), addr, store.PoolFilter{})
 			done <- err
 		}()
 	}
@@ -413,7 +413,7 @@ func TestPoolManagerSkipsBusyCatalog(t *testing.T) {
 	tun := PoolTunnel{ID: "pppp", Name: "пул", CatalogURL: "https://keys.example/catalog", Enabled: true}
 	m.SetTunnels([]PoolTunnel{tun})
 
-	go func() { _, _ = c.Servers(context.Background(), tun.CatalogURL) }()
+	go func() { _, _ = c.Servers(context.Background(), tun.CatalogURL, store.PoolFilter{}) }()
 	<-d.started
 
 	if err := m.Refresh(context.Background()); err != nil {
@@ -446,7 +446,7 @@ func TestPoolCatalogBadResponse(t *testing.T) {
 	})
 
 	c := poolCatalog(srv)
-	_, err := c.Servers(context.Background(), catalogAddr(srv))
+	_, err := c.Servers(context.Background(), catalogAddr(srv), store.PoolFilter{})
 	if !errors.Is(err, ErrBadResponse) {
 		t.Fatalf("ожидалась ErrBadResponse, получено: %v", err)
 	}
@@ -460,7 +460,7 @@ func TestPoolCatalogEmptyPage(t *testing.T) {
 	})
 
 	c := poolCatalog(srv)
-	if _, err := c.Servers(context.Background(), catalogAddr(srv)); err == nil {
+	if _, err := c.Servers(context.Background(), catalogAddr(srv), store.PoolFilter{}); err == nil {
 		t.Fatal("пустой каталог принят за пул без серверов")
 	}
 }
@@ -630,7 +630,7 @@ func TestPoolTunnels(t *testing.T) {
 		{
 			ID: "b", Name: "пул", Source: store.SourcePool, Enabled: false,
 			Raw:  DefaultPoolCatalogURL,
-			Pool: []store.PoolServer{{URL: "vless://x@1.2.3.4:443"}},
+			Pool: []store.PoolServer{{URL: "vless://x@1.2.3.4:443?security=reality"}},
 		},
 	}}
 	got := PoolTunnels(snap)
@@ -649,7 +649,7 @@ func TestPoolTunnels(t *testing.T) {
 func TestSamePoolSet(t *testing.T) {
 	base := []PoolTunnel{{
 		ID: "pppp", Name: "пул", CatalogURL: DefaultPoolCatalogURL, Enabled: true,
-		Servers: []store.PoolServer{{URL: "vless://x@1.2.3.4:443", PingMS: 50}},
+		Servers: []store.PoolServer{{URL: "vless://x@1.2.3.4:443?security=reality", PingMS: 50}},
 	}}
 	// Копия набора, которой можно править одно поле, не задевая base.
 	with := func(f func(*PoolTunnel)) []PoolTunnel {
@@ -666,8 +666,8 @@ func TestSamePoolSet(t *testing.T) {
 		{"тот же набор", with(func(*PoolTunnel) {}), true},
 		{"другой состав серверов", with(func(t *PoolTunnel) {
 			t.Servers = []store.PoolServer{
-				{URL: "vless://x@1.2.3.4:443", PingMS: 90, Misses: 2},
-				{URL: "vless://y@5.6.7.8:443"},
+				{URL: "vless://x@1.2.3.4:443?security=reality", PingMS: 90, Misses: 2},
+				{URL: "vless://y@5.6.7.8:443?security=reality"},
 			}
 		}), true},
 		{"состав опустел", with(func(t *PoolTunnel) { t.Servers = nil }), true},
@@ -773,7 +773,7 @@ func poolCards(n int) []store.PoolServer {
 	out := make([]store.PoolServer, 0, n)
 	for i := range n {
 		out = append(out, store.PoolServer{
-			URL:     fmt.Sprintf("vless://key-%02d@10.0.0.%d:443", i, i+1),
+			URL:     fmt.Sprintf("vless://key-%02d@10.0.0.%d:443?security=reality", i, i+1),
 			Country: "Нидерланды",
 			Title:   fmt.Sprintf("сервер %d", i),
 			PingMS:  1000 - i,
@@ -815,9 +815,9 @@ func poolWithout(servers []store.PoolServer, skip ...string) []store.PoolServer 
 // начале — лучшие. Пинг не показан — сервер уходит в конец, но не выбрасывается.
 func TestMergePoolFirstCrawlOrdersByPing(t *testing.T) {
 	cards := poolCards(4)
-	cards = append(cards, store.PoolServer{URL: "vless://key-nп@10.0.0.9:443"})
+	cards = append(cards, store.PoolServer{URL: "vless://key-nп@10.0.0.9:443?security=reality"})
 
-	merged, changed := MergePool(nil, cards)
+	merged, changed := MergePool(nil, cards, store.PoolFilter{})
 	if !changed {
 		t.Fatal("первый обход не счёлся изменением")
 	}
@@ -833,9 +833,9 @@ func TestMergePoolFirstCrawlOrdersByPing(t *testing.T) {
 // но здесь она уже есть — значит трогать нечего.
 func TestMergePoolFreezesKnownCards(t *testing.T) {
 	cards := poolCards(PoolConfigServers + 4)
-	stored, _ := MergePool(nil, poolWithout(cards))
+	stored, _ := MergePool(nil, poolWithout(cards), store.PoolFilter{})
 
-	merged, changed := MergePool(stored, poolWithout(cards))
+	merged, changed := MergePool(stored, poolWithout(cards), store.PoolFilter{})
 	if changed {
 		t.Error("дрейф пинга и подписей сочтён изменением состава")
 	}
@@ -852,11 +852,11 @@ func TestMergePoolFreezesKnownCards(t *testing.T) {
 // Старый состав мог лечь без подписи (до #189 igareck не заполнял Title). Присутствующему
 // в свежем каталоге серверу имя и страну подтягиваем — иначе в модалке остаётся прочерк.
 func TestMergePoolBackfillsTitleFromCatalog(t *testing.T) {
-	url := "vless://key-00@10.0.0.1:443"
+	url := "vless://key-00@10.0.0.1:443?security=reality"
 	stored := []store.PoolServer{{URL: url}} // легло без Title/Country
 	fresh := []store.PoolServer{{URL: url, Title: "🇧🇬 Bulgaria, Sofia | [BL]", Country: "Болгария"}}
 
-	merged, changed := MergePool(stored, fresh)
+	merged, changed := MergePool(stored, fresh, store.PoolFilter{})
 	if !changed {
 		t.Fatal("подтяжка подписи не сочлась изменением состава")
 	}
@@ -875,10 +875,10 @@ func TestMergePoolBackfillsTitleFromCatalog(t *testing.T) {
 // всех: смена окна стоит перезапуска sing-box, а работающему серверу замена не нужна.
 func TestMergePoolNewcomerWaitsBehindWindow(t *testing.T) {
 	cards := poolCards(PoolConfigServers + 4)
-	stored, _ := MergePool(nil, poolWithout(cards))
+	stored, _ := MergePool(nil, poolWithout(cards), store.PoolFilter{})
 
-	newcomer := store.PoolServer{URL: "vless://новый@10.9.9.9:443", PingMS: 1}
-	merged, changed := MergePool(stored, append(poolWithout(cards), newcomer))
+	newcomer := store.PoolServer{URL: "vless://новый@10.9.9.9:443?security=reality", PingMS: 1}
+	merged, changed := MergePool(stored, append(poolWithout(cards), newcomer), store.PoolFilter{})
 	if !changed {
 		t.Fatal("новая карточка не попала в пул")
 	}
@@ -896,10 +896,10 @@ func TestMergePoolNewcomerWaitsBehindWindow(t *testing.T) {
 // после нескольких обходов подряд, и ровно своё — остальные не сдвигаются.
 func TestMergePoolReplacesOnlyAfterRepeatedMiss(t *testing.T) {
 	cards := poolCards(PoolConfigServers + 4)
-	stored, _ := MergePool(nil, poolWithout(cards))
+	stored, _ := MergePool(nil, poolWithout(cards), store.PoolFilter{})
 	victim := stored[3]
 
-	merged, changed := MergePool(stored, poolWithout(cards, victim.URL))
+	merged, changed := MergePool(stored, poolWithout(cards, victim.URL), store.PoolFilter{})
 	if !changed {
 		t.Fatal("пропуск карточки не отмечен в БД")
 	}
@@ -914,7 +914,7 @@ func TestMergePoolReplacesOnlyAfterRepeatedMiss(t *testing.T) {
 	}
 
 	for i := 1; i < poolMissesBeforeDrop; i++ {
-		merged, _ = MergePool(merged, poolWithout(cards, victim.URL))
+		merged, _ = MergePool(merged, poolWithout(cards, victim.URL), store.PoolFilter{})
 	}
 
 	if merged[3].URL == victim.URL {
@@ -961,5 +961,45 @@ func TestOutlineKeysPageURL(t *testing.T) {
 func TestPoolIntervalDefaultAgrees(t *testing.T) {
 	if got := store.DefaultSettings().PoolUpdateInterval; got != DefaultPoolInterval {
 		t.Errorf("дефолт настройки пула = %s, DefaultPoolInterval = %s", got, DefaultPoolInterval)
+	}
+}
+
+// Фильтр применяется и к сохранённому составу, а не только к свежему обходу: в БД
+// работающей установки уже лежат ноды, которых фильтр тогда не было. Место в окне
+// отбракованный не держит — его занимает годный кандидат (ADR 0020, issue #202).
+func TestMergePoolDropsStoredBlocked(t *testing.T) {
+	filter := store.PoolFilter{Countries: store.DefaultPoolCountryBlocklist()}
+	stored := []store.PoolServer{
+		{URL: "vless://a@10.0.0.1:443?security=reality", Title: "🇳🇱 NL-1"},
+		{URL: "vless://ru@10.0.0.2:443?security=reality", Title: "🇷🇺 Россия, СПб"},
+		{URL: "vless://plain@10.0.0.3:443?security=none", Title: "🇩🇪 DE-1"},
+	}
+	fresh := append([]store.PoolServer(nil), stored...)
+	newcomer := store.PoolServer{URL: "vless://b@10.0.0.9:443?security=reality", Title: "🇫🇮 FI-1"}
+	fresh = append(fresh, newcomer)
+
+	merged, changed := MergePool(stored, fresh, filter)
+	if !changed {
+		t.Fatal("выброс отбракованных не счёлся изменением состава")
+	}
+	want := []string{stored[0].URL, newcomer.URL}
+	if got := poolURLs(merged); !slices.Equal(got, want) {
+		t.Fatalf("состав %v, ожидался %v", got, want)
+	}
+}
+
+// Смена чёрного списка применяется следующим обходом сама: без неё настройка
+// действовала бы только на новые ноды, а старые оставались бы в конфиге.
+func TestMergePoolAppliesChangedBlocklist(t *testing.T) {
+	stored := []store.PoolServer{
+		{URL: "vless://a@10.0.0.1:443?security=reality", Title: "🇳🇱 NL-1"},
+		{URL: "vless://de@10.0.0.2:443?security=reality", Title: "🇩🇪 Германия"},
+	}
+	merged, changed := MergePool(stored, stored, store.PoolFilter{Countries: []string{"DE"}})
+	if !changed {
+		t.Fatal("расширенный чёрный список состав не изменил")
+	}
+	if got := poolURLs(merged); !slices.Equal(got, []string{stored[0].URL}) {
+		t.Fatalf("состав %v, ожидался только NL", got)
 	}
 }

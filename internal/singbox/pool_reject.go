@@ -52,11 +52,12 @@ func rejectedPoolMember(opts option.Options, snap store.Snapshot, checkErr error
 // `poolMemberTag`, что и генератор: иначе номер из ошибки указал бы не на того.
 func poolMembersByTag(snap store.Snapshot) map[string]rejectedMember {
 	out := make(map[string]rejectedMember)
+	filter := store.PoolFilterFrom(snap.Settings)
 	for _, t := range snap.Tunnels {
 		if !t.Enabled || t.Source != store.SourcePool {
 			continue
 		}
-		for i, s := range selectPoolServers(t.Pool) {
+		for i, s := range selectPoolServers(t.Pool, filter) {
 			out[poolMemberTag(t.ID, i)] = rejectedMember{
 				tunnelID:   t.ID,
 				tunnelName: t.Name,

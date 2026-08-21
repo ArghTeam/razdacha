@@ -120,8 +120,8 @@ func poolMemberTag(tunnelID string, i int) string {
 // Нужен слою api: Clash API отдаёт выбранный участник тегом, а показать
 // пользователю надо имя и страну сервера, и вычислять отбор второй раз своими
 // руками означало бы разойтись с генератором.
-func PoolMembers(t store.Tunnel) map[string]store.PoolServer {
-	servers := selectPoolServers(t.Pool)
+func PoolMembers(t store.Tunnel, filter store.PoolFilter) map[string]store.PoolServer {
+	servers := selectPoolServers(t.Pool, filter)
 	out := make(map[string]store.PoolServer, len(servers))
 	for i, s := range servers {
 		out[poolMemberTag(t.ID, i)] = s
@@ -137,8 +137,8 @@ func PoolMembers(t store.Tunnel) map[string]store.PoolServer {
 // туннель, а ссылающиеся на него правила остаются отказом (ADR 0013). Ошибка здесь
 // заморозила бы весь конфиг, включая исправные туннели, из-за чужого недоступного
 // каталога.
-func buildPool(t store.Tunnel, log *slog.Logger) ([]option.Outbound, bool) {
-	servers := selectPoolServers(t.Pool)
+func buildPool(t store.Tunnel, filter store.PoolFilter, log *slog.Logger) ([]option.Outbound, bool) {
+	servers := selectPoolServers(t.Pool, filter)
 	out := make([]option.Outbound, 0, len(servers)+1)
 	tags := make([]string, 0, len(servers))
 	insecure := 0
@@ -236,11 +236,11 @@ func forceCertVerify(ob *option.Outbound) bool {
 // и байты конфига. А байты решают всё: `sameOnDisk` в apply.go сравнивает конфиг
 // байт в байт, и любое расхождение идёт в `systemctl reload-or-restart`, то есть в
 // перезапуск sing-box с разрывом соединений во всех туннелях (ADR 0010, issue #68).
-func selectPoolServers(pool []store.PoolServer) []store.PoolServer {
+func selectPoolServers(pool []store.PoolServer, filter store.PoolFilter) []store.PoolServer {
 	seen := make(map[string]bool, len(pool))
 	uniq := make([]store.PoolServer, 0, len(pool))
 	for _, s := range pool {
-		if s.URL == "" || seen[s.URL] {
+		if s.URL == "" || seen[s.URL] || !filter.Allows(s) {
 			continue
 		}
 		seen[s.URL] = true

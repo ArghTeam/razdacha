@@ -33,13 +33,19 @@ type clashProxies interface {
 // и вторая собственная проверялка расходилась бы с той, по которой идёт ротация.
 // Оба поля указатели: недоступный Clash означает «неизвестно», а не «ноль живых» —
 // ноль был бы утверждением о пуле, которого никто не спрашивал.
+//
+// ServersTotal считает только тех, кто прошёл фильтр пула: отбракованный не участник
+// пула ни в каком смысле, и включать его в «известно N серверов» значило бы обещать
+// выходы, которых нет. Сколько выброшено — отдельным полем ServersExcluded, чтобы
+// похудевший пул не выглядел обеднённым каталогом (ADR 0020).
 type poolResponse struct {
-	CatalogURL   string             `json:"catalog_url"`
-	ServersTotal int                `json:"servers_total"`
-	ServersAlive *int               `json:"servers_alive"`
-	Current      *poolCurrentServer `json:"current"`
-	UpdatedAt    *time.Time         `json:"updated_at"`
-	NextUpdateAt *time.Time         `json:"next_update_at"`
+	CatalogURL      string             `json:"catalog_url"`
+	ServersTotal    int                `json:"servers_total"`
+	ServersExcluded int                `json:"servers_excluded"`
+	ServersAlive    *int               `json:"servers_alive"`
+	Current         *poolCurrentServer `json:"current"`
+	UpdatedAt       *time.Time         `json:"updated_at"`
+	NextUpdateAt    *time.Time         `json:"next_update_at"`
 }
 
 // poolCurrentServer — сервер, который группа выбрала прямо сейчас.
@@ -50,12 +56,17 @@ type poolCurrentServer struct {
 
 // newPoolResponse собирает блок из того, что лежит в БД. Живое состояние
 // добавляет [Server.withPoolState] — оно требует запроса к sing-box.
-func newPoolResponse(t store.Tunnel, interval time.Duration) *poolResponse {
+func newPoolResponse(t store.Tunnel, interval time.Duration, filter store.PoolFilter) *poolResponse {
 	if t.Source != store.SourcePool {
 		return nil
 	}
+	keep, excluded := store.SplitPool(t.Pool, filter)
 	// В Raw пула лежит URL каталога — см. [store.SourcePool].
-	out := &poolResponse{CatalogURL: t.Raw, ServersTotal: len(t.Pool)}
+	out := &poolResponse{
+		CatalogURL:      t.Raw,
+		ServersTotal:    len(keep),
+		ServersExcluded: len(excluded),
+	}
 	if !t.PoolUpdatedAt.IsZero() {
 		at := t.PoolUpdatedAt.UTC()
 		next := at.Add(interval)
@@ -70,7 +81,9 @@ func newPoolResponse(t store.Tunnel, interval time.Duration) *poolResponse {
 // пул в списке есть: недоступный sing-box иначе стоил бы таймаута на каждой
 // отрисовке экрана «Туннели». Ошибка наружу не выносится — поля остаются null, и
 // карточка показывает пул без статистики вместо ошибки на весь список.
-func (s *Server) withPoolState(ctx context.Context, out []tunnelResponse, byID map[string]store.Tunnel) {
+func (s *Server) withPoolState(ctx context.Context, out []tunnelResponse,
+	byID map[string]store.Tunnel, filter store.PoolFilter,
+) {
 	var live bool
 	for i := range out {
 		if out[i].Pool != nil && out[i].Enabled {
@@ -94,7 +107,7 @@ func (s *Server) withPoolState(ctx context.Context, out []tunnelResponse, byID m
 		if out[i].Pool == nil || !out[i].Enabled {
 			continue
 		}
-		members := singbox.PoolMembers(byID[out[i].ID])
+		members := singbox.PoolMembers(byID[out[i].ID], filter)
 
 		alive := 0
 		for tag := range members {
@@ -126,10 +139,23 @@ func (s *Server) withPoolState(ctx context.Context, out []tunnelResponse, byID m
 // poolServersResponse — ответ `GET /api/tunnels/{id}/pool`: состав каталога по одному
 // серверу. Отдельной ручкой, а не полем списка туннелей: каталог — это сотня с лишним
 // записей, и возить их в каждом ответе экрана «Туннели» незачем.
+//
+// Excluded — отбракованные фильтром пула (ADR 0020): в `servers` их нет, потому что
+// участниками пула они не являются ни в конфиге, ни в ротации, но и исчезнуть молча
+// не должны. Пустой экран без объяснения читался бы как «каталог сломался», а не как
+// «фильтр сработал».
 type poolServersResponse struct {
-	CatalogURL string               `json:"catalog_url"`
-	UpdatedAt  *time.Time           `json:"updated_at"`
-	Servers    []poolServerResponse `json:"servers"`
+	CatalogURL string                 `json:"catalog_url"`
+	UpdatedAt  *time.Time             `json:"updated_at"`
+	Servers    []poolServerResponse   `json:"servers"`
+	Excluded   []poolExcludedResponse `json:"excluded"`
+}
+
+// poolExcludedResponse — отбракованный сервер и причина. Ссылки здесь нет по той же
+// причине, что и в [poolServerResponse]: в ней UUID или пароль (issue #124).
+type poolExcludedResponse struct {
+	Title  string `json:"title"`
+	Reason string `json:"reason"`
 }
 
 // poolServerResponse — один сервер каталога.
@@ -168,7 +194,13 @@ func (s *Server) handlePoolServers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := poolServersResponse{CatalogURL: t.Raw, Servers: s.poolServers(r.Context(), t)}
+	filter := s.poolFilter(r.Context())
+	keep, excluded := store.SplitPool(t.Pool, filter)
+	out := poolServersResponse{
+		CatalogURL: t.Raw,
+		Servers:    s.poolServers(r.Context(), t, keep, filter),
+		Excluded:   poolExclusions(excluded),
+	}
 	if !t.PoolUpdatedAt.IsZero() {
 		at := t.PoolUpdatedAt.UTC()
 		out.UpdatedAt = &at
@@ -181,9 +213,11 @@ func (s *Server) handlePoolServers(w http.ResponseWriter, r *http.Request) {
 //
 // Ротацию считает не этот файл: набор участников и их теги даёт [singbox.PoolMembers] —
 // тот же отбор, что попал в конфиг. Свой второй отбор разошёлся бы с генератором.
-func (s *Server) poolServers(ctx context.Context, t store.Tunnel) []poolServerResponse {
-	tagByURL := make(map[string]string, len(t.Pool))
-	for tag, srv := range singbox.PoolMembers(t) {
+func (s *Server) poolServers(ctx context.Context, t store.Tunnel, keep []store.PoolServer,
+	filter store.PoolFilter,
+) []poolServerResponse {
+	tagByURL := make(map[string]string, len(keep))
+	for tag, srv := range singbox.PoolMembers(t, filter) {
 		tagByURL[srv.URL] = tag
 	}
 
@@ -205,9 +239,9 @@ func (s *Server) poolServers(ctx context.Context, t store.Tunnel) []poolServerRe
 		}
 	}
 
-	out := make([]poolServerResponse, 0, len(t.Pool))
-	seen := make(map[string]bool, len(t.Pool))
-	for _, srv := range t.Pool {
+	out := make([]poolServerResponse, 0, len(keep))
+	seen := make(map[string]bool, len(keep))
+	for _, srv := range keep {
 		if srv.URL == "" || seen[srv.URL] {
 			continue
 		}
@@ -322,8 +356,9 @@ func (s *Server) handleRefreshPool(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err, "Туннель не найден")
 		return
 	}
-	res := s.withCheck(newTunnelResponse(fresh, s.poolInterval()))
-	s.withPoolState(r.Context(), []tunnelResponse{res}, map[string]store.Tunnel{id: fresh})
+	filter := s.poolFilter(r.Context())
+	res := s.withCheck(newTunnelResponse(fresh, s.poolInterval(), filter))
+	s.withPoolState(r.Context(), []tunnelResponse{res}, map[string]store.Tunnel{id: fresh}, filter)
 	writeJSON(w, s.log, http.StatusOK, res)
 }
 
@@ -348,6 +383,29 @@ func (s *Server) poolCrawlError(w http.ResponseWriter, err error) {
 		writeError(w, s.log, http.StatusBadGateway, codeInternal,
 			"Не удалось обойти каталог: "+err.Error())
 	}
+}
+
+// poolExclusions переводит отбракованных в ответ, сохраняя порядок состава.
+func poolExclusions(v []store.PoolExclusion) []poolExcludedResponse {
+	out := make([]poolExcludedResponse, 0, len(v))
+	for _, e := range v {
+		out = append(out, poolExcludedResponse{Title: e.Server.Title, Reason: e.Reason})
+	}
+	return out
+}
+
+// poolFilter — отбраковка членов пула по текущим настройкам (ADR 0020).
+//
+// Неудача чтения настроек даёт дефолтный чёрный список, а не пустой: ошибка БД не
+// повод пустить в ответ ноду, которую фильтр должен был выбросить. Ошибка в
+// безопасную сторону — та же логика, что у отметки удачи в `tunnels_check.go`.
+func (s *Server) poolFilter(ctx context.Context) store.PoolFilter {
+	v, err := s.store.Settings(ctx)
+	if err != nil {
+		s.log.Debug("настройки для фильтра пула недоступны, взят дефолт", "ошибка", err)
+		return store.PoolFilter{Countries: store.DefaultPoolCountryBlocklist()}
+	}
+	return store.PoolFilterFrom(v)
 }
 
 // poolInterval — период обхода каталога, от которого считается next_update_at.
