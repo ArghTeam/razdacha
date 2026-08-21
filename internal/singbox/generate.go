@@ -87,7 +87,7 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 	}
 
 	log := slog.Default()
-	endpoints, outbounds, skipped, err := buildTunnels(snap.Tunnels, log)
+	endpoints, outbounds, skipped, err := buildTunnels(snap.Tunnels, store.PoolFilterFrom(snap.Settings), log)
 	if err != nil {
 		return option.Options{}, nil, err
 	}

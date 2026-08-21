@@ -38,7 +38,7 @@ func igareckSubs() map[string]string {
 		}, "\n"),
 		"BLACK_VLESS_RUS.txt": strings.Join([]string{
 			"vless://uuid-3@nl.example.com:443?security=reality#NL-domain",
-			"trojan://pass@10.0.0.4:443#DE-2",
+			"trojan://pass@10.0.0.4:443?security=tls&sni=de.example.com#DE-2",
 			"vless://uuid-1@10.0.0.1:443?security=reality#NL-1", // точный дубль ключа mobile
 		}, "\n"),
 		"BLACK_SS+All_RUS.txt": strings.Join([]string{
@@ -89,7 +89,7 @@ func TestIgareckServers(t *testing.T) {
 	catalog, requests := igareckStub(t, igareckSubs())
 	c := &PoolCatalog{Log: quietSlog(), Pause: -1, CheckKey: igareckCheckKey}
 
-	servers, err := c.Servers(context.Background(), catalog)
+	servers, err := c.Servers(context.Background(), catalog, store.PoolFilter{})
 	if err != nil {
 		t.Fatalf("Servers: %v", err)
 	}
@@ -102,8 +102,15 @@ func TestIgareckServers(t *testing.T) {
 		if s.PingMS != 0 {
 			t.Errorf("у %q взялся пинг, источник его не даёт", s.URL)
 		}
+		// Страна в записи по-прежнему не хранится, но причина у этого с ADR 0020
+		// другая, чем была в 0018. Раньше её не было вовсе (geo-IP убран); теперь
+		// она есть — в подписи карточки, — и фильтр разбирает её на каждом
+		// обращении, а не запоминает в составе. Так смена чёрного списка стран
+		// применяется без перезаписи `pool` в БД: перезапись состава на каждом
+		// обходе означала бы churn конфига и перезапуск sing-box (issue #68).
 		if s.Country != "" {
-			t.Errorf("у %q проставлена страна, geo-IP убран (ADR 0018): %q", s.URL, s.Country)
+			t.Errorf("у %q проставлена страна: состав хранит подпись, страну разбирает "+
+				"фильтр (ADR 0018/0020), получено %q", s.URL, s.Country)
 		}
 	}
 	// uuid-1, uuid-2, uuid-3(домен), trojan, ss = 5. vmess отсеян парсером, дубль
@@ -223,7 +230,7 @@ func TestIgareckSubscriptionFailureDoesNotStopCrawl(t *testing.T) {
 	// Резерв (raw.githubusercontent.com) в тесте недоступен, но httptest-хост каталога
 	// — единственное зеркало, отдающее 404 на пропавший файл; драйвер сунется и на
 	// резерв, тот тоже упадёт, файл пропустится. Остальные два файла разберутся.
-	servers, err := c.Servers(context.Background(), catalog)
+	servers, err := c.Servers(context.Background(), catalog, store.PoolFilter{})
 	if err != nil {
 		t.Fatalf("Servers: %v", err)
 	}
@@ -304,5 +311,49 @@ func TestIgareckTitle(t *testing.T) {
 				t.Fatalf("igareckTitle(%q) = %q, хотели %q", tc.line, got, tc.want)
 			}
 		})
+	}
+}
+
+// Отбраковка идёт на обходе каталога, а не в драйвере: в БД российская нода и ключ
+// без шифрования не попадают вовсе (ADR 0020, issue #202).
+func TestPoolCrawlDropsBlockedServers(t *testing.T) {
+	subs := map[string]string{
+		"BLACK_VLESS_RUS_mobile.txt": strings.Join([]string{
+			"vless://uuid-nl@10.0.0.1:443?security=reality#%F0%9F%87%B3%F0%9F%87%B1%20NL",
+			// Флаг РФ в подписи — под нож.
+			"vless://uuid-ru@10.0.0.2:443?security=reality#%F0%9F%87%B7%F0%9F%87%BA%20Russia",
+			// Anycast с флагом РФ среди прочих — тоже.
+			"vless://uuid-any@10.0.0.3:443?security=reality" +
+				"#%F0%9F%87%B7%F0%9F%87%BA%20%F0%9F%87%BA%F0%9F%87%B8%20anycast",
+		}, "\n"),
+		"BLACK_VLESS_RUS.txt": strings.Join([]string{
+			// Открытый текст: страна нейтральная, но шифрования нет.
+			"vless://uuid-plain@10.0.0.4:443?security=none#%F0%9F%87%A9%F0%9F%87%AA%20DE",
+			"trojan://pass@10.0.0.5:443?security=tls&sni=de.example#%F0%9F%87%A9%F0%9F%87%AA%20DE-2",
+		}, "\n"),
+		"BLACK_SS+All_RUS.txt": "",
+	}
+	catalog, _ := igareckStub(t, subs)
+	c := &PoolCatalog{Log: quietSlog(), Pause: -1, CheckKey: igareckCheckKey}
+
+	servers, err := c.Servers(context.Background(), catalog,
+		store.PoolFilter{Countries: store.DefaultPoolCountryBlocklist()})
+	if err != nil {
+		t.Fatalf("Servers: %v", err)
+	}
+
+	got := make(map[string]bool, len(servers))
+	for _, s := range servers {
+		got[s.URL] = true
+	}
+	if len(servers) != 2 {
+		t.Fatalf("собрано %d ключей, ожидалось 2 (NL и trojan DE): %+v", len(servers), servers)
+	}
+	for _, blocked := range []string{"uuid-ru", "uuid-any", "uuid-plain"} {
+		for url := range got {
+			if strings.Contains(url, blocked) {
+				t.Errorf("отбракованный ключ %s попал в выдачу обхода", blocked)
+			}
+		}
 	}
 }

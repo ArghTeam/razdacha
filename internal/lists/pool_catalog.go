@@ -268,7 +268,14 @@ func (c *PoolCatalog) pause() time.Duration {
 // Ошибка обхода отменяет его целиком: половина каталога, записанная как целый пул,
 // выкинула бы из конфига живые серверы. Сколько собрано и сколько это стоило
 // запросов, видно в логе — обход двухшаговый и дорогой, и цену надо знать (ADR 0015).
-func (c *PoolCatalog) Servers(ctx context.Context, catalogURL string) ([]store.PoolServer, error) {
+//
+// Отбраковка по стране и по отсутствию шифрования идёт здесь, а не внутри драйвера:
+// политика обхода общая для всех источников, драйвер знает только разметку своей
+// страницы (ADR 0015/0020). Второй каталог иначе получил бы фильтр молча не
+// работающим.
+func (c *PoolCatalog) Servers(ctx context.Context, catalogURL string, filter store.PoolFilter) (
+	[]store.PoolServer, error,
+) {
 	d, u, err := PoolDriverFor(catalogURL)
 	if err != nil {
 		return nil, err
@@ -294,9 +301,11 @@ func (c *PoolCatalog) Servers(ctx context.Context, catalogURL string) ([]store.P
 		checkKey: c.CheckKey,
 	}
 	started := time.Now()
-	out, err := d.Servers(ctx, crawl, u)
+	raw, err := d.Servers(ctx, crawl, u)
+	out, dropped := filterPoolServers(raw, filter, crawl)
 	c.log().Info("каталог обойдён",
 		"источник", d.Name(), "каталог", u.String(), "собрано", len(out),
+		"отбраковано", dropped,
 		"запросов", crawl.requests, "пропущено", crawl.skipped,
 		"за", time.Since(started).Round(time.Millisecond))
 	if err != nil {
@@ -306,6 +315,28 @@ func (c *PoolCatalog) Servers(ctx context.Context, catalogURL string) ([]store.P
 		return nil, fmt.Errorf("%w: каталог %s не дал ни одного ключа", ErrBadResponse, u)
 	}
 	return out, nil
+}
+
+// filterPoolServers выбрасывает из выдачи драйвера то, что не проходит фильтр пула
+// (ADR 0020). Второе значение — сколько выброшено.
+//
+// Причина каждой отбраковки идёт в лог отладки вместе с подписью карточки, но без
+// самой ссылки: в ней UUID или пароль (issue #124). Число выброшенных — в общей
+// строке обхода: молча похудевший пул неотличим от обедневшего каталога.
+func filterPoolServers(in []store.PoolServer, filter store.PoolFilter, crawl *poolCrawl) (
+	[]store.PoolServer, int,
+) {
+	out := make([]store.PoolServer, 0, len(in))
+	dropped := 0
+	for _, srv := range in {
+		if reason := filter.Exclusion(srv); reason != "" {
+			dropped++
+			crawl.skip("нода отбракована фильтром пула", "причина", reason, "карточка", srv.Title)
+			continue
+		}
+		out = append(out, srv)
+	}
+	return out, dropped
 }
 
 // poolCrawl — общее для всех драйверов: как взять страницу, куда писать, когда

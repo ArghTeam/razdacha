@@ -33,7 +33,7 @@ var singboxTypes = map[store.TunnelType]string{
 // включены: пока это только пул без пригодных серверов. Правила на них отказывают
 // так же, как правила на выключенный туннель (ADR 0013): ссылаться им не на что,
 // а маршрут на несуществующий тег `sing-box check` отверг бы целиком.
-func buildTunnels(list []store.Tunnel, log *slog.Logger) (
+func buildTunnels(list []store.Tunnel, filter store.PoolFilter, log *slog.Logger) (
 	[]option.Endpoint, []option.Outbound, map[string]bool, error,
 ) {
 	var (
@@ -46,7 +46,7 @@ func buildTunnels(list []store.Tunnel, log *slog.Logger) (
 			continue
 		}
 		if t.Source == store.SourcePool {
-			group, ok := buildPool(t, log)
+			group, ok := buildPool(t, filter, log)
 			if !ok {
 				skipped[t.ID] = true
 				continue

@@ -117,6 +117,10 @@ type PoolManagerOptions struct {
 	Logger   *slog.Logger
 	Interval time.Duration // ноль означает DefaultPoolInterval
 	Retry    time.Duration // пауза после неудачного прогона, ноль означает defaultRetry
+	// Filter — отбраковка членов пула (ADR 0020). Нулевое значение по стране не
+	// отбраковывает; настоящий чёрный список приходит из настроек через
+	// [PoolManager.SetFilter].
+	Filter store.PoolFilter
 }
 
 // PoolManager обновляет состав туннелей-пулов по расписанию.
@@ -131,6 +135,7 @@ type PoolManager struct {
 
 	mu       sync.RWMutex
 	interval time.Duration
+	filter   store.PoolFilter
 	tunnels  []PoolTunnel
 	last     time.Time
 
@@ -146,6 +151,7 @@ func NewPoolManager(o PoolManagerOptions) *PoolManager {
 		log:      o.Logger,
 		retry:    o.Retry,
 		interval: o.Interval,
+		filter:   o.Filter,
 		updates:  make(chan struct{}, 1),
 	}
 	if m.catalog == nil {
@@ -179,6 +185,23 @@ func (m *PoolManager) SetInterval(d time.Duration) {
 	m.mu.Lock()
 	m.interval = d
 	m.mu.Unlock()
+}
+
+// SetFilter задаёт отбраковку членов пула (ADR 0020). Чёрный список стран живёт в
+// настройках и меняется через панель, поэтому фильтр подхватывается на каждом такте
+// сверки, а не берётся один раз при старте. Применяется со следующего обхода: он же
+// вычистит из сохранённого состава то, что фильтр больше не пропускает.
+func (m *PoolManager) SetFilter(f store.PoolFilter) {
+	m.mu.Lock()
+	m.filter = f
+	m.mu.Unlock()
+}
+
+// currentFilter — фильтр на момент обхода.
+func (m *PoolManager) currentFilter() store.PoolFilter {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.filter
 }
 
 // Start запускает расписание и сразу возвращается: старт демона не ждёт чужого сайта.
@@ -347,7 +370,8 @@ func (m *PoolManager) RefreshPool(ctx context.Context, t PoolTunnel) (bool, erro
 // пулу целиком (ADR 0018). Первое значение — изменился ли состав хоть у одного пула
 // группы. Ошибка обхода — общая для группы; ошибка записи одного пула не мешает остальным.
 func (m *PoolManager) refreshGroup(ctx context.Context, group []PoolTunnel) (bool, error) {
-	servers, err := m.catalog.Servers(ctx, group[0].CatalogURL)
+	filter := m.currentFilter()
+	servers, err := m.catalog.Servers(ctx, group[0].CatalogURL, filter)
 	if err != nil {
 		return false, fmt.Errorf("каталог пулов %q: %w", group[0].CatalogURL, err)
 	}
@@ -357,7 +381,7 @@ func (m *PoolManager) refreshGroup(ctx context.Context, group []PoolTunnel) (boo
 		changed bool
 	)
 	for _, t := range group {
-		ok, werr := m.applyServers(ctx, t, servers)
+		ok, werr := m.applyServers(ctx, t, servers, filter)
 		if werr != nil {
 			errs = append(errs, werr)
 			m.log.Warn("пул не обновлён", "туннель", t.Name, "err", werr)
@@ -373,17 +397,20 @@ func (m *PoolManager) refreshGroup(ctx context.Context, group []PoolTunnel) (boo
 // refreshOne обходит каталог одного пула. Первое значение — изменился ли состав.
 // Используется обходом по требованию ([RefreshPool]): один пул — один обход.
 func (m *PoolManager) refreshOne(ctx context.Context, t PoolTunnel) (bool, error) {
-	servers, err := m.catalog.Servers(ctx, t.CatalogURL)
+	filter := m.currentFilter()
+	servers, err := m.catalog.Servers(ctx, t.CatalogURL, filter)
 	if err != nil {
 		return false, fmt.Errorf("каталог пула %q: %w", t.Name, err)
 	}
-	return m.applyServers(ctx, t, servers)
+	return m.applyServers(ctx, t, servers, filter)
 }
 
 // applyServers сводит переданный состав с тем, что лежит в БД, и пишет, если он
 // изменился. Первое значение — изменился ли состав.
-func (m *PoolManager) applyServers(ctx context.Context, t PoolTunnel, servers []store.PoolServer) (bool, error) {
-	merged, changed := MergePool(t.Servers, servers)
+func (m *PoolManager) applyServers(ctx context.Context, t PoolTunnel, servers []store.PoolServer,
+	filter store.PoolFilter,
+) (bool, error) {
+	merged, changed := MergePool(t.Servers, servers, filter)
 	if !changed {
 		m.log.Debug("состав пула не изменился", "туннель", t.Name, "серверов", len(servers))
 		return false, nil
@@ -446,11 +473,16 @@ const PoolConfigServers = 64
 // каталоге, а конфиг меняется только когда участник действительно пропал: смена
 // байтов конфига стоит перезапуска sing-box и разрыва соединений во всех туннелях
 // (ADR 0010).
-func MergePool(stored, fresh []store.PoolServer) ([]store.PoolServer, bool) {
+// Отбраковка (ADR 0020) применяется здесь и к сохранённому составу, не только к
+// свежей выдаче: в БД работающей установки уже лежат ноды, которых фильтр тогда не
+// было, а смена чёрного списка в настройках обязана применяться без ручной правки БД.
+// Отбракованный сервер место в окне не держит — его занимает лучший кандидат, как
+// после выселения.
+func MergePool(stored, fresh []store.PoolServer, filter store.PoolFilter) ([]store.PoolServer, bool) {
 	inFresh := make(map[string]bool, len(fresh))
 	freshByURL := make(map[string]store.PoolServer, len(fresh))
 	for _, s := range fresh {
-		if s.URL != "" {
+		if s.URL != "" && filter.Allows(s) {
 			inFresh[s.URL] = true
 			if _, ok := freshByURL[s.URL]; !ok {
 				freshByURL[s.URL] = s
@@ -470,6 +502,12 @@ func MergePool(stored, fresh []store.PoolServer) ([]store.PoolServer, bool) {
 			continue
 		}
 		known[s.URL] = true
+		// Отбракованный уходит из состава сразу, без счётчика пропусков: пропуски
+		// страхуют от каприза чужой страницы, а страна в подписи и `security=none`
+		// в ссылке от неё не зависят.
+		if !filter.Allows(s) {
+			continue
+		}
 
 		alive := true
 		if inFresh[s.URL] {
@@ -506,7 +544,7 @@ func MergePool(stored, fresh []store.PoolServer) ([]store.PoolServer, bool) {
 
 	seen := make(map[string]bool, len(fresh))
 	for _, s := range fresh {
-		if s.URL == "" || known[s.URL] || seen[s.URL] {
+		if s.URL == "" || known[s.URL] || seen[s.URL] || !filter.Allows(s) {
 			continue
 		}
 		seen[s.URL] = true

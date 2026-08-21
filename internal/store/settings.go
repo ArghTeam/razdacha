@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -46,6 +47,10 @@ type Settings struct {
 	// PoolUpdateInterval — как часто расписание обходит каталог ключей пула.
 	// Дефолт 1 ч, нижняя граница [MinPoolUpdateInterval].
 	PoolUpdateInterval time.Duration `json:"pool_update_interval"`
+	// PoolCountryBlocklist — ISO-коды стран, ноды которых в пул не берутся
+	// (ADR 0020). Дефолт RU, BY; пустой список означает «не отбраковывать по
+	// стране» и является законным выбором пользователя, а не отсутствием ключа.
+	PoolCountryBlocklist []string `json:"pool_country_blocklist"`
 	// TunnelCheckInterval — как часто расписание опрашивает состояние туннелей.
 	TunnelCheckInterval time.Duration `json:"tunnel_check_interval"`
 	LogLevel            string        `json:"log_level"`
@@ -69,6 +74,10 @@ func DefaultSettings() Settings {
 		// равными руками, потому что store не может импортировать lists (это он
 		// импортирует store). Разъедутся — расписание возьмёт свой fallback.
 		PoolUpdateInterval: 1 * time.Hour,
+		// Дефолт живёт в коде, а не в схеме: настройки лежат key/value, и
+		// отсутствующий ключ читается отсюда. На уже установленном сервере
+		// чёрный список применяется без миграции и без правки БД руками (ADR 0020).
+		PoolCountryBlocklist: DefaultPoolCountryBlocklist(),
 		// Две минуты — компромисс: чаще означает лишние пробы через каждый
 		// обычный туннель, реже — что падение замечается слишком поздно, а
 		// подтверждение перехода тремя проверками растягивается на полчаса.
@@ -89,6 +98,7 @@ const (
 	keyWANInterface        = "wan_interface"
 	keyListUpdateInterval  = "list_update_interval"
 	keyPoolUpdateInterval  = "pool_update_interval"
+	keyPoolCountryBlock    = "pool_country_blocklist"
 	keyTunnelCheckInterval = "tunnel_check_interval"
 	keyLogLevel            = "log_level"
 )
@@ -152,6 +162,10 @@ func (v Settings) values() map[string]string {
 		keyWANInterface:       v.WANInterface,
 		keyListUpdateInterval: strconv.FormatInt(int64(v.ListUpdateInterval/time.Second), 10),
 		keyPoolUpdateInterval: strconv.FormatInt(int64(v.PoolUpdateInterval/time.Second), 10),
+		// Через запятую, без пробелов. Пустая строка — законное значение: она
+		// означает «по стране не отбраковывать», в отличие от отсутствия ключа,
+		// который читается дефолтом (ADR 0020).
+		keyPoolCountryBlock: strings.Join(v.PoolCountryBlocklist, ","),
 		keyTunnelCheckInterval: strconv.FormatInt(
 			int64(v.TunnelCheckInterval/time.Second), 10),
 		keyLogLevel: v.LogLevel,
@@ -193,6 +207,8 @@ func (v *Settings) set(key, value string) error {
 			return err
 		}
 		v.TunnelCheckInterval = time.Duration(seconds) * time.Second
+	case keyPoolCountryBlock:
+		v.PoolCountryBlocklist = parseCountryList(value)
 	case keyWGPool:
 		v.WGPool = value
 	case keyWGServerAddress:
@@ -209,6 +225,35 @@ func (v *Settings) set(key, value string) error {
 		v.LogLevel = value
 	}
 	return nil
+}
+
+// parseCountryList разбирает чёрный список стран из строки «RU,BY».
+//
+// Пустой список — не то же самое, что отсутствие ключа: отсутствие берётся из
+// [DefaultSettings], а пустая строка означает «по стране не отбраковывать». Регистр
+// и пробелы нормализуются здесь, чтобы сравнение в [PoolFilter] не занималось этим на
+// каждой ноде.
+func parseCountryList(value string) []string {
+	out := []string{}
+	for _, part := range strings.Split(value, ",") {
+		if code := strings.ToUpper(strings.TrimSpace(part)); code != "" {
+			out = append(out, code)
+		}
+	}
+	return out
+}
+
+// isCountryCode — две латинские буквы в верхнем регистре.
+func isCountryCode(code string) bool {
+	if len(code) != 2 {
+		return false
+	}
+	for i := 0; i < len(code); i++ {
+		if code[i] < 'A' || code[i] > 'Z' {
+			return false
+		}
+	}
+	return true
 }
 
 // validate проверяет настройки до записи.
@@ -260,6 +305,15 @@ func (v Settings) validate() error {
 	// Нижняя граница держит churn состава пула в узде — см. MinPoolUpdateInterval.
 	if v.PoolUpdateInterval < MinPoolUpdateInterval {
 		return fmt.Errorf("%w: интервал обновления пула меньше %s", ErrInvalid, MinPoolUpdateInterval)
+	}
+	// Код страны — две латинские буквы (ISO 3166-1 alpha-2). Отказ на записи, а не
+	// тихая нормализация: «Россия» в чёрном списке выглядела бы работающей, а
+	// фильтр сверяется с флагом и кодом, и такая запись не совпала бы ни с чем.
+	for _, code := range v.PoolCountryBlocklist {
+		if !isCountryCode(code) {
+			return fmt.Errorf("%w: %q — не код страны из двух латинских букв (например RU)",
+				ErrInvalid, code)
+		}
 	}
 	// Нижняя граница не вкусовая: каждый прогон пробивает обычные туннели
 	// настоящим запросом, и секундный интервал превратил бы проверку в нагрузку.

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -16,7 +17,7 @@ func TestSettingsDefaults(t *testing.T) {
 		t.Fatalf("Settings: %v", err)
 	}
 	want := DefaultSettings()
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("настройки по умолчанию = %+v, ожидались %+v", got, want)
 	}
 	if got.ClientMTU != 1280 {
@@ -62,7 +63,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Settings: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("прочитано %+v, ожидалось %+v", got, want)
 	}
 
@@ -155,5 +156,66 @@ func TestSettingsMTUBounds(t *testing.T) {
 		if err := s.SaveSettings(ctx, v); err != nil {
 			t.Fatalf("MTU %d отвергнут: %v", mtu, err)
 		}
+	}
+}
+
+// На уже установленном сервере ключа `pool_country_blocklist` в таблице нет: он
+// появился с ADR 0020. Отсутствие читается дефолтом, поэтому чёрный список
+// применяется после апгрейда без миграции данных и без правки БД руками.
+func TestSettingsCountryBlocklistDefaultOnExistingInstall(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	// Имитируем установку до 0020: настройки записаны, ключа фильтра среди них нет.
+	v := DefaultSettings()
+	v.LogLevel = "info"
+	if err := s.SaveSettings(ctx, v); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`DELETE FROM settings WHERE key = ?`, keyPoolCountryBlock); err != nil {
+		t.Fatalf("удаление ключа: %v", err)
+	}
+
+	got, err := s.Settings(ctx)
+	if err != nil {
+		t.Fatalf("Settings: %v", err)
+	}
+	if !reflect.DeepEqual(got.PoolCountryBlocklist, []string{"RU", "BY"}) {
+		t.Fatalf("чёрный список = %v, ожидался дефолт RU, BY", got.PoolCountryBlocklist)
+	}
+	// И фильтр, собранный из этих настроек, российскую ноду не пропускает.
+	if PoolFilterFrom(got).Allows(PoolServer{URL: okKey, Title: "🇷🇺 Россия, Москва"}) {
+		t.Error("после апгрейда фильтр пустил российскую ноду")
+	}
+}
+
+// Пустой список — не то же самое, что отсутствие ключа: его пишут и читают как есть.
+func TestSettingsCountryBlocklistEmptyIsExplicit(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+
+	v := DefaultSettings()
+	v.PoolCountryBlocklist = []string{}
+	if err := s.SaveSettings(ctx, v); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	got, err := s.Settings(ctx)
+	if err != nil {
+		t.Fatalf("Settings: %v", err)
+	}
+	if len(got.PoolCountryBlocklist) != 0 {
+		t.Fatalf("чёрный список = %v, ожидался пустой", got.PoolCountryBlocklist)
+	}
+}
+
+// Не-код страны отклоняется на записи: «Россия» в чёрном списке выглядела бы
+// работающей, а фильтр сверяется с флагом и ISO-кодом.
+func TestSettingsCountryBlocklistRejectsNonCode(t *testing.T) {
+	v := DefaultSettings()
+	v.PoolCountryBlocklist = []string{"Россия"}
+	err := open(t).SaveSettings(context.Background(), v)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("SaveSettings дал %v, ожидался ErrInvalid", err)
 	}
 }

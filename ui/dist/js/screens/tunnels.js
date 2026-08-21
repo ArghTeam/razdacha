@@ -62,6 +62,16 @@ function poolServers(pool, off) {
   return `<span class="badge ${alive ? 'ok' : 'err'}">живых ${alive} из ${total}</span>`;
 }
 
+/** Сколько нод выброшено фильтром пула (ADR 0020).
+
+    Отдельным бейджем, а не молчанием: пул, похудевший на семнадцать нод, иначе
+    выглядит обеднённым каталогом. Ноль не показываем — это не новость. */
+function poolExcludedBadge(pool) {
+  const n = Number(pool.servers_excluded) || 0;
+  if (!n) return '';
+  return `<span class="badge">исключено ${n}</span>`;
+}
+
 /** Сервер, через который пул идёт прямо сейчас. */
 function poolCurrent(pool, off) {
   const cur = pool.current || {};
@@ -153,9 +163,38 @@ function poolFold(title, n, body) {
     </details>`;
 }
 
+/** Отбракованный фильтром сервер: подпись каталога и причина.
+
+    Живости у него нет и быть не может — в конфиг он не попал, никто его не
+    проверял. Поэтому строка без точки состояния и без задержки: показывается
+    ровно то, что известно. */
+function poolExcludedRow(s) {
+  return `<div class="pool-srv">
+      <div class="pool-srv-main"><span class="pool-srv-name">${esc(s.title || '—')}</span></div>
+      <span class="badge err">${esc(s.reason || 'исключён фильтром')}</span>
+    </div>`;
+}
+
+/** Блок «Исключены фильтром». Свёрнут, как и прочие вторичные списки, но виден
+    всегда, когда исключённые есть: молча исчезнувшая нода читалась бы как
+    поломка каталога, а не как работа фильтра (ADR 0020). */
+function poolExcludedSection(excluded) {
+  if (!excluded.length) return '';
+  return poolFold('Исключены фильтром', excluded.length,
+    `<div class="hint">Эти ключи в пул не идут: страна из чёрного списка либо транспорт
+       без шифрования. Страна — со слов каталога, по IP она не проверяется.</div>
+     <div class="pool-list">${excluded.map(poolExcludedRow).join('')}</div>`);
+}
+
 function poolDetailsHTML(t, data) {
   const servers = data.servers || [];
+  const excluded = data.excluded || [];
   if (!servers.length) {
+    if (excluded.length) {
+      return `<div class="parse-result idle">Все ${excluded.length} известных ключей
+        отбракованы фильтром — в пул не попал ни один.</div>
+        ${poolExcludedSection(excluded)}`;
+    }
     return '<div class="parse-result idle">Каталог ещё не обходился — серверов пока нет. '
       + 'Нажмите «Обновить каталог».</div>';
   }
@@ -187,7 +226,8 @@ function poolDetailsHTML(t, data) {
     ${poolFold('Остальные — вне ротации', rest.length,
     `<div class="hint">Проверяются только серверы в ротации — в конфиг попадают лучшие
        по пингу каталога. Об остальных известно лишь то, что было на карточке.</div>
-     <div class="pool-list">${rest.map((s) => poolServerRow(s)).join('')}</div>`)}`;
+     <div class="pool-list">${rest.map((s) => poolServerRow(s)).join('')}</div>`)}
+    ${poolExcludedSection(excluded)}`;
 }
 
 function modalPoolDetails(id) {
@@ -246,6 +286,7 @@ function tunnelRow(t) {
           <div class="row-title">${esc(t.name)}
             <span class="badge${pool ? ' accent' : ''}">${esc(tunnelLabel(t))}</span>
             ${pool ? poolServers(pool, off) : ''}
+            ${pool ? poolExcludedBadge(pool) : ''}
             ${st.badge}
           </div>
           <div class="row-meta mono">${esc(tunnelEndpoint(t))}</div>

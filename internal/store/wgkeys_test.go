@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"reflect"
 	"testing"
 )
 
@@ -46,7 +47,7 @@ func TestServerPrivateKeySurvivesSaveSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Settings: %v", err)
 	}
-	if read != settings {
+	if !reflect.DeepEqual(read, settings) {
 		t.Errorf("настройки = %+v, ожидались %+v", read, settings)
 	}
 }

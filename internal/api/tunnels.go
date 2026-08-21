@@ -72,7 +72,7 @@ type tunnelResponse struct {
 	Pool *poolResponse `json:"pool,omitempty"`
 }
 
-func newTunnelResponse(t store.Tunnel, poolEvery time.Duration) tunnelResponse {
+func newTunnelResponse(t store.Tunnel, poolEvery time.Duration, filter store.PoolFilter) tunnelResponse {
 	host, port := "", uint16(0)
 	// У пула адрес не спрашиваем: серверов там сотня, и меняются они сами.
 	if t.Source != store.SourcePool {
@@ -82,7 +82,7 @@ func newTunnelResponse(t store.Tunnel, poolEvery time.Duration) tunnelResponse {
 		host, port = parsedEndpoint(t.Parsed)
 	}
 	return tunnelResponse{
-		Pool:      newPoolResponse(t, poolEvery),
+		Pool:      newPoolResponse(t, poolEvery, filter),
 		Host:      host,
 		Port:      port,
 		ID:        t.ID,
@@ -102,16 +102,17 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err, "Туннель не найден")
 		return
 	}
+	filter := s.poolFilter(r.Context())
 	out := make([]tunnelResponse, 0, len(list))
 	alive := make(map[string]bool, len(list))
 	byID := make(map[string]store.Tunnel, len(list))
 	for _, t := range list {
 		alive[t.ID] = true
 		byID[t.ID] = t
-		out = append(out, s.withCheck(newTunnelResponse(t, s.poolInterval())))
+		out = append(out, s.withCheck(newTunnelResponse(t, s.poolInterval(), filter)))
 	}
 	s.checks.keep(alive)
-	s.withPoolState(r.Context(), out, byID)
+	s.withPoolState(r.Context(), out, byID, filter)
 	writeJSON(w, s.log, http.StatusOK, out)
 }
 
@@ -215,7 +216,7 @@ func (s *Server) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err, "Туннель не найден")
 		return
 	}
-	writeJSON(w, s.log, http.StatusCreated, newTunnelResponse(created, s.poolInterval()))
+	writeJSON(w, s.log, http.StatusCreated, newTunnelResponse(created, s.poolInterval(), s.poolFilter(r.Context())))
 }
 
 // handleUpdateTunnel — `PATCH /api/tunnels/{id}`. Смена raw означает повторный
@@ -263,7 +264,7 @@ func (s *Server) handleUpdateTunnel(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err, "Туннель не найден")
 		return
 	}
-	writeJSON(w, s.log, http.StatusOK, newTunnelResponse(t, s.poolInterval()))
+	writeJSON(w, s.log, http.StatusOK, newTunnelResponse(t, s.poolInterval(), s.poolFilter(r.Context())))
 }
 
 // handleDeleteTunnel — `DELETE /api/tunnels/{id}`.
