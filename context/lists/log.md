@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-28
+
+### #204 — расширение razvedka: A/B-разбор гео-зависимости
+
+**Changed:** `tools/razvedka/` — панель DevTools, вне сборки демона; ADR 0021.
+**New surface:** экспорт plain-списка доменов под правило; веса сигналов и тиры в `lib/diff.js`.
+**Beware:** свёртка до `domain_suffix` запрещена для общих CDN — `cloudfront.net` в правиле заворачивает чужие сайты. Одна страна в обоих прогонах = туннель не сработал, диф ниже — шум, и панель это говорит.
+
 ## 2026-08-21
 
 ### #202 — фильтр на обходе каталога и на слиянии состава
