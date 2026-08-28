@@ -52,6 +52,7 @@ internal/packaging/     nginx, TLS, sysctl, юниты, установка sing-
 internal/qr/            QR в терминал, без внешнего qrencode
 ui/dist/                статика панели, уезжает в бинарник
 packaging/install.sh    установщик
+tools/razvedka/         расширение Chrome: A/B-разбор гео-зависимости, вне сборки демона
 ```
 
 Соглашения: ошибки оборачиваются `fmt.Errorf("...: %w", err)`; текст ошибок, доходящих
