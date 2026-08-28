@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-21
+
+### #202 — отбракованные видны, а не исчезают молча
+
+**Changed:** `internal/api/tunnels_pool.go`, `settings.go` — состав в выдаче совпадает с тем, что в конфиге; чёрный список стран читается и пишется настройкой.
+**New surface:** `GET /api/tunnels/{id}/pool` отдаёт `excluded` — список отбракованных с причиной.
+**Beware:** отсутствующий ключ настройки читается дефолтом `RU,BY`; апгрейд существующей установки правки БД не требует.
+
 ## 2026-08-18
 
 ### #198 — интервал пула в настройках API

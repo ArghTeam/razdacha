@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-21
+
+### #202 — отбраковка нод пула по стране и без шифрования
+
+**Changed:** `internal/store/poolfilter.go` — страна из подписи карточки; `Settings.PoolCountryBlocklist`, дефолт `RU,BY` в коде.
+**New surface:** `PoolFilter`, причина отбраковки в `PoolServer`.
+**Beware:** проверка здесь, а не в lists или singbox: зовут её оба, импортировать друг друга не могут. Страна не сохраняется — иначе смена списка требует перезаписи `pool` и churn конфига (#68).
+
 ## 2026-08-18
 
 ### #198 — интервал обновления пула настройкой

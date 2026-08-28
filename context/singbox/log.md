@@ -3,6 +3,13 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-08-21
+
+### #202 — отсеянный член пула не доходит до конфига
+
+**Changed:** `internal/singbox/pool.go`, `pool_reject.go`, `tunnel.go` — `selectPoolServers` гонит состав через `store.PoolFilter` на пути от БД к конфигу.
+**Beware:** фильтра на обходе каталога мало. Пока обход не удался ни разу, конфиг собирается из сохранённого состава, а при мёртвом источнике оно живёт сколько угодно — РФ-нода пережила бы апгрейд.
+
 ## 2026-08-18
 
 ### #194 — потолок пула 16 → 64
