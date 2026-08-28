@@ -1,0 +1,119 @@
+/* Панель живёт внутри DevTools: собственной темы не изобретаем, берём системные
+   цвета, чтобы не спорить со светлой и тёмной темой браузера. */
+
+:root {
+  color-scheme: light dark;
+  --line: color-mix(in srgb, currentColor 18%, transparent);
+  --muted: color-mix(in srgb, currentColor 55%, transparent);
+  --accent: #3b7dd8;
+  --danger: #c0392b;
+  --high: #c0392b;
+  --medium: #b8860b;
+  --low: #6b7280;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 13px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: Canvas;
+  z-index: 2;
+}
+
+.spacer { flex: 1; }
+
+main { padding: 12px; }
+
+section { margin-bottom: 24px; }
+
+h2 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+button {
+  font: inherit;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { border-color: var(--accent); color: var(--accent); }
+button.danger { border-color: var(--danger); color: var(--danger); }
+
+select, input[type='text'], textarea {
+  font: inherit;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.inline { display: inline-flex; align-items: center; gap: 6px; }
+.row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 6px 0;
+}
+
+th, td {
+  text-align: left;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th { font-weight: 600; color: var(--muted); font-size: 12px; }
+
+td.host, td.domain { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+tr.noise { opacity: .6; }
+
+.verdict {
+  font-size: 18px;
+  font-weight: 600;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.warning {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  color: var(--danger);
+}
+
+.tier-высокая { color: var(--high); font-weight: 600; }
+.tier-средняя { color: var(--medium); }
+.tier-низкая { color: var(--low); }
+
+.signals { margin: 0; padding-left: 16px; font-size: 12px; }
+.signals li { margin: 1px 0; }
+
+.rec { color: var(--danger); font-weight: 600; }

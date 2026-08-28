@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>razvedka — проверки</title>
+  <style>
+    body { font: 13px/1.5 system-ui, sans-serif; margin: 20px; color-scheme: light dark; }
+    h1 { font-size: 16px; }
+    #summary { font-weight: 600; margin: 10px 0; }
+    ol { padding-left: 22px; }
+    li { font-family: ui-monospace, Menlo, monospace; }
+    .ok { color: #2e7d32; }
+    .fail { color: #c0392b; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>razvedka — проверки чистых функций</h1>
+  <p>Откройте этот файл прямо из <code>tools/razvedka/</code> через
+     <code>chrome://extensions</code> → страница расширения, либо любым локальным
+     сервером: модули по <code>file://</code> браузер не загрузит.</p>
+  <div id="summary">выполняется…</div>
+  <ol id="results"></ol>
+  <script type="module" src="test.js"></script>
+</body>
+</html>

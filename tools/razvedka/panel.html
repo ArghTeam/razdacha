@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>razvedka</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="bar">
+    <button id="rec-start" class="primary">Начать запись</button>
+    <button id="rec-stop" hidden>Остановить</button>
+    <label class="inline">
+      метка прогона
+      <select id="rec-label">
+        <option value="direct">напрямую</option>
+        <option value="tunnel">через туннель</option>
+      </select>
+    </label>
+    <span id="rec-status" class="muted">не пишем</span>
+    <span class="spacer"></span>
+    <button id="sessions-clear" class="danger">Очистить всё</button>
+  </header>
+
+  <main>
+    <section>
+      <h2>Сессии</h2>
+      <p class="muted small">
+        Отметьте два прогона — A и B — и нажмите «Сравнить». Хранятся последние 10.
+      </p>
+      <table id="sessions">
+        <thead>
+          <tr>
+            <th>A</th><th>B</th><th>Имя</th><th>Метка</th><th>Запросов</th><th>Начата</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="sessions-body"></tbody>
+      </table>
+      <p id="sessions-empty" class="muted">Сессий пока нет.</p>
+      <button id="compare" class="primary" disabled>Сравнить</button>
+    </section>
+
+    <section id="result" hidden>
+      <h2>Результат</h2>
+      <div id="verdict" class="verdict"></div>
+      <div id="warning" class="warning" hidden></div>
+      <div class="row">
+        <label class="inline"><input type="checkbox" id="show-noise"> показать шум</label>
+        <span class="spacer"></span>
+        <button id="export">Экспорт выбранных</button>
+      </div>
+      <table id="hosts">
+        <thead>
+          <tr>
+            <th></th><th>Хост</th><th>В правило</th><th>Вес</th><th>Уверенность</th><th>Расхождения</th>
+          </tr>
+        </thead>
+        <tbody id="hosts-body"></tbody>
+      </table>
+      <p id="hosts-empty" class="muted" hidden>Расхождений не найдено.</p>
+    </section>
+
+    <section id="export-box" hidden>
+      <h2>Список под правило</h2>
+      <textarea id="export-text" rows="10" spellcheck="false"></textarea>
+      <div class="row">
+        <button id="copy">Скопировать</button>
+        <span id="copy-note" class="muted"></span>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>
