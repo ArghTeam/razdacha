@@ -12,6 +12,7 @@ import { diffSessions } from './lib/diff.js';
 import {
   loadSessions, putSession, removeSession, clearSessions, defaultName, MAX_SESSIONS,
 } from './lib/storage.js';
+import { makePersistQueue } from './lib/persist.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -84,6 +85,9 @@ function recordEntry(entry) {
   };
 
   session.entries.push(rec);
+  // Записанная строка должна доехать до storage независимо от того, нашлось ли что-то
+  // в теле: прогон без единого гео-поля — обычное дело, и терять его нельзя.
+  persistRecording();
   if (!session.host) {
     session.host = host;
     if (!session.renamed) session.name = defaultName(host, session.startedAt);
@@ -105,17 +109,16 @@ function recordEntry(entry) {
   });
 }
 
-let persistTimer = null;
+const persistQueue = makePersistQueue(async () => {
+  if (!state.recording) return;
+  await putSession(state.recording);
+});
 
 /** Сессия пишется в storage не на каждый запрос: на живом сайте их сотни в минуту.
     Раз в две секунды достаточно, чтобы прогон пережил закрытие DevTools. */
 function persistRecording() {
-  if (!state.recording || persistTimer) return;
-  persistTimer = setTimeout(async () => {
-    persistTimer = null;
-    if (!state.recording) return;
-    await putSession(state.recording);
-  }, 2000);
+  if (!state.recording) return;
+  persistQueue.schedule();
 }
 
 function startRecording() {
@@ -136,7 +139,7 @@ function startRecording() {
 async function stopRecording() {
   const session = state.recording;
   state.recording = null;
-  if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; }
+  persistQueue.cancel(); // висящий таймер не должен продублировать финальную запись
   if (session) await putSession(session);
   renderStatus();
   await refreshSessions();

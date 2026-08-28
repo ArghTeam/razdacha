@@ -6,6 +6,7 @@ import { geoHeaders, geoFields, parseCdnTrace, isGeoEndpoint, countryCode, runVe
 import { etldPlusOne, isSharedCDN, foldHost, exportDomains } from './lib/domains.js';
 import { diffSessions, tierOf, isAnalytics, isStaticEntry, localePrefix, redirectDiffers, WEIGHTS } from './lib/diff.js';
 import { pruneSessions, defaultName } from './lib/storage.js';
+import { makePersistQueue, PERSIST_DELAY_MS } from './lib/persist.js';
 
 const results = [];
 
@@ -216,6 +217,48 @@ check('pruneSessions оставляет свежие',
 check('pruneSessions на пустом', pruneSessions(null, 5), []);
 check('defaultName содержит хост', defaultName('shop.com', Date.parse('2026-08-28T14:05:00')),
   'shop.com 14:05');
+
+/* --- отложенная запись ---------------------------------------------------- */
+
+/* Таймер подставной: очередь получает его снаружи, поэтому проверяется без ожидания
+   и без chrome. */
+function fakeTimers() {
+  let queued = null;
+  let id = 0;
+  return {
+    setTimer(fn, delay) { queued = { fn, delay }; return ++id; },
+    clearTimer() { queued = null; },
+    fire() { const q = queued; queued = null; if (q) q.fn(); },
+    get armed() { return queued !== null; },
+    get delay() { return queued?.delay ?? null; },
+  };
+}
+
+/* Прогон, в котором ни одно тело не дало гео-полей — обычный случай: сайт режет по IP
+   молча. Такой прогон обязан доехать до storage целиком, а не остаться в памяти. */
+const t = fakeTimers();
+const written = [];
+const session = { id: 's1', entries: [] };
+const queue = makePersistQueue(() => written.push(session.entries.length), {
+  setTimer: t.setTimer, clearTimer: t.clearTimer,
+});
+
+check('очередь взводится с первого запроса', queue.schedule(), true);
+check('очередь ждёт две секунды', t.delay, PERSIST_DELAY_MS);
+session.entries.push({ host: 'a.io' });
+check('пока таймер висит, запрос таймер не переставляет', queue.schedule(), false);
+session.entries.push({ host: 'b.io' });
+queue.schedule();
+check('до срабатывания в storage ничего не ушло', written, []);
+t.fire();
+check('по срабатыванию пишется вся пачка, включая последнюю запись', written, [2]);
+check('после записи таймер снят', queue.pending, false);
+check('очередь снова принимает запросы', queue.schedule(), true);
+check('cancel гасит висящий таймер', queue.cancel(), true);
+check('после cancel таймера нет', [queue.pending, t.armed], [false, false]);
+t.fire();
+check('погашенный таймер уже ничего не пишет', written, [2]);
+check('cancel на пустой очереди безвреден', queue.cancel(), false);
 
 /* --- вывод --------------------------------------------------------------- */
 
