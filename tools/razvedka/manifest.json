@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "razvedka",
-  "version": "0.1.0",
-  "description": "Панель DevTools: A/B-сравнение сетевых сессий и список гео-зависимых доменов под правило razdacha.",
+  "version": "0.2.0",
+  "description": "Панель DevTools: что на странице блокируется и кто трогает страну, плюс список доменов под правило razdacha.",
   "devtools_page": "devtools.html",
   "permissions": ["storage"]
 }

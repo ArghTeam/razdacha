@@ -5,6 +5,9 @@ import { pathKey, normalizeSegment, entryKey, hostOf } from './lib/pathkey.js';
 import { geoHeaders, geoFields, parseCdnTrace, isGeoEndpoint, countryCode, runVerdict } from './lib/geo.js';
 import { etldPlusOne, isSharedCDN, foldHost, exportDomains } from './lib/domains.js';
 import { diffSessions, tierOf, isAnalytics, isStaticEntry, localePrefix, redirectDiffers, WEIGHTS } from './lib/diff.js';
+import {
+  scanRun, runIsSilent, defaultExportHosts, blockKind, ABORTED, MAX_VALUES,
+} from './lib/single.js';
 import { pruneSessions, defaultName } from './lib/storage.js';
 import { makePersistQueue, PERSIST_DELAY_MS } from './lib/persist.js';
 
@@ -208,6 +211,105 @@ const twiceA = { entries: [runA.entries[0], { ...runA.entries[0], pathKey: '/geo
 const twiceB = { entries: [runB.entries[0], { ...runB.entries[0], pathKey: '/geo2' }] };
 check('диф: повтор сигнала не удваивает вес',
   diffSessions(twiceA, twiceB).hosts[0].score, WEIGHTS.geoHeader + WEIGHTS.geoField);
+
+/* --- одиночный прогон ----------------------------------------------------- */
+
+check('blockKind узнаёт 403', blockKind(403), '403');
+check('blockKind узнаёт 451', blockKind(451), '451');
+check('blockKind узнаёт 429', blockKind(429), '429');
+check('blockKind зовёт нулевой статус оборванным', blockKind(0), ABORTED);
+check('blockKind молчит на 200', blockKind(200), '');
+check('blockKind молчит на 404', blockKind(404), '');
+
+const single = scanRun([
+  {
+    host: 'shop.com', status: 403, geoHeaders: {}, geoFields: {},
+  },
+  {
+    host: 'shop.com', status: 403, geoHeaders: {}, geoFields: {},
+  },
+  {
+    host: 'shop.com', status: 0, geoHeaders: {}, geoFields: {},
+  },
+  {
+    host: 'stream.shop.com', status: 451, geoHeaders: {}, geoFields: {},
+  },
+  {
+    host: 'api.shop.com',
+    status: 200,
+    geoHeaders: { 'cf-ipcountry': 'RU' },
+    geoFields: { 'data.country': 'RU' },
+  },
+  {
+    host: 'api.shop.com',
+    status: 200,
+    geoHeaders: { 'cf-ipcountry': 'RU' },
+    geoFields: { 'data.country': 'RU' },
+  },
+  {
+    host: 'quiet.shop.com', status: 200, geoHeaders: {}, geoFields: {},
+  },
+  {
+    host: '', status: 403, geoHeaders: {}, geoFields: {},
+  },
+]);
+
+check('scanRun считает записи и хосты, безхостовую пропускает',
+  [single.entries, single.hosts], [7, 4]);
+check('scanRun: блокировки только у отказавших хостов',
+  single.blocked.map((b) => b.host), ['shop.com', 'stream.shop.com']);
+check('scanRun: отказы одного хоста сложены по видам',
+  single.blocked[0].statuses, [{ status: '403', count: 2 }, { status: ABORTED, count: 1 }]);
+check('scanRun: всего отказов по хосту', single.blocked[0].total, 3);
+check('scanRun: 200 в блокировки не идёт',
+  single.blocked.some((b) => b.host === 'api.shop.com'), false);
+check('scanRun: упоминание страны отдельно от блокировок',
+  single.geo.map((g) => g.host), ['api.shop.com']);
+check('scanRun: повтор значения не дублируется',
+  single.geo[0].headers, [{ name: 'cf-ipcountry', values: ['RU'], more: 0 }]);
+check('scanRun: гео-поле тела с путём',
+  single.geo[0].fields, [{ name: 'data.country', values: ['RU'], more: 0 }]);
+check('scanRun: считаны оба запроса хоста', single.geo[0].requests, 2);
+check('scanRun: у выдачи нет ни веса, ни тира',
+  [('score' in single.blocked[0]), ('tier' in single.geo[0])], [false, false]);
+
+/* Хост, отдающий каждый раз новое значение, показывается не целиком: три значения и
+   счётчик остального. */
+const manyValues = scanRun([1, 2, 3, 4, 5].map((n) => ({
+  host: 'pop.example.com', status: 200, geoHeaders: { 'x-served-by': `pop-${n}` }, geoFields: {},
+})));
+check('scanRun: значений показывается не больше трёх',
+  manyValues.geo[0].headers[0].values.length, MAX_VALUES);
+check('scanRun: остальные значения посчитаны', manyValues.geo[0].headers[0].more, 2);
+
+check('scanRun: хосты с большим числом отказов идут первыми',
+  scanRun([
+    { host: 'a.io', status: 403 },
+    { host: 'b.io', status: 403 },
+    { host: 'b.io', status: 429 },
+  ]).blocked.map((b) => b.host), ['b.io', 'a.io']);
+
+/* Под экспорт по умолчанию идут только отказавшие хосты: гео-упоминание — догадка,
+   и отмечать её за человека панель не вправе. */
+check('defaultExportHosts берёт только блокировки',
+  defaultExportHosts(single), ['shop.com', 'stream.shop.com']);
+check('defaultExportHosts не берёт хост, который только сказал про страну',
+  defaultExportHosts(single).includes('api.shop.com'), false);
+check('defaultExportHosts на прогоне без отказов',
+  defaultExportHosts(scanRun([{ host: 'a.io', status: 200, geoHeaders: { 'cf-ipcountry': 'NL' } }])), []);
+check('defaultExportHosts на пустом', defaultExportHosts(null), []);
+
+const silent = scanRun([
+  { host: 'shop.com', status: 200, geoHeaders: {}, geoFields: {} },
+  { host: 'cdn.shop.com', status: 304, geoHeaders: {}, geoFields: {} },
+]);
+checkTrue('runIsSilent: прогон без отказов и без гео молчаливый', runIsSilent(silent));
+check('runIsSilent: прогон с отказом не молчаливый', runIsSilent(single), false);
+checkTrue('runIsSilent: прогон только с гео не молчаливый (обратная сторона)',
+  !runIsSilent(scanRun([{ host: 'a.io', status: 200, geoHeaders: { 'cf-ipcountry': 'NL' } }])));
+check('scanRun на пустом прогоне',
+  [scanRun([]).blocked.length, scanRun(null).geo.length, scanRun(null).entries], [0, 0, 0]);
+checkTrue('runIsSilent на пустом прогоне', runIsSilent(scanRun([])));
 
 /* --- хранилище ----------------------------------------------------------- */
 
