@@ -9,54 +9,59 @@
   <header class="bar">
     <button id="rec-start" class="primary">Начать запись</button>
     <button id="rec-stop" hidden>Остановить</button>
-    <label class="inline">
-      метка прогона
-      <select id="rec-label">
-        <option value="direct">напрямую</option>
-        <option value="tunnel">через туннель</option>
-      </select>
-    </label>
     <span id="rec-status" class="muted">не пишем</span>
     <span class="spacer"></span>
     <button id="sessions-clear" class="danger">Очистить всё</button>
   </header>
 
   <main>
-    <section>
-      <h2>Сессии</h2>
-      <p class="muted small">
-        Отметьте два прогона — A и B — и нажмите «Сравнить». Хранятся последние 10.
+    <section id="single">
+      <h2>Прогон <span id="single-name" class="muted"></span></h2>
+      <p id="single-hint" class="muted small">
+        Нажмите «Начать запись» и пройдите по сайту: главная, поиск, каталог, страница
+        товара — то, где видно географию. Список ниже наполняется по ходу записи.
       </p>
-      <table id="sessions">
-        <thead>
-          <tr>
-            <th>A</th><th>B</th><th>Имя</th><th>Метка</th><th>Запросов</th><th>Начата</th><th></th>
-          </tr>
-        </thead>
-        <tbody id="sessions-body"></tbody>
-      </table>
-      <p id="sessions-empty" class="muted">Сессий пока нет.</p>
-      <button id="compare" class="primary" disabled>Сравнить</button>
-    </section>
 
-    <section id="result" hidden>
-      <h2>Результат</h2>
-      <div id="verdict" class="verdict"></div>
-      <div id="warning" class="warning" hidden></div>
-      <div class="row">
-        <label class="inline"><input type="checkbox" id="show-noise"> показать шум</label>
-        <span class="spacer"></span>
-        <button id="export">Экспорт выбранных</button>
-      </div>
-      <table id="hosts">
+      <h3>Блокируется</h3>
+      <p class="muted small">
+        Наблюдение: так ответил сервер. 403, 451, 429 и запросы, которые не дошли.
+      </p>
+      <table id="blocked">
         <thead>
-          <tr>
-            <th></th><th>Хост</th><th>В правило</th><th>Вес</th><th>Уверенность</th><th>Расхождения</th>
-          </tr>
+          <tr><th></th><th>Хост</th><th>В правило</th><th>Ответы</th><th>Запросов</th></tr>
         </thead>
-        <tbody id="hosts-body"></tbody>
+        <tbody id="blocked-body"></tbody>
       </table>
-      <p id="hosts-empty" class="muted" hidden>Расхождений не найдено.</p>
+      <p id="blocked-empty" class="muted">Отказов не было.</p>
+
+      <h3>Говорит про страну</h3>
+      <p class="muted small">
+        Подсказка, не доказательство. Хост прислал гео-заголовок или гео-поле в теле —
+        это значит лишь, что он что-то знает о стране. <code>cf-ipcountry</code> отдаёт
+        половина интернета, и зависеть от него может ровно ничего. Что от чего зависит,
+        показывает только сравнение двух прогонов — поэтому под экспорт эти хосты по
+        умолчанию не отмечены.
+      </p>
+      <table id="geo">
+        <thead>
+          <tr><th></th><th>Хост</th><th>В правило</th><th>Что нашлось</th><th>Запросов</th></tr>
+        </thead>
+        <tbody id="geo-body"></tbody>
+      </table>
+      <p id="geo-empty" class="muted">Про страну никто не сказал.</p>
+
+      <div class="row">
+        <button id="single-export" class="primary" disabled>Экспорт отмеченных</button>
+        <span id="single-count" class="muted small"></span>
+      </div>
+
+      <div id="silent" class="callout" hidden>
+        <p><strong>В этом прогоне ничего не нашлось.</strong> Это не значит, что всё в
+        порядке: сайт умеет резать по стране молча — без отказов и без единого
+        гео-заголовка. Такой случай видно только сравнением двух прогонов: один
+        напрямую, второй через туннель.</p>
+        <button id="silent-open">Сравнить два прогона</button>
+      </div>
     </section>
 
     <section id="export-box" hidden>
@@ -67,6 +72,53 @@
         <span id="copy-note" class="muted"></span>
       </div>
     </section>
+
+    <details id="sessions-box">
+      <summary>Прошлые прогоны <span id="sessions-count" class="muted"></span></summary>
+      <p class="muted small">
+        «Показать» открывает прогон сверху. A и B — выбор для сравнения, оно ниже.
+        Хранятся последние 10, старые вытесняются.
+      </p>
+      <table id="sessions">
+        <thead>
+          <tr>
+            <th>A</th><th>B</th><th>Имя</th><th>Метка</th><th>Запросов</th><th>Начат</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="sessions-body"></tbody>
+      </table>
+      <p id="sessions-empty" class="muted">Прогонов пока нет.</p>
+    </details>
+
+    <details id="ab">
+      <summary>Ничего не нашлось? Сравнить два прогона</summary>
+      <p class="muted small">
+        Сравнение отвечает на другой вопрос: от чего меняется выдача. Запишите
+        сценарий дважды — напрямую и через туннель, — проставьте прогонам метки в
+        списке выше, отметьте их как A и B и нажмите «Сравнить». Между прогонами
+        очистите куки сайта, иначе страна приедет из старой сессии.
+      </p>
+      <button id="compare" class="primary" disabled>Сравнить</button>
+
+      <div id="result" hidden>
+        <div id="verdict" class="verdict"></div>
+        <div id="warning" class="warning" hidden></div>
+        <div class="row">
+          <label class="inline"><input type="checkbox" id="show-noise"> показать шум</label>
+          <span class="spacer"></span>
+          <button id="export">Экспорт выбранных</button>
+        </div>
+        <table id="hosts">
+          <thead>
+            <tr>
+              <th></th><th>Хост</th><th>В правило</th><th>Вес</th><th>Уверенность</th><th>Расхождения</th>
+            </tr>
+          </thead>
+          <tbody id="hosts-body"></tbody>
+        </table>
+        <p id="hosts-empty" class="muted" hidden>Расхождений не найдено.</p>
+      </div>
+    </details>
   </main>
 
   <script type="module" src="panel.js"></script>

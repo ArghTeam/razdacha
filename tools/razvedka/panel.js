@@ -1,5 +1,9 @@
-/* Панель razvedka: запись сетевой сессии, сравнение двух прогонов, экспорт списка
-   доменов.
+/* Панель razvedka: запись сетевой сессии, разбор одного прогона, сравнение двух,
+   экспорт списка доменов.
+
+   Главный экран — одиночный прогон: что отказало и кто упомянул страну, в двух
+   разных разделах с разной подписью уверенности. Сравнение двух прогонов никуда не
+   делось, но живёт вторым шагом ([ADR 0022](../../docs/decisions/0022-single-run-entry.md)).
 
    Тела ответов здесь не хранятся. Из тела в момент записи вынимаются гео-поля, и
    дальше живёт только компактная запись — иначе сессия на полсотни страниц не
@@ -9,6 +13,7 @@ import { hostOf, pathKey } from './lib/pathkey.js';
 import { geoHeaders, geoFields, parseCdnTrace, isGeoEndpoint } from './lib/geo.js';
 import { foldHost, exportDomains } from './lib/domains.js';
 import { diffSessions } from './lib/diff.js';
+import { scanRun, runIsSilent } from './lib/single.js';
 import {
   loadSessions, putSession, removeSession, clearSessions, defaultName, MAX_SESSIONS,
 } from './lib/storage.js';
@@ -24,13 +29,20 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
     `country`, а данные, и разбирать их незачем. */
 const MAX_BODY_BYTES = 256 * 1024;
 
+/** Перерисовка живого списка не чаще раза в 400 мс: на живом сайте запросов сотни
+    в минуту, и перерисовывать таблицу на каждый — работа впустую. */
+const RENDER_DELAY_MS = 400;
+
 const state = {
   recording: null, // текущая сессия или null
+  viewing: null, // прогон, показанный в одиночном разделе
   sessions: [],
   pickA: null,
   pickB: null,
   diff: null,
-  chosen: new Set(), // хосты, отмеченные под экспорт
+  chosen: new Set(), // хосты, отмеченные под экспорт в сравнении
+  chosenSingle: new Set(), // то же в одиночном прогоне
+  defaulted: new Set(), // хосты, которым дефолт отметки уже выставлен
   showNoise: false,
 };
 
@@ -93,6 +105,7 @@ function recordEntry(entry) {
     if (!session.renamed) session.name = defaultName(host, session.startedAt);
   }
   renderStatus();
+  scheduleSingleRender();
 
   const worthBody = textualMime(rec.mime)
     && rec.bodyBytes >= 0
@@ -105,6 +118,7 @@ function recordEntry(entry) {
     if (Object.keys(fields).length) {
       rec.geoFields = fields;
       persistRecording();
+      scheduleSingleRender();
     }
   });
 }
@@ -121,18 +135,30 @@ function persistRecording() {
   persistQueue.schedule();
 }
 
+const renderQueue = makePersistQueue(() => renderSingle(), { delay: RENDER_DELAY_MS });
+
+function scheduleSingleRender() {
+  renderQueue.schedule();
+}
+
 function startRecording() {
   const startedAt = Date.now();
+  // Метка прогона на входе не спрашивается: для одного прогона она бессмысленна.
+  // Проставляют её в списке прошлых прогонов, и только ради сравнения.
   state.recording = {
     id: `s${startedAt}-${Math.random().toString(36).slice(2, 8)}`,
     name: defaultName('', startedAt),
-    label: $('#rec-label').value,
+    label: '',
     host: '',
     renamed: false,
     startedAt,
     entries: [],
   };
+  state.viewing = state.recording;
+  state.chosenSingle = new Set();
+  state.defaulted = new Set();
   renderStatus();
+  renderSingle();
   persistRecording();
 }
 
@@ -140,8 +166,10 @@ async function stopRecording() {
   const session = state.recording;
   state.recording = null;
   persistQueue.cancel(); // висящий таймер не должен продублировать финальную запись
+  renderQueue.cancel();
   if (session) await putSession(session);
   renderStatus();
+  renderSingle();
   await refreshSessions();
 }
 
@@ -149,7 +177,6 @@ function renderStatus() {
   const rec = state.recording;
   $('#rec-start').hidden = !!rec;
   $('#rec-stop').hidden = !rec;
-  $('#rec-label').disabled = !!rec;
   const el = $('#rec-status');
   if (!rec) {
     el.className = 'muted';
@@ -163,10 +190,105 @@ function renderStatus() {
 chrome.devtools.network.onRequestFinished.addListener(recordEntry);
 
 /* ==========================================================================
-   Список сессий
+   Одиночный прогон: что отказало и кто упомянул страну
    ========================================================================== */
 
-const LABELS = { direct: 'напрямую', tunnel: 'через туннель' };
+/** Ячейка «В правило»: свёрнутый домен и, если свёртки не случилось, причина. */
+function ruleCell(host) {
+  const fold = foldHost(host);
+  const note = fold.reason ? ` <span class="muted small">(${esc(fold.reason)})</span>` : '';
+  return `<td class="domain">${esc(fold.domain)}${note}</td>`;
+}
+
+/** Отметка по умолчанию: блокировки отмечены, гео-подсказки — нет. Разница не
+    косметическая: отказ сервера наблюдаем, гео-заголовок — догадка, и молча класть
+    догадку в правило панель не вправе. */
+function defaultPick(host, on) {
+  if (state.defaulted.has(host)) return;
+  state.defaulted.add(host);
+  if (on) state.chosenSingle.add(host);
+}
+
+function renderSingle() {
+  const session = state.viewing;
+  const entries = session?.entries || [];
+  const scan = scanRun(entries);
+
+  $('#single-name').textContent = session
+    ? `— ${session.name} (${entries.length} запросов)`
+    : '— ещё не записан';
+
+  $('#single-hint').hidden = !!session && entries.length > 0;
+
+  for (const b of scan.blocked) defaultPick(b.host, true);
+  for (const g of scan.geo) defaultPick(g.host, false);
+
+  $('#blocked-empty').hidden = scan.blocked.length > 0;
+  $('#blocked').hidden = scan.blocked.length === 0;
+  $('#blocked-body').innerHTML = scan.blocked.map((b) => `
+    <tr data-host="${esc(b.host)}">
+      <td><input type="checkbox" class="pick"${state.chosenSingle.has(b.host) ? ' checked' : ''}></td>
+      <td class="host">${esc(b.host)}</td>
+      ${ruleCell(b.host)}
+      <td>${b.statuses.map((s) => `<span class="badge">${esc(s.status)}</span>&nbsp;×${s.count}`).join(' ')}</td>
+      <td>${b.total}</td>
+    </tr>`).join('');
+
+  $('#geo-empty').hidden = scan.geo.length > 0;
+  $('#geo').hidden = scan.geo.length === 0;
+  $('#geo-body').innerHTML = scan.geo.map((g) => {
+    const found = [...g.headers, ...g.fields].map((s) => {
+      const more = s.more ? ` <span class="muted">и ещё ${s.more}</span>` : '';
+      return `<li><code>${esc(s.name)}</code>: ${esc(s.values.join(', '))}${more}</li>`;
+    }).join('');
+    return `
+      <tr data-host="${esc(g.host)}">
+        <td><input type="checkbox" class="pick"${state.chosenSingle.has(g.host) ? ' checked' : ''}></td>
+        <td class="host">${esc(g.host)}</td>
+        ${ruleCell(g.host)}
+        <td><ul class="signals">${found}</ul></td>
+        <td>${g.requests}</td>
+      </tr>`;
+  }).join('');
+
+  const picked = state.chosenSingle.size;
+  $('#single-export').disabled = picked === 0;
+  $('#single-count').textContent = picked ? `отмечено хостов: ${picked}` : '';
+
+  // Пустой прогон — не «ничего нет», а повод сравнивать: сайт умеет резать молча.
+  $('#silent').hidden = !!state.recording || !session || entries.length === 0
+    || !runIsSilent(scan);
+}
+
+document.addEventListener('change', (e) => {
+  if (!e.target.classList?.contains('pick')) return;
+  const row = e.target.closest('tr');
+  if (!row || !row.closest('#blocked-body, #geo-body')) return;
+  const host = row.dataset.host;
+  if (!host) return;
+  if (e.target.checked) state.chosenSingle.add(host);
+  else state.chosenSingle.delete(host);
+  const picked = state.chosenSingle.size;
+  $('#single-export').disabled = picked === 0;
+  $('#single-count').textContent = picked ? `отмечено хостов: ${picked}` : '';
+});
+
+$('#single-export').addEventListener('click', () => {
+  showExport([...state.chosenSingle]);
+});
+
+$('#silent-open').addEventListener('click', () => {
+  $('#sessions-box').open = true;
+  const ab = $('#ab');
+  ab.open = true;
+  ab.scrollIntoView({ block: 'start' });
+});
+
+/* ==========================================================================
+   Список прошлых прогонов
+   ========================================================================== */
+
+const LABELS = { '': 'без метки', direct: 'напрямую', tunnel: 'через туннель' };
 
 function stamp(ms) {
   const d = new Date(ms);
@@ -182,22 +304,26 @@ async function refreshSessions() {
 function renderSessions() {
   const body = $('#sessions-body');
   const list = state.sessions;
+  $('#sessions-count').textContent = list.length ? `(${list.length})` : '';
   $('#sessions-empty').hidden = list.length > 0;
   $('#sessions').hidden = list.length === 0;
   body.innerHTML = list.map((s) => `
     <tr data-id="${esc(s.id)}">
       <td><input type="radio" name="pickA" value="${esc(s.id)}"${state.pickA === s.id ? ' checked' : ''}></td>
       <td><input type="radio" name="pickB" value="${esc(s.id)}"${state.pickB === s.id ? ' checked' : ''}></td>
-      <td><input type="text" class="name" value="${esc(s.name)}" size="26"></td>
+      <td><input type="text" class="name" value="${esc(s.name)}" size="22"></td>
       <td>
         <select class="label">
           ${Object.entries(LABELS).map(([k, v]) => `
-            <option value="${k}"${s.label === k ? ' selected' : ''}>${v}</option>`).join('')}
+            <option value="${k}"${(s.label || '') === k ? ' selected' : ''}>${v}</option>`).join('')}
         </select>
       </td>
       <td>${s.entries?.length || 0}</td>
       <td class="muted">${stamp(s.startedAt)}</td>
-      <td><button class="drop">удалить</button></td>
+      <td>
+        <button class="show">показать</button>
+        <button class="drop">удалить</button>
+      </td>
     </tr>`).join('');
   $('#compare').disabled = !(state.pickA && state.pickB && state.pickA !== state.pickB);
 }
@@ -223,36 +349,49 @@ $('#sessions-body').addEventListener('change', async (e) => {
 });
 
 $('#sessions-body').addEventListener('click', async (e) => {
-  if (!e.target.classList.contains('drop')) return;
   const id = e.target.closest('tr')?.dataset.id;
   if (!id) return;
+  if (e.target.classList.contains('show')) {
+    if (state.recording) return; // идёт запись — сверху показан именно он
+    state.viewing = state.sessions.find((s) => s.id === id) || null;
+    state.chosenSingle = new Set();
+    state.defaulted = new Set();
+    renderSingle();
+    $('#single').scrollIntoView({ block: 'start' });
+    return;
+  }
+  if (!e.target.classList.contains('drop')) return;
   if (state.pickA === id) state.pickA = null;
   if (state.pickB === id) state.pickB = null;
+  if (state.viewing?.id === id) state.viewing = null;
   await removeSession(id);
   await refreshSessions();
+  renderSingle();
 });
 
 $('#rec-start').addEventListener('click', startRecording);
 $('#rec-stop').addEventListener('click', stopRecording);
 
 $('#sessions-clear').addEventListener('click', async () => {
-  if (!confirm(`Удалить все сессии (${state.sessions.length})?`)) return;
+  if (!confirm(`Удалить все прогоны (${state.sessions.length})?`)) return;
   state.pickA = null;
   state.pickB = null;
   state.diff = null;
+  state.viewing = state.recording;
   $('#result').hidden = true;
   $('#export-box').hidden = true;
   await clearSessions();
   await refreshSessions();
+  renderSingle();
 });
 
 /* ==========================================================================
-   Сравнение
+   Сравнение двух прогонов
    ========================================================================== */
 
 function verdictLine(tag, session, verdict) {
   const top = verdict.top;
-  const label = LABELS[session.label] || session.label;
+  const label = LABELS[session.label || ''] || session.label;
   if (!top) return `${tag} (${label}): страна не определилась`;
   return `${tag} (${label}): ${top.code} (по ${top.hosts} ${top.hosts === 1 ? 'хосту' : 'хостам'})`;
 }
@@ -285,16 +424,14 @@ function renderDiff() {
   const rows = d.hosts.filter((h) => state.showNoise || !h.noise);
   $('#hosts-empty').hidden = rows.length > 0;
   $('#hosts-body').innerHTML = rows.map((h) => {
-    const fold = foldHost(h.host);
-    const note = fold.reason ? ` <span class="muted small">(${esc(fold.reason)})</span>` : '';
     const tags = [];
     if (h.analytics) tags.push('аналитика');
     if (h.staticOnly) tags.push('статика');
     return `
       <tr class="${h.noise ? 'noise' : ''}" data-host="${esc(h.host)}">
-        <td><input type="checkbox" class="pick"${state.chosen.has(h.host) ? ' checked' : ''}></td>
+        <td><input type="checkbox" class="pick-diff"${state.chosen.has(h.host) ? ' checked' : ''}></td>
         <td class="host">${esc(h.host)}${tags.length ? ` <span class="muted small">${esc(tags.join(', '))}</span>` : ''}</td>
-        <td class="domain">${esc(fold.domain)}${note}</td>
+        ${ruleCell(h.host)}
         <td>${h.score}</td>
         <td class="tier-${esc(h.tier)}">${esc(h.tier)}</td>
         <td><ul class="signals">${h.signals.map((s) => `<li>${esc(s.detail)} <span class="muted">+${s.weight}</span></li>`).join('')}</ul></td>
@@ -308,7 +445,7 @@ $('#show-noise').addEventListener('change', (e) => {
 });
 
 $('#hosts-body').addEventListener('change', (e) => {
-  if (!e.target.classList.contains('pick')) return;
+  if (!e.target.classList.contains('pick-diff')) return;
   const host = e.target.closest('tr')?.dataset.host;
   if (!host) return;
   if (e.target.checked) state.chosen.add(host);
@@ -319,11 +456,16 @@ $('#hosts-body').addEventListener('change', (e) => {
    Экспорт
    ========================================================================== */
 
-$('#export').addEventListener('click', () => {
+/** Один экспорт на обе выдачи: формат и свёртка доменов у одиночного прогона и у
+    сравнения одинаковые — plain-список, который читает слой lists. */
+function showExport(hosts) {
   $('#export-box').hidden = false;
-  $('#export-text').value = exportDomains([...state.chosen]).join('\n');
+  $('#export-text').value = exportDomains(hosts).join('\n');
   $('#copy-note').textContent = '';
-});
+  $('#export-box').scrollIntoView({ block: 'nearest' });
+}
+
+$('#export').addEventListener('click', () => showExport([...state.chosen]));
 
 $('#copy').addEventListener('click', async () => {
   const text = $('#export-text').value;
@@ -340,7 +482,8 @@ $('#copy').addEventListener('click', async () => {
 
 refreshSessions().then(() => {
   if (state.sessions.length >= MAX_SESSIONS) {
-    console.info(`razvedka: сессий ${state.sessions.length}, старые вытесняются`);
+    console.info(`razvedka: прогонов ${state.sessions.length}, старые вытесняются`);
   }
 });
 renderStatus();
+renderSingle();

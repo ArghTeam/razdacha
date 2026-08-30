@@ -43,6 +43,52 @@ h2 {
   font-weight: 600;
 }
 
+h3 {
+  margin: 18px 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Разделы второго шага свёрнуты: первое, что видит человек, — свой прогон, а не
+   таблица прошлых сессий и не процедура сравнения. */
+details {
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+details[open] summary { margin-bottom: 6px; }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.callout {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+
+.callout p { margin: 0 0 8px; }
+
+.badge {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
 button {
   font: inherit;
   padding: 4px 10px;
