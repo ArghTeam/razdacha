@@ -23,8 +23,8 @@ body {
   position: sticky;
   top: 0;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: baseline;
+  gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
   background: Canvas;
@@ -35,59 +35,13 @@ body {
 
 main { padding: 12px; }
 
-section { margin-bottom: 24px; }
-
 h2 {
-  margin: 0 0 6px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-h3 {
-  margin: 18px 0 2px;
+  margin: 14px 0 2px;
   font-size: 13px;
   font-weight: 600;
 }
 
-/* Разделы второго шага свёрнуты: первое, что видит человек, — свой прогон, а не
-   таблица прошлых сессий и не процедура сравнения. */
-details {
-  margin-bottom: 16px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-
-summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-
-details[open] summary { margin-bottom: 6px; }
-
-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-}
-
-.callout {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-}
-
-.callout p { margin: 0 0 8px; }
-
-.badge {
-  display: inline-block;
-  padding: 0 5px;
-  border-radius: 3px;
-  border: 1px solid var(--danger);
-  color: var(--danger);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-}
+main > h2:first-of-type { margin-top: 4px; }
 
 button {
   font: inherit;
@@ -113,36 +67,69 @@ select, input[type='text'], textarea {
   color: inherit;
 }
 
-textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+textarea {
+  width: 100%;
+  margin-top: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 
 .inline { display: inline-flex; align-items: center; gap: 6px; }
-.row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.row { display: flex; align-items: center; gap: 10px; margin: 12px 0 6px; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
 
 table {
   width: 100%;
   border-collapse: collapse;
-  margin: 6px 0;
+  margin: 2px 0;
 }
 
 th, td {
   text-align: left;
-  padding: 5px 8px;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
 
 th { font-weight: 600; color: var(--muted); font-size: 12px; }
 
+td.pick-cell { width: 24px; padding-right: 0; }
 td.host, td.domain { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+td.what { color: var(--muted); }
 
 tr.noise { opacity: .6; }
 
+.badge {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+/* Сравнение двух прогонов сохранено, но на главном экране его быть не должно:
+   свёрнутая строка внизу, без объяснений и без зова. */
+details {
+  margin-top: 28px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+summary { cursor: pointer; }
+details[open] summary { margin-bottom: 6px; }
+
 .verdict {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
-  padding: 10px 12px;
+  margin-top: 8px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
 }
@@ -161,5 +148,3 @@ tr.noise { opacity: .6; }
 
 .signals { margin: 0; padding-left: 16px; font-size: 12px; }
 .signals li { margin: 1px 0; }
-
-.rec { color: var(--danger); font-weight: 600; }

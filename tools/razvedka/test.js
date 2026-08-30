@@ -5,7 +5,9 @@ import { pathKey, normalizeSegment, entryKey, hostOf } from './lib/pathkey.js';
 import { geoHeaders, geoFields, parseCdnTrace, isGeoEndpoint, countryCode, runVerdict } from './lib/geo.js';
 import { etldPlusOne, isSharedCDN, foldHost, exportDomains } from './lib/domains.js';
 import { diffSessions, tierOf, isAnalytics, isStaticEntry, localePrefix, redirectDiffers, WEIGHTS } from './lib/diff.js';
-import { scanRun, runIsSilent, blockKind, ABORTED, MAX_VALUES } from './lib/single.js';
+import {
+  scanRun, runIsSilent, defaultExportHosts, blockKind, ABORTED, MAX_VALUES,
+} from './lib/single.js';
 import { pruneSessions, defaultName } from './lib/storage.js';
 import { makePersistQueue, PERSIST_DELAY_MS } from './lib/persist.js';
 
@@ -286,6 +288,16 @@ check('scanRun: хосты с большим числом отказов иду�
     { host: 'b.io', status: 403 },
     { host: 'b.io', status: 429 },
   ]).blocked.map((b) => b.host), ['b.io', 'a.io']);
+
+/* Под экспорт по умолчанию идут только отказавшие хосты: гео-упоминание — догадка,
+   и отмечать её за человека панель не вправе. */
+check('defaultExportHosts берёт только блокировки',
+  defaultExportHosts(single), ['shop.com', 'stream.shop.com']);
+check('defaultExportHosts не берёт хост, который только сказал про страну',
+  defaultExportHosts(single).includes('api.shop.com'), false);
+check('defaultExportHosts на прогоне без отказов',
+  defaultExportHosts(scanRun([{ host: 'a.io', status: 200, geoHeaders: { 'cf-ipcountry': 'NL' } }])), []);
+check('defaultExportHosts на пустом', defaultExportHosts(null), []);
 
 const silent = scanRun([
   { host: 'shop.com', status: 200, geoHeaders: {}, geoFields: {} },

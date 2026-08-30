@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "razvedka",
   "version": "0.2.0",
-  "description": "Панель DevTools: что блокируется и кто говорит про страну за один прогон, сравнение двух прогонов и список доменов под правило razdacha.",
+  "description": "Панель DevTools: что на странице блокируется и кто трогает страну, плюс список доменов под правило razdacha.",
   "devtools_page": "devtools.html",
   "permissions": ["storage"]
 }

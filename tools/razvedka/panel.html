@@ -7,77 +7,50 @@
 </head>
 <body>
   <header class="bar">
-    <button id="rec-start" class="primary">Начать запись</button>
-    <button id="rec-stop" hidden>Остановить</button>
-    <span id="rec-status" class="muted">не пишем</span>
+    <strong id="site">—</strong>
+    <span id="count" class="muted"></span>
     <span class="spacer"></span>
-    <button id="sessions-clear" class="danger">Очистить всё</button>
+    <button id="clear">Очистить</button>
   </header>
 
   <main>
-    <section id="single">
-      <h2>Прогон <span id="single-name" class="muted"></span></h2>
-      <p id="single-hint" class="muted small">
-        Нажмите «Начать запись» и пройдите по сайту: главная, поиск, каталог, страница
-        товара — то, где видно географию. Список ниже наполняется по ходу записи.
-      </p>
+    <p id="hint" class="muted small">
+      Перезагрузите страницу (<code>⌘R</code> / <code>F5</code>) — запросы появятся
+      здесь. DevTools должен быть открыт до перезагрузки.
+    </p>
 
-      <h3>Блокируется</h3>
+    <h2>Блокируется</h2>
+    <table id="blocked">
+      <tbody id="blocked-body"></tbody>
+    </table>
+    <p id="blocked-empty" class="muted small">пока ничего</p>
+
+    <h2>Трогает страну</h2>
+    <table id="geo">
+      <tbody id="geo-body"></tbody>
+    </table>
+    <p id="geo-empty" class="muted small">пока ничего</p>
+    <p id="geo-note" class="muted small" hidden>
+      Заголовок про страну сам по себе ничего не доказывает — поэтому эти хосты не
+      отмечены.
+    </p>
+
+    <div class="row">
+      <button id="copy-domains" class="primary" disabled>Скопировать домены</button>
+      <span id="copy-note" class="muted small"></span>
+    </div>
+    <textarea id="export-text" rows="8" spellcheck="false" hidden></textarea>
+
+    <p id="silent" class="muted small" hidden>
+      Ничего не нашлось — сайт может резать молча.
+    </p>
+
+    <details id="ab">
+      <summary class="muted small">Сравнить два прогона</summary>
       <p class="muted small">
-        Наблюдение: так ответил сервер. 403, 451, 429 и запросы, которые не дошли.
-      </p>
-      <table id="blocked">
-        <thead>
-          <tr><th></th><th>Хост</th><th>В правило</th><th>Ответы</th><th>Запросов</th></tr>
-        </thead>
-        <tbody id="blocked-body"></tbody>
-      </table>
-      <p id="blocked-empty" class="muted">Отказов не было.</p>
-
-      <h3>Говорит про страну</h3>
-      <p class="muted small">
-        Подсказка, не доказательство. Хост прислал гео-заголовок или гео-поле в теле —
-        это значит лишь, что он что-то знает о стране. <code>cf-ipcountry</code> отдаёт
-        половина интернета, и зависеть от него может ровно ничего. Что от чего зависит,
-        показывает только сравнение двух прогонов — поэтому под экспорт эти хосты по
-        умолчанию не отмечены.
-      </p>
-      <table id="geo">
-        <thead>
-          <tr><th></th><th>Хост</th><th>В правило</th><th>Что нашлось</th><th>Запросов</th></tr>
-        </thead>
-        <tbody id="geo-body"></tbody>
-      </table>
-      <p id="geo-empty" class="muted">Про страну никто не сказал.</p>
-
-      <div class="row">
-        <button id="single-export" class="primary" disabled>Экспорт отмеченных</button>
-        <span id="single-count" class="muted small"></span>
-      </div>
-
-      <div id="silent" class="callout" hidden>
-        <p><strong>В этом прогоне ничего не нашлось.</strong> Это не значит, что всё в
-        порядке: сайт умеет резать по стране молча — без отказов и без единого
-        гео-заголовка. Такой случай видно только сравнением двух прогонов: один
-        напрямую, второй через туннель.</p>
-        <button id="silent-open">Сравнить два прогона</button>
-      </div>
-    </section>
-
-    <section id="export-box" hidden>
-      <h2>Список под правило</h2>
-      <textarea id="export-text" rows="10" spellcheck="false"></textarea>
-      <div class="row">
-        <button id="copy">Скопировать</button>
-        <span id="copy-note" class="muted"></span>
-      </div>
-    </section>
-
-    <details id="sessions-box">
-      <summary>Прошлые прогоны <span id="sessions-count" class="muted"></span></summary>
-      <p class="muted small">
-        «Показать» открывает прогон сверху. A и B — выбор для сравнения, оно ниже.
-        Хранятся последние 10, старые вытесняются.
+        Для сайта, который режет по стране молча: запишите один проход напрямую и
+        один через туннель (между ними очистите куки), проставьте прогонам метки,
+        отметьте их как A и B.
       </p>
       <table id="sessions">
         <thead>
@@ -87,18 +60,12 @@
         </thead>
         <tbody id="sessions-body"></tbody>
       </table>
-      <p id="sessions-empty" class="muted">Прогонов пока нет.</p>
-    </details>
-
-    <details id="ab">
-      <summary>Ничего не нашлось? Сравнить два прогона</summary>
-      <p class="muted small">
-        Сравнение отвечает на другой вопрос: от чего меняется выдача. Запишите
-        сценарий дважды — напрямую и через туннель, — проставьте прогонам метки в
-        списке выше, отметьте их как A и B и нажмите «Сравнить». Между прогонами
-        очистите куки сайта, иначе страна приедет из старой сессии.
-      </p>
-      <button id="compare" class="primary" disabled>Сравнить</button>
+      <p id="sessions-empty" class="muted small">Прогонов пока нет.</p>
+      <div class="row">
+        <button id="compare" disabled>Сравнить</button>
+        <span class="spacer"></span>
+        <button id="sessions-clear" class="danger">Удалить все прогоны</button>
+      </div>
 
       <div id="result" hidden>
         <div id="verdict" class="verdict"></div>
@@ -116,7 +83,7 @@
           </thead>
           <tbody id="hosts-body"></tbody>
         </table>
-        <p id="hosts-empty" class="muted" hidden>Расхождений не найдено.</p>
+        <p id="hosts-empty" class="muted small" hidden>Расхождений не найдено.</p>
       </div>
     </details>
   </main>
