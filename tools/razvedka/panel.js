@@ -166,11 +166,15 @@ async function startNewRun(url) {
   const prev = state.current;
   persistQueue.cancel();
   renderQueue.cancel();
-  if (prev && prev.entries.length) await putSession(prev);
+  // Новый прогон встаёт до первого `await`. Обращение к `chrome.storage.local` длится
+  // миллисекунды, а запись главного документа приходит вплотную к переходу: подожди
+  // мы здесь — она уедет в прогон, который строкой ниже выбрасывается, и страница на
+  // один запрос покажет пустой список.
   state.current = newRun(hostOf(url || '') || '');
   state.chosenMain = new Set();
   state.defaulted = new Set();
   renderMain();
+  if (prev && prev.entries.length) await putSession(prev);
   await refreshSessions();
 }
 
@@ -278,13 +282,14 @@ $('#clear').addEventListener('click', async () => {
   const run = state.current;
   persistQueue.cancel();
   renderQueue.cancel();
-  if (run) await removeSession(run.id);
+  // Та же причина, что в `startNewRun`: подмена прогона идёт до похода в storage.
   state.current = newRun();
   state.chosenMain = new Set();
   state.defaulted = new Set();
   $('#export-text').hidden = true;
   $('#copy-note').textContent = '';
   renderMain();
+  if (run) await removeSession(run.id);
   await refreshSessions();
 });
 
