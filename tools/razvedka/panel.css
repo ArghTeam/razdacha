@@ -148,3 +148,18 @@ details[open] summary { margin-bottom: 6px; }
 
 .signals { margin: 0; padding-left: 16px; font-size: 12px; }
 .signals li { margin: 1px 0; }
+
+/* Строка состояния самой панели. Пустой экран означает четыре разных вещи —
+   событий не было, событие отброшено, разбор упал, API недоступен, — и без этой
+   строки они неотличимы, а лезть за ответом надо в консоль panel.html. */
+.diag {
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.diag.bad {
+  color: var(--danger);
+}
