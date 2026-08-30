@@ -49,6 +49,13 @@ const state = {
   chosenMain: new Set(), // то же на главном экране
   defaulted: new Set(), // хостам дефолт отметки уже выставлен
   showNoise: false,
+  // Счётчики самой панели, с момента открытия и через перезагрузки страницы:
+  // прогон обнуляется на каждом переходе, а вопрос «доходят ли события вообще»
+  // живёт дольше одного прогона.
+  raw: 0, // событий пришло от devtools.network
+  kept: 0, // из них записано
+  dropped: 0, // из них отброшено (нет хоста, нет прогона)
+  fault: '', // последняя ошибка, которая иначе ушла бы только в консоль панели
 };
 
 /* ==========================================================================
@@ -93,13 +100,32 @@ function fieldsFromBody(host, path, mime, body) {
   }
 }
 
+/** Событие пришло — считаем его до всякого разбора и не даём исключению убить
+    слушателя. Молчащая панель означает четыре разных вещи, и различить их можно
+    только по счётчикам: сырых не было вовсе / были и отброшены / разбор упал. */
 function recordEntry(entry) {
+  state.raw += 1;
+  try {
+    takeEntry(entry);
+  } catch (err) {
+    state.fault = `разбор: ${err?.message || err}`;
+  }
+  renderDiag();
+}
+
+function takeEntry(entry) {
   const run = state.current;
-  if (!run) return;
+  if (!run) {
+    state.dropped += 1;
+    return;
+  }
 
   const url = entry?.request?.url || '';
   const host = hostOf(url);
-  if (!host) return; // data:, blob: и прочее к хостам отношения не имеет
+  if (!host) {
+    state.dropped += 1; // data:, blob: и прочее к хостам отношения не имеет
+    return;
+  }
 
   const path = pathKey(url);
   const res = entry.response || {};
@@ -117,6 +143,7 @@ function recordEntry(entry) {
   };
 
   run.entries.push(rec);
+  state.kept += 1;
   // Записанное должно доехать до storage независимо от того, нашлось ли что-то в
   // теле: страница без единого гео-поля — обычное дело, и терять её нельзя.
   persistRun();
@@ -132,12 +159,19 @@ function recordEntry(entry) {
   if (!worthBody) return;
 
   entry.getContent((content) => {
-    if (!content || content.length > MAX_BODY_BYTES) return;
-    const fields = fieldsFromBody(host, path, rec.mime, content);
-    if (Object.keys(fields).length) {
-      rec.geoFields = fields;
-      persistRun();
-      scheduleRender();
+    // Колбэк приходит вне try из `recordEntry` — своё исключение он унесёт в
+    // консоль панели, и снаружи это будет выглядеть как «гео-полей не нашлось».
+    try {
+      if (!content || content.length > MAX_BODY_BYTES) return;
+      const fields = fieldsFromBody(host, path, rec.mime, content);
+      if (Object.keys(fields).length) {
+        rec.geoFields = fields;
+        persistRun();
+        scheduleRender();
+      }
+    } catch (err) {
+      state.fault = `тело ${host}: ${err?.message || err}`;
+      renderDiag();
     }
   });
 }
@@ -178,8 +212,27 @@ async function startNewRun(url) {
   await refreshSessions();
 }
 
-chrome.devtools.network.onRequestFinished.addListener(recordEntry);
-chrome.devtools.network.onNavigated.addListener((url) => { startNewRun(url); });
+/** Есть ли вообще к чему подключаться. Без этой проверки отсутствующий API выглядит
+    точно так же, как страница без запросов, — пустым экраном. */
+const netAPI = globalThis.chrome?.devtools?.network || null;
+
+if (netAPI) {
+  netAPI.onRequestFinished.addListener(recordEntry);
+  netAPI.onNavigated.addListener((url) => { startNewRun(url); });
+} else {
+  state.fault = 'chrome.devtools.network недоступен — панель открыта не из DevTools';
+}
+
+// Ошибка, случившаяся вне наших try, иначе видна только в консоли самой панели,
+// а до неё добираться через открепление DevTools и второй инспектор.
+globalThis.addEventListener?.('error', (e) => {
+  state.fault = `сбой: ${e.message || e.error?.message || 'без описания'}`;
+  renderDiag();
+});
+globalThis.addEventListener?.('unhandledrejection', (e) => {
+  state.fault = `сбой: ${e.reason?.message || e.reason || 'без описания'}`;
+  renderDiag();
+});
 
 /* ==========================================================================
    Главный экран
@@ -207,6 +260,22 @@ function ruleNote(host) {
   const fold = foldHost(host);
   if (fold.domain === host) return '';
   return ` <span class="muted">→ ${esc(fold.domain)}</span>`;
+}
+
+/** Строка состояния панели. Видна всегда, в том числе на пустом экране: именно там
+    она и нужна. Сбой показывается вместо счётчиков — если панель упала, счётчики
+    всё равно врут. */
+function renderDiag() {
+  const el = $('#diag');
+  if (state.fault) {
+    el.textContent = state.fault;
+    el.classList.add('bad');
+    return;
+  }
+  el.classList.remove('bad');
+  el.textContent = state.raw === 0
+    ? 'Слушаю. Событий пока не приходило.'
+    : `Событий принято ${state.raw} · записано ${state.kept} · отброшено ${state.dropped}`;
 }
 
 function renderMain() {
@@ -248,6 +317,7 @@ function renderMain() {
   // молча. Одной строкой, без крупного блока и без зова в сравнение.
   $('#silent').hidden = entries.length === 0 || !runIsSilent(scan);
 
+  renderDiag();
   renderCopyButton();
 }
 
