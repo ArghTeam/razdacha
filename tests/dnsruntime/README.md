@@ -25,6 +25,12 @@ process and never calls systemctl or accesses a real key/database/configuration.
 
 Actual nft/tproxy steering protects selected CIDRs; AF_PACKET at the sink records
 forbidden TCP/UDP probes and escaped port-53 traffic independently of socket errors.
+After all probes, a fresh UDP nonce to the permitted sink must be acknowledged by
+the same raw collector. The gateway waits until its output scanner receives that
+barrier before inspecting forbidden reports; an echo response or fixed delay does
+not establish observer completion. Verbose mode propagates to the isolated gateway
+so all eight subtests are visible. The global success summary is emitted only after
+the raw barrier and absence checks pass and no subtest has failed.
 The fixture verifies unrelated DNS over TCP/UDP, domain rejects, permitted traffic,
 failed validation, prior checked config/nft restoration and restart. This is a
 standalone DNS prerequisite fixture, not #214 publication-order evidence. Missing

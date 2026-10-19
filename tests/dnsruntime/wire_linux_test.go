@@ -5,6 +5,7 @@ package dnsruntime
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -168,6 +169,13 @@ func (d *wirePayloadDetector) feed(data []byte) bool {
 }
 
 func wireSink(t *testing.T) {
+	// The nonce is supplied by the gateway before any probe. Only the raw packet
+	// collector can acknowledge it, after processing earlier queued frames.
+	barrierNonce := os.Getenv("RAZDACHA_WIRE_ARGS")
+	if !strings.HasPrefix(barrierNonce, "observer-barrier-") {
+		t.Fatal("missing raw collector barrier nonce")
+	}
+
 	// Wildcard UDP WriteTo can choose the main interface as reply source, which
 	// connected probes correctly reject. Bind each destination explicitly so
 	// its reply keeps the synthetic address that received the request.
@@ -204,6 +212,9 @@ func wireSink(t *testing.T) {
 			port := binary.BigEndian.Uint16(ip[ihl+2 : ihl+4])
 			if port == 12080 && net.IP(ip[16:20]).String() == "203.0.113.20" {
 				fmt.Println("CONTROL-PACKET")
+			}
+			if port == 12080 && net.IP(ip[16:20]).String() == "203.0.113.20" && ip[9] == unix.IPPROTO_UDP && len(ip) >= ihl+8 && string(ip[ihl+8:]) == barrierNonce {
+				fmt.Println("BARRIER:" + barrierNonce)
 			}
 
 			if port == 53 {
@@ -322,7 +333,11 @@ func TestDNSProjectionWire(t *testing.T) {
 		wireMust(t, err)
 		parentMount, err := os.Readlink("/proc/self/ns/mnt")
 		wireMust(t, err)
-		cmd := exec.Command(os.Args[0], "-test.run=^TestDNSProjectionWire$", "-test.timeout=80s")
+		args := []string{"-test.run=^TestDNSProjectionWire$", "-test.timeout=80s"}
+		if testing.Verbose() {
+			args = append(args, "-test.v")
+		}
+		cmd := exec.Command(os.Args[0], args...)
 		cmd.Env = append(wireEnv("RAZDACHA_WIRE_ROLE", "gateway"), "RAZDACHA_WIRE_PARENT="+parent, "RAZDACHA_WIRE_PARENT_MOUNT="+parentMount, "RAZDACHA_WIRE_BIN="+bin)
 		cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: unix.CLONE_NEWNET | unix.CLONE_NEWNS, Pdeathsig: syscall.SIGKILL}
 		out, err := cmd.CombinedOutput()
@@ -352,7 +367,11 @@ func dnsWireExercise(t *testing.T) {
 	clientNS, sinkNS := wireTopology(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 65*time.Second)
 	defer cancel()
-	sink := wireExec(t, sinkNS, "sink")
+	nonceBytes := make([]byte, 16)
+	_, err := rand.Read(nonceBytes)
+	wireMust(t, err)
+	barrierNonce := fmt.Sprintf("observer-barrier-%x", nonceBytes)
+	sink := wireExec(t, sinkNS, "sink", barrierNonce)
 	pipe, err := sink.StdoutPipe()
 	wireMust(t, err)
 	sink.Stderr = os.Stderr
@@ -361,6 +380,8 @@ func dnsWireExercise(t *testing.T) {
 	var mu sync.Mutex
 	var observations []string
 	ready := make(chan struct{})
+	barrierObserved := make(chan struct{})
+	var barrierOnce sync.Once
 	go func() {
 		scanner := bufio.NewScanner(pipe)
 		for scanner.Scan() {
@@ -371,6 +392,9 @@ func dnsWireExercise(t *testing.T) {
 			mu.Lock()
 			observations = append(observations, line)
 			mu.Unlock()
+			if line == "BARRIER:"+barrierNonce {
+				barrierOnce.Do(func() { close(barrierObserved) })
+			}
 		}
 	}()
 	select {
@@ -525,7 +549,14 @@ func dnsWireExercise(t *testing.T) {
 			}
 		}
 	}
-	time.Sleep(100 * time.Millisecond)
+	// Echo success is not observer synchronization: wait for the raw collector's
+	// acknowledgement, then the scanner has also consumed earlier raw reports.
+	probe("udp4", "203.0.113.20:12080", barrierNonce, true)
+	select {
+	case <-barrierObserved:
+	case <-ctx.Done():
+		t.Fatal("raw collector barrier was not observed: ", ctx.Err())
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	controlObserved := false
@@ -540,5 +571,7 @@ func dnsWireExercise(t *testing.T) {
 	if !controlObserved {
 		t.Fatal("packet observer did not capture positive control")
 	}
-	t.Log("Controlled DNS succeeds; selected domains reject; selected CIDR TCP/UDP packets absent at sink; prior config/nft restore and restart passed")
+	if !t.Failed() {
+		t.Log("Controlled DNS succeeds; selected domains reject; selected CIDR TCP/UDP packets absent at sink; prior config/nft restore and restart passed")
+	}
 }
