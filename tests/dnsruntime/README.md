@@ -33,7 +33,9 @@ interface; nonce decoding checks IPv4 header/total lengths and UDP payload bound
 Collector errors or unexpected output termination fail evidence collection. This
 drains frames queued before the barrier, not packets sent after the observation
 interval. Verbose mode propagates to the isolated gateway
-so all eight subtests are visible. The global success summary is emitted only after
+so all eight subtests are visible. Assertion helpers take the current subtest's
+`*testing.T` explicitly, so an expected baseline failure does not abort the parent
+matrix. The global success summary is emitted only after
 the raw barrier and absence checks pass and no subtest has failed.
 The fixture verifies unrelated DNS over TCP/UDP, domain rejects, permitted traffic,
 failed validation, prior checked config/nft restoration and restart. This is a
@@ -45,3 +47,6 @@ Use the staging supervisor required by `docs/11-staging-validation.md` for bound
 process-group cleanup. No source-host access, host service changes or external
 traffic is permitted. Public evidence contains only synthetic assertions. Staging
 execution and independent final acceptance remain pending until explicitly recorded.
+Attempt 1 on `bc013e7` stopped after one baseline failure because helpers captured
+the parent test; seven baseline cases and all fixed cases were not run. That
+attempt is failed evidence, not a completed baseline or fixed wire validation.

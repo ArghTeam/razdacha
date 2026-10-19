@@ -442,7 +442,9 @@ func dnsWireExercise(t *testing.T) {
 	if answer.Rcode != dns.RcodeSuccess || len(answer.Answer) != 1 {
 		t.Fatal("controlled upstream precondition failed")
 	}
-	probe := func(proto, addr, nonce string, want bool) {
+	// Use the current subtest owner: failing the parent here aborts the entire
+	// matrix instead of recording one baseline failure and continuing.
+	probe := func(t *testing.T, proto, addr, nonce string, want bool) {
 		t.Helper()
 		cmd := wireExec(t, clientNS, "probe", proto, addr, nonce)
 		out, err := cmd.CombinedOutput()
@@ -451,7 +453,7 @@ func dnsWireExercise(t *testing.T) {
 		}
 	}
 	for _, proto := range []string{"tcp4", "udp4"} {
-		probe(proto, "203.0.113.20:12080", "positive-control", true)
+		probe(t, proto, "203.0.113.20:12080", "positive-control", true)
 	}
 	wireMust(t, netstack.NewRoute().Apply())
 	nft, err := netstack.NewNft()
@@ -477,7 +479,7 @@ func dnsWireExercise(t *testing.T) {
 		}
 	}
 	defer stop()
-	start := func(data []byte) {
+	start := func(t *testing.T, data []byte) {
 		t.Helper()
 		wireMust(t, os.WriteFile(configPath, data, 0o600))
 		check := exec.CommandContext(ctx, os.Getenv("RAZDACHA_WIRE_BIN"), "check", "-c", configPath)
@@ -504,7 +506,7 @@ func dnsWireExercise(t *testing.T) {
 		}
 		t.Fatal("isolated runtime did not become ready")
 	}
-	start(baselineBytes)
+	start(t, baselineBytes)
 	for _, source := range []string{"manual", "plain"} {
 		for _, shape := range []string{"cidr", "mixed"} {
 			for _, mode := range []string{"block", "unavailable"} {
@@ -533,19 +535,19 @@ func dnsWireExercise(t *testing.T) {
 					wireMust(t, err)
 					data, err := singbox.Marshal(opts)
 					wireMust(t, err)
-					start(data)
+					start(t, data)
 					_, err = nft.Apply(nftConfig(content.Subnets))
 					wireMust(t, err)
 					// Both TCP and UDP port-53 requests are intercepted into the real runtime.
 					for _, proto := range []string{"dns", "dnstcp"} {
-						probe(proto, "203.0.113.99:53", "unrelated.example.", true)
+						probe(t, proto, "203.0.113.99:53", "unrelated.example.", true)
 						if shape == "mixed" {
-							probe(proto+"reject", "203.0.113.99:53", "selected.example.", true)
+							probe(t, proto+"reject", "203.0.113.99:53", "selected.example.", true)
 						}
 					}
 					for _, proto := range []string{"tcp4", "udp4"} {
-						probe(proto, "203.0.113.10:12081", "blocked-final-"+name, false)
-						probe(proto, "203.0.113.20:12080", "permitted-"+name, true)
+						probe(t, proto, "203.0.113.10:12081", "blocked-final-"+name, false)
+						probe(t, proto, "203.0.113.20:12080", "permitted-"+name, true)
 					}
 					// Invalid prospective bytes must not replace or stop the working runtime.
 					invalid := filepath.Join(dir, "invalid.json")
@@ -553,27 +555,27 @@ func dnsWireExercise(t *testing.T) {
 					if err := exec.CommandContext(ctx, os.Getenv("RAZDACHA_WIRE_BIN"), "check", "-c", invalid).Run(); err == nil {
 						t.Fatal("invalid configuration unexpectedly validated")
 					}
-					probe("dns", "10.8.0.1:53", "unrelated-after-failed-check.example.", true)
+					probe(t, "dns", "10.8.0.1:53", "unrelated-after-failed-check.example.", true)
 					// Rehearse restoration of this fixture's prior checked bytes and nft state.
-					start(baselineBytes)
+					start(t, baselineBytes)
 					_, err = nft.Apply(nftConfig(nil))
 					wireMust(t, err)
 					for _, proto := range []string{"tcp4", "udp4"} {
-						probe(proto, "203.0.113.10:12080", "restored-"+name, true)
+						probe(t, proto, "203.0.113.10:12080", "restored-"+name, true)
 					}
 					// Restart the same checked policy and confirm domain/CIDR behavior survives.
-					start(data)
+					start(t, data)
 					_, err = nft.Apply(nftConfig(content.Subnets))
 					wireMust(t, err)
-					probe("dns", "10.8.0.1:53", "unrelated-after-restart.example.", true)
-					probe("udp4", "203.0.113.10:12081", "blocked-final-restart-"+name, false)
+					probe(t, "dns", "10.8.0.1:53", "unrelated-after-restart.example.", true)
+					probe(t, "udp4", "203.0.113.10:12081", "blocked-final-restart-"+name, false)
 				})
 			}
 		}
 	}
 	// Echo success is not observer synchronization: wait for the raw collector's
 	// acknowledgement, then the scanner has also consumed earlier raw reports.
-	probe("udp4", "203.0.113.20:12080", barrierNonce, true)
+	probe(t, "udp4", "203.0.113.20:12080", barrierNonce, true)
 	select {
 	case failure := <-observerErrors:
 		t.Fatal(failure)

@@ -36,3 +36,18 @@ Staging wire execution and both independent security review gates remain pending
 Missing/empty source skipping is pre-existing behavior, not last-good publication
 protection; #214 owns that separate guarantee. Native source DNS semantics remain
 unresolved in #220. No all-format or production-deployment claim is made.
+
+## Staging attempt 1: incomplete evidence
+
+The first isolated run used revision `bc013e7`. Its first baseline case reached
+the expected unrelated-DNS REFUSED defect, but a fixture helper reported failure
+through the parent test instead of the current subtest. This terminated the
+baseline matrix: one baseline case failed, seven baseline cases were not run, and
+the fixed binary was not run. The attempt is failed and supplies no successful
+wire acceptance evidence. Process cleanup passed and host services were unchanged.
+
+Probe and runtime-start helpers now accept the current `*testing.T` explicitly at
+every call site. This preserves per-case failure attribution and continuation
+without weakening desired behavior. The matrix still requires eight original-base
+failures and eight fixed passes. A new reviewed fixture revision, rebuilt binaries
+and a repinned supervisor are required before another isolated run.
