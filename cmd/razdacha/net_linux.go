@@ -36,6 +36,10 @@ func resetNetwork(_ context.Context, log *slog.Logger) error {
 		log.Info("nft-правила сняты")
 	}
 
+	if err := netstack.SetClientGuard(false); err != nil {
+		errs = append(errs, err)
+	}
+
 	if err := netstack.NewRoute().Clear(); err != nil {
 		errs = append(errs, err)
 	} else {
@@ -55,3 +59,5 @@ func deleteWG(log *slog.Logger) error {
 	defer func() { _ = wg.Close() }()
 	return wg.Down(context.Background())
 }
+
+func installClientGuard() error { return netstack.SetClientGuard(true) }

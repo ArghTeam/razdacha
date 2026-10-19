@@ -29,13 +29,8 @@ func listsCacheDir(dbPath string) string {
 	return filepath.Join(filepath.Dir(dbPath), "lists")
 }
 
-// startLists поднимает планировщик списков.
-//
-// Списки качаются с чужих серверов, поэтому ни одна неудача здесь демон не
-// останавливает: не открылся кэш — возвращается nil, и демон работает без
-// списков; не скачался список — планировщик повторит сам с нарастающей паузой.
-// Единственное следствие — в nft-сет не попадут подсети, а трафик к ним пойдёт
-// напрямую, и это лучше, чем не поднявшийся шлюз.
+// startLists starts asynchronous fetches. Failure retains committed list content
+// during recovery; a new candidate requiring missing plain content is rejected.
 func startLists(ctx context.Context, st *store.Store, dbPath string, log *slog.Logger) *lists.Manager {
 	fetcher, err := lists.NewFetcher(lists.Options{Dir: listsCacheDir(dbPath), Logger: log})
 	if err != nil {
@@ -55,14 +50,13 @@ func startLists(ctx context.Context, st *store.Store, dbPath string, log *slog.L
 	// Start возвращается сразу: первый прогон уходит в горутину, и старт демона
 	// не ждёт ни сети, ни чужих серверов.
 	m.Start(ctx)
-	go syncListSources(ctx, st, m, src, log)
+	// Source reconciliation starts after the apply gate can retain committed sources.
 	return m
 }
 
-// syncListSources держит набор источников и интервал равными состоянию БД.
-// Изменившийся набор дозагружается сразу: ждать сутки до следующего прогона
-// после добавления правила незачем.
-func syncListSources(ctx context.Context, st *store.Store, m *lists.Manager, prev []lists.Source, log *slog.Logger) {
+// syncListSources retains applied and pending sources. Pending edits may request
+// downloads, but only committed policy decides which content reaches the network.
+func syncListSources(ctx context.Context, st *store.Store, m *lists.Manager, prev []lists.Source, applied func() []lists.Source, log *slog.Logger) {
 	ticker := time.NewTicker(listSourcesInterval)
 	defer ticker.Stop()
 	for {
@@ -79,6 +73,16 @@ func syncListSources(ctx context.Context, st *store.Store, m *lists.Manager, pre
 		}
 
 		src := listSources(ctx, st, log)
+		seen := make(map[string]bool, len(src))
+		for _, v := range src {
+			seen[v.URL] = true
+		}
+		for _, v := range applied() {
+			if !seen[v.URL] {
+				src = append(src, v)
+				seen[v.URL] = true
+			}
+		}
 		if reflect.DeepEqual(src, prev) {
 			continue
 		}
@@ -119,12 +123,13 @@ func plainLists(m *lists.Manager) singbox.PlainLists {
 	if m == nil {
 		return nil
 	}
+	return frozenPlainLists(m.Snapshot())
+}
+
+func frozenPlainLists(contents map[string]lists.List) singbox.PlainLists {
 	return func(url string) (singbox.PlainList, bool) {
-		l, ok := m.List(url)
-		if !ok {
-			return singbox.PlainList{}, false
-		}
-		return singbox.PlainList{Domains: l.Domains, Subnets: l.Subnets}, true
+		l, ok := contents[url]
+		return singbox.PlainList{Domains: append([]string(nil), l.Domains...), Subnets: append([]string(nil), l.Subnets...)}, ok
 	}
 }
 

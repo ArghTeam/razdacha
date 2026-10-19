@@ -34,6 +34,9 @@ description: генерация option.Options из состояния БД, п�
 - Из `Tunnel.Parsed` выбрасываются `type` и `tag`: их проставляет генератор, иначе чужой ключ перебил бы наш тег при слиянии объектов.
 - Цепь правила материализуется **клоном** эндпоинта второго звена с `detour` на тег первого, под тегом `chain-<второе>-via-<первое>`; исходный туннель второго звена остаётся без `detour`. Одинаковые пары из разных правил дают один клон. `detour` принадлежит outbound, а не действию `route`, поэтому цепь не выражается route-правилом (ADR 0012).
 
+- `Applier.Prepare` generates/checks a complete candidate without publishing it; `Prepared.Commit` renames and syncs the config directory before invoking the reloader. Pool-member validation retries remain bounded and preserve ADR 0019. The daemon wraps publication in the guarded generation protocol (ADR 0023).
+- Production publication unconditionally runs `systemctl restart`, never asynchronous `reload-or-restart`: the old runtime must stop before nft is updated. A failed or uncertain publication is rechecked and restarted even when candidate bytes match disk. `Type=simple` start acknowledgment is not application readiness; intercepted traffic remains fail-closed while the new runtime starts.
+
 ## Key entry points
 - `internal/singbox/parse.go` — `Parse(raw)`: определение формы ввода (URL / INI / JSON) и единая точка разбора.
 - `internal/singbox/generate.go` — `Generate(store.Snapshot)`: сборка конфига целиком, частичного патча нет; `Marshal` — JSON для `/etc/sing-box/config.json`.

@@ -115,3 +115,18 @@
 **Changed:** `internal/singbox/parse*.go` — разбор vless/ss/trojan/hysteria2/socks и INI WireGuard; зависимость `sing-box v1.12.25`.
 **New surface:** `Parse(raw)` — единственная точка разбора пользовательского ввода.
 **Beware:** `kcp` и `xhttp` из корпуса Podkop не поддерживаются; `ech` игнорируется — там base64, а sing-box ждёт PEM.
+
+## 2026-10-19
+
+### #214 — Guarded plain-list network generations
+
+**Changed:** one serialized gate publishes frozen policy/list content through a persistent
+client-ingress barrier, with checked preparation, unconditional runtime restart, nft
+publication and durable recovery authority. Applied peer addresses remain reserved
+across deletion/restart until explicit Apply. Fresh setup uses a distinct checked seed;
+legacy setup and DB restore require explicit policy authorization when authority is absent.
+**Decision:** [ADR 0023](../../docs/decisions/0023-coherent-network-generation.md).
+**Validation:** deterministic local regression/failure/concurrency/recovery tests and
+Linux fixture compilation are in progress. Staging wire execution and final independent
+security acceptance remain pending; no production deployment is claimed.
+**Limit:** autonomous remote `.srs`/`.json` synchronization remains [#220](https://github.com/ArghTeam/razdacha/issues/220).

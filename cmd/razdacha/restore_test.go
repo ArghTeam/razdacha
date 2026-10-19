@@ -12,6 +12,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/ArghTeam/razdacha/internal/lists"
+	"github.com/ArghTeam/razdacha/internal/networkstate"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -332,4 +334,51 @@ VALUES ('p1', 'старый', 'pub', 'priv', 'psk', '10.8.0.2/32', 1, 0);
 		t.Fatalf("чтение: %v", err)
 	}
 	return data
+}
+
+func TestRestoreInvalidatesRoutingAuthorityBeforeRestartingRestoredDatabase(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "state.db")
+	if err := os.WriteFile(dbPath, stateWithPeer(t, "Fixture old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	file := writeFile(t, "fixture-copy.db", stateWithPeer(t, "Fixture restored"))
+	for _, entry := range []struct{ name, kind string }{{networkstate.CommittedFile, networkstate.CommittedKind}, {networkstate.BootstrapFile, networkstate.BootstrapKind}} {
+		if err := networkstate.Write(filepath.Join(dir, entry.name), networkstate.Generation{Version: 1, Kind: entry.kind, Lists: map[string]lists.List{}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	guarded := false
+	started := false
+	opts := restoreOptions{dbPath: dbPath, file: file, force: true, unitActive: func(context.Context) bool { return true }}
+	opts.closeIngress = func() error {
+		guarded = true
+		if got := peerNames(t, dbPath); len(got) != 1 || got[0] != "Fixture old" {
+			t.Fatal("database replaced before client guard")
+		}
+		return nil
+	}
+	opts.systemctl = func(_ context.Context, args ...string) error {
+		if len(args) > 0 && args[0] == "start" {
+			started = true
+			if !guarded {
+				t.Fatal("restored database restarted without guard")
+			}
+			for _, name := range []string{networkstate.CommittedFile, networkstate.BootstrapFile} {
+				if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+					t.Fatal("stale authority survived restored database restart")
+				}
+			}
+		}
+		return nil
+	}
+	if err := restore(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if !started || !guarded {
+		t.Fatal("restore did not use guarded restart")
+	}
+	if got := peerNames(t, dbPath); len(got) != 1 || got[0] != "Fixture restored" {
+		t.Fatal("restored database content missing")
+	}
 }

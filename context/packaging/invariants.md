@@ -34,6 +34,10 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 - Сертификат панели выпускается средствами Go (`crypto/x509`, `crypto/ecdsa`), не вызовом `openssl`; ключ `0600`, каталог `0700`, SAN — IP адреса панели (в публичном режиме `10.8.0.1` и внешний адрес), срок 10 лет. Не хватает в SAN хотя бы одного нужного адреса — сертификат перевыпускается.
 - Корень файловой системы в установщике — поле `Installer.Root`. Тесты подменяют его `t.TempDir()`, в реальные `/etc` не пишет ни один тест.
 
+- Only a genuinely fresh setup creates the first peer and checks/writes initial runtime config. It freezes a private bootstrap seed distinct from a committed network generation; the daemon publishes it under the guard and durably removes seed authority before releasing traffic. Missing DB plus orphan bootstrap/committed authority is refused. Existing-install setup never automatically recreates a deleted first peer or writes pending DB policy into runtime config (ADR 0023).
+- Legacy installations without committed policy require explicit Apply through an out-of-band panel/SSH tunnel. Normal restarts recover committed policy/list contents while live database peer revocation remains authoritative. Corrupt authority stops under the guard.
+- Restore stops the daemon and guards ingress before replacing the DB. Bootstrap authority is moved aside and synced before committed authority; successful invalidation syncs the directory even if paths are already absent. Restored routing requires explicit Apply. This is authority invalidation, not the cross-host safe migration planned in #217.
+
 ## Key entry points
 - `.github/workflows/ci.yml` — все автоматические проверки репозитория.
 - `Makefile` — local build, test, lint and Linux cross-build commands. The dormant `deb` target references a missing nfpm configuration and is not a supported packaging path.

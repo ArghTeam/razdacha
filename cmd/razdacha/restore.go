@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ArghTeam/razdacha/internal/networkstate"
 	"github.com/ArghTeam/razdacha/internal/packaging"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -35,7 +36,8 @@ type restoreOptions struct {
 	// unitActive отвечает, работает ли демон. Подменяется вместе с systemctl.
 	unitActive func(ctx context.Context) bool
 	// stdin — откуда читается фраза, когда её не дали ни файлом, ни окружением.
-	stdin *os.File
+	stdin        *os.File
+	closeIngress func() error
 }
 
 // runRestore поднимает состояние из копии (ADR 0016).
@@ -51,6 +53,9 @@ func runRestore(ctx context.Context, args []string) error {
 	opts.systemctl = systemctl
 	opts.unitActive = daemonActive
 	opts.stdin = os.Stdin
+	if opts.root == "" {
+		opts.closeIngress = installClientGuard
+	}
 	return restore(ctx, opts)
 }
 
@@ -160,6 +165,17 @@ func restore(ctx context.Context, opts restoreOptions) error {
 		}
 	}
 
+	// Never allow stale committed routing to be replayed over the restored database.
+	// The daemon remains guarded until explicit Apply authorizes restored policy.
+	if opts.closeIngress != nil {
+		if err := opts.closeIngress(); err != nil {
+			return err
+		}
+	}
+	if err := networkstate.Invalidate(filepath.Dir(dbPath)); err != nil {
+		return err
+	}
+
 	if !target.Empty() {
 		saved, err := backupDB(dbPath, "before-restore")
 		if err != nil {
@@ -177,6 +193,7 @@ func restore(ctx context.Context, opts restoreOptions) error {
 		}
 	}
 
+	fmt.Println("Restored policy requires explicit Apply; client ingress remains guarded.")
 	fmt.Printf("состояние восстановлено из %s: %s\n", opts.file, describeState(after))
 	if before.SchemaVersion != after.SchemaVersion {
 		fmt.Printf("схема БД обновлена с версии %d до %d\n",

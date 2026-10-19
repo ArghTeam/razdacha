@@ -413,7 +413,11 @@ func TestPoolManagerSkipsBusyCatalog(t *testing.T) {
 	tun := PoolTunnel{ID: "pppp", Name: "пул", CatalogURL: "https://keys.example/catalog", Enabled: true}
 	m.SetTunnels([]PoolTunnel{tun})
 
-	go func() { _, _ = c.Servers(context.Background(), tun.CatalogURL, store.PoolFilter{}) }()
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		_, _ = c.Servers(context.Background(), tun.CatalogURL, store.PoolFilter{})
+	}()
 	<-d.started
 
 	if err := m.Refresh(context.Background()); err != nil {
@@ -423,6 +427,8 @@ func TestPoolManagerSkipsBusyCatalog(t *testing.T) {
 		t.Fatalf("обход по требованию получил %v, ожидалась ErrPoolCrawlBusy", err)
 	}
 	close(d.release)
+	// Wait for the background crawl to finish logging before reading its buffer.
+	<-finished
 	if got := d.calls.Load(); got != 1 {
 		t.Errorf("каталог обойден %d раза, ожидался один", got)
 	}

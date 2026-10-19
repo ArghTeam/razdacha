@@ -46,3 +46,36 @@ Final acceptance requires baseline-fails/fix-passes evidence, adversarial negati
 cases and controlled staging observations under the [runbook](../docs/11-staging-validation.md).
 No unresolved P0/P1 findings may be marked ready to merge. Unknown results stay explicit.
 Review approval does not authorize merge or release. These reviews are planned, not completed.
+
+
+## Implementation and local evidence (2026-10-19)
+
+The chosen coordination contract is [ADR 0023](../docs/decisions/0023-coherent-network-generation.md).
+The API's manual Apply, plain-list refresh and pool refresh share immutable policy/list
+content and one guard-protected publication gate. WG settings and address allocation are
+part of this boundary; live key/peer revocation and authentication remain database-owned.
+Fresh installation uses a distinct checked bootstrap seed; legacy and restore paths
+without authority stay guarded until explicit Apply. Private records are owner-only and
+restore invalidation is ordered and fsynced. A healthy background no-op skips mutation;
+explicit unchanged Apply repairs network state without restarting a known runtime.
+
+| Check | Observation |
+|---|---|
+| `go test ./cmd/razdachad -run '^TestPlainListsGenerationIsImmutable$' -count=1` on original base plus regression | Failed: a captured generation changed from old domain/subnet to refreshed contents |
+| Same regression after snapshot implementation | Passed |
+| Daemon publication unit matrix | Passed locally: ordered guard/WG/route/runtime/nft, validation/guard/WG/route/restart/nft/manifest/bootstrap/release faults, identical-byte retry, cancellation, restart, pending edits and concurrency |
+| Peer identity/address matrix | Passed locally: deleted address remains reserved across restart, both allocation/Apply orderings, concurrent creates, legacy refusal, pending allocation mismatch, stored-peer/server/pool validation |
+| Restore/bootstrap unit matrix | Passed locally: fresh orphan authority refusal, distinct seed/commit kinds, private permissions, interrupted invalidation ordering and fsync retry, guarded restore restart |
+| Linux wire fixture | Compiled locally; execution pending independent threat gate and controlled staging |
+| Archived original watcher baseline | Adapter prepared; compile/execution pending; no wire-level baseline result claimed |
+
+The baseline-only adapter invokes the original `startNetfilter` and `watchLists` from an
+archive of the unfixed base, using shared disposable namespace helpers. Run separate
+`list-tcp`, `list-udp`, `list-dns` and `pending` cases so one expected red assertion does
+not mask another. The fixed fixture uses production gate/netlink/nft and an isolated
+sing-box process reloader; it never invokes host systemd. Full local verification,
+controlled staging evidence and final independent acceptance must still be recorded.
+
+Scope is plain-list content and the publication boundary. The autonomous remote
+`.srs`/`.json` synchronization gap remains [#220](https://github.com/ArghTeam/razdacha/issues/220),
+which precedes #215 in the delivery queue. Do not claim all-format coherence from #214.

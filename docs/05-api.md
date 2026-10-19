@@ -755,23 +755,35 @@ routing](03-networking.md#policy-routing)). Признака два, и сним
 каждого нажатия дорого и вызывает разрывы соединений. UI показывает плашку «есть
 непримененные изменения» с кнопкой.
 
-**Состав пула — исключение.** Каталог ключей обходит расписание, а не пользователь
-([ADR 0010](decisions/0010-tunnel-pool-urltest.md)), и ждать кнопки тут некому: пока
-свежие ключи лежат в БД, а sing-box работает со старыми, пул отказывает своим правилам
-([ADR 0013](decisions/0013-unavailable-tunnel-rejects.md)) при живых ключах под рукой
-(issue #121). Поэтому изменившийся состав демон применяет сам — и применяет **только
-его**: поверх состояния, которое уже в работе, переносится состав пулов и время их
-обхода, а правки правил и туннелей продолжают ждать кнопку. Обход, не изменивший состав,
-не применяет ничего: лишний `reload-or-restart` рвёт соединения во всех туннелях сразу,
-а не только в обновившемся пуле. Таблица nft при этом не перезаливается — состав пула не
-меняет ни подсетей правил, ни адреса резолвера.
+Manual Apply, scheduled plain-list refresh and pool membership refresh share one
+serialized publication gate ([ADR 0023](decisions/0023-coherent-network-generation.md)).
+Manual Apply reads one database snapshot inside that gate. List refresh uses the
+committed policy with a copied list-content generation; pool refresh changes only
+committed pool membership and preserves the committed list contents. Saved rule,
+resolver and tunnel edits remain pending, including across daemon restart.
 
-Применяются **оба** слоя: сначала конфиг sing-box, затем таблица nft с подсетями правил
-и списков. Порядок именно такой: пометить трафик раньше, чем sing-box узнает, куда его
-вести, значит отправить его в tproxy под `final: direct-out` — то есть напрямую с адреса
-сервера. Таблица перезаливается и тогда, когда конфиг не изменился: сет мог разъехаться
-с правилами без единой правки в конфиге, а планового прогона списков ждать до суток
-(issue #119).
+The gate prepares and validates the complete candidate before changing the network.
+It then closes all WireGuard client ingress with a separate persistent early nft
+DROP table, reconciles candidate WG address/port/MTU using live key storage, ensures
+policy routing, publishes the config and restarts sing-box,
+publishes nft from the same policy/list snapshot, durably records the generation,
+discards obsolete bootstrap authority, and removes the guard last. Normal direct
+routing resumes after successful publication. A healthy background no-op does not restart the runtime or install the guard. Explicit
+unchanged Apply still guards and repairs WG/route/nft without restarting a known runtime.
+Changed publication briefly interrupts all clients.
+
+Production uses unconditional `systemctl restart`, including with packaged units;
+a successful asynchronous `ExecReload` is not proof that the old policy has stopped.
+Service startup can still temporarily reject traffic. The operation does not claim
+an application-level readiness acknowledgment.
+
+A missing required plain list rejects the candidate instead of silently omitting its
+rule. A first successful download does not authorize pending policy: explicit Apply
+is still required when no committed generation exists. The scheduler retains the
+union of applied and pending sources, while only applied sources reach nft/config.
+
+This contract covers daemon-managed plain lists. Autonomous sing-box `.srs`/`.json`
+refresh remains a tracked limitation in [#220](https://github.com/ArghTeam/razdacha/issues/220).
 
 Ответ:
 
@@ -785,12 +797,22 @@ routing](03-networking.md#policy-routing)). Признака два, и сним
 }
 ```
 
-`nft` равен `null`, когда подсистема правил не поднята — тогда применён только конфиг.
+`nft` is populated by the daemon's unified publisher; it can be `null` for standalone
+API test wiring. There is no second API-owned nft operation.
 
-Ошибка `sing-box check` возвращает `422` с текстом ошибки; предыдущий конфиг остаётся
-активным, таблица nft не трогается. Отказ заливки nft — `500` с кодом `internal` и
-текстом, в котором сказано, что конфиг sing-box применён, а правила остались прежними:
-в ядре после неудачи прежняя таблица целиком, пакет изменений откатывается.
+Generation/check errors return `422` before network mutation and preserve the prior
+effective policy. Post-guard publication, restart, persistence or guard-removal errors
+return `500` and keep client ingress blocked until a successful retry/recovery. Retry
+rechecks and restarts even when candidate bytes already match disk. `nft` diagnostics
+report the guarded condition as an error, including the legacy bootstrap requirement.
+The API's peer creation is serialized with snapshot acquisition and publication; it
+reserves every committed peer address, including deleted/disabled identities, until
+explicit Apply replaces that generation. Before the first trusted generation, peer
+creation returns `503`. Creation also returns `503` while editable WG allocation
+fields differ from the applied fields. Candidate settings cannot exclude any stored
+peer (including disabled peers) from usable pool addresses or collide with a peer
+address; address migration requires a separate workflow. Database peer deletion and live WG revocation remain immediate;
+recovery never restores peer rows or authentication/session state from a routing record.
 
 ## Живые данные
 

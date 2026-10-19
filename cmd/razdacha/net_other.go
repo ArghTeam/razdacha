@@ -13,3 +13,5 @@ import (
 var errNotLinux = errors.New("снятие интерфейса и правил доступно только в Linux")
 
 func resetNetwork(context.Context, *slog.Logger) error { return errNotLinux }
+
+func installClientGuard() error { return errNotLinux }

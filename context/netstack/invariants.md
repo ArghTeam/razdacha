@@ -13,10 +13,17 @@ description: wg0, nft-правила и маршрутизация через ne
 - Существование таблицы проверяется до формирования пакета: удаление отсутствующей таблицы отменяет весь пакет вместе с созданием новой.
 - Синхронизация пиров идёт диффом; совпадающие пиры не переписываются, при пустом диффе `ConfigureDevice` не вызывается — живым клиентам не рвутся хендшейки.
 - Приватный ключ сервера лежит в `settings` вне структуры `Settings`: сохранение настроек из UI его не затирает и наружу он не отдаётся.
-- Правила остаются в ядре после остановки демона, `wg0` не снимается — прямой трафик клиентов не зависит от перезапуска. Снимает всё `--reset-network` и удаление пакета.
+- Routing rules and the separate `inet razdacha_guard` table survive daemon exit. Startup installs the early wg0 ingress DROP guard before WG setup, and releases it only after a checked, durably committed generation. Normal direct routing resumes after recovery; daemon restart can interrupt clients. Explicit reset/uninstall removes both tables (ADR 0023).
+
+- Candidate WG address, listen port and MTU are validated before publication and reconciled under the guard before route/runtime/nft. Temporary managers use live key storage and never replay peers; the long-lived peer-sync/stat manager retains its fixed interface identity. Startup uses trusted committed/seed WG settings; only genuine legacy absence allows guarded DB initialization for administrative access. All stored peers, including disabled peers, must fit usable pool addresses without server collision.
+- Explicit unchanged Apply guards and repairs WG/route/nft without restarting a known runtime. Healthy background no-ops may skip mutation.
+- Guard and routing publications use fresh netlink connections per attempt so a rejected batch cannot contaminate a later transaction. The ingress guard is a separate early-prerouting DROP table, covering forwarded traffic, DNS and tproxy; SSH/public-panel traffic does not enter through wg0. No cross-process atomic-transaction claim is made (ADR 0023).
+- Private routing-generation records belong to `internal/networkstate`; they preserve policy/list content, never restore live peer/authentication database rows, and reject symlinks, non-owner files, non-0600 permissions and malformed envelopes. Interrupted publication/recovery leaves the kernel guard installed.
 
 ## Key entry points
 - `internal/netstack/wg.go` — `WGManager`: `Up`, `SyncPeers`, `Stats`, `PublicKey`.
 - `internal/netstack/nft_rules.go` — чистая сборка набора правил, тестируется без root.
 - `internal/netstack/nft.go` — перевод набора в выражения nftables, только Linux.
 - `cmd/razdachad/netfilter_linux.go` — проводка в демон и `--reset-network`.
+
+- `internal/networkstate/state.go` — private committed/bootstrap authority and durable restore invalidation.

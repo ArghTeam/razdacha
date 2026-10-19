@@ -1,7 +1,7 @@
 # Staging security validation
 
-Status: planned. This runbook and the linked specifications do not claim that fixes,
-deployments or server acceptance checks have been completed.
+Status: #214 is implemented locally; isolated wire validation and final security acceptance
+are pending. Later tasks remain planned. No production deployment is claimed.
 
 ## Environment boundary and privacy
 
@@ -24,11 +24,12 @@ one change before advancing to the next. These are sequential delivery dependenc
 
 | Order | Specification | Primary staging observation | Current status |
 |---|---|---|---|
-| 1 | [#214: coherent network state](../tasks/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Planned, not executed |
-| 2 | [#215: safe peer deletion](../tasks/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Planned, not executed |
-| 3 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
-| 4 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
-| 5 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
+| 1 | [#214: coherent plain-list network state](../tasks/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Implemented locally; staging not executed |
+| 2 | [#220: remote list coherence](https://github.com/ArghTeam/razdacha/issues/220) | Coordinate autonomous remote matching and subnet interception | Planned, not executed |
+| 3 | [#215: safe peer deletion](../tasks/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Planned, not executed |
+| 4 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
+| 5 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
+| 6 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
 
 ## Preconditions before each staging run
 
@@ -91,7 +92,7 @@ The author cannot approve their own implementation. Use two gates:
 2. After staging evidence is available, review the final diff, tests, maintained context,
    negative results and cleanup/recovery outcome before declaring merge/release readiness.
 
-For #214 and #217, require two independent reviewer passes: a threat/failure-model review
+For #214, #220 and #217, require two independent reviewer passes: a threat/failure-model review
 and a final diff/tests/docs/evidence review, performed by two distinct reviewers
 independent of the author and each other. Two rereads by one reviewer do not qualify. For #215,
 #216 and #218, require a reviewer separate from the author plus primary owner review.
@@ -125,3 +126,32 @@ report the blocker with redacted evidence; keep the recovery snapshot available 
 Each implementation PR updates relevant maintained context and behavior documentation.
 Write a new ADR before changing an accepted decision; historical ADRs are not rewritten.
 This planning change does not alter runtime invariants or introduce an architecture decision.
+
+
+## #214 isolated fixture scope
+
+Cross-compile `cmd/razdachad` tests locally with `CGO_ENABLED=0 GOOS=linux` and the
+staging architecture. Supply an installed sing-box binary using private environment
+configuration. The opt-in `TestNetworkGenerationWire` requires `RAZDACHA_NETNS_TEST=1`
+and `RAZDACHA_TEST_SINGBOX`; it self-executes in fresh network and mount namespaces,
+verifies both identities differ from the parent, makes mounts private and overlays
+`/var/lib` with disposable tmpfs before any network mutation. The fixture never invokes
+systemd or connects to provider endpoints. A veth named wg0 exercises production ingress
+classification; it is not a real WireGuard/provider credential test.
+
+The local list, DNS and echo sources use synthetic addresses. Positive pre-guard echoes
+prove direct and initially intercepted tproxy paths work. AF_PACKET sink observations
+check forbidden guard-epoch TCP/UDP packets and direct DNS, including TCP SYNs; established
+TCP/connected-UDP sockets carry distinct before/during/after epochs. A publication failure
+after runtime restart must retain the real guard until recovery. The fixture also
+changes a disposable veth resolver address under the guard and proves recovery makes
+the committed resolver local before release, with no direct DNS packets. Explicit
+unchanged Apply repairs deliberately removed fixture route/nft state without a runtime
+restart. Runtime restart may
+break established proxy connections; the acceptance condition is absence of forbidden
+egress, not connection survival. A packet admitted before the guard acknowledgment may
+already be in flight. Raw captures/output stay private; publish redacted assertions only.
+
+Run an archived baseline with the original list watcher and shared fixture helpers to
+show new selected traffic still reaches the direct sink before the fix. Baseline failure
+and fixed success remain required. Compilation alone does not satisfy wire acceptance.
