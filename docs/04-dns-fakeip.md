@@ -124,11 +124,16 @@ requested. Direct policies have no DNS action. Real-resolution policies require 
 CIDR source for nft steering; domain-only real-resolution policies are rejected at
 save time. CIDR presence in a referenced list is still a diagnostic responsibility.
 
-Native community, SRS and JSON sets retain their complete predicates and shared
-tags. Their DNS matching and autonomous refresh remain an explicit unresolved
-scope in issue #220. This fix does not flatten native logical, inverted or regex
-conditions and does not claim all-format closure. The IPv4 strategy, HTTPS-query
-reject and application-DNS guard remain unchanged.
+Supported native community/SRS/JSON sources now use unchanged immutable local original
+blobs for routing and separate exact domain-only DNS artifacts from the same accepted
+AST ([ADR 0025](decisions/0025-daemon-owned-native-rule-sets.md)). Domain and destination
+CIDR items in a default native rule are ORed by pinned sing-box v1.12.25. Pure-domain
+AND/OR/inversion/regex is preserved; mixed domain/address AND or inversion and unknown
+context predicates are rejected before acceptance. Inverted-domain expressions matching
+literal-IP traffic and all-IPv4 address projections are rejected rather than silently
+intercepting the whole gateway. Domain-only regex `.*` does not match an absent domain.
+Unsupported sources retain their last-good accepted version and report an error.
+The global IPv4, HTTPS-query and application-DNS guards remain unchanged.
 
 **FakeIP переживает перезапуск.** `experimental.cache_file` с `store_fakeip: true` хранит
 соответствие адрес ↔ домен в `/var/lib/sing-box/cache.db`. Без него после перезагрузки
@@ -167,11 +172,11 @@ FakeIP работает, только если клиент **резолвит �
 
 | Вид | Формат | Как используется |
 |---|---|---|
-| Домены сервиса | `.srs` из релизов | `rule_set` типа `remote`, sing-box обновляет сам |
+| Service domains | Release `.srs` | Daemon-owned validated immutable local original and exact DNS projection |
 | Подсети сервиса | plain `.lst` | скачиваются демоном, заливаются в nft-сет |
 | Свои домены | текст из UI | `rule_set` типа `inline`, `domain_suffix` |
 | Свои подсети | текст из UI | тот же `inline`-набор + nft-сет |
-| Внешний список | URL | `.srs`/`.json` → `remote`; иное → скачиваем сами, содержимое в `inline` |
+| External list | URL | Supported `.srs`/`.json` use daemon-owned local artifacts; plain content uses inline sets |
 
 **Plain-список — не только подсети.** Демон качает его, разбирает на домены и подсети, и
 то и другое кладёт в `rule_set` типа `inline` того правила, где список указан: sing-box

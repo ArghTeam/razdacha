@@ -223,3 +223,47 @@ WG address reconciliation. It does not exercise an encrypted WG handshake. Zero-
 collector barriers cover a finite queued observation, not universal lossless capture.
 Native SRS/JSON semantics and refresh remain unresolved in #220. No active application
 or production deployment is part of this evidence.
+
+## Native rule-set fixture and recovery contract (#220)
+
+The native fixture is opt-in `TestNetworkGenerationWire`, with
+`RAZDACHA_NETNS_TEST=1`, an absolute `RAZDACHA_TEST_SINGBOX`,
+`RAZDACHA_WIRE_NATIVE_FORMAT=json|srs`, and
+`RAZDACHA_WIRE_NATIVE_CASE=daemon-new-runtime-old|runtime-new-daemon-old`.
+Run four fixed combinations (JSON first, then SRS; daemon-new first in each), then
+four original-base combinations in the same order. Each test has an 80-second Go
+limit, a 60-second internal context and a separately supervised 90-second limit.
+Use the existing private exact-process supervisor; clear inherited wire-role values.
+The gateway receives verbose mode. No fixture may use host systemctl or provider keys.
+
+Baseline binaries archive the pristine prerequisite base and overlay only shared
+fixture helpers, payload detector and the `security220_baseline` adapter. They use
+the original remote generator and flattened daemon snapshot. A synthetic daemon-only
+HTTP header separates the two consumers; explicit counters plus actual nft state
+prove the selected skew before probes. Both forbidden TCP and UDP echo must succeed,
+then the same raw collector must ACK a fresh nonce with zero kernel drops before
+`220-BASELINE-NATIVE-LEAK-OBSERVED` is emitted. Generic failures, missing prerequisites,
+partial leak proof or collector errors are never desired baseline failures.
+
+Fixed runs assert zero autonomous runtime source requests, exact accepted-generation
+protection, unrelated DNS success and selected-domain REFUSED, then forced committed
+recovery. An unseen upstream body has no authority until the daemon accepts it.
+`220-FIXED-NATIVE-WIRE-PASS` follows the final zero-drop capture barrier and absence
+checks. The disposable veth exercises WG address control flow; it is not an encrypted
+WireGuard handshake. Wire execution/evidence remains pending until separately reviewed.
+
+On upgrade, a legacy v1 native authority cannot reopen an autonomous remote config.
+The daemon retains committed WG settings for administrative access, keeps clients
+guarded and exposes explicit Apply as the recovery path. Fetch supported sources,
+inspect source errors, then explicitly Apply the intended policy through out-of-band
+administrative access. A v2 missing/corrupt artifact keeps ingress guarded; never repair
+or overwrite a referenced hash path. A newly accepted immutable generation or explicit
+policy replacement can recover through the gate after the active failure is detected.
+Retain artifact history for rollback; there is no garbage collection. At the native
+256-MiB/4,096-file quota, new acceptance fails visibly and existing references remain.
+Do not delete history until its active/prepared/recovery reachability is established.
+
+Database backups exclude native blobs. Restore invalidates routing authority and
+requires reacquisition and explicit Apply; it cannot replay absent references.
+Safe cross-host restore remains #217. No staging, release or deployment claim follows
+from local tests or a draft PR.

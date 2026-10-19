@@ -26,14 +26,16 @@ func TestRuleInConfig(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "community-список",
-			rule: store.Rule{ID: "r2", Enabled: true, CommunityLists: []string{"youtube"}},
-			want: true,
+			name:  "community-список",
+			plain: testPlain,
+			rule:  store.Rule{ID: "r2", Enabled: true, CommunityLists: []string{"youtube"}},
+			want:  true,
 		},
 		{
-			name: "внешний .srs ведёт сам sing-box",
-			rule: store.Rule{ID: "r3", Enabled: true, RemoteLists: []string{"https://ex.com/a.srs"}},
-			want: true,
+			name:  "loaded immutable native source",
+			plain: testPlain,
+			rule:  store.Rule{ID: "r3", Enabled: true, RemoteLists: []string{"https://ex.com/a.srs"}},
+			want:  true,
 		},
 		{
 			name:  "plain-список скачан",

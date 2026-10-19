@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ArghTeam/razdacha/internal/clash"
+	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -524,6 +525,19 @@ func TestRouteProbeCIDRCandidatesHaveConservativeVerdict(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+func TestLoadedNativeRouteCandidateRemainsUncertain(t *testing.T) {
+	s := &Server{plainLists: func(string) (singbox.PlainList, bool) {
+		return singbox.PlainList{Native: &lists.NativeArtifact{Format: lists.FormatJSON}}, true
+	}}
+	for _, real := range []bool{false, true} {
+		r := store.Rule{ResolveRealIP: real, RemoteLists: []string{"https://example.invalid/native.json"}}
+		hit, certain := s.ruleCatches(r, "selected.example")
+		if !hit || certain {
+			t.Fatalf("loaded native was excluded: hit=%v certain=%v", hit, certain)
 		}
 	}
 }

@@ -599,7 +599,7 @@ func TestPoolConfigDropsStoredBlockedWithoutCrawl(t *testing.T) {
 		{URL: plain, Title: "🇩🇪 Германия, Франкфурт"},
 	})
 	// Каталог не обходился ни разу: состав пришёл из БД как есть, обхода не было.
-	opts, err := Generate(snap, nil)
+	opts, err := Generate(snap, testPlain)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -625,7 +625,7 @@ func TestPoolConfigDropsStoredBlockedWithoutCrawl(t *testing.T) {
 	// Фильтр — из настроек снимка: пустой чёрный список пустил бы РФ-ноду обратно,
 	// а ключ без шифрования — нет, он отвергается всегда.
 	snap.Settings.PoolCountryBlocklist = nil
-	opts, err = Generate(snap, nil)
+	opts, err = Generate(snap, testPlain)
 	if err != nil {
 		t.Fatalf("Generate без чёрного списка: %v", err)
 	}

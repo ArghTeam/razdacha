@@ -34,6 +34,14 @@ type cache struct {
 // приватные ключи пиров, и незачем расширять доступ на весь каталог состояния.
 func openCache(dir string) (*cache, error) {
 	if dir == "" {
+		return nil, fmt.Errorf("%w: cache directory is required", ErrBadResponse)
+	}
+	var absErr error
+	dir, absErr = filepath.Abs(dir)
+	if absErr != nil {
+		return nil, absErr
+	}
+	if dir == "" {
 		return nil, fmt.Errorf("%w: не задан каталог кэша списков", ErrBadResponse)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {

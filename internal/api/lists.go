@@ -73,17 +73,25 @@ func (s *Server) ruleLists(r store.Rule) []listStatus {
 
 	out := make([]listStatus, 0, len(r.CommunityLists)+len(r.RemoteLists))
 	for _, key := range r.CommunityLists {
-		st := listStatus{Key: key}
-		url, fetched := lists.CommunitySubnetURL(key)
-		switch {
-		case !fetched:
-			// Подсетей у сервиса нет, .srs с доменами качает сам sing-box —
-			// состояния обновления у демона по нему нет и не будет.
-			st.State = listCore
-		default:
-			st.Source = url
-			st.SubnetsOnly = true
-			fill(&st, states, known)
+		st := listStatus{Key: key, Source: lists.CommunitySRSURL(key)}
+		fill(&st, states, known)
+		if url, ok := lists.CommunitySubnetURL(key); ok {
+			companion := listStatus{Source: url}
+			fill(&companion, states, known)
+			if companion.State == listFailed {
+				if st.Error != "" {
+					st.Error += "; "
+				}
+				st.Error += "Companion subnet list: " + companion.Error
+				st.State = listFailed
+			} else if st.State != listFailed && companion.State != listUpdated {
+				st.State = companion.State
+			}
+			if companion.UpdatedAt == nil {
+				st.UpdatedAt = nil
+			} else if st.UpdatedAt != nil && companion.UpdatedAt.Before(*st.UpdatedAt) {
+				st.UpdatedAt = companion.UpdatedAt
+			}
 		}
 		out = append(out, st)
 	}

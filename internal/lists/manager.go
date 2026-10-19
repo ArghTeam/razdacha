@@ -24,11 +24,8 @@ type Source struct {
 	Format Format
 }
 
-// Sources — какие списки нужны демону при таком состоянии БД.
-//
-// Домены сюда не попадают: наборы типа remote в конфиге sing-box он обновляет
-// сам. Демону списки нужны ради подсетей — их дублируют в nft-сет, потому что
-// FakeIP срабатывает, только когда клиент резолвит домен (docs/04-dns-fakeip.md).
+// Sources includes every enabled policy source, including community originals
+// and independently versioned companion subnets (ADR 0025).
 func Sources(snap store.Snapshot) []Source {
 	seen := make(map[string]bool)
 	var out []Source
@@ -52,15 +49,13 @@ func Sources(snap store.Snapshot) []Source {
 		// одному действию, блокировка по ручной подсети молчала (issue #126).
 		// Расхождение стережёт TestRuleSubnetsAgreesWithListSources.
 		for _, key := range r.CommunityLists {
-			// Только сервисы, у которых в allow-domains есть подсети:
-			// у остальных .srs с одними доменами, и качать его незачем.
+			add(CommunitySRSURL(key))
 			if url, ok := CommunitySubnetURL(key); ok {
 				add(url)
 			}
 		}
 		for _, url := range r.RemoteLists {
-			// Свои списки берём в любом виде: .srs и .json ведёт sing-box,
-			// но подсети из них всё равно нужны в nft-сете.
+			// The daemon owns acquisition for every supported format.
 			add(url)
 		}
 	}
@@ -211,6 +206,9 @@ func (m *Manager) Refresh(ctx context.Context) error {
 			m.failState(src.URL, err)
 			continue
 		}
+		if res.Stale != nil && src.Format != FormatPlain {
+			errs = append(errs, res.Stale)
+		}
 		m.mu.Lock()
 		m.lists[src.URL] = res.List
 		m.storeState(src.URL, res)
@@ -333,6 +331,10 @@ func (m *Manager) Snapshot() map[string]List {
 	for url, l := range m.lists {
 		l.Domains = append([]string(nil), l.Domains...)
 		l.Subnets = append([]string(nil), l.Subnets...)
+		if l.Native != nil {
+			a := *l.Native
+			l.Native = &a
+		}
 		out[url] = l
 	}
 	return out

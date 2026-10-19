@@ -48,3 +48,5 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 - `internal/packaging/install.go` — `Installer.Install`/`Uninstall`: файлы nginx на диске.
 - `internal/packaging/default_site.go` — снятие и возврат штатного сайта Debian.
 - `internal/packaging/sysctl.go` — drop-in с параметрами ядра и их применение.
+
+- Native artifact history is excluded from database backups. Restore invalidates routing authority and requires supported sources to be fetched and explicitly applied again; it never reopens references to absent blobs. In-place startup with legacy v1 native authority preserves committed WG administrative settings but keeps client ingress guarded until explicit Apply. Corrupt v2 authority/artifacts stay guarded. Safe cross-host migration remains #217 (ADR 0025).

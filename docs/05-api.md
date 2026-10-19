@@ -391,12 +391,13 @@ and detaches referencing rules with an explicit warning; see the
 | `updated` | последняя попытка удалась, `updated_at` — когда |
 | `failed` | последняя попытка не удалась, `error` — чем; `updated_at` — прошлый успех или `null` |
 | `never` | источник в наборе, но обновления не было ни разу |
-| `core` | демон этот список не качает: `.srs` с доменами ведёт сам sing-box |
+| `core` | Legacy response only; current native sources are daemon-owned |
 | `unknown` | планировщик списков не поднялся, состояния нет — не выдаём его за успех |
 
-`subnets_only` означает, что демон качает у сервиса только подсети, а домены остаются за
-sing-box (docs/04-dns-fakeip.md). Состояние едет вместе с правилом, а не отдельной ручкой
-на список: строка правила рисуется целиком на каждом опросе экрана.
+Current community status covers daemon-owned native SRS and its companion subnet source
+when present. Either failure produces `failed`; `updated_at` is the oldest successful
+component time. `subnets_only` is no longer set for community lists. Unsupported native
+predicates and quota failures remain visible even while last-good content is active.
 
 ### Пробник маршрута
 
@@ -782,8 +783,10 @@ rule. A first successful download does not authorize pending policy: explicit Ap
 is still required when no committed generation exists. The scheduler retains the
 union of applied and pending sources, while only applied sources reach nft/config.
 
-This contract covers daemon-managed plain lists. Autonomous sing-box `.srs`/`.json`
-refresh remains a tracked limitation in [#220](https://github.com/ArghTeam/razdacha/issues/220).
+This contract also covers supported native SRS/JSON through immutable local original
+and exact DNS artifacts (ADR 0025). Unsupported predicates fail before acceptance;
+a detected active artifact failure closes the guard even on no-op or removed-source
+candidates. Legacy v1 native authority requires guarded administrator recovery.
 
 Ответ:
 

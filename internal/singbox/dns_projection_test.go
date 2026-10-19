@@ -79,21 +79,19 @@ func TestDNSProjectionRefreshAndRestart(t *testing.T) {
 	}
 }
 
-func TestDNSProjectionNativeSourcesUnchanged(t *testing.T) {
+func TestDNSProjectionNativeSourcesAreLocal(t *testing.T) {
 	r := store.Rule{ID: "synthetic", CommunityLists: []string{"synthetic"}, RemoteLists: []string{"https://example.invalid/native.srs", "https://example.invalid/native.json"}}
-	built := buildRuleSets(r, store.DefaultSettings(), func(string) (PlainList, bool) {
-		t.Fatal("native source passed to plain parser")
-		return PlainList{}, false
-	})
-	if !reflect.DeepEqual(built.RouteTags, built.DNSTags) || len(built.Sets) != 3 {
-		t.Fatalf("native tags changed: %+v", built)
+	built := buildRuleSets(r, store.DefaultSettings(), testPlain)
+	if built.Err != nil || len(built.Sets) != 6 || len(built.DNSTags) != 3 {
+		t.Fatalf("native projections: %+v", built)
 	}
-	for i, set := range built.Sets {
-		if set.Type != C.RuleSetTypeRemote || len(set.InlineOptions.Rules) != 0 {
-			t.Fatalf("native predicate replaced: %+v", set)
+	for _, set := range built.Sets {
+		if set.Type != C.RuleSetTypeLocal || set.RemoteOptions.URL != "" || set.LocalOptions.Path == "" {
+			t.Fatalf("autonomous source: %+v", set)
 		}
-		if i > 0 && set.RemoteOptions.URL != r.RemoteLists[i-1] {
-			t.Fatal("native source changed")
-		}
+	}
+	missing := buildRuleSets(r, store.DefaultSettings(), nil)
+	if missing.Err == nil {
+		t.Fatal("missing native source silently accepted")
 	}
 }

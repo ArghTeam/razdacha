@@ -11,7 +11,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test -c -o /private/tmp/razdacha-dns-ru
 
 `TestGeneratedDNSRuntime` uses actual local rule sets and `DNSRouter.Exchange`, a
 real loopback UDP upstream, and a synthetic FakeIP transport. It covers manual and
-plain CIDR/domain/mixed/empty/missing sources, block/unavailable/live/direct actions,
+plain CIDR/domain/mixed/empty/missing sources, native JSON/SRS CIDR/domain/mixed sources,
+block/unavailable/live/direct actions,
 real resolution, selected/unassigned peers and unrelated questions. The synthetic
 FakeIP transport verifies action selection, not the persistent FakeIP allocator.
 
@@ -58,3 +59,10 @@ source/artifact identities, cleanup and scoped observations are recorded in
 occurred. The nonce barrier drains queued observations only: without
 `PACKET_STATISTICS`, these checks make no zero-drop, lossless or universal no-leak
 claim. They are not #214 publication-order or actual FakeIP-allocator validation.
+
+`TestNativeOriginalAndProjectionRuntime` compares actual local native JSON and SRS
+versions 1/2/3 against exact DNS plus nft projections, including default domain+IP OR,
+pure AND/NOT, regex empty-domain behavior and false address expressions.
+`TestNativeUnsafeRuntimePredicatesRejected` proves mixed-AND, source-scope and
+negated-domain hazards and a noncanonical compiled SRS marker/Dump discrepancy.
+Native empty/missing sources are compile-time refusals, not successful wire cases.

@@ -1,10 +1,5 @@
-// Package lists качает и кэширует списки ресурсов: бинарные наборы `.srs` и
-// plain-списки доменов и подсетей.
-//
-// Слой отвечает за то, что sing-box сделать не может: подсети из списков нужны
-// в nft-сете, потому что FakeIP работает только когда клиент резолвит домен
-// (docs/04-dns-fakeip.md). Наборы типа `remote` в конфиге sing-box обновляет он
-// сам — их здесь нет.
+// Package lists acquires, validates and caches policy sources and pool catalogs.
+// Native original/DNS artifacts and nft projections share accepted daemon authority.
 package lists
 
 import (
@@ -66,9 +61,7 @@ func CommunitySubnetURL(key string) (string, bool) {
 	return fmt.Sprintf(communitySubnetURL, key), true
 }
 
-// CommunitySRSURL — адрес бинарного набора доменов сервиса. Тот же адрес
-// строит генератор конфига: sing-box качает такие наборы сам, демону они нужны
-// только когда из набора вынимаются подсети.
+// CommunitySRSURL identifies the original native community artifact acquired by the daemon.
 func CommunitySRSURL(key string) string {
 	return fmt.Sprintf(communitySRSURL, key)
 }
@@ -91,6 +84,7 @@ func FormatOf(raw string) Format {
 
 // List — разобранное содержимое списка.
 type List struct {
+	Native *NativeArtifact `json:"native,omitempty"`
 	// Domains — суффиксы доменов, пригодные для domain_suffix.
 	Domains []string
 	// Subnets — префиксы IPv4, пригодные для элементов nft-сета. Только v4:

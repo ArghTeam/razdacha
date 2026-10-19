@@ -35,10 +35,7 @@ func TestSources(t *testing.T) {
 				Enabled:        true,
 				CommunityLists: []string{"telegram", "youtube"},
 			}},
-			want: []Source{{
-				URL:    "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/telegram.lst",
-				Format: FormatPlain,
-			}},
+			want: []Source{{URL: CommunitySRSURL("telegram"), Format: FormatSRS}, {URL: "https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Subnets/IPv4/telegram.lst", Format: FormatPlain}, {URL: CommunitySRSURL("youtube"), Format: FormatSRS}},
 		},
 		{
 			name: "свои списки в любом виде",
