@@ -251,7 +251,7 @@ func assertRejected(t *testing.T, opts option.Options, tag string) {
 		}
 	}
 	for _, r := range opts.DNS.Rules {
-		if !contains(r.DefaultOptions.RuleSet, tag) {
+		if !contains(r.DefaultOptions.RuleSet, tag+"-dns") {
 			continue
 		}
 		inDNS = true
@@ -327,9 +327,9 @@ func TestDNSRulesPerAction(t *testing.T) {
 		}
 	}
 	want := map[string]string{
-		ruleSetTag("r1"): "route:" + TagDNSFakeIP,
-		ruleSetTag("r4"): "reject:",
-		ruleSetTag("r6"): "reject:", // туннель выключен — отказ, а не пропуск
+		ruleSetTag("r1") + "-dns": "route:" + TagDNSFakeIP,
+		ruleSetTag("r4") + "-dns": "reject:",
+		ruleSetTag("r6") + "-dns": "reject:", // туннель выключен — отказ, а не пропуск
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("DNS-правила: %v, ожидалось %v", got, want)
@@ -566,7 +566,7 @@ func TestPlainListRoutesToTunnel(t *testing.T) {
 		}
 	}
 	for _, r := range opts.DNS.Rules {
-		if contains(r.DefaultOptions.RuleSet, tag) &&
+		if contains(r.DefaultOptions.RuleSet, tag+"-dns") &&
 			r.DefaultOptions.RouteOptions.Server == TagDNSFakeIP {
 			resolved = true
 		}

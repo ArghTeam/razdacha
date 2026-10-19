@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -345,26 +346,18 @@ func TestRouteProbeDivergenceSeesUnappliedRule(t *testing.T) {
 	}
 }
 
-// Д3. Настоящий адрес от резолвера — доказательство ядра: правило с туннелем не
-// сработало, иначе был бы FakeIP. Кандидат снимается, а не висит предположением.
-func TestRouteProbeRealAddressDropsTunnelCandidates(t *testing.T) {
+// Native sets may route by CIDR even when the DNS answer is real.
+func TestRouteProbeRealAddressKeepsUnknownCIDRCandidates(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
 	_, withList := probeRules(t, ts)
-
 	fakeCore{
-		rules: `{"rules":[
-			{"type":"default","payload":"rule_set=[list-youtube]","proxy":"route(tun-x)"}]}`,
-		answer: `{"Status":0,"Answer":[{"name":"example.org.","type":1,"TTL":60,"data":"93.184.216.34"}]}`,
+		rules:  `{"rules":[{"type":"default","payload":"rule_set=[list-youtube]","proxy":"route(tun-x)"}]}`,
+		answer: `{"Status":0,"Answer":[{"name":"example.org.","type":1,"TTL":60,"data":"203.0.113.7"}]}`,
 	}.start(t, ts)
-
 	got := decodeProbe(t, runProbe(t, ts, cookie, "example.org"))
-	if got.Rule != nil || len(got.Candidates) != 0 {
-		t.Fatalf("правило «%s» осталось кандидатом вопреки настоящему адресу: %+v",
-			withList.Name, got)
-	}
-	if !strings.Contains(got.Verdict, "Ни одно правило") {
-		t.Errorf("вердикт = %q, ожидалось «ни одно правило»", got.Verdict)
+	if got.Rule != nil || len(got.Candidates) != 1 || got.Candidates[0].ID != withList.ID {
+		t.Fatalf("real DNS answer incorrectly eliminated an unknown CIDR candidate: %+v", got)
 	}
 }
 
@@ -405,11 +398,9 @@ func TestRouteProbeCertainBeatsCandidate(t *testing.T) {
 	if got.Rule.Outbound != "route(direct)" {
 		t.Errorf("outbound = %q, ожидался route(direct)", got.Rule.Outbound)
 	}
-	// Правило со списком выше по порядку отсеяно настоящим адресом: FakeIP ему
-	// не выдали, значит оно не совпало.
-	if len(got.Candidates) != 0 {
-		t.Errorf("кандидаты остались вопреки доказательству ядра: %+v (правило «%s»)",
-			got.Candidates, withList.Name)
+	// A native set can match a resolved CIDR despite a real DNS answer.
+	if len(got.Candidates) != 1 || got.Candidates[0].ID != withList.ID {
+		t.Fatalf("unknown native CIDR candidate was lost: %+v", got.Candidates)
 	}
 }
 
@@ -465,5 +456,30 @@ func TestRouteProbeNXDomainFromBody(t *testing.T) {
 	}
 	if len(got.Addresses) != 0 {
 		t.Errorf("адреса = %v, а их нет", got.Addresses)
+	}
+}
+
+func TestRouteProbeKeepsKnownCIDRCandidates(t *testing.T) {
+	for _, source := range []string{"manual", "plain"} {
+		for _, mixed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/mixed=%t", source, mixed), func(t *testing.T) {
+				s := &Server{}
+				r := store.Rule{Subnets: []string{"203.0.113.0/24"}}
+				if mixed {
+					r.Domains = []string{"selected.example"}
+				}
+				if source == "plain" {
+					content := singbox.PlainList{Domains: r.Domains, Subnets: r.Subnets}
+					r.Domains = nil
+					r.Subnets = nil
+					r.RemoteLists = []string{"https://example.invalid/list"}
+					s.plainLists = func(string) (singbox.PlainList, bool) { return content, true }
+				}
+				hit, certain := s.ruleCatches(r, "unrelated.example")
+				if !hit || certain {
+					t.Fatalf("CIDR route was excluded by domain projection: hit=%t certain=%t", hit, certain)
+				}
+			})
+		}
 	}
 }
