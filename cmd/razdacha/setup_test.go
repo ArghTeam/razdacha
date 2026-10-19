@@ -537,3 +537,21 @@ func TestPanelURL(t *testing.T) {
 		t.Fatalf("адрес панели %q", got)
 	}
 }
+
+func TestFreshSetupRefusesOrphanRoutingAuthorityBeforeCreatingDatabase(t *testing.T) {
+	for _, name := range []string{"applied-network.json", "bootstrap-network.json"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			dbPath := filepath.Join(dir, "state.db")
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("orphan"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := setup(context.Background(), setupOptions{dbPath: dbPath}); err == nil {
+				t.Fatal("fresh setup accepted stale routing authority")
+			}
+			if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
+				t.Fatal("fresh setup created a database before rejecting stale authority")
+			}
+		})
+	}
+}

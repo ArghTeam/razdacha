@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
@@ -16,14 +17,13 @@ type Applier interface {
 	Apply(ctx context.Context, snap store.Snapshot) (singbox.ApplyResult, error)
 }
 
-// NftApplier перезаливает таблицу nft подсетями из состояния БД и отвечает,
-// сколько подсетей ушло в сет.
-//
-// Замыкание, а не тип слоя netstack: про nftables слой api не знает, проводку
-// даёт демон (`cmd/razdachad/netfilter_linux.go`). Заодно это единственный
-// способ проверить ручку тестами — файл проводки платформенный и на macOS не
-// собирается вовсе.
-type NftApplier func(ctx context.Context) (int, error)
+// CoherentApplier serializes snapshot acquisition and peer address allocation with
+// network publication. Production wiring must supply this interface.
+type CoherentApplier interface {
+	Applier
+	ApplyCurrent(context.Context, *store.Store) (singbox.ApplyResult, error)
+	CreatePeer(context.Context, *store.Store, string, time.Time) (store.Peer, error)
+}
 
 // applyResponse — тело `POST /api/apply`.
 //
@@ -44,20 +44,23 @@ type nftResponse struct {
 	Subnets int `json:"subnets"`
 }
 
-// handleApply пересобирает конфиг sing-box из состояния и применяет его, а
-// следом перезаливает таблицу nft: без второй половины подсети, дописанные в
-// правило руками, ждали бы планового прогона списков — до суток (issue #119).
+// handleApply delegates the complete network publication to the daemon gate.
+// The API never independently reads or publishes nft policy.
 //
 // Отказ `sing-box check` — 422 с текстом ошибки рантайма: прежний конфиг остался
 // в силе, и пользователю нужна причина, а не код (docs/05-api.md).
 func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
-	snap, err := s.store.Snapshot(r.Context())
-	if err != nil {
-		s.storeError(w, err, "Состояние не прочитано")
-		return
+	var res singbox.ApplyResult
+	var err error
+	if coherent, ok := s.applier.(CoherentApplier); ok {
+		res, err = coherent.ApplyCurrent(r.Context(), s.store)
+	} else {
+		var snap store.Snapshot
+		snap, err = s.store.Snapshot(r.Context())
+		if err == nil {
+			res, err = s.applier.Apply(r.Context(), snap)
+		}
 	}
-
-	res, err := s.applier.Apply(r.Context(), snap)
 	switch {
 	case errors.Is(err, singbox.ErrCheckFailed):
 		s.log.Error("конфиг sing-box не применён", "ошибка", err)
@@ -83,18 +86,9 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Таблица nft заливается после конфига, а не до: помеченный трафик, для
-	// которого в конфиге ещё нет правила, доезжает до tproxy и уходит под
-	// `final: direct-out` — напрямую с адреса сервера.
-	nft, err := s.applyNftRules(r.Context())
-	if err != nil {
-		// Конфиг уже применён, поэтому это не 422 и не «применено»: в ядре
-		// осталась прежняя таблица целиком, и пользователь обязан узнать, что
-		// половина применения не доехала.
-		s.log.Error("правила nft не перезалиты", "ошибка", err)
-		writeError(w, s.log, http.StatusInternalServerError, codeInternal,
-			fmt.Sprintf("Конфигурация sing-box применена, правила nft не перезалиты: %v", err))
-		return
+	var nft *nftResponse
+	if res.NftSubnets != nil {
+		nft = &nftResponse{Subnets: *res.NftSubnets}
 	}
 
 	writeJSON(w, s.log, http.StatusOK, applyResponse{
@@ -104,23 +98,6 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 		Detail:   applyDetail(res, nft),
 		Nft:      nft,
 	})
-}
-
-// applyNftRules перезаливает таблицу nft, если демон дал заливку.
-//
-// Заливка идёт и при `changed == false`: сет расходится с правилами независимо
-// от конфига — правка подсетей его не меняет, — а ждать планового прогона
-// списков сутки незачем (issue #119). Пустая заливка ошибкой не считается:
-// подсистема правил есть только в Linux, а тесты слоя ходят в ручку без неё.
-func (s *Server) applyNftRules(ctx context.Context) (*nftResponse, error) {
-	if s.applyNft == nil {
-		return nil, nil
-	}
-	subnets, err := s.applyNft(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &nftResponse{Subnets: subnets}, nil
 }
 
 // applyDetail — строка для плашки в UI. Текст здесь, а не в UI, потому что

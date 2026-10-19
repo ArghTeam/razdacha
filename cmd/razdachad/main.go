@@ -17,6 +17,7 @@ import (
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/packaging"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -76,32 +77,29 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		return storePassword(ctx, st)
 	}
 
-	wg, err := startWG(ctx, st)
+	nf, err := startNetfilter(ctx)
+	if err != nil {
+		return err
+	}
+	defer nf.stop()
+	settings, err := initialWGSettings(ctx, st, dbPath)
+	if err != nil {
+		return err
+	}
+	wg, err := startWG(ctx, st, settings)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = wg.Close() }()
 	go syncWGPeers(ctx, st, wg)
-
-	// Планировщик списков поднимается до правил: первая же его выгрузка должна
-	// застать заливку правил готовой слушать обновления. Ошибки загрузки демон
-	// не останавливают — nil означает работу без списков.
 	listsMgr := startLists(ctx, st, dbPath, slog.Default())
-	// Встроенный пул заводится до расписания: иначе первый обход его каталога
-	// пришёлся бы только на следующий такт сверки набора пулов.
 	ensureBuiltinPool(ctx, st, slog.Default())
 	poolsMgr := startPools(ctx, st, slog.Default())
-
-	nf, err := startNetfilter(ctx, st, listsMgr, slog.Default())
-	if err != nil {
-		return err
-	}
-	defer nf.stop()
 
 	// Применение конфига собирается здесь, а не внутри слоя api: дверей к нему
 	// две — кнопка «Применить» и расписание пулов, которое приносит свежие
 	// ключи само (issue #121).
-	apply, err := startApply(ctx, st, poolsMgr, plainLists(listsMgr), slog.Default())
+	apply, err := startApply(ctx, st, poolsMgr, listsMgr, nf, dbPath, slog.Default())
 	if err != nil {
 		return err
 	}
@@ -114,21 +112,32 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		ServerPublicKey: wg.PublicKey,
 		PeerStats:       wg.Stats,
 		Diag: api.DiagSources{
-			WG:        wg.DiagState,
-			Nft:       nf.nftState,
+			WG: wg.DiagState,
+			Nft: func(ctx context.Context) (netstack.DiagNftState, error) {
+				if err := apply.networkStatus(); err != nil {
+					return netstack.DiagNftState{}, err
+				}
+				return nf.nftState(ctx)
+			},
 			Route:     nf.routeState,
 			IPForward: netstack.DiagIPForward,
 			Lists:     listsDiag(st, listsMgr),
 		},
 		// Заливка nft уходит в слой api замыканием: `POST /api/apply`
 		// применяет обе половины — конфиг sing-box и таблицу (issue #119).
-		ApplyNft: nf.applyNft,
-		Applier:  apply,
+
+		Applier: apply,
 		// Содержимое plain-списков — тем же приёмом: генератор берёт домены и
 		// подсети из кэша планировщика, иначе они никуда не попадают
 		// (issue #125). Применению они уже отданы в startApply; здесь их берёт
 		// диагностика, которая обязана сверять конфиг так же, как он собран.
-		PlainLists: plainLists(listsMgr),
+		PlainLists: func(url string) (singbox.PlainList, bool) {
+			p := plainLists(listsMgr)
+			if p == nil {
+				return singbox.PlainList{}, false
+			}
+			return p(url)
+		},
 		// Состояние обновления списков — тем же приёмом: панель показывает его
 		// рядом с чипом списка в строке правила (issue #149).
 		ListStates: listStates(listsMgr),
@@ -186,10 +195,10 @@ type netfilter struct {
 	// routeState отдаёт состояние правила по метке и таблицы маршрутизации.
 	// Пустое поле означает «источника нет» — как и у nftState.
 	routeState func(context.Context) (netstack.DiagRouteState, error)
-	// applyNft перезаливает таблицу по требованию слоя api и отвечает, сколько
-	// подсетей ушло в сет. Пустое поле означает «подсистема правил не поднята»:
-	// `POST /api/apply` тогда применяет только конфиг sing-box.
-	applyNft api.NftApplier
+	// Publication is owned exclusively by the shared apply gate.
+	guard       func(bool) error
+	ensureRoute func(context.Context) error
+	publish     func(context.Context, store.Snapshot, map[string]lists.List) (int, error)
 }
 
 // listsDiag — источник свежести списков для диагностики: набор источников
@@ -227,11 +236,7 @@ const wgSyncInterval = 10 * time.Second
 
 // startWG поднимает wg0 по настройкам из БД. Интерфейс — не опция: без него
 // демон не выполняет свою работу, поэтому ошибка здесь останавливает запуск.
-func startWG(ctx context.Context, st *store.Store) (*netstack.WGManager, error) {
-	settings, err := st.Settings(ctx)
-	if err != nil {
-		return nil, err
-	}
+func startWG(ctx context.Context, st *store.Store, settings store.Settings) (*netstack.WGManager, error) {
 	cfg, err := netstack.WGConfigFromSettings(settings)
 	if err != nil {
 		return nil, err

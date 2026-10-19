@@ -3,296 +3,817 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/ArghTeam/razdacha/internal/api"
 	"github.com/ArghTeam/razdacha/internal/lists"
+	"github.com/ArghTeam/razdacha/internal/networkstate"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
-// poolServerURL — рабочая ссылка участника пула. Настоящая по форме: генератор
-// разбирает её, и без разбора состав в конфиг не попадёт вовсе.
-const poolServerURL = "vless://00000000-0000-0000-0000-000000000000@203.0.113.9:443?security=none#сервер"
+type checkerFunc func(context.Context, string) error
 
-// fakeApplier запоминает снимки, которые до него доехали. Настоящего рантайма
-// и systemd в тестах нет.
-type fakeApplier struct {
-	mu    sync.Mutex
-	snaps []store.Snapshot
-	res   singbox.ApplyResult
-	err   error
+func (f checkerFunc) Check(ctx context.Context, path string) error { return f(ctx, path) }
+
+type reloaderFunc func(context.Context) error
+
+func (f reloaderFunc) Reload(ctx context.Context) error { return f(ctx) }
+
+type publicationFixture struct {
+	t          *testing.T
+	g          *applyGate
+	mu         sync.Mutex
+	guarded    bool
+	fail       string
+	events     []string
+	reloads    int
+	runtime    []byte
+	published  store.Snapshot
+	contents   map[string]lists.List
+	reloadHook func()
+	wgSettings store.Settings
 }
 
-func (f *fakeApplier) Apply(_ context.Context, snap store.Snapshot) (singbox.ApplyResult, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.snaps = append(f.snaps, snap)
-	return f.res, f.err
-}
-
-func (f *fakeApplier) calls() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.snaps)
-}
-
-func (f *fakeApplier) last() store.Snapshot {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.snaps) == 0 {
-		return store.Snapshot{}
-	}
-	return f.snaps[len(f.snaps)-1]
-}
-
-// okChecker — `sing-box check`, который всегда доволен: проверяется поведение
-// применятеля, а не рантайма.
-type okChecker struct{}
-
-func (okChecker) Check(context.Context, string) error { return nil }
-
-// countingReloader считает перезагрузки сервиса. Каждая из них — разрыв
-// соединений во всех туннелях сразу, поэтому счёт здесь и проверяется.
-type countingReloader struct {
-	mu sync.Mutex
-	n  int
-}
-
-func (r *countingReloader) Reload(context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.n++
-	return nil
-}
-
-func (r *countingReloader) count() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.n
-}
-
-// poolSnapshots собирает пару снимков: применённое состояние и то, что лежит в
-// БД сейчас — со свежим составом пула и с правкой правила, которую пользователь
-// применять не просил.
-func poolSnapshots() (base, fresh store.Snapshot) {
-	base = store.Snapshot{
-		Tunnels: []store.Tunnel{{
-			ID: "t1", Name: "пул", Type: store.TunnelVLESS, Source: store.SourcePool,
-			Raw: "https://example.org/protocol/vless", Enabled: true,
-			Pool: []store.PoolServer{{URL: "vless://старый@198.51.100.1:443", PingMS: 40}},
-		}},
-		Rules: []store.Rule{{
-			ID: "r1", Name: "правило", Action: store.ActionTunnel, TunnelID: "t1",
-			Enabled: true, Domains: []string{"example.com"},
-		}},
-	}
-	fresh = store.Snapshot{
-		Tunnels: []store.Tunnel{{
-			ID: "t1", Name: "пул", Type: store.TunnelVLESS, Source: store.SourcePool,
-			Raw: "https://example.org/protocol/vless", Enabled: true,
-			Pool:          []store.PoolServer{{URL: poolServerURL, PingMS: 12}},
-			PoolUpdatedAt: time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC),
-		}},
-		Rules: []store.Rule{{
-			// Та же правка правила, что копится до кнопки «Применить».
-			ID: "r1", Name: "правило", Action: store.ActionTunnel, TunnelID: "t1",
-			Enabled: true, Domains: []string{"example.com", "недоприменённый.example"},
-		}},
-	}
-	return base, fresh
-}
-
-// Обновление каталога везёт в конфиг состав пула и ничего кроме него: правки
-// правил копятся до кнопки «Применить», и выкатывать их за пользователя
-// расписание не вправе (issue #121, issue #125).
-func TestApplyPoolsCarriesOnlyPoolServers(t *testing.T) {
-	base, fresh := poolSnapshots()
-	f := &fakeApplier{res: singbox.ApplyResult{Changed: true, Reloaded: true}}
-	g := newApplyGate(f, base, nil)
-
-	if _, err := g.applyPools(context.Background(), fresh); err != nil {
-		t.Fatalf("применение состава пула: %v", err)
-	}
-
-	got := f.last()
-	if len(got.Tunnels) != 1 || len(got.Tunnels[0].Pool) != 1 {
-		t.Fatalf("в применённом снимке состав пула %+v", got.Tunnels)
-	}
-	if got.Tunnels[0].Pool[0].URL != poolServerURL {
-		t.Errorf("состав пула не обновился: %q", got.Tunnels[0].Pool[0].URL)
-	}
-	if got.Tunnels[0].PoolUpdatedAt != fresh.Tunnels[0].PoolUpdatedAt {
-		t.Errorf("время обхода каталога не перенесено: %v", got.Tunnels[0].PoolUpdatedAt)
-	}
-	if len(got.Rules) != 1 || len(got.Rules[0].Domains) != 1 {
-		t.Errorf("в конфиг уехала неприменённая правка правила: %+v", got.Rules)
-	}
-
-	// Применённое состояние обновилось: следующий обход каталога отсчитывается
-	// от него, а не от того, что было до обновления пула.
-	if len(g.base.Tunnels[0].Pool) != 1 || g.base.Tunnels[0].Pool[0].URL != poolServerURL {
-		t.Errorf("применённое состояние не запомнено: %+v", g.base.Tunnels[0].Pool)
-	}
-	// Исходный снимок остался нетронутым: он же лежит в кэше применения.
-	if base.Tunnels[0].Pool[0].URL == poolServerURL {
-		t.Error("применение переписало снимок на месте")
-	}
-}
-
-// Пул, заведённый, но не применённый, расписание в конфиг не тащит: это такая
-// же правка пользователя, как правило рядом.
-func TestApplyPoolsIgnoresUnappliedPool(t *testing.T) {
-	base, fresh := poolSnapshots()
-	base.Tunnels = nil
-	f := &fakeApplier{}
-	g := newApplyGate(f, base, nil)
-
-	if _, err := g.applyPools(context.Background(), fresh); err != nil {
-		t.Fatalf("применение состава пула: %v", err)
-	}
-	if got := f.last(); len(got.Tunnels) != 0 {
-		t.Errorf("неприменённый пул уехал в конфиг: %+v", got.Tunnels)
-	}
-}
-
-// Кнопка «Применить» применяет снимок целиком и становится новой точкой
-// отсчёта: иначе следующее обновление пула откатило бы только что применённое.
-func TestApplyRemembersWholeSnapshot(t *testing.T) {
-	base, fresh := poolSnapshots()
-	f := &fakeApplier{}
-	g := newApplyGate(f, base, nil)
-
-	if _, err := g.Apply(context.Background(), fresh); err != nil {
-		t.Fatalf("применение снимка: %v", err)
-	}
-	if _, err := g.applyPools(context.Background(), fresh); err != nil {
-		t.Fatalf("применение состава пула: %v", err)
-	}
-	if got := f.last(); len(got.Rules[0].Domains) != 2 {
-		t.Errorf("применённая правка правила откатилась: %+v", got.Rules)
-	}
-}
-
-// Отказ проверки диск не трогает, поэтому применённым остаётся прежнее
-// состояние. Отказ перезагрузки — трогает: конфиг уже лежит на диске, и считать
-// его неприменённым значит откатить его следующим же обходом каталога.
-func TestApplyGateRemembersByOutcome(t *testing.T) {
-	cases := []struct {
-		name     string
-		err      error
-		remember bool
-	}{
-		{"конфиг отклонён рантаймом", singbox.ErrCheckFailed, false},
-		{"сервис не перезагрузился", singbox.ErrReloadFailed, true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			base, fresh := poolSnapshots()
-			f := &fakeApplier{err: c.err}
-			g := newApplyGate(f, base, nil)
-
-			if _, err := g.applyPools(context.Background(), fresh); !errors.Is(err, c.err) {
-				t.Fatalf("ошибка применения: %v", err)
+func newPublicationFixture(t *testing.T, mgr *lists.Manager) *publicationFixture {
+	t.Helper()
+	f := &publicationFixture{t: t, guarded: true}
+	dir := t.TempDir()
+	a := &singbox.Applier{ConfigPath: filepath.Join(dir, "config.json"), Log: quietSlog()}
+	a.Checker = checkerFunc(func(_ context.Context, _ string) error {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.events = append(f.events, "check")
+		if f.fail == "check" {
+			return fmt.Errorf("%w: fixture rejection", singbox.ErrCheckFailed)
+		}
+		return nil
+	})
+	a.Reloader = reloaderFunc(func(context.Context) error {
+		f.mu.Lock()
+		f.events = append(f.events, "reload")
+		f.reloads++
+		if !f.guarded {
+			t.Error("runtime changed with open client ingress")
+		}
+		fail := f.fail
+		hook := f.reloadHook
+		f.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+		if fail == "reload" {
+			return errors.New("fixture reload failure")
+		}
+		data, err := os.ReadFile(a.ConfigPath)
+		f.mu.Lock()
+		f.runtime = data
+		f.mu.Unlock()
+		return err
+	})
+	n := &networkPublication{manager: mgr, path: filepath.Join(dir, networkstate.CommittedFile), uncertain: true}
+	n.guard = func(enabled bool) error {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		event := "guard-off"
+		if enabled {
+			event = "guard-on"
+		}
+		f.events = append(f.events, event)
+		if f.fail == event {
+			return errors.New("fixture guard failure")
+		}
+		if !enabled {
+			seedPath := n.bootstrapPath
+			if seedPath == "" {
+				seedPath = filepath.Join(filepath.Dir(n.path), networkstate.BootstrapFile)
 			}
-			got := g.base.Tunnels[0].Pool[0].URL == poolServerURL
-			if got != c.remember {
-				t.Errorf("состояние запомнено: %v, ожидалось %v", got, c.remember)
+			if _, err := os.Lstat(seedPath); !errors.Is(err, os.ErrNotExist) {
+				t.Error("guard released while bootstrap authority still existed")
+			}
+			gen, err := readGeneration(n.path)
+			if err != nil || !reflect.DeepEqual(gen.Policy, f.g.base) {
+				t.Errorf("guard released before durable generation: %v", err)
+			}
+		}
+		f.guarded = enabled
+		return nil
+	}
+	n.wg = func(_ context.Context, settings store.Settings) error {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.events = append(f.events, "wg")
+		if !f.guarded {
+			t.Error("WireGuard changed with open ingress")
+		}
+		f.wgSettings = settings
+		if f.fail == "wg" {
+			return errors.New("fixture partial WG failure")
+		}
+		return nil
+	}
+	n.route = func(context.Context) error {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.events = append(f.events, "route")
+		if !f.guarded {
+			t.Error("policy routing changed with open ingress")
+		}
+		if f.fail == "route" {
+			return errors.New("fixture route failure")
+		}
+		return nil
+	}
+	n.nft = func(_ context.Context, snap store.Snapshot, content map[string]lists.List) (int, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.events = append(f.events, "nft")
+		if !f.guarded {
+			t.Error("nft changed with open client ingress")
+		}
+		if f.fail == "nft" {
+			return 0, errors.New("fixture nft failure")
+		}
+		// Compare independently regenerated bytes against what the runtime loaded.
+		// A refresh during reload must not change the contents supplied to nft.
+		opts, err := singbox.Generate(snap, frozenPlainLists(content))
+		if err != nil {
+			return 0, err
+		}
+		expected, err := singbox.Marshal(opts)
+		if err != nil {
+			return 0, err
+		}
+		if string(expected) != string(f.runtime) {
+			t.Error("nft and runtime received different generations")
+		}
+		if f.wgSettings.WGServerAddress != snap.Settings.WGServerAddress || f.wgSettings.WGPool != snap.Settings.WGPool {
+			t.Error("runtime resolver and local WireGuard addressing differ")
+		}
+		f.published = snap
+		f.contents = content
+		return len(generationSubnets(snap, content)), nil
+	}
+	f.g = newApplyGate(a, n, quietSlog())
+	return f
+}
+
+func policy(subnets ...string) store.Snapshot {
+	return store.Snapshot{Settings: store.DefaultSettings(), Rules: []store.Rule{{ID: "fixture-rule", Name: "Fixture", Enabled: true, Action: store.ActionBlock, Domains: []string{"blocked.example"}, Subnets: subnets}}}
+}
+
+func (f *publicationFixture) setFailure(at string) { f.mu.Lock(); f.fail = at; f.mu.Unlock() }
+func (f *publicationFixture) isGuarded() bool      { f.mu.Lock(); defer f.mu.Unlock(); return f.guarded }
+func (f *publicationFixture) reloadCount() int     { f.mu.Lock(); defer f.mu.Unlock(); return f.reloads }
+
+func TestPublicationOrdersMutationsAndManualRepairDoesNotRestart(t *testing.T) {
+	f := newPublicationFixture(t, nil)
+	snap := policy("192.0.2.0/24")
+	res, err := f.g.Apply(context.Background(), snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.NftSubnets == nil || *res.NftSubnets != 1 {
+		t.Fatalf("nft result: %+v", res)
+	}
+	if !reflect.DeepEqual(f.events, []string{"check", "guard-on", "wg", "route", "reload", "nft", "guard-off"}) {
+		t.Fatalf("publication order: %v", f.events)
+	}
+	if f.isGuarded() {
+		t.Fatal("successful generation remained guarded")
+	}
+	before := len(f.events)
+	res, err = f.g.Apply(context.Background(), snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Changed || res.Reloaded || !reflect.DeepEqual(f.events[before:], []string{"guard-on", "wg", "route", "nft", "guard-off"}) {
+		t.Fatalf("manual repair must reapply network under guard without restarting runtime: %+v %v", res, f.events)
+	}
+	before = len(f.events)
+	if _, err := f.g.refreshLists(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.events) != before {
+		t.Fatal("healthy background no-op interrupted traffic")
+	}
+}
+
+func TestPublicationFailuresStayGuardedAndRetryIdenticalBytes(t *testing.T) {
+	for _, at := range []string{"check", "guard-on", "wg", "route", "reload", "nft", "manifest", "bootstrap", "guard-off"} {
+		t.Run(at, func(t *testing.T) {
+			f := newPublicationFixture(t, nil)
+			initial := policy("192.0.2.0/24")
+			if _, err := f.g.Apply(context.Background(), initial); err != nil {
+				t.Fatal(err)
+			}
+			oldPath := f.g.network.path
+			switch at {
+			case "manifest":
+				f.g.network.path = t.TempDir()
+			case "bootstrap":
+				f.g.network.bootstrapPath = t.TempDir()
+				if err := os.WriteFile(filepath.Join(f.g.network.bootstrapPath, "keep"), []byte("fixture"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			default:
+				f.setFailure(at)
+			}
+			candidate := policy("203.0.113.0/24")
+			if _, err := f.g.Apply(context.Background(), candidate); err == nil {
+				t.Fatal("injected failure succeeded")
+			}
+			preMutation := at == "check" || at == "guard-on"
+			if f.isGuarded() == preMutation {
+				t.Fatalf("guard=%v at %s", f.isGuarded(), at)
+			}
+			if at != "guard-off" && !reflect.DeepEqual(f.g.base, initial) {
+				t.Fatal("failed generation became applied")
+			}
+			if at == "guard-off" && !reflect.DeepEqual(f.g.base, candidate) {
+				t.Fatal("durable generation missing after release failure")
+			}
+			reloads := f.reloadCount()
+			f.setFailure("")
+			f.g.network.bootstrapPath = ""
+			f.g.network.path = oldPath
+			if _, err := f.g.Apply(context.Background(), candidate); err != nil {
+				t.Fatal(err)
+			}
+			if f.isGuarded() {
+				t.Fatal("retry did not release guard")
+			}
+			if f.reloadCount() != reloads+1 {
+				t.Fatal("retry skipped reload because failed candidate already matched disk")
 			}
 		})
 	}
 }
 
-// Обход, не изменивший состав, sing-box не перезапускает. Проверяется на
-// настоящем применятеле: молчание держат два рубежа — расписание не будит
-// применение зря, а применение сверяет байты с лежащим на диске конфигом.
-// Лишний `reload-or-restart` рвёт соединения во всех туннелях сразу (issue #68).
-func TestApplyPoolsSameCompositionDoesNotReload(t *testing.T) {
-	st, _ := openStore(t)
-	tn := createPool(t, st, "пул", "https://example.org/protocol/vless", true)
-	servers := []store.PoolServer{{URL: poolServerURL, PingMS: 12}}
-	if err := st.UpdateTunnelPool(context.Background(), tn.ID, servers, time.Now().UTC()); err != nil {
-		t.Fatalf("запись состава пула: %v", err)
+func TestPublicationCancellationKeepsGuard(t *testing.T) {
+	f := newPublicationFixture(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	f.reloadHook = cancel
+	if _, err := f.g.Apply(ctx, policy()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation: %v", err)
 	}
-
-	base, err := st.Snapshot(context.Background())
-	if err != nil {
-		t.Fatalf("снимок состояния: %v", err)
-	}
-
-	reloader := &countingReloader{}
-	g := newApplyGate(&singbox.Applier{
-		ConfigPath: filepath.Join(t.TempDir(), "config.json"),
-		Checker:    okChecker{},
-		Reloader:   reloader,
-	}, base, nil)
-
-	res, err := g.applyPools(context.Background(), base)
-	if err != nil {
-		t.Fatalf("первое применение: %v", err)
-	}
-	if !res.Changed || !res.Reloaded {
-		t.Fatalf("первое применение прошло мимо диска: %+v", res)
-	}
-
-	res, err = g.applyPools(context.Background(), base)
-	if err != nil {
-		t.Fatalf("повторное применение: %v", err)
-	}
-	if res.Changed || res.Reloaded {
-		t.Errorf("неизменившийся состав переписал конфиг: %+v", res)
-	}
-	if got := reloader.count(); got != 1 {
-		t.Errorf("sing-box перезагружен %d раза на одном изменении состава", got)
+	if !f.isGuarded() || f.g.network.initialized {
+		t.Fatal("canceled generation escaped guard or became committed")
 	}
 }
 
-// Состав изменился — конфиг применён, без участия человека. До issue #121 у
-// [lists.PoolManager.Updates] не было потребителя: свежие ключи ложились в БД и
-// оставались там до нажатия «Применить».
-func TestWatchPoolsAppliesFreshServers(t *testing.T) {
-	st, _ := openStore(t)
-	srv, _ := poolCatalogServer(t)
-	sink := &logSink{}
-	tn := createPool(t, st, "пул", poolCatalogAddr(srv), true)
-
-	base, err := st.Snapshot(context.Background())
+func fixtureLists(t *testing.T) (*lists.Manager, *atomic.Bool, string) {
+	t.Helper()
+	next := &atomic.Bool{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if next.Load() {
+			_, _ = w.Write([]byte("new.example\n203.0.113.0/24\n"))
+		} else {
+			_, _ = w.Write([]byte("old.example\n192.0.2.0/24\n"))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	fetcher, err := lists.NewFetcher(lists.Options{Dir: t.TempDir(), Logger: quietSlog()})
 	if err != nil {
-		t.Fatalf("снимок состояния: %v", err)
+		t.Fatal(err)
 	}
-	if len(base.Tunnels) != 1 || len(base.Tunnels[0].Pool) != 0 {
-		t.Fatalf("свежезаведённый пул уже с составом: %+v", base.Tunnels)
-	}
+	mgr := lists.NewManager(lists.ManagerOptions{Fetcher: fetcher, Logger: quietSlog()})
+	mgr.SetSources([]lists.Source{{URL: srv.URL, Format: lists.FormatPlain}})
+	return mgr, next, srv.URL
+}
 
-	f := &fakeApplier{res: singbox.ApplyResult{Changed: true, Reloaded: true}}
-	g := newApplyGate(f, base, sink.logger())
-
-	m := lists.NewPoolManager(lists.PoolManagerOptions{
-		Catalog: &lists.PoolCatalog{Client: srv.Client(), Log: sink.logger(), Pause: -1},
-		Writer:  st,
-		Logger:  sink.logger(),
-	})
-
+func TestScheduledListsPublishNewDomainsAndSubnetsWithoutPendingDatabaseEdits(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go watchPools(ctx, st, m, g, sink.logger())
-
-	changed, err := m.RefreshPool(ctx, lists.PoolTunnelFrom(tn))
+	defer cancel()
+	mgr, next, url := fixtureLists(t)
+	if err := mgr.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := openStore(t)
+	r, err := st.CreateRule(ctx, store.Rule{Name: "Fixture", Action: store.ActionBlock, Enabled: true, PeerScope: store.ScopeAll, RemoteLists: []string{url}, Subnets: []string{"198.51.100.0/24"}})
 	if err != nil {
-		t.Fatalf("обход каталога: %v", err)
+		t.Fatal(err)
 	}
-	if !changed {
-		t.Fatal("обход каталога не принёс состава")
+	snap, err := st.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
+	f := newPublicationFixture(t, mgr)
+	if _, err := f.g.Apply(ctx, snap); err != nil {
+		t.Fatal(err)
+	}
+	// Save a removal, resolver change and unrelated source without Apply.
+	r.Subnets = []string{"198.51.101.0/24"}
+	r.RemoteLists = []string{"https://pending.invalid/list.txt"}
+	if err := st.UpdateRule(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	settings := snap.Settings
+	settings.WGServerAddress = "10.8.0.254"
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	go watchAppliedLists(ctx, mgr, f.g, quietSlog())
+	next.Store(true)
+	if err := mgr.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "scheduled refresh did not publish new plain list", func() bool {
+		f.g.mu.Lock()
+		defer f.g.mu.Unlock()
+		return slices.Contains(f.g.network.contents[url].Domains, "new.example")
+	})
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	got := generationSubnets(f.published, f.contents)
+	for _, want := range []string{"198.51.100.0/24", "203.0.113.0/24"} {
+		if !slices.Contains(got, want) {
+			t.Fatalf("committed subnet %s absent: %v", want, got)
+		}
+	}
+	if slices.Contains(got, "198.51.101.0/24") || f.published.Settings.WGServerAddress != snap.Settings.WGServerAddress {
+		t.Fatal("scheduled refresh published pending database edits")
+	}
+	if !strings.Contains(string(f.runtime), "new.example") || strings.Contains(string(f.runtime), "old.example") {
+		t.Fatal("inline runtime matching stayed stale")
+	}
+	if len(f.contents) != 1 {
+		t.Fatal("pending or historical lists entered the generation")
+	}
+}
 
-	waitFor(t, "состав пула не доехал до применения", func() bool { return f.calls() > 0 })
-	got := f.last()
-	if len(got.Tunnels) != 1 || len(got.Tunnels[0].Pool) == 0 {
-		t.Fatalf("в применённом снимке пул пуст: %+v", got.Tunnels)
+func TestMissingPlainListWaitsForExplicitOrCommittedPolicy(t *testing.T) {
+	mgr, _, url := fixtureLists(t)
+	f := newPublicationFixture(t, mgr)
+	snap := policy()
+	snap.Rules[0].RemoteLists = []string{url}
+	if _, err := f.g.Apply(context.Background(), snap); !errors.Is(err, singbox.ErrGenerateFailed) {
+		t.Fatalf("missing list: %v", err)
 	}
-	if sink.count("конфиг применён после обновления состава пула") == 0 {
-		t.Error("применение конфига не отмечено в журнале")
+	if f.g.network.initialized || !f.isGuarded() {
+		t.Fatal("missing first list silently activated incomplete policy")
+	}
+	if err := mgr.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.refreshLists(context.Background()); !errors.Is(err, errNoAppliedGeneration) {
+		t.Fatalf("background refresh adopted uncommitted policy: %v", err)
+	}
+	if _, err := f.g.Apply(context.Background(), snap); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPoolRefreshKeepsCommittedListsAndIgnoresPendingEdits(t *testing.T) {
+	mgr, next, url := fixtureLists(t)
+	ctx := context.Background()
+	if err := mgr.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f := newPublicationFixture(t, mgr)
+	snap := policy()
+	snap.Rules[0].RemoteLists = []string{url}
+	snap.Tunnels = []store.Tunnel{{ID: "pool", Name: "Fixture pool", Type: store.TunnelVLESS, Source: store.SourcePool, Enabled: true, Raw: "https://catalog.invalid", Pool: []store.PoolServer{{URL: "vless://00000000-0000-0000-0000-000000000000@192.0.2.9:443?security=tls&sni=fixture.invalid"}}}}
+	if _, err := f.g.Apply(ctx, snap); err != nil {
+		t.Fatal(err)
+	}
+	next.Store(true)
+	if err := mgr.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fresh := policy("203.0.113.0/24")
+	fresh.Tunnels = append([]store.Tunnel(nil), snap.Tunnels...)
+	fresh.Tunnels[0].Pool = []store.PoolServer{{URL: "vless://00000000-0000-0000-0000-000000000000@198.51.100.9:443?security=tls&sni=fixture.invalid"}}
+	fresh.Tunnels = append(fresh.Tunnels, store.Tunnel{ID: "pending-pool", Source: store.SourcePool})
+	if _, err := f.g.applyPools(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.g.base.Tunnels) != 1 || len(f.g.base.Rules[0].Subnets) != 0 || f.g.base.Tunnels[0].Pool[0].URL != fresh.Tunnels[0].Pool[0].URL {
+		t.Fatal("pool refresh published pending policy or failed to update membership")
+	}
+	if !slices.Contains(f.contents[url].Domains, "old.example") || slices.Contains(f.contents[url].Domains, "new.example") {
+		t.Fatal("pool refresh changed committed list generation")
+	}
+}
+
+func TestGenerationRecoveryUsesDurablePolicyAndFrozenLists(t *testing.T) {
+	mgr, next, url := fixtureLists(t)
+	ctx := context.Background()
+	if err := mgr.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f := newPublicationFixture(t, mgr)
+	snap := policy()
+	snap.Rules[0].RemoteLists = []string{url}
+	if _, err := f.g.Apply(ctx, snap); err != nil {
+		t.Fatal(err)
+	}
+	committed := f.g.network.path
+	next.Store(true)
+	if err := mgr.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	recovered := newPublicationFixture(t, mgr)
+	recovered.g.network.path = committed
+	if err := recovered.g.recover(ctx, filepath.Join(t.TempDir(), "absent-seed")); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(recovered.contents[url].Domains, "old.example") {
+		t.Fatal("restart adopted uncommitted cache content")
+	}
+	if recovered.reloadCount() != 1 || recovered.isGuarded() {
+		t.Fatal("restart did not force validated reload and recover")
+	}
+}
+
+func TestLegacyBootstrapRequiresExplicitApplyAndFreshSeedIsConsumed(t *testing.T) {
+	ctx := context.Background()
+	f := newPublicationFixture(t, nil)
+	seedPath := filepath.Join(t.TempDir(), networkstate.BootstrapFile)
+	if err := f.g.recover(ctx, seedPath); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(f.g.networkStatus(), api.ErrNetworkGuarded) || !f.isGuarded() {
+		t.Fatal("legacy state was silently trusted")
+	}
+	if _, err := f.g.applyPools(ctx, policy()); !errors.Is(err, errNoAppliedGeneration) {
+		t.Fatalf("pool bootstrap: %v", err)
+	}
+	snap := policy("192.0.2.0/24")
+	if err := networkstate.Write(seedPath, networkstate.Generation{Version: 1, Kind: networkstate.BootstrapKind, Policy: snap, Lists: map[string]lists.List{}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.g.recover(ctx, seedPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(seedPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("bootstrap seed not consumed")
+	}
+	if !reflect.DeepEqual(f.g.base, snap) || f.isGuarded() {
+		t.Fatal("fresh seed did not publish its frozen policy")
+	}
+}
+
+func TestConcurrentManualListAndPoolPublicationDoesNotMixGenerations(t *testing.T) {
+	ctx := context.Background()
+	mgr, next, url := fixtureLists(t)
+	if err := mgr.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f := newPublicationFixture(t, mgr)
+	initial := policy()
+	initial.Rules[0].RemoteLists = []string{url}
+	if _, err := f.g.Apply(ctx, initial); err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	f.mu.Lock()
+	f.reloadHook = func() { once.Do(func() { close(entered); <-release }) }
+	f.mu.Unlock()
+	candidate := policy("198.51.100.0/24")
+	candidate.Rules[0].RemoteLists = []string{url}
+	results := make(chan error, 3)
+	go func() { _, err := f.g.Apply(ctx, candidate); results <- err }()
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("manual publication did not reach reload")
+	}
+	next.Store(true)
+	if err := mgr.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, err := f.g.refreshLists(ctx); results <- err }()
+	go func() { _, err := f.g.applyPools(ctx, policy("203.0.113.0/24")); results <- err }()
+	close(release)
+	for range 3 {
+		select {
+		case err := <-results:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("publication deadlocked")
+		}
+	}
+	if !slices.Contains(f.g.base.Rules[0].Subnets, "198.51.100.0/24") || !slices.Contains(f.g.network.contents[url].Domains, "new.example") || f.isGuarded() {
+		t.Fatal("concurrent publication lost manual policy or list update")
+	}
+}
+
+func TestCommittedPeerAddressesCannotBeReusedUntilExplicitApply(t *testing.T) {
+	ctx := context.Background()
+	st, _ := openStore(t)
+	a, err := api.CreatePeer(ctx, st, "Fixture A", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := st.CreateRule(ctx, store.Rule{Name: "Private A", Enabled: true, Action: store.ActionBlock, PeerScope: store.ScopeSelected, PeerIDs: []string{a.ID}, Domains: []string{"private.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newPublicationFixture(t, nil)
+	if _, err := f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeletePeer(ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	b, err := f.g.CreatePeer(ctx, st, "Fixture B", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Address == a.Address {
+		t.Fatal("new identity inherited a committed private address")
+	}
+	recovered := newPublicationFixture(t, nil)
+	recovered.g.network.path = f.g.network.path
+	if err := recovered.g.recover(ctx, filepath.Join(t.TempDir(), "no-seed")); err != nil {
+		t.Fatal(err)
+	}
+	c, err := recovered.g.CreatePeer(ctx, st, "Fixture C", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Address == a.Address {
+		t.Fatal("restart forgot committed address reservation")
+	}
+	peers, err := st.Peers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range peers {
+		if p.ID == a.ID {
+			t.Fatal("routing recovery resurrected deleted WireGuard identity")
+		}
+	}
+	// Remove the old policy before explicitly releasing its address reservation.
+	if err := st.DeleteRule(ctx, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recovered.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	d, err := recovered.g.CreatePeer(ctx, st, "Fixture D", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Address != a.Address {
+		t.Fatal("explicitly removed policy did not release its old address")
+	}
+}
+
+func TestPeerCreationWaitsForInFlightApplyAndUsesCommittedReservations(t *testing.T) {
+	ctx := context.Background()
+	st, _ := openStore(t)
+	a, err := api.CreatePeer(ctx, st, "Fixture A", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newPublicationFixture(t, nil)
+	entered, release := make(chan struct{}), make(chan struct{})
+	f.reloadHook = func() { close(entered); <-release }
+	applied := make(chan error, 1)
+	go func() { _, err := f.g.ApplyCurrent(ctx, st); applied <- err }()
+	<-entered
+	if err := st.DeletePeer(ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	created := make(chan store.Peer, 1)
+	errs := make(chan error, 1)
+	go func() { p, err := f.g.CreatePeer(ctx, st, "Fixture B", time.Now()); created <- p; errs <- err }()
+	// A database read is independent of the gate; no new identity can be inserted
+	// until publication finishes and establishes the old identity's reservation.
+	peers, err := st.Peers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != 0 {
+		t.Fatal("new peer was inserted before in-flight generation committed")
+	}
+	close(release)
+	if err := <-applied; err != nil {
+		t.Fatal(err)
+	}
+	b := <-created
+	if err := <-errs; err != nil {
+		t.Fatal(err)
+	}
+	if b.Address == a.Address {
+		t.Fatal("allocation raced ahead of committed peer reservation")
+	}
+}
+
+func TestUninitializedGenerationRefusesPeerAllocation(t *testing.T) {
+	f := newPublicationFixture(t, nil)
+	st, _ := openStore(t)
+	if _, err := f.g.CreatePeer(context.Background(), st, "Fixture", time.Now()); !errors.Is(err, api.ErrNetworkGuarded) {
+		t.Fatalf("untrusted legacy allocation: %v", err)
+	}
+	peers, err := st.Peers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != 0 {
+		t.Fatal("untrusted legacy peer inserted")
+	}
+}
+
+func TestCreateFirstApplyCapturesNewIdentityAndConcurrentCreatesStayDistinct(t *testing.T) {
+	ctx := context.Background()
+	st, _ := openStore(t)
+	f := newPublicationFixture(t, nil)
+	if _, err := f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	b, err := f.g.CreatePeer(ctx, st, "Fixture B", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.g.base.Peers) != 1 || f.g.base.Peers[0].ID != b.ID {
+		t.Fatal("Apply captured stale policy after peer allocation completed")
+	}
+	const count = 8
+	peers := make(chan store.Peer, count)
+	errs := make(chan error, count)
+	for i := range count {
+		go func() {
+			p, err := f.g.CreatePeer(ctx, st, fmt.Sprintf("Fixture %d", i), time.Now())
+			peers <- p
+			errs <- err
+		}()
+	}
+	addresses := map[string]bool{b.Address: true}
+	for range count {
+		p := <-peers
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+		if addresses[p.Address] {
+			t.Fatal("concurrent peer allocations reused an address")
+		}
+		addresses[p.Address] = true
+	}
+	if _, err := f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.g.base.Peers) != count+1 {
+		t.Fatal("Apply omitted successfully created peers")
+	}
+}
+
+func TestWGRecoveryUsesCommittedAddressInsteadOfPendingDatabaseSettings(t *testing.T) {
+	ctx := context.Background()
+	st, dbPath := openStore(t)
+	f := newPublicationFixture(t, nil)
+	committed, err := st.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.Apply(ctx, committed); err != nil {
+		t.Fatal(err)
+	}
+	record, err := os.ReadFile(f.g.network.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(dbPath), networkstate.CommittedFile), record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pending := committed.Settings
+	pending.WGServerAddress = "10.8.0.254"
+	pending.WGListenPort = 51821
+	pending.ClientMTU = 1360
+	if err := st.SaveSettings(ctx, pending); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := initialWGSettings(ctx, st, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.WGServerAddress != committed.Settings.WGServerAddress || settings.WGListenPort != committed.Settings.WGListenPort || settings.ClientMTU != committed.Settings.ClientMTU {
+		t.Fatal("startup initialized WG from pending policy")
+	}
+	recovered := newPublicationFixture(t, nil)
+	recovered.g.network.path = f.g.network.path
+	if err := recovered.g.recover(ctx, filepath.Join(t.TempDir(), "no-seed")); err != nil {
+		t.Fatal(err)
+	}
+	if recovered.wgSettings.WGServerAddress != committed.Settings.WGServerAddress {
+		t.Fatal("guard released with nonlocal committed resolver")
+	}
+	if _, err := recovered.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if recovered.wgSettings.WGServerAddress != pending.WGServerAddress || recovered.wgSettings.WGListenPort != pending.WGListenPort || recovered.wgSettings.ClientMTU != pending.ClientMTU {
+		t.Fatal("explicit Apply did not configure candidate WG settings")
+	}
+}
+
+func TestWGPoolAndServerChangesRejectStoredPeerConflictsBeforeMutation(t *testing.T) {
+	ctx := context.Background()
+	st, _ := openStore(t)
+	a, err := api.CreatePeer(ctx, st, "Fixture A", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Enabled = false
+	if err := st.UpdatePeer(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	f := newPublicationFixture(t, nil)
+	f.g.network.validateWG = func(ctx context.Context, settings store.Settings) error {
+		peers, err := st.Peers(ctx)
+		if err != nil {
+			return err
+		}
+		return validateWGPolicy(settings, peers)
+	}
+	if _, err := f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ name, pool, server string }{{"server collision", "10.8.0.0/24", a.Address}, {"pool move", "10.9.0.0/24", "10.9.0.1"}, {"pool shrink", "10.8.0.4/30", "10.8.0.5"}} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := f.g.base
+			candidate.Settings.WGPool = test.pool
+			candidate.Settings.WGServerAddress = test.server
+			before := len(f.events)
+			if _, err := f.g.Apply(ctx, candidate); !errors.Is(err, singbox.ErrGenerateFailed) {
+				t.Fatalf("unsafe WG change: %v", err)
+			}
+			if len(f.events) != before || f.isGuarded() {
+				t.Fatal("invalid WG candidate mutated active network")
+			}
+		})
+	}
+	settings, err := st.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.WGServerAddress = "10.8.0.254"
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.CreatePeer(ctx, st, "Fixture B", time.Now()); !errors.Is(err, api.ErrNetworkGuarded) {
+		t.Fatalf("allocation used unapplied WG settings: %v", err)
+	}
+	if _, err := f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.CreatePeer(ctx, st, "Fixture B", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPeerAllocationUsesTheSameSnapshotAsItsSettingsValidation(t *testing.T) {
+	ctx := context.Background()
+	st, _ := openStore(t)
+	f := newPublicationFixture(t, nil)
+	if _, err := f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	// Capture the exact view validated by the gate, then complete a concurrent
+	// settings edit before allocation. The helper must not reread that new pool.
+	snap, err := st.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Settings.WGPool != f.g.base.Settings.WGPool {
+		t.Fatal("fixture premise")
+	}
+	edited := make(chan error, 1)
+	go func() {
+		pending := snap.Settings
+		pending.WGPool = "10.9.0.0/24"
+		pending.WGServerAddress = "10.9.0.1"
+		edited <- st.SaveSettings(ctx, pending)
+	}()
+	if err := <-edited; err != nil {
+		t.Fatal(err)
+	}
+	peer, err := api.CreatePeerFromSnapshot(ctx, st, "Fixture B", time.Now(), snap, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if peer.Address != "10.8.0.2" {
+		t.Fatal("allocation reread pending settings after validating applied settings")
+	}
+	if _, err := f.g.CreatePeer(ctx, st, "Fixture C", time.Now()); !errors.Is(err, api.ErrNetworkGuarded) {
+		t.Fatal("subsequent creation accepted pending allocation settings")
 	}
 }

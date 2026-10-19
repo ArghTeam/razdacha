@@ -34,25 +34,6 @@ func withApplier(ts *testServer, a Applier) *testServer {
 	return ts
 }
 
-// fakeNft — подмена заливки таблицы: настоящая живёт в платформенном файле
-// демона и на не-Linux не собирается вовсе.
-type fakeNft struct {
-	subnets int
-	err     error
-	calls   int
-}
-
-func (n *fakeNft) apply(context.Context) (int, error) {
-	n.calls++
-	return n.subnets, n.err
-}
-
-// withNft подставляет заливку nft уже собранному тестовому серверу.
-func withNft(ts *testServer, n *fakeNft) *testServer {
-	ts.applyNft = n.apply
-	return ts
-}
-
 func decodeApply(t *testing.T, resp response) applyResponse {
 	t.Helper()
 	var out applyResponse
@@ -82,8 +63,9 @@ func TestApplyOK(t *testing.T) {
 	ap := &fakeApplier{res: singbox.ApplyResult{
 		Path: singbox.DefaultConfigPath, Changed: true, Reloaded: true,
 	}}
-	nft := &fakeNft{subnets: 24}
-	ts := withNft(withApplier(newTestServer(t), ap), nft)
+	count := 24
+	ap.res.NftSubnets = &count
+	ts := withApplier(newTestServer(t), ap)
 	cookie := ts.login(t)
 
 	resp := ts.do(t, request{
@@ -93,9 +75,7 @@ func TestApplyOK(t *testing.T) {
 		t.Fatalf("код %d, ожидался 200 (%s)", resp.code, resp.body)
 	}
 	got := decodeApply(t, resp)
-	if nft.calls != 1 {
-		t.Fatalf("заливка nft вызвана %d раз, ожидался 1: применяются обе половины", nft.calls)
-	}
+
 	if got.Nft == nil || got.Nft.Subnets != 24 {
 		t.Fatalf("в ответе nft %+v, ожидались 24 подсети", got.Nft)
 	}
@@ -115,8 +95,7 @@ func TestApplyOK(t *testing.T) {
 
 func TestApplyUnchanged(t *testing.T) {
 	ap := &fakeApplier{res: singbox.ApplyResult{Path: singbox.DefaultConfigPath}}
-	nft := &fakeNft{subnets: 3}
-	ts := withNft(withApplier(newTestServer(t), ap), nft)
+	ts := withApplier(newTestServer(t), ap)
 	cookie := ts.login(t)
 
 	resp := ts.do(t, request{
@@ -131,11 +110,6 @@ func TestApplyUnchanged(t *testing.T) {
 	}
 	if !strings.Contains(got.Detail, "не изменилась") {
 		t.Fatalf("описание %q не говорит, что применять было нечего", got.Detail)
-	}
-	// Правка подсетей конфиг не меняет: не залить таблицу здесь — оставить сет
-	// расходиться с правилами до планового прогона списков (issue #119).
-	if nft.calls != 1 {
-		t.Fatalf("заливка nft вызвана %d раз при неизменном конфиге, ожидался 1", nft.calls)
 	}
 }
 
@@ -159,49 +133,19 @@ func TestApplyWithoutNftSource(t *testing.T) {
 	}
 }
 
-func TestApplyNftFailureIs500(t *testing.T) {
-	ap := &fakeApplier{res: singbox.ApplyResult{
-		Path: singbox.DefaultConfigPath, Changed: true, Reloaded: true,
-	}}
-	nft := &fakeNft{err: errors.New("заливка правил: нет доступа к nftables")}
-	ts := withNft(withApplier(newTestServer(t), ap), nft)
+func TestApplyGuardedPublicationFailureIs500(t *testing.T) {
+	ap := &fakeApplier{err: errors.New("clients remain guarded: publish nft policy: denied")}
+	ts := withApplier(newTestServer(t), ap)
 	cookie := ts.login(t)
-
-	resp := ts.do(t, request{
-		method: http.MethodPost, path: "/api/apply", cookies: []*http.Cookie{cookie},
-	})
+	resp := ts.do(t, request{method: http.MethodPost, path: "/api/apply", cookies: []*http.Cookie{cookie}})
 	if resp.code != http.StatusInternalServerError {
-		t.Fatalf("код %d, ожидался 500 (%s)", resp.code, resp.body)
+		t.Fatalf("status %d: %s", resp.code, resp.body)
 	}
-	got := decodeError(t, resp)
-	if got.Code != codeInternal {
-		t.Fatalf("код ошибки %q, ожидался %q", got.Code, codeInternal)
+	if got := decodeError(t, resp); got.Code != codeInternal || !strings.Contains(got.Error, "clients remain guarded") {
+		t.Fatalf("failure concealed: %+v", got)
 	}
-	// Отказ виден в ответе, а не только в логе, и в нём сказано, что доехало.
-	if !strings.Contains(got.Error, "нет доступа к nftables") {
-		t.Fatalf("текст %q не содержит причины отказа", got.Error)
-	}
-	if !strings.Contains(got.Error, "sing-box применена") {
-		t.Fatalf("текст %q не говорит, что конфиг применён, а правила нет", got.Error)
-	}
-}
-
-func TestApplyNftSkippedOnConfigFailure(t *testing.T) {
-	// Пометить трафик под конфиг, который не применился, — отправить его в
-	// tproxy под `final: direct-out`, то есть напрямую с адреса сервера.
-	ap := &fakeApplier{err: fmt.Errorf("%w: route rule 0", singbox.ErrCheckFailed)}
-	nft := &fakeNft{subnets: 7}
-	ts := withNft(withApplier(newTestServer(t), ap), nft)
-	cookie := ts.login(t)
-
-	resp := ts.do(t, request{
-		method: http.MethodPost, path: "/api/apply", cookies: []*http.Cookie{cookie},
-	})
-	if resp.code != http.StatusUnprocessableEntity {
-		t.Fatalf("код %d, ожидался 422 (%s)", resp.code, resp.body)
-	}
-	if nft.calls != 0 {
-		t.Fatal("таблица nft перезалита под конфиг, который не применился")
+	if ap.calls != 1 {
+		t.Fatalf("publication calls=%d", ap.calls)
 	}
 }
 

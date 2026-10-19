@@ -323,3 +323,17 @@ func (m *Manager) LastRefresh() time.Time {
 	defer m.mu.RUnlock()
 	return m.last
 }
+
+// Snapshot copies one complete list-content generation while holding one read lock.
+// Callers may retain and modify the result without observing later refreshes.
+func (m *Manager) Snapshot() map[string]List {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make(map[string]List, len(m.lists))
+	for url, l := range m.lists {
+		l.Domains = append([]string(nil), l.Domains...)
+		l.Subnets = append([]string(nil), l.Subnets...)
+		out[url] = l
+	}
+	return out
+}

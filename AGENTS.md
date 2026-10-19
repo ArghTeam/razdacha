@@ -39,6 +39,7 @@ The dormant `make deb` target is not a supported packaging path.
 | `cmd/razdacha/` | Setup, restore, uninstall CLI |
 | `internal/store/` | SQLite, migrations, peer keys, settings |
 | `internal/netstack/` | `wg0`, nftables, routing via netlink |
+| `internal/networkstate/` | Private committed policy/list records and fresh bootstrap authority |
 | `internal/singbox/` | Full config generation, URL parsing, validation and apply |
 | `internal/lists/` | Rule lists, pool catalogs, cache and scheduling |
 | `internal/clash/`, `internal/diag/`, `internal/api/` | Runtime API, diagnostics, authentication and panel |
@@ -119,6 +120,8 @@ under GPL-2.0-or-later ([ADR 0007](docs/decisions/0007-license-gplv2.md)).
   rejection uses domain-only projections; CIDR-only sources have no DNS matcher,
   never an empty-tag match-all action ([ADR 0024](docs/decisions/0024-domain-only-dns-projections.md)).
   Native rule-set DNS semantics remain unresolved in #220.
+- Publish plain-list policy through the serialized guarded generation protocol ([ADR 0023](docs/decisions/0023-coherent-network-generation.md)): prepare/check first, guard client ingress, reconcile WG/route/runtime/nft, persist authority, discard bootstrap authority, release last. Post-guard failure remains closed; recovery never restores live peers/authentication. Peer allocation shares the gate and reserves committed addresses. Autonomous remote-list coherence remains issue #220.
+
 - Use netlink libraries instead of `nft`, `ip`, `wg`, or `wg-quick` subprocesses.
 - Build static binaries with `CGO_ENABLED=0` and `modernc.org/sqlite`.
 - Client configs always include `DNS = 10.8.0.1`, `MTU`,

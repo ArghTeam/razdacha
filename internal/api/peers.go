@@ -112,7 +112,17 @@ func (s *Server) handleCreatePeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := CreatePeer(r.Context(), s.store, req.Name, s.now())
+	var created store.Peer
+	var err error
+	if coherent, ok := s.applier.(CoherentApplier); ok {
+		created, err = coherent.CreatePeer(r.Context(), s.store, req.Name, s.now())
+	} else {
+		created, err = CreatePeer(r.Context(), s.store, req.Name, s.now())
+	}
+	if errors.Is(err, ErrNetworkGuarded) {
+		writeError(w, s.log, http.StatusServiceUnavailable, codeNotReady, err.Error())
+		return
+	}
 	if errors.Is(err, ErrNoAddress) {
 		writeError(w, s.log, http.StatusConflict, codeConflict, err.Error())
 		return
@@ -134,7 +144,18 @@ func CreatePeer(ctx context.Context, st *store.Store, name string, now time.Time
 	if err != nil {
 		return store.Peer{}, err
 	}
-	addr, err := allocateAddress(snap.Settings, snap.Peers)
+	return CreatePeerFromSnapshot(ctx, st, name, now, snap, nil)
+}
+
+// CreatePeerFromSnapshot allocates from exactly the policy/peer view checked by
+// its caller. It never rereads editable settings. The caller must serialize
+// allocation/insertion with other peer allocations and policy publication.
+func CreatePeerFromSnapshot(ctx context.Context, st *store.Store, name string, now time.Time, snap store.Snapshot, reserved []string) (store.Peer, error) {
+	peers := append([]store.Peer(nil), snap.Peers...)
+	for _, addr := range reserved {
+		peers = append(peers, store.Peer{Address: addr})
+	}
+	addr, err := allocateAddress(snap.Settings, peers)
 	if err != nil {
 		return store.Peer{}, err
 	}

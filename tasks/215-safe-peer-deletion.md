@@ -15,7 +15,7 @@ never grant another client access to a private tunnel or implicitly broaden a re
 - [API](../context/api/index.md): communicate affected rules where required.
 
 ## Decisions
-Implement after [#214](214-coherent-network-state.md). Before code, choose and document
+Implement after [#214](done/214-coherent-network-state.md). Before code, choose and document
 safe empty-scope semantics: disabled orphaned rule or selected-but-empty rule. Preserve
 rule identity, conditions and references for explicit reassignment. Document compatibility
 and migration behavior; add an ADR if the choice supersedes an accepted decision.

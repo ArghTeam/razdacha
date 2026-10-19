@@ -285,7 +285,10 @@ curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install
    `installed_version`) отдельным чтением, без миграций — они бы уже изменили файл.
    Копии, снятые при обновлении с версий до 0.2.1, называются `state-unknown-<время>.db`:
    те версии свою версию в БД не записывали, и придумать её задним числом нечем
-5. миграции схемы, регенерация конфига nginx и первичного конфига sing-box
+5. Schema migrations and nginx configuration refresh; the existing sing-box config
+   remains authoritative until the guarded daemon publishes a committed generation.
+   Upgrades never rewrite runtime config from pending database edits or create a
+   replacement first peer when the existing database has no peers.
 6. `systemctl enable` + `systemctl restart` для `sing-box`, `razdachad` и nginx.
    Именно `restart`, а не `enable --now`: на уже работающем юните `--now` не делает
    ничего, и после обновления в памяти оставался старый процесс — новый бинарник на
@@ -370,13 +373,14 @@ WantedBy=multi-user.target
 запись сгенерированного конфига падает по правам, и в панели это выглядит как
 «внутренняя ошибка» на кнопке «Применить».
 
-**Юнит sing-box.** Если рантайм пришёл пакетом дистрибутива, используется его штатный
-юнит и ничего не подменяется: обновляет его пакетный менеджер, а наш файл в
-`/etc/systemd/system` перекрыл бы его навсегда. Если бинарник положили мы, юнит пишем
-тоже мы — с маркером в первой строке и **без `ExecReload`**. Это не упущение:
-`systemctl reload-or-restart` при отсутствии `ExecReload` перезапускает сервис, а нам
-нужен именно перезапуск — конфиг генерируется целиком, и кэш FakeIP обязан обнулиться
-вместе с ним, иначе клиент с закэшированным адресом уходит в никуда.
+A packaged sing-box unit remains package-owned; an `/etc/systemd/system` replacement
+would mask its future updates. When the installer supplies the binary, it writes a
+marked local unit without `ExecReload`. Runtime publication unconditionally uses
+`systemctl restart`, including with packaged units: a signal-based `ExecReload` can
+acknowledge success while the old policy remains active. The old process must terminate
+before nft publication. Restart also clears FakeIP cache when the full config changes,
+so clients cannot retain stale runtime mappings.
+
 
 ## Удаление
 
@@ -449,11 +453,15 @@ razdacha restore /root/razdacha-state-20260815-031500.db.enc
 у файла БД писатель один, и подмена под работающим демоном оставила бы в памяти прежнее
 состояние, а на диске — новое.
 
-**После восстановления старые клиентские конфиги работают как были** — в этом и смысл
-копии целиком. Единственное, что нужно поправить руками, — `Endpoint`, если у нового
-сервера другой адрес: он записан в конфигах на устройствах. Адрес в настройках панели
-восстановление берёт из копии; сменить его — `Настройки → Внешний адрес`, после чего
-конфиги придётся перевыдать.
+Restoration preserves client keys, but routing requires explicit Apply before clients
+resume. On a live host the CLI stops the daemon, installs the persistent ingress guard,
+and moves bootstrap authority aside durably before invalidating committed authority.
+Private `.before-restore-*` records remain available for controlled recovery. It then
+replaces the database and restarts the daemon guarded. The old routing manifest must
+never be replayed over restored identities. A DB-only backup intentionally does not
+carry automatic routing-publication authority. Cross-host safe migration and paused
+outgoing credentials are separate work in #217; these changes do not claim that feature.
+Update the endpoint and reissue client configs when a destination host changes.
 
 ### Флаги
 
@@ -524,3 +532,54 @@ p=4). AES-GCM даёт не только шифрование, но и пров�
 ```sh
 razdachad --reset-network     # снять nft-правила, ip rule, маршруты; wg0 оставить
 ```
+
+
+## Guarded network generations and first upgrade
+
+[ADR 0023](decisions/0023-coherent-network-generation.md) adds two private records next
+to `state.db`: `applied-network.json` is a durably committed policy/list generation;
+`bootstrap-network.json` is an explicitly checked fresh-install seed, not committed
+runtime state. Both contain secrets and require owner-only `0600` permissions. Include
+them in a private current-state recovery snapshot together with the database and runtime
+config; never publish their contents. DB-only restore invalidates their authority.
+
+A genuinely fresh setup freezes its initial database policy only after full config
+validation and first-peer creation. The daemon publishes that seed under the ingress
+guard, saves the committed record, durably removes bootstrap authority, and releases
+the guard. Missing DB with an old committed/bootstrap record is refused as orphaned
+identity state, rather than treating it as a new installation. No address may inherit
+old private policy through automatic first-peer recreation.
+
+An existing installation without a trusted committed record starts with clients
+blocked until explicit Apply. A corrupt or nonprivate record stops startup under the
+guard. After a normal restart, committed policy/list contents are replayed and checked;
+pending database edits remain pending. WG initializes from trusted committed/seed
+addressing, then reconciles candidate address/port/MTU under the same guard. With no
+authority, only legacy administrative WG initialization may use DB settings while
+client traffic remains blocked. Corrupt/untrusted authority never permits that fallback.
+Post-guard failures keep the barrier across
+process exit. Retrying Apply repairs an uncertain publication even if disk bytes match.
+
+Keep SSH access available for the first legacy upgrade and restore. For a private panel,
+forward its server-local HTTPS listener through SSH, for example:
+
+```sh
+ssh -L 8443:10.8.0.1:443 admin@staging.example
+```
+
+Open `https://localhost:8443`, authenticate, inspect pending changes, then explicitly
+Apply. The server-local connection does not enter through wg0, so the client guard does
+not block this recovery path. Public panel/SSH access also stays available. A published
+record does not restore deleted live WG peers or authentication state. Deleted peer
+addresses stay reserved while their old policy is committed, including after restart;
+Apply releases reservations only with the replacement routing generation. Creation
+waits if editable allocation fields differ from applied fields. Candidate settings must
+retain usable addresses for all stored peers, including disabled peers, and cannot use
+a peer address as the server address. Address/pool migration is not implemented here.
+Explicit unchanged Apply also repairs WG/route/nft under the guard without restarting
+a known runtime; healthy background no-ops do not interrupt clients.
+
+Normal direct routing resumes after publication; the guard is a temporary fail-closed
+transition/recovery barrier, not a permanent global reject policy. A packet admitted
+before guard acknowledgment may already be in flight. Autonomous `.srs`/`.json` refresh
+is separately tracked in [#220](https://github.com/ArghTeam/razdacha/issues/220).

@@ -35,6 +35,9 @@ const diagStaleFactor = 2
 // а не пустой снимок: «unknown» обязан объяснять, чего не хватает.
 var errDiagNoSource = errors.New("источник данных не подключён к демону")
 
+// ErrNetworkGuarded reports an intentionally closed publication/recovery barrier.
+var ErrNetworkGuarded = errors.New("client ingress is guarded")
+
 // check — одна строка диагностики.
 type check struct {
 	ID     string `json:"id"`
@@ -443,6 +446,10 @@ func tunnelsCheck(tunnels []store.Tunnel, cache *checkCache) check {
 // уходят напрямую с адреса сервера.
 func nftCheck(st netstack.DiagNftState, err error, snap store.Snapshot) check {
 	c := check{ID: "nft", Title: "Правила nftables"}
+	if errors.Is(err, ErrNetworkGuarded) {
+		return check{ID: checkNft, Title: "Network policy", Status: statusError, Detail: err.Error()}
+	}
+
 	if err != nil {
 		return diagUnknown(c, "состояние nftables не прочитано", err)
 	}

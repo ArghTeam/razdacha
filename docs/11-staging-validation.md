@@ -1,8 +1,9 @@
 # Staging security validation
 
-Status: #222 completed its isolated wire regression; the remaining delivery queue
-is pending. Only the evidence explicitly linked below is complete. No product or
-production deployment is claimed.
+Status: #222 completed its isolated wire regression. #214 completed the controlled
+attempt-5 matrix. Distinct final review and current CI are required before merge.
+Later delivery tasks remain pending.
+Only linked evidence is complete. No product or production deployment is claimed.
 
 ## Environment boundary and privacy
 
@@ -26,16 +27,20 @@ one change before advancing to the next. These are sequential delivery dependenc
 | Order | Specification | Primary staging observation | Current status |
 |---|---|---|---|
 | 1 | [#222: domain-only DNS matching](../tasks/done/222-dns-rule-scope.md) | Unrelated DNS succeeds while matching domains/CIDRs remain protected | Validated: 8 expected baseline failures, 8 fixed passes; no product deployment |
-| 2 | [#214: coherent network state](../tasks/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Paused for prerequisite merge and rebuilt baseline; original four baseline cases not executed |
+| 2 | [#214: coherent network state](../tasks/done/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Attempt 5: fixed matrix PASS and four expected original-watcher failures; distinct final review and current CI required before merge; no product deployment |
 | 3 | [#220: native rule-set coherence](https://github.com/ArghTeam/razdacha/issues/220) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Planned, not executed |
 | 4 | [#215: safe peer deletion](../tasks/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Planned, not executed |
 | 5 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
 | 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
 | 7 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
 
-Earlier unsuccessful #214 attempts remain failed; #222 does not replace its four
+The first three unsuccessful #214 attempts remain failed: initial UDP echo, initial DNS with unknown response status, and initial DNS REFUSED (5). Core refresh/failure observations were not reached. #222 does not replace its four
 original-watcher baseline cases. After merging the prerequisite, merge the updated
 base into #214 without rebasing and rebuild that baseline with its original watcher.
+The fourth #214 fixed attempt ended with top-level Go PASS but hid all child evidence
+markers because verbose mode was not forwarded. It remains uncertified; all four
+baseline cases were not run. Forwarding verbose mode changes visibility only and
+requires a new reviewed execution with the same marker contract.
 For #222, attempt 1 remains incomplete (one baseline failure, seven baseline cases
 and all fixed cases not run); only attempt 2 completed the 8/8 matrix.
 
@@ -119,6 +124,15 @@ review findings and disposition, approved scope, and a rollback summary. Never i
 private host output or connection/credential values. These gates apply to each
 implementation; completion is claimed only by its linked revision-specific evidence.
 
+The #214 observer consumes a fresh random UDP barrier in the same AF_PACKET loop
+that records forbidden packets, checks `PACKET_STATISTICS` at every barrier, and
+requires the stdout scanner to consume its matching ACK before an evidence snapshot.
+Any reported drop, receiver/statistics error, output EOF/scanner failure or missing ACK
+invalidates the observation. These low-volume finite checks cover packets queued before
+the barrier; they do not claim universal lossless capture or future traffic protection.
+The rebuilt baseline uses prerequisite main `085cbf7d4a5898615da343453755ab13f3bd4e7a`
+with its unchanged original watcher. All four baseline cases completed with the expected failures in canonical attempt 5.
+
 ## Cleanup and rollback
 
 Remove disposable peers, rules, processes, namespaces and fixture artifacts. Restore
@@ -134,3 +148,78 @@ report the blocker with redacted evidence; keep the recovery snapshot available 
 Each implementation PR updates relevant maintained context and behavior documentation.
 Write a new ADR before changing an accepted decision; historical ADRs are not rewritten.
 This planning change does not alter runtime invariants or introduce an architecture decision.
+
+
+## #214 isolated fixture scope
+
+Cross-compile `cmd/razdachad` tests locally with `CGO_ENABLED=0 GOOS=linux` and the
+staging architecture. Supply an installed sing-box binary using private environment
+configuration. The opt-in `TestNetworkGenerationWire` requires `RAZDACHA_NETNS_TEST=1`
+and `RAZDACHA_TEST_SINGBOX`; it self-executes in fresh network and mount namespaces,
+verifies both identities differ from the parent, makes mounts private and overlays
+`/var/lib` with disposable tmpfs before any network mutation. The fixture never invokes
+systemd or connects to provider endpoints. A veth named wg0 exercises production ingress
+classification; it is not a real WireGuard/provider credential test.
+
+The local list, DNS and echo sources use synthetic addresses. Positive pre-guard echoes
+prove direct and initially intercepted tproxy paths work. AF_PACKET sink observations
+check forbidden guard-epoch TCP/UDP packets and direct DNS, including TCP SYNs; established
+TCP/connected-UDP sockets carry distinct before/during/after epochs. A publication failure
+after runtime restart must retain the real guard until recovery. The fixture also
+changes a disposable veth resolver address under the guard and proves recovery makes
+the committed resolver local before release, with no direct DNS packets. Explicit
+unchanged Apply repairs deliberately removed fixture route/nft state without a runtime
+restart. Runtime restart may
+break established proxy connections; the acceptance condition is absence of forbidden
+egress, not connection survival. A packet admitted before the guard acknowledgment may
+already be in flight. Raw captures/output stay private; publish redacted assertions only.
+
+TCP payload detection retains a bounded tail per connection and matches epoch markers
+across fragmented/coalesced reads; it does not rely on TCP read boundaries.
+
+Run an archived baseline with the original list watcher and shared fixture helpers to
+show new selected traffic still reaches the direct sink before the fix. Baseline failure
+and fixed success remain required. Compilation alone does not satisfy wire acceptance.
+
+The baseline archive copies `network_fixture_linux_test.go`,
+`network_payload_test.go` and `network_baseline_linux_test.go` into `cmd/razdachad`
+and builds with `-tags security214_baseline`. The current fixed runner uses the default
+build tags and `network_generation_linux_test.go`; do not copy that runner into baseline.
+
+UDP echo listeners bind each synthetic destination address explicitly. Connected UDP
+probes reject replies from a different source; a wildcard sink must not turn that fixture
+error into a product failure. Every alias must pass a positive UDP echo precondition
+before application policy is installed. Deadlines and negative assertions remain fixed.
+
+The disposable gateway has a default WAN route only to its isolated fixture sink; no
+namespace is connected to a host uplink. This supplies the default interface required
+by sing-box's network monitor rather than changing production DNS behavior for a test.
+The local UDP DNS socket is bound before serving and must pass its own positive query
+before sing-box is started. DNS diagnostics distinguish transport failure, no response,
+and response rcode/answer count. Probe deadlines and negative assertions are unchanged.
+
+The fixed runner saves a real database subnet edit without Apply and observes both
+sides of the boundary: the applied manual target still rejects, while the pending new
+target remains direct. Only after these assertions does explicit Apply remove that
+manual block and restore its direct control. A separate second list generation queues
+`ApplyCurrent` behind a paused watcher, proves it cannot finish or open the guard,
+then waits for two acknowledged publications before stable wire probes. Established
+TCP/UDP observations and post-restart publication-failure controls remain in the matrix.
+
+
+## Issue 214 accepted wire observation and limits
+
+Canonical attempt 5 used fixed source `50aa62a` and original-watcher baseline
+`085cbf7`. Fixed Go PASS included exactly four zero-drop capture ACKs and one final
+matrix PASS marker. Each baseline case (`list-tcp`, `list-udp`, `list-dns`, `pending`)
+emitted one ordered positive-control/watcher/zero-drop-ACK/desired-leak sequence and
+Go FAIL. No observer errors, panics or runtime errors were reported. Downloaded result hashes
+matched; all uploaded payloads and owned processes were removed, and pre-run service,
+file and host inventories were unchanged. The [completed specification](../tasks/done/214-coherent-network-state.md)
+retains all earlier failed or uncertified attempts. Distinct final review and current CI are required before merge.
+
+This matrix exercises actual nft, route and sing-box behavior with a veth adapter for
+WG address reconciliation. It does not exercise an encrypted WG handshake. Zero-drop
+collector barriers cover a finite queued observation, not universal lossless capture.
+Native SRS/JSON semantics and refresh remain unresolved in #220. No active application
+or production deployment is part of this evidence.

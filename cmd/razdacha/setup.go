@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/api"
+	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
+	"github.com/ArghTeam/razdacha/internal/networkstate"
 	"github.com/ArghTeam/razdacha/internal/packaging"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
@@ -137,6 +139,12 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		return summary{}, err
 	}
 
+	if fresh {
+		if err := networkstate.CheckFreshDirectory(filepath.Dir(dbPath)); err != nil {
+			return summary{}, err
+		}
+	}
+
 	// Резервная копия снимается до открытия БД: миграции накатываются в
 	// store.Open, и откатывать их нечем — восстановление это возврат файла.
 	//
@@ -200,10 +208,6 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		return summary{}, err
 	}
 
-	if err := writeFirstSingboxConfig(ctx, opts.root, sb.Path, st, log); err != nil {
-		return summary{}, err
-	}
-
 	if err := writeUnits(opts, sb.Path, log); err != nil {
 		return summary{}, err
 	}
@@ -213,9 +217,13 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		return summary{}, err
 	}
 
-	peer, created, err := ensureFirstPeer(ctx, st, opts.peerName, log)
-	if err != nil {
-		return summary{}, err
+	var peer store.Peer
+	created := false
+	if fresh {
+		peer, created, err = ensureFirstPeer(ctx, st, opts.peerName, log)
+		if err != nil {
+			return summary{}, err
+		}
 	}
 
 	// Версия записывается последней из того, что трогает БД: по ней назовётся
@@ -223,6 +231,26 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 	// установка сложилась, значило бы пообещать откат к тому, чего не было.
 	if err := st.SetInstalledVersion(ctx, version); err != nil {
 		return summary{}, err
+	}
+
+	if fresh {
+		if err := writeFirstSingboxConfig(ctx, opts.root, sb.Path, st, log); err != nil {
+			return summary{}, err
+		}
+	} else if _, err := os.Stat(filepath.Join(opts.root, singbox.DefaultConfigPath)); err != nil {
+		return summary{}, fmt.Errorf("existing runtime configuration is unavailable; recover through explicit Apply: %w", err)
+	}
+
+	if fresh {
+		snap, err := st.Snapshot(ctx)
+		if err != nil {
+			return summary{}, err
+		}
+		// This seed is explicit installer intent, not a claim of a live publication.
+		seed := networkstate.Generation{Version: 1, Kind: networkstate.BootstrapKind, Policy: snap, Lists: map[string]lists.List{}}
+		if err := networkstate.Write(filepath.Join(filepath.Dir(dbPath), networkstate.BootstrapFile), seed); err != nil {
+			return summary{}, err
+		}
 	}
 
 	out := summary{
@@ -471,9 +499,15 @@ func writeFirstSingboxConfig(ctx context.Context, root, binary string, st *store
 		Reloader:   noopReloader{},
 		Log:        log,
 	}
-	if _, err := applier.Apply(ctx, snap); err != nil {
+	prepared, err := applier.PrepareRecovery(ctx, snap)
+	if err != nil {
 		return err
 	}
+	defer prepared.Close()
+	if _, err := prepared.Commit(ctx, false); err != nil {
+		return err
+	}
+
 	return nil
 }
 

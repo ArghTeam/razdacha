@@ -101,6 +101,8 @@ type ApplyResult struct {
 	Changed bool
 	// Reloaded — перезагружали ли сервис. Без изменений — не перезагружали.
 	Reloaded bool
+	// NftSubnets is populated by the daemon's coherent network publisher.
+	NftSubnets *int
 }
 
 func (a *Applier) path() string {
@@ -131,28 +133,73 @@ func (a *Applier) reloader() Reloader {
 	return a.Reloader
 }
 
-// Apply собирает конфиг из снимка состояния и применяет его.
-//
-// Порядок шагов задан требованием «битый конфиг не затирает рабочий»:
-//
-//  1. генерация и сериализация — в памяти;
-//  2. сравнение с лежащим на диске: совпало — выходим, сервис не трогаем.
-//     Podkop сравнивает md5 (podkop/files/usr/bin/podkop:1256), здесь сравнение
-//     идёт по самим байтам: файл читается всё равно, а хеш только добавил бы
-//     шанс на совпадение при разном содержимом;
-//  3. запись во временный файл рядом с целевым и `sing-box check` по нему:
-//     проверяется ровно тот файл, который станет конфигом;
-//  4. rename поверх старого — атомарная замена в пределах каталога;
-//  5. reload сервиса.
-//
-// Отказ на шаге 3 оставляет рабочий конфиг нетронутым, а временный файл
-// удаляется. Единственное исключение — когда `check` споткнулся об участника
-// пула (ADR 0019): его выкидывают из состояния, конфиг генерируют и проверяют
-// заново. Незнакомый рантайму ключ из чужого каталога не должен ронять весь пул,
-// но конфиг по-прежнему генерируется и проверяется целиком, меняется лишь состав
-// пула. Терпимость строго к членам пула: ручной туннель, не прошедший `check`,
-// по-прежнему валит применение целиком.
+// Prepared owns a checked temporary configuration. Close must always be called.
+// Preparing never changes the published configuration or running service.
+type Prepared struct {
+	applier   *Applier
+	result    ApplyResult
+	temporary string
+}
+
+func (p *Prepared) Close() {
+	if p.temporary != "" {
+		_ = os.Remove(p.temporary)
+	}
+}
+
+// Changed reports a disk change; a guarded recovery can still require reload.
+func (p *Prepared) Changed() bool { return p.temporary != "" }
+
+// Commit publishes checked bytes and reloads. Force reload on uncertain recovery,
+// even if a previous failed attempt already wrote identical bytes to disk.
+func (p *Prepared) Commit(ctx context.Context, force bool) (ApplyResult, error) {
+	res := p.result
+	if p.temporary != "" {
+		if err := os.Rename(p.temporary, res.Path); err != nil {
+			return res, fmt.Errorf("publish sing-box configuration: %w", err)
+		}
+		p.temporary = ""
+		res.Changed = true
+	}
+	if res.Changed || force {
+		dir, err := os.Open(filepath.Dir(res.Path))
+		if err != nil {
+			return res, fmt.Errorf("open configuration directory: %w", err)
+		}
+		err = dir.Sync()
+		_ = dir.Close()
+		if err != nil {
+			return res, fmt.Errorf("sync configuration directory: %w", err)
+		}
+		if err := p.applier.reloader().Reload(ctx); err != nil {
+			return res, fmt.Errorf("%w: %w", ErrReloadFailed, err)
+		}
+		res.Reloaded = true
+	}
+	return res, nil
+}
+
 func (a *Applier) Apply(ctx context.Context, snap store.Snapshot) (ApplyResult, error) {
+	p, err := a.Prepare(ctx, snap)
+	if err != nil {
+		return ApplyResult{Path: a.path()}, err
+	}
+	defer p.Close()
+	return p.Commit(ctx, false)
+}
+
+// Prepare generates/checks the complete candidate, including bounded ADR 0019
+// pool-member retries, without replacing the published file or runtime.
+func (a *Applier) Prepare(ctx context.Context, snap store.Snapshot) (*Prepared, error) {
+	return a.prepare(ctx, snap, false)
+}
+
+// PrepareRecovery validates even byte-identical disk content before recovery.
+func (a *Applier) PrepareRecovery(ctx context.Context, snap store.Snapshot) (*Prepared, error) {
+	return a.prepare(ctx, snap, true)
+}
+
+func (a *Applier) prepare(ctx context.Context, snap store.Snapshot, forceCheck bool) (*Prepared, error) {
 	res := ApplyResult{Path: a.path()}
 
 	// Потолок выкидываний: отвергнуть можно не больше, чем есть серверов в пулах,
@@ -162,30 +209,30 @@ func (a *Applier) Apply(ctx context.Context, snap store.Snapshot) (ApplyResult, 
 	for drop := 0; ; drop++ {
 		opts, err := Generate(snap, a.PlainLists)
 		if err != nil {
-			return res, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
+			return nil, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
 		}
 		data, err := Marshal(opts)
 		if err != nil {
-			return res, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
+			return nil, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
 		}
 
 		same, err := sameOnDisk(res.Path, data)
 		if err != nil {
-			return res, err
+			return nil, err
 		}
-		if same {
+		if same && !forceCheck {
 			a.log().Debug("конфиг sing-box не изменился", "путь", res.Path)
-			return res, nil
+			return &Prepared{applier: a, result: res}, nil
 		}
 
 		dir := filepath.Dir(res.Path)
 		if err := os.MkdirAll(dir, configDirMode); err != nil {
-			return res, fmt.Errorf("создание каталога %s: %w", dir, err)
+			return nil, fmt.Errorf("create configuration directory %s: %w", dir, err)
 		}
 
 		tmp, err := writeTemp(res.Path, data)
 		if err != nil {
-			return res, err
+			return nil, err
 		}
 
 		if err := a.checker().Check(ctx, tmp); err != nil {
@@ -202,25 +249,14 @@ func (a *Applier) Apply(ctx context.Context, snap store.Snapshot) (ApplyResult, 
 				continue
 			}
 			a.log().Error("конфиг sing-box отклонён рантаймом", "ошибка", err)
-			return ApplyResult{Path: res.Path}, err
+			return nil, err
 		}
 
-		if err := os.Rename(tmp, res.Path); err != nil {
+		if same {
 			_ = os.Remove(tmp)
-			return res, fmt.Errorf("запись конфига sing-box в %s: %w", res.Path, err)
+			return &Prepared{applier: a, result: res}, nil
 		}
-		res.Changed = true
-		a.log().Info("записан конфиг sing-box", "путь", res.Path, "байт", len(data))
-
-		if err := a.reloader().Reload(ctx); err != nil {
-			// Конфиг уже на диске и валиден: следующий старт сервиса его
-			// подхватит. Поэтому это ошибка применения, а не повод откатывать
-			// файл.
-			return res, err
-		}
-		res.Reloaded = true
-		a.log().Info("sing-box перезагружен")
-		return res, nil
+		return &Prepared{applier: a, result: res, temporary: tmp}, nil
 	}
 }
 

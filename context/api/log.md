@@ -177,3 +177,34 @@ Separate independent pre-run and final reviews remain required.
 **New surface:** `POST /api/login`, `/api/logout`, `GET /api/session`; `razdachad -set-password` читает пароль из stdin.
 **Beware:** природа блокировки и отсутствие CSRF-токена — в инвариантах слоя.
 
+
+## 2026-10-19
+
+### #214 — Guarded plain-list network generations
+
+**Changed:** one serialized gate publishes frozen policy/list content through a persistent
+client-ingress barrier, with checked preparation, unconditional runtime restart, nft
+publication and durable recovery authority. Applied peer addresses remain reserved
+across deletion/restart until explicit Apply. Fresh setup uses a distinct checked seed;
+legacy setup and DB restore require explicit policy authorization when authority is absent.
+**Decision:** [ADR 0023](../../docs/decisions/0023-coherent-network-generation.md).
+**Validation:** deterministic local regression/failure/concurrency/recovery tests and
+Linux fixture compilation are in progress. Staging wire execution and final independent
+security acceptance remain pending; no production deployment is claimed.
+**Limit:** autonomous remote `.srs`/`.json` synchronization remains [#220](https://github.com/ArghTeam/razdacha/issues/220).
+
+
+## 2026-10-20
+
+### #214 — Controlled generation validation
+
+**Validation:** canonical attempt 5 at `50aa62a` passed the fixed matrix with four
+zero-drop collector ACKs and one final PASS marker. All four original-watcher cases
+on prerequisite base `085cbf7` produced the expected ordered desired-protection
+failures. Cleanup preserved service/file/host state and removed owned processes and
+uploaded payloads. Earlier failed/uncertified attempts remain historical evidence.
+**Limits:** actual nft/route/sing-box with a veth WG-address adapter, no encrypted WG
+handshake; finite queued capture observations, no universal lossless claim; native
+SRS/JSON remains #220. No application or production deployment occurred.
+**Review:** pre-canary and owner gates passed. Distinct final review and current CI
+are required before merge. See the [completed implementation record](../../tasks/done/214-coherent-network-state.md).
