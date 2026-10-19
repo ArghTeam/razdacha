@@ -18,10 +18,12 @@ import (
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
-const CommittedFile = "applied-network.json"
-const BootstrapFile = "bootstrap-network.json"
-const CommittedKind = "committed"
-const BootstrapKind = "bootstrap"
+const (
+	CommittedFile = "applied-network.json"
+	BootstrapFile = "bootstrap-network.json"
+	CommittedKind = "committed"
+	BootstrapKind = "bootstrap"
+)
 
 type Generation struct {
 	Kind    string                `json:"kind"`

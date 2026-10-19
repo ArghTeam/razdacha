@@ -111,7 +111,6 @@ func TestApplyUnchanged(t *testing.T) {
 	if !strings.Contains(got.Detail, "не изменилась") {
 		t.Fatalf("описание %q не говорит, что применять было нечего", got.Detail)
 	}
-
 }
 
 func TestApplyWithoutNftSource(t *testing.T) {

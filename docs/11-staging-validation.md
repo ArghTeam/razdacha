@@ -152,6 +152,14 @@ break established proxy connections; the acceptance condition is absence of forb
 egress, not connection survival. A packet admitted before the guard acknowledgment may
 already be in flight. Raw captures/output stay private; publish redacted assertions only.
 
+TCP payload detection retains a bounded tail per connection and matches epoch markers
+across fragmented/coalesced reads; it does not rely on TCP read boundaries.
+
 Run an archived baseline with the original list watcher and shared fixture helpers to
 show new selected traffic still reaches the direct sink before the fix. Baseline failure
 and fixed success remain required. Compilation alone does not satisfy wire acceptance.
+
+The baseline archive copies `network_fixture_linux_test.go`,
+`network_payload_test.go` and `network_baseline_linux_test.go` into `cmd/razdachad`
+and builds with `-tags security214_baseline`. The current fixed runner uses the default
+build tags and `network_generation_linux_test.go`; do not copy that runner into baseline.

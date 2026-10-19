@@ -339,7 +339,7 @@ VALUES ('p1', 'старый', 'pub', 'priv', 'psk', '10.8.0.2/32', 1, 0);
 func TestRestoreInvalidatesRoutingAuthorityBeforeRestartingRestoredDatabase(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "state.db")
-	if err := os.WriteFile(dbPath, stateWithPeer(t, "Fixture old"), 0600); err != nil {
+	if err := os.WriteFile(dbPath, stateWithPeer(t, "Fixture old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	file := writeFile(t, "fixture-copy.db", stateWithPeer(t, "Fixture restored"))

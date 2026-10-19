@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -37,6 +38,7 @@ func wireMust(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
 func wireEnv(key, value string) []string {
 	out := []string{}
 	for _, s := range os.Environ() {
@@ -46,6 +48,7 @@ func wireEnv(key, value string) []string {
 	}
 	return append(out, key+"="+value)
 }
+
 func wireExec(t *testing.T, ns netns.NsHandle, role string, args ...string) *exec.Cmd {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestNetworkGenerationWire$", "-test.timeout=80s")
@@ -57,6 +60,7 @@ func wireExec(t *testing.T, ns netns.NsHandle, role string, args ...string) *exe
 	cmd.ExtraFiles = []*os.File{file}
 	return cmd
 }
+
 func wireNewNS(t *testing.T) netns.NsHandle {
 	t.Helper()
 	runtime.LockOSThread()
@@ -70,6 +74,7 @@ func wireNewNS(t *testing.T) netns.NsHandle {
 	t.Cleanup(func() { _ = ns.Close() })
 	return ns
 }
+
 func wireLink(t *testing.T, h *netlink.Handle, name, addr string) {
 	t.Helper()
 	l, err := h.LinkByName(name)
@@ -79,6 +84,7 @@ func wireLink(t *testing.T, h *netlink.Handle, name, addr string) {
 	wireMust(t, h.AddrAdd(l, a))
 	wireMust(t, h.LinkSetUp(l))
 }
+
 func wireRoute(t *testing.T, h *netlink.Handle, dst, gw, dev string) {
 	t.Helper()
 	l, err := h.LinkByName(dev)
@@ -90,6 +96,7 @@ func wireRoute(t *testing.T, h *netlink.Handle, dst, gw, dev string) {
 	}
 	wireMust(t, h.RouteAdd(&netlink.Route{LinkIndex: l.Attrs().Index, Dst: d, Gw: net.ParseIP(gw)}))
 }
+
 func wireTopology(t *testing.T) (netns.NsHandle, netns.NsHandle) {
 	t.Helper()
 	client, sink := wireNewNS(t), wireNewNS(t)
@@ -125,7 +132,7 @@ func wireTopology(t *testing.T) (netns.NsHandle, netns.NsHandle) {
 	wireRoute(t, gateway, "203.0.113.0/24", "192.0.2.2", "wan0")
 	wireRoute(t, ch, "", "10.8.0.1", "client0")
 	wireRoute(t, sh, "", "192.0.2.1", "sink0")
-	wireMust(t, os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0600))
+	wireMust(t, os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0o600))
 	return client, sink
 }
 
@@ -148,6 +155,7 @@ func wireRole(t *testing.T) bool {
 	}
 	return false
 }
+
 func wireSink(t *testing.T) {
 	udp, err := net.ListenPacket("udp4", ":12080")
 	wireMust(t, err)
@@ -210,10 +218,14 @@ func wireSink(t *testing.T) {
 			go func() {
 				defer c.Close()
 				buf := make([]byte, 2048)
+				var detector wirePayloadDetector
 				for {
 					n, err := c.Read(buf)
 					if n > 0 {
 						fmt.Printf("SINK:%s\n", buf[:n])
+						if detector.feed(buf[:n]) {
+							fmt.Println("FORBIDDEN-TCP-PAYLOAD")
+						}
 						_, _ = c.Write(buf[:n])
 					}
 					if err != nil {
@@ -226,6 +238,7 @@ func wireSink(t *testing.T) {
 	fmt.Println("READY")
 	select {}
 }
+
 func wireProbe(t *testing.T) {
 	args := strings.Split(os.Getenv("RAZDACHA_WIRE_ARGS"), "|")
 	if len(args) != 3 {
@@ -271,7 +284,7 @@ func wireStreamRole(t *testing.T) {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		nonce := scanner.Text()
-		ok := true
+		var ok bool
 		_ = c.SetDeadline(time.Now().Add(400 * time.Millisecond))
 		if _, err := c.Write([]byte(nonce)); err != nil {
 			ok = false
@@ -317,6 +330,7 @@ func (h *wireHarness) stream(t *testing.T, proto, addr string) *wireStream {
 	}
 	return &wireStream{input: input, results: results}
 }
+
 func (s *wireStream) exchange(t *testing.T, nonce string, want bool) {
 	t.Helper()
 	_, err := fmt.Fprintln(s.input, nonce)
@@ -348,6 +362,7 @@ func (r *wireReload) stop() {
 		r.cmd = nil
 	}
 }
+
 func (r *wireReload) Reload(ctx context.Context) error {
 	r.restarts.Add(1)
 	if r.pause.Swap(false) {
@@ -373,7 +388,10 @@ func (r *wireReload) Reload(ctx context.Context) error {
 	for time.Now().Before(deadline) {
 		select {
 		case <-r.done:
-			return fmt.Errorf("fixture runtime exited: %v", r.exit)
+			if r.exit == nil {
+				return errors.New("fixture runtime exited before readiness")
+			}
+			return fmt.Errorf("fixture runtime exited: %w", r.exit)
 		default:
 		}
 		req, _ := http.NewRequestWithContext(ctx, "GET", "http://127.0.0.1:9090/version", nil)
@@ -468,6 +486,7 @@ func newWireHarness(t *testing.T) *wireHarness {
 	h.settings.DNSUpstream = "127.0.0.1:15353"
 	return h
 }
+
 func (h *wireHarness) probe(t *testing.T, proto, addr, nonce string, want bool) {
 	t.Helper()
 	cmd := wireExec(t, h.client, "probe", proto, addr, nonce)
@@ -476,6 +495,7 @@ func (h *wireHarness) probe(t *testing.T, proto, addr, nonce string, want bool) 
 		t.Fatalf("probe %s %s want=%t error=%v output=%s", proto, addr, want, err, out)
 	}
 }
+
 func (h *wireHarness) assertNoForbidden(t *testing.T) {
 	t.Helper()
 	time.Sleep(100 * time.Millisecond)
@@ -531,7 +551,7 @@ func TestNetworkGenerationWire(t *testing.T) {
 	}
 	wireMust(t, unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""))
 	wireMust(t, unix.Mount("tmpfs", "/var/lib", "tmpfs", 0, "size=16m"))
-	wireMust(t, os.MkdirAll("/var/lib/sing-box", 0700))
+	wireMust(t, os.MkdirAll("/var/lib/sing-box", 0o700))
 	wireExercise(t)
 }
 

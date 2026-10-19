@@ -44,6 +44,7 @@ type networkGeneration = networkstate.Generation
 func readGeneration(path string) (networkGeneration, error) {
 	return networkstate.Read(path, networkstate.CommittedKind)
 }
+
 func writeGeneration(path string, gen networkGeneration) error {
 	gen.Kind = networkstate.CommittedKind
 	return networkstate.Write(path, gen)

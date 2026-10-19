@@ -543,7 +543,7 @@ func TestFreshSetupRefusesOrphanRoutingAuthorityBeforeCreatingDatabase(t *testin
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "state.db")
-			if err := os.WriteFile(filepath.Join(dir, name), []byte("orphan"), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("orphan"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := setup(context.Background(), setupOptions{dbPath: dbPath}); err == nil {

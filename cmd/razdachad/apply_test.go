@@ -219,14 +219,15 @@ func TestPublicationFailuresStayGuardedAndRetryIdenticalBytes(t *testing.T) {
 				t.Fatal(err)
 			}
 			oldPath := f.g.network.path
-			if at == "manifest" {
+			switch at {
+			case "manifest":
 				f.g.network.path = t.TempDir()
-			} else if at == "bootstrap" {
+			case "bootstrap":
 				f.g.network.bootstrapPath = t.TempDir()
-				if err := os.WriteFile(filepath.Join(f.g.network.bootstrapPath, "keep"), []byte("fixture"), 0600); err != nil {
+				if err := os.WriteFile(filepath.Join(f.g.network.bootstrapPath, "keep"), []byte("fixture"), 0o600); err != nil {
 					t.Fatal(err)
 				}
-			} else {
+			default:
 				f.setFailure(at)
 			}
 			candidate := policy("203.0.113.0/24")
@@ -691,7 +692,7 @@ func TestWGRecoveryUsesCommittedAddressInsteadOfPendingDatabaseSettings(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(dbPath), networkstate.CommittedFile), record, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(filepath.Dir(dbPath), networkstate.CommittedFile), record, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	pending := committed.Settings

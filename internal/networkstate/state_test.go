@@ -22,13 +22,13 @@ func TestPrivateRecordRejectsUntrustedFilesAndKinds(t *testing.T) {
 	if _, err := Read(path, BootstrapKind); err == nil {
 		t.Fatal("committed state accepted as bootstrap intent")
 	}
-	if err := os.Chmod(path, 0644); err != nil {
+	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Read(path, CommittedKind); err == nil {
 		t.Fatal("publicly readable secret record accepted")
 	}
-	if err := os.Chmod(path, 0600); err != nil {
+	if err := os.Chmod(path, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(dir, "link")
@@ -38,7 +38,7 @@ func TestPrivateRecordRejectsUntrustedFilesAndKinds(t *testing.T) {
 	if _, err := Read(link, CommittedKind); err == nil {
 		t.Fatal("symlink accepted as routing authority")
 	}
-	if err := os.WriteFile(path, []byte("truncated"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("truncated"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Read(path, CommittedKind); err == nil {
@@ -65,7 +65,7 @@ func TestRestoreInvalidatesBothKindsAndRetainsPrivateRecoveryCopies(t *testing.T
 			t.Fatalf("recovery copy: %v %v", copies, err)
 		}
 		info, err := os.Stat(copies[0])
-		if err != nil || info.Mode().Perm() != 0600 {
+		if err != nil || info.Mode().Perm() != 0o600 {
 			t.Fatal("recovery copy lost secret permissions")
 		}
 	}
@@ -78,7 +78,7 @@ func TestFreshInstallRejectsOrphanRoutingAuthority(t *testing.T) {
 			if err := CheckFreshDirectory(dir); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, name), []byte("orphan"), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("orphan"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if err := CheckFreshDirectory(dir); err == nil {

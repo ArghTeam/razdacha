@@ -79,3 +79,12 @@ controlled staging evidence and final independent acceptance must still be recor
 Scope is plain-list content and the publication boundary. The autonomous remote
 `.srs`/`.json` synchronization gap remains [#220](https://github.com/ArghTeam/razdacha/issues/220),
 which precedes #215 in the delivery queue. Do not claim all-format coherence from #214.
+
+
+### Review follow-up
+
+The final reviewer identified a fixture evidence gap at TCP read boundaries. The sink
+now retains a bounded per-connection marker tail and detects forbidden epoch substrings
+across arbitrary fragmentation/coalescing. A portable regression exercises every marker
+split and one-byte reads. The baseline archive also copies `network_payload_test.go`.
+CI formatting and minor static-analysis findings were corrected without product changes.
