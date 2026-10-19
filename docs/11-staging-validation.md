@@ -168,3 +168,10 @@ UDP echo listeners bind each synthetic destination address explicitly. Connected
 probes reject replies from a different source; a wildcard sink must not turn that fixture
 error into a product failure. Every alias must pass a positive UDP echo precondition
 before application policy is installed. Deadlines and negative assertions remain fixed.
+
+The disposable gateway has a default WAN route only to its isolated fixture sink; no
+namespace is connected to a host uplink. This supplies the default interface required
+by sing-box's network monitor rather than changing production DNS behavior for a test.
+The local UDP DNS socket is bound before serving and must pass its own positive query
+before sing-box is started. DNS diagnostics distinguish transport failure, no response,
+and response rcode/answer count. Probe deadlines and negative assertions are unchanged.

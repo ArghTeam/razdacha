@@ -99,3 +99,16 @@ sink did not pin reply source identity; the fixture now binds a listener per syn
 alias and checks positive UDP echo for each before installing application policy. No
 product defect or successful wire acceptance is inferred from that failed precondition.
 The corrected fixture requires a new build, review and controlled execution.
+
+
+### DNS fixture precondition observation
+
+The corrected UDP sink passed all alias preconditions and initial TCP/UDP application
+probes. The next initial DNS positive failed before refresh; the runtime reported a
+missing default interface. Its pinned source pauses network operation when no default
+interface exists. The shared disposable topology now supplies a default route ending
+at its isolated sink, and the baseline adapter uses that same topology. A separately
+bound local upstream must answer before runtime startup; probe failures report rcode
+and answer count. No product DNS behavior or probe deadline was changed. Baseline cases
+were not run, cleanup completed, and the host structural snapshot remained unchanged.
+The new fixture revision still requires review/build and controlled execution.

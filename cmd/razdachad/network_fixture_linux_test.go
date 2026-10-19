@@ -130,6 +130,9 @@ func wireTopology(t *testing.T) (netns.NsHandle, netns.NsHandle) {
 	wireLink(t, sh, "lo", "203.0.113.20/32")
 	wireLink(t, sh, "lo", "203.0.113.30/32")
 	wireRoute(t, gateway, "203.0.113.0/24", "192.0.2.2", "wan0")
+	// sing-box's network monitor pauses DNS without a default interface. This
+	// synthetic WAN terminates at the disposable sink and has no host uplink.
+	wireRoute(t, gateway, "", "192.0.2.2", "wan0")
 	wireRoute(t, ch, "", "10.8.0.1", "client0")
 	wireRoute(t, sh, "", "192.0.2.1", "sink0")
 	wireMust(t, os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0o600))
@@ -262,8 +265,14 @@ func wireProbe(t *testing.T) {
 			network = "tcp"
 		}
 		answer, _, err := (&dns.Client{Net: network, Timeout: 400 * time.Millisecond}).Exchange(q, args[1])
-		if err != nil || answer == nil || answer.Rcode != dns.RcodeSuccess || len(answer.Answer) == 0 {
-			t.Fatalf("DNS failed: %v", err)
+		if err != nil {
+			t.Fatalf("DNS transport failed: %v", err)
+		}
+		if answer == nil {
+			t.Fatal("DNS returned no response")
+		}
+		if answer.Rcode != dns.RcodeSuccess || len(answer.Answer) == 0 {
+			t.Fatalf("DNS response: rcode=%s(%d) answers=%d", dns.RcodeToString[answer.Rcode], answer.Rcode, len(answer.Answer))
 		}
 		return
 	}
@@ -464,15 +473,34 @@ func newWireHarness(t *testing.T) *wireHarness {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	dnsServer := &dns.Server{Addr: "127.0.0.1:15353", Net: "udp", Handler: dns.HandlerFunc(func(w dns.ResponseWriter, q *dns.Msg) {
+	dnsSocket, err := net.ListenPacket("udp4", "127.0.0.1:15353")
+	wireMust(t, err)
+	dnsServer := &dns.Server{PacketConn: dnsSocket, Handler: dns.HandlerFunc(func(w dns.ResponseWriter, q *dns.Msg) {
 		answer := new(dns.Msg)
 		answer.SetReply(q)
 		rr, _ := dns.NewRR(q.Question[0].Name + " 0 IN A 203.0.113.20")
 		answer.Answer = []dns.RR{rr}
 		_ = w.WriteMsg(answer)
 	})}
-	go func() { _ = dnsServer.ListenAndServe() }()
-	t.Cleanup(func() { _ = dnsServer.Shutdown() })
+	dnsDone := make(chan error, 1)
+	go func() { dnsDone <- dnsServer.ActivateAndServe() }()
+	t.Cleanup(func() {
+		_ = dnsServer.Shutdown()
+		if err := <-dnsDone; err != nil {
+			t.Errorf("fixture DNS server failed: %v", err)
+		}
+	})
+	// Check the local upstream independently of sing-box policy and DNS hijack.
+	query := new(dns.Msg)
+	query.SetQuestion("fixture-upstream.example.", dns.TypeA)
+	response, _, err := (&dns.Client{Net: "udp", Timeout: 400 * time.Millisecond}).Exchange(query, "127.0.0.1:15353")
+	wireMust(t, err)
+	if response == nil {
+		t.Fatal("local fixture DNS upstream returned no response")
+	}
+	if response.Rcode != dns.RcodeSuccess || len(response.Answer) != 1 {
+		t.Fatalf("local fixture DNS upstream: rcode=%s(%d) answers=%d", dns.RcodeToString[response.Rcode], response.Rcode, len(response.Answer))
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if h.next.Load() {
 			_, _ = io.WriteString(w, "blocked.example\n203.0.113.10/32\n")

@@ -14,7 +14,6 @@ import (
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
-	"github.com/vishvananda/netlink"
 )
 
 // This adapter is compiled only with the archived unfixed source. It deliberately
@@ -30,10 +29,6 @@ func wireExercise(t *testing.T) {
 	default:
 		t.Fatalf("unknown baseline case %q", mode)
 	}
-	handle, err := netlink.NewHandle()
-	wireMust(t, err)
-	defer handle.Close()
-	wireRoute(t, handle, "", "192.0.2.2", "wan0")
 	st, err := store.Open(h.ctx, filepath.Join(t.TempDir(), "state.db"))
 	wireMust(t, err)
 	t.Cleanup(func() { _ = st.Close() })
