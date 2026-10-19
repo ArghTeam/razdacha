@@ -211,14 +211,12 @@ func probeVerdict(p probeResponse) string {
 		fmt.Fprintf(&b, "Домен ловит правило «%s», ядро отправляет его в %s.",
 			p.Rule.Name, p.Rule.Outbound)
 		if len(p.Candidates) > 0 {
-			b.WriteString(" Выше него стоят правила со списками: " + names(p.Candidates) +
-				". Состав готовых списков ведёт сам sing-box и наружу не отдаёт — если домен есть" +
-				" и в них, выиграет то, что выше.")
+			b.WriteString(" Earlier policies may match the domain or its resolved destination: " + names(p.Candidates) +
+				". Destination CIDRs and native rule-set predicates remain possible matches; the actual connection route is unverified.")
 		}
 	case len(p.Candidates) > 0:
-		b.WriteString("Домен ловит одно из правил со списками: " + names(p.Candidates) +
-			". Какое именно — сказать нечем: состав готовых списков ведёт сам sing-box и наружу не отдаёт. " +
-			"Выигрывает первое из перечисленных.")
+		b.WriteString("Policies may match the domain or its resolved destination: " + names(p.Candidates) +
+			". Destination CIDRs and native rule-set predicates remain possible matches; the actual connection route is unverified.")
 	case p.FakeIP:
 		b.WriteString("Ядро выдало FakeIP, значит домен поймало какое-то правило, " +
 			"но привязать его к правилу из базы не вышло — похоже, применён другой набор правил.")

@@ -154,8 +154,8 @@ func TestRouteProbeListRuleIsCandidate(t *testing.T) {
 		t.Errorf("порядок кандидатов = %q, %q — ожидался порядок ядра",
 			got.Candidates[0].Name, got.Candidates[1].Name)
 	}
-	if !strings.Contains(got.Verdict, "одно из правил") {
-		t.Errorf("вердикт не говорит о неопределённости: %q", got.Verdict)
+	if !strings.Contains(got.Verdict, "may match") || !strings.Contains(got.Verdict, "actual connection route is unverified") {
+		t.Errorf("verdict does not preserve uncertainty: %q", got.Verdict)
 	}
 	// Расхождение с базой: правило «Свои домены» включено, а в конфиге ядра его нет.
 	if !got.Diverged {
@@ -480,6 +480,50 @@ func TestRouteProbeKeepsKnownCIDRCandidates(t *testing.T) {
 					t.Fatalf("CIDR route was excluded by domain projection: hit=%t certain=%t", hit, certain)
 				}
 			})
+		}
+	}
+}
+
+func TestRouteProbeCIDRCandidatesHaveConservativeVerdict(t *testing.T) {
+	for _, source := range []string{"manual", "plain"} {
+		for _, mixed := range []bool{false, true} {
+			for _, answer := range []string{"203.0.113.7", "192.0.2.7"} {
+				t.Run(fmt.Sprintf("%s/mixed=%t/answer=%s", source, mixed, answer), func(t *testing.T) {
+					ts := newTestServer(t)
+					cookie := ts.login(t)
+					policy := store.Rule{Name: "Synthetic CIDR policy", Enabled: true, Action: store.ActionBlock, PeerScope: store.ScopeAll, Subnets: []string{"203.0.113.0/24"}}
+					if mixed {
+						policy.Domains = []string{"selected.example"}
+					}
+					if source == "plain" {
+						content := singbox.PlainList{Domains: policy.Domains, Subnets: policy.Subnets}
+						policy.Domains = nil
+						policy.Subnets = nil
+						policy.RemoteLists = []string{"https://example.invalid/plain"}
+						ts.plainLists = func(string) (singbox.PlainList, bool) { return content, true }
+					}
+					rule, err := ts.st.CreateRule(context.Background(), policy)
+					if err != nil {
+						t.Fatal(err)
+					}
+					tag := "rule-" + rule.ID
+					if source == "plain" {
+						tag += "-plain-0"
+					}
+					fakeCore{rules: `{"rules":[{"type":"default","payload":"rule_set=` + tag + `","proxy":"reject"}]}`, answer: `{"Status":0,"Answer":[{"name":"unrelated.example.","type":1,"TTL":60,"data":"` + answer + `"}]}`}.start(t, ts)
+					response := runProbe(t, ts, cookie, "unrelated.example")
+					if response.code != http.StatusOK {
+						t.Fatalf("endpoint returned %d: %s", response.code, response.body)
+					}
+					got := decodeProbe(t, response)
+					if got.Rule != nil || len(got.Candidates) != 1 || got.Candidates[0].ID != rule.ID || got.Candidates[0].Certain {
+						t.Fatalf("CIDR possibility became a definitive route or disappeared: %+v", got)
+					}
+					if !strings.Contains(got.Verdict, "may match the domain or its resolved destination") || !strings.Contains(got.Verdict, "actual connection route is unverified") {
+						t.Fatalf("candidate verdict overclaims routing evidence: %q", got.Verdict)
+					}
+				})
+			}
 		}
 	}
 }

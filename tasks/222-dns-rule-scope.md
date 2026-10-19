@@ -13,7 +13,7 @@ pass with this fix. Independent reviews and a disposable Linux mount/network
 namespace wire check are required before merge. Staging evidence remains pending
 until those gates pass. Never access the source host or publish private values.
 
-Primary: `/Users/romanzhigalkin/Web/razdacha`, `main`.
+Primary checkout: recorded privately by the orchestrator; target branch `main`.
 Remote: `origin` (`git@github.com:ArghTeam/razdacha.git`), target `main`.
 Fresh fetched base: `a095f21e418c4ac077d15051647ecfd6ffb38a4c`.
 Feature: `fix/222-dns-rule-scope` in its isolated authorized worktree.
