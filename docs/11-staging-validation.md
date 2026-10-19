@@ -175,3 +175,11 @@ by sing-box's network monitor rather than changing production DNS behavior for a
 The local UDP DNS socket is bound before serving and must pass its own positive query
 before sing-box is started. DNS diagnostics distinguish transport failure, no response,
 and response rcode/answer count. Probe deadlines and negative assertions are unchanged.
+
+The fixed runner saves a real database subnet edit without Apply and observes both
+sides of the boundary: the applied manual target still rejects, while the pending new
+target remains direct. Only after these assertions does explicit Apply remove that
+manual block and restore its direct control. A separate second list generation queues
+`ApplyCurrent` behind a paused watcher, proves it cannot finish or open the guard,
+then waits for two acknowledged publications before stable wire probes. Established
+TCP/UDP observations and post-restart publication-failure controls remain in the matrix.

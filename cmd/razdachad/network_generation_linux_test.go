@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -36,23 +37,44 @@ func wireExercise(t *testing.T) {
 		return len(sub), err
 	}}
 	gate := newApplyGate(a, n, quietSlog())
-	snap := store.Snapshot{Settings: h.settings, Rules: []store.Rule{{ID: "block", Name: "Fixture block", Enabled: true, PeerScope: store.ScopeAll, Action: store.ActionBlock, RemoteLists: []string{h.url}}}}
-	// The control address is initially intercepted, then explicitly routed direct.
-	// Positive echo proves the guard tests include a working tproxy ingress path.
-	snap.Rules = append(snap.Rules, store.Rule{ID: "direct-control", Name: "Direct control", Enabled: true, Action: store.ActionDirect, PeerScope: store.ScopeAll, Subnets: []string{"203.0.113.20/32"}})
+	st, err := store.Open(h.ctx, filepath.Join(dir, "state.db"))
+	wireMust(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	wireMust(t, st.SaveSettings(h.ctx, h.settings))
+	_, err = st.CreateRule(h.ctx, store.Rule{Name: "Fixture block", Enabled: true, PeerScope: store.ScopeAll, Action: store.ActionBlock, RemoteLists: []string{h.url}})
+	wireMust(t, err)
+	// Positive echo proves the guard includes an already intercepted tproxy path.
+	_, err = st.CreateRule(h.ctx, store.Rule{Name: "Direct control", Enabled: true, Action: store.ActionDirect, PeerScope: store.ScopeAll, Subnets: []string{"203.0.113.20/32"}})
+	wireMust(t, err)
+	manual, err := st.CreateRule(h.ctx, store.Rule{Name: "Manual block", Enabled: true, Action: store.ActionBlock, PeerScope: store.ScopeAll, Subnets: []string{"203.0.113.30/32"}})
+	wireMust(t, err)
+	snap, err := st.Snapshot(h.ctx)
+	wireMust(t, err)
+	phase2Commits := make(chan struct{}, 2)
 	n.guard = func(enabled bool) error {
 		if !enabled {
 			if err := wireResolverIsLocal(gate.base.Settings); err != nil {
 				return err
 			}
 		}
-		return netstack.SetClientGuard(enabled)
+		err := netstack.SetClientGuard(enabled)
+		if err == nil && !enabled && h.extended.Load() {
+			select {
+			case phase2Commits <- struct{}{}:
+			default:
+			}
+		}
+		return err
 	}
-	_, err := gate.Apply(h.ctx, snap)
+	_, err = gate.Apply(h.ctx, snap)
 	wireMust(t, err)
 	for _, proto := range []string{"tcp4", "udp4"} {
 		h.probe(t, proto, "203.0.113.10:12080", "initial-"+proto, true)
 		h.probe(t, proto, "203.0.113.20:12080", "control-initial-"+proto, true)
+	}
+	for _, proto := range []string{"tcp4", "udp4"} {
+		h.probe(t, proto, "203.0.113.99:12080", "pending-control-initial-"+proto, true)
+		h.probe(t, proto, "203.0.113.30:12080", "blocked-final-manual-initial-"+proto, false)
 	}
 	h.probe(t, "dns", "203.0.113.20:53", "unrelated.example.", true)
 	h.probe(t, "dnstcp", "203.0.113.20:53", "unrelated.example.", true)
@@ -92,6 +114,10 @@ func wireExercise(t *testing.T) {
 	done := make(chan struct{})
 	go func() { defer close(done); watchAppliedLists(ctx, h.mgr, gate, quietSlog()) }()
 	t.Cleanup(func() { cancel(); <-done })
+	// Save a real edit without Apply. Refresh must retain the applied .30 block
+	// and must not introduce the pending .99 block.
+	manual.Subnets = []string{"203.0.113.99/32"}
+	wireMust(t, st.UpdateRule(h.ctx, manual))
 	r.pause.Store(true)
 	h.next.Store(true)
 	wireMust(t, h.mgr.Refresh(ctx))
@@ -131,8 +157,71 @@ func wireExercise(t *testing.T) {
 	h.probe(t, "dns", "203.0.113.20:53", "blocked.example.", false)
 	h.probe(t, "dns", "203.0.113.20:53", "unrelated.example.", true)
 	h.probe(t, "dnstcp", "203.0.113.20:53", "unrelated.example.", true)
+	for _, proto := range []string{"tcp4", "udp4"} {
+		h.probe(t, proto, "203.0.113.99:12080", "pending-not-applied-"+proto, true)
+		h.probe(t, proto, "203.0.113.30:12080", "blocked-final-pending-policy-"+proto, false)
+	}
+	// Explicitly remove the manual rule only after observing the unapplied edit.
+	// This restores .30 as an independent direct control for the failure matrix.
+	wireMust(t, st.DeleteRule(h.ctx, manual.ID))
+	_, err = gate.ApplyCurrent(ctx, st)
+	wireMust(t, err)
+	snap, err = st.Snapshot(ctx)
+	wireMust(t, err)
+	for _, proto := range []string{"tcp4", "udp4"} {
+		h.probe(t, proto, "203.0.113.30:12080", "manual-removed-control-"+proto, true)
+	}
+	// A second plain generation preserves subnet intent while adding a domain.
+	// Queue the actual ApplyCurrent entry point behind the paused watcher.
+	r.entered = make(chan struct{})
+	r.release = make(chan struct{})
+	r.pause.Store(true)
+	h.extended.Store(true)
+	wireMust(t, h.mgr.Refresh(ctx))
+	select {
+	case <-r.entered:
+	case <-ctx.Done():
+		t.Fatal("second watcher publication did not pause")
+	}
+	manualStarted := make(chan struct{})
+	manualDone := make(chan error, 1)
+	go func() { close(manualStarted); _, err := gate.ApplyCurrent(ctx, st); manualDone <- err }()
+	<-manualStarted
+	for _, proto := range []string{"tcp4", "udp4"} {
+		h.probe(t, proto, "203.0.113.30:12081", "guarded-overlap-"+proto, false)
+	}
+	h.probe(t, "dns", "203.0.113.20:53", "guarded-overlap.example.", false)
+	select {
+	case err := <-manualDone:
+		t.Fatalf("queued Apply completed while watcher held ingress guard: %v", err)
+	default:
+	}
+	close(r.release)
+	select {
+	case err := <-manualDone:
+		wireMust(t, err)
+	case <-ctx.Done():
+		t.Fatal("queued Apply did not complete")
+	}
+	for range 2 {
+		select {
+		case <-phase2Commits:
+		case <-ctx.Done():
+			t.Fatal("both serialized publications did not finish")
+		}
+	}
+	gate.mu.Lock()
+	hasExtra := slices.Contains(n.contents[h.url].Domains, "extra.example")
+	gate.mu.Unlock()
+	if !hasExtra || gate.networkStatus() != nil {
+		t.Fatal("concurrent publications lost the new list generation")
+	}
+	for _, proto := range []string{"tcp4", "udp4"} {
+		h.probe(t, proto, "203.0.113.20:12080", "overlap-control-"+proto, true)
+		h.probe(t, proto, "203.0.113.10:12080", "blocked-final-overlap-"+proto, false)
+	}
 	// A publication error after the real runtime restart must leave the real
-	// kernel guard installed until recovery. The third target is always direct.
+	// kernel guard installed until recovery. The restored third target is direct.
 	h.probe(t, "tcp4", "203.0.113.30:12080", "always-direct-before-failure", true)
 	realNft := n.nft
 	gate.mu.Lock()

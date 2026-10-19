@@ -129,6 +129,7 @@ func wireTopology(t *testing.T) (netns.NsHandle, netns.NsHandle) {
 	wireLink(t, sh, "lo", "203.0.113.10/32")
 	wireLink(t, sh, "lo", "203.0.113.20/32")
 	wireLink(t, sh, "lo", "203.0.113.30/32")
+	wireLink(t, sh, "lo", "203.0.113.99/32")
 	wireRoute(t, gateway, "203.0.113.0/24", "192.0.2.2", "wan0")
 	// sing-box's network monitor pauses DNS without a default interface. This
 	// synthetic WAN terminates at the disposable sink and has no host uplink.
@@ -164,7 +165,7 @@ func wireSink(t *testing.T) {
 	// connected probes correctly reject. Bind each destination explicitly so
 	// its reply keeps the synthetic address that received the request.
 	var udpSockets []net.PacketConn
-	for _, addr := range []string{"203.0.113.10:12080", "203.0.113.20:12080", "203.0.113.30:12080"} {
+	for _, addr := range []string{"203.0.113.10:12080", "203.0.113.20:12080", "203.0.113.30:12080", "203.0.113.99:12080"} {
 		udp, err := net.ListenPacket("udp4", addr)
 		wireMust(t, err)
 		udpSockets = append(udpSockets, udp)
@@ -435,6 +436,7 @@ type wireHarness struct {
 	client   netns.NsHandle
 	mgr      *lists.Manager
 	next     atomic.Bool
+	extended atomic.Bool
 	url      string
 	settings store.Settings
 	mu       sync.Mutex
@@ -504,6 +506,9 @@ func newWireHarness(t *testing.T) *wireHarness {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if h.next.Load() {
 			_, _ = io.WriteString(w, "blocked.example\n203.0.113.10/32\n")
+			if h.extended.Load() {
+				_, _ = io.WriteString(w, "extra.example\n")
+			}
 		} else {
 			_, _ = io.WriteString(w, "old.example\n192.0.2.100/32\n")
 		}
@@ -521,7 +526,7 @@ func newWireHarness(t *testing.T) *wireHarness {
 	}
 	// Prove UDP echo reply identity on every synthetic alias before installing
 	// application policy; a broken fixture cannot satisfy negative leak tests.
-	for i, addr := range []string{"203.0.113.10:12080", "203.0.113.20:12080", "203.0.113.30:12080"} {
+	for i, addr := range []string{"203.0.113.10:12080", "203.0.113.20:12080", "203.0.113.30:12080", "203.0.113.99:12080"} {
 		h.probe(t, "udp4", addr, fmt.Sprintf("fixture-udp-precondition-%d", i), true)
 	}
 	h.settings = store.DefaultSettings()

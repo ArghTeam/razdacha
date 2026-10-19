@@ -112,3 +112,16 @@ bound local upstream must answer before runtime startup; probe failures report r
 and answer count. No product DNS behavior or probe deadline was changed. Baseline cases
 were not run, cleanup completed, and the host structural snapshot remained unchanged.
 The new fixture revision still requires review/build and controlled execution.
+
+
+### Wire matrix completion before the next run
+
+The fixed fixture now uses a real temporary store. It saves a manual subnet change
+without Apply, refreshes the plain list, and asserts that the old manual target remains
+blocked while the new pending target remains direct. It then explicitly removes that
+manual rule and proves the independent failure-control target is direct again. A second
+plain-list generation keeps subnet intent stable, adds a domain, and queues the actual
+`ApplyCurrent` entry point behind a paused watcher. Both successful publication
+acknowledgments are required before stable postcondition probes. These are prepared
+observations, not executed acceptance evidence. Existing established-flow, DNS, repair,
+restart, failure and recovery checks are retained with unchanged per-probe deadlines.
