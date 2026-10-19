@@ -83,7 +83,7 @@ DoH-провайдером их игнорирует. Это остаётся д
   "rules": [
     { "query_type": ["HTTPS"], "action": "reject" },
     { "domain_suffix": ["use-application-dns.net"], "action": "reject" },
-    { "rule_set": ["rule-<id>", "..."], "server": "fakeip", "rewrite_ttl": 60 }
+    { "rule_set": ["rule-<id>-dns", "..."], "server": "fakeip", "rewrite_ttl": 60 }
   ]
 }
 ```
@@ -101,39 +101,34 @@ DoH-провайдером их игнорирует. Это остаётся д
 - **reject на HTTPS-записи (тип 65)** — иначе браузеры получают ECH/HTTP3-подсказки в
   обход FakeIP.
 
-## Как правило превращается в DNS-правило
+## How a policy becomes DNS and route rules
 
-Каждое `Rule` с `action = tunnel` даёт:
+Manual domains and daemon-managed plain lists have separate projections
+([ADR 0024](decisions/0024-domain-only-dns-projections.md)). Full route sets retain
+both domains and CIDRs under their existing tags. Their additional `-dns` sets
+contain only domain suffixes, taken from the same single plain-list read. Immediate
+DNS actions reference these domain-only tags. In sing-box v1.12.25 an IP-only
+headless entry can otherwise match an unrelated DNS question during preliminary
+matching and cause an unrelated reject or FakeIP response.
 
-1. `route.rule_set[]` — набор доменов и подсетей правила (`remote` для community-списков и
-   внешних `.srs`, `inline` для пользовательских);
-2. запись в `dns.rules[]`, ссылающуюся на тот же `rule_set` и направляющую совпадения на
-   сервер `fakeip`;
-3. запись в `route.rules[]`, направляющую соединения к выданным FakeIP в туннель правила.
+A CIDR-only source contributes no DNS tag. If no DNS tags remain, the DNS action
+is omitted; the complete route rule and nft CIDR steering remain active. Never emit
+an empty-tag DNS action: even a source-peer restriction would reject or rewrite all
+questions for that peer. Selected-peer constraints are identical in DNS and route
+rules. CIDR-only policies protect destination traffic without blocking unrelated
+name resolution.
 
-Все три ссылаются на один и тот же `rule_set` — это гарантирует, что DNS и маршрутизация
-не разъезжаются. По той же причине `source_ip_cidr` правила с `peer_scope = selected`
-проставляется и в DNS-правиле: иначе FakeIP выдавался бы всем, а в туннель уходил бы
-только выбранный пир.
+Block and unavailable-tunnel policies reject matching domains, including when
+`resolve_real_ip` is enabled. A live tunnel uses FakeIP unless real resolution is
+requested. Direct policies have no DNS action. Real-resolution policies require a
+CIDR source for nft steering; domain-only real-resolution policies are rejected at
+save time. CIDR presence in a referenced list is still a diagnostic responsibility.
 
-`resolve_real_ip` выключает только шаг 2 — домены правила резолвятся в настоящий адрес.
-Маршрутизация такого правила держится на подсетях в nft-сете, не на FakeIP.
-
-**Отсюда требование:** у правила с `resolve_real_ip` обязан быть источник подсетей —
-свои `subnets` либо список (`community_lists`, `remote_lists`), из которого слой lists
-зальёт подсети в nft-сет. Правило с одними доменами и этим флагом не маршрутизирует
-ничего: FakeIP не выдан, метка nft не поставлена, трафик уходит напрямую с адреса
-сервера. Такое правило отклоняется при сохранении (`ErrInvalid`), а не сохраняется
-молча — утечка обязана быть видимой отказом, как и в [ADR 0013](decisions/0013-unavailable-tunnel-rejects.md).
-Проверка коарсная: наличие списка она засчитывает, а подсетей в нём может не оказаться —
-это остаётся на диагностике.
-
-**`action = block` тоже даёт запись в `dns.rules[]`,** но с `action: reject`. Одной записи
-в `route.rules` мало: без FakeIP домены блокируемого правила резолвятся в настоящие
-адреса, метка nft на них не ставится, и трафик уходит напрямую мимо sing-box — то есть
-мимо блокировки. Отказ на DNS закрывает домены, запись в `route.rules` — подсети, которые
-дублируются в nft-сет. `action = direct` DNS-записи не получает: его трафик и так идёт
-мимо sing-box.
+Native community, SRS and JSON sets retain their complete predicates and shared
+tags. Their DNS matching and autonomous refresh remain an explicit unresolved
+scope in issue #220. This fix does not flatten native logical, inverted or regex
+conditions and does not claim all-format closure. The IPv4 strategy, HTTPS-query
+reject and application-DNS guard remain unchanged.
 
 **FakeIP переживает перезапуск.** `experimental.cache_file` с `store_fakeip: true` хранит
 соответствие адрес ↔ домен в `/var/lib/sing-box/cache.db`. Без него после перезагрузки

@@ -144,13 +144,8 @@ func (s *Server) probe(ctx context.Context, domain string, live []clash.Rule, sn
 			out.FakeIP = true
 		}
 	}
-	// Настоящий адрес от резолвера — доказательство от ядра: ни одно правило с
-	// записью в dns.rules не совпало. Такие записи есть у правила в туннель
-	// (FakeIP), у правила «блокировать» и у правила с недоступным туннелем
-	// (отказ, ADR 0013); нет — только у `direct` и у `resolve_real_ip`
-	// (docs/04-dns-fakeip.md). Отказ резолвера ничего не доказывает: он как раз
-	// и означает, что одно из правил с отказом сработало.
-	proven := rerr == nil && !out.FakeIP && len(addrs) > 0
+	// A real DNS answer does not disprove a route CIDR match. Native sets may
+	// contain address predicates, so retain uncertain candidates (ADR 0024).
 
 	// Порядок ядра — тот же, в каком оно проверяет правила, поэтому первое
 	// совпадение и есть победитель. Ниже достоверного совпадения смотреть
@@ -159,12 +154,6 @@ func (s *Server) probe(ctx context.Context, domain string, live []clash.Rule, sn
 	for _, m := range matched {
 		hit, certain := s.ruleCatches(m.rule, domain)
 		if !hit {
-			continue
-		}
-		if !certain && proven && dnsRuled(m.rule) {
-			// «Может быть» против доказательства ядра: правило с DNS-записью
-			// не совпало, иначе адрес был бы подставным или его не было бы
-			// вовсе. Кандидат снимается, а не остаётся висеть предположением.
 			continue
 		}
 		hits = append(hits, probeRule{
@@ -222,14 +211,12 @@ func probeVerdict(p probeResponse) string {
 		fmt.Fprintf(&b, "Домен ловит правило «%s», ядро отправляет его в %s.",
 			p.Rule.Name, p.Rule.Outbound)
 		if len(p.Candidates) > 0 {
-			b.WriteString(" Выше него стоят правила со списками: " + names(p.Candidates) +
-				". Состав готовых списков ведёт сам sing-box и наружу не отдаёт — если домен есть" +
-				" и в них, выиграет то, что выше.")
+			b.WriteString(" Earlier policies may match the domain or its resolved destination: " + names(p.Candidates) +
+				". Destination CIDRs and native rule-set predicates remain possible matches; the actual connection route is unverified.")
 		}
 	case len(p.Candidates) > 0:
-		b.WriteString("Домен ловит одно из правил со списками: " + names(p.Candidates) +
-			". Какое именно — сказать нечем: состав готовых списков ведёт сам sing-box и наружу не отдаёт. " +
-			"Выигрывает первое из перечисленных.")
+		b.WriteString("Policies may match the domain or its resolved destination: " + names(p.Candidates) +
+			". Destination CIDRs and native rule-set predicates remain possible matches; the actual connection route is unverified.")
 	case p.FakeIP:
 		b.WriteString("Ядро выдало FakeIP, значит домен поймало какое-то правило, " +
 			"но привязать его к правилу из базы не вышло — похоже, применён другой набор правил.")
@@ -412,28 +399,11 @@ func (s *Server) countInConfig(rules []store.Rule) int {
 	return n
 }
 
-// dnsRuled — получает ли правило запись в `dns.rules`, то есть виден ли его
-// отказ или его FakeIP в ответе резолвера (docs/04-dns-fakeip.md).
-//
-// Записи нет только у двух видов: `direct` (его трафик и так идёт мимо
-// sing-box) и `resolve_real_ip` (там клиенту нужен настоящий адрес). Всё
-// остальное — туннель, блокировка, недоступный туннель — в DNS видно.
-func dnsRuled(r store.Rule) bool {
-	switch {
-	case r.Action == store.ActionDirect:
-		return false
-	case r.Action == store.ActionTunnel && r.ResolveRealIP:
-		return false
-	default:
-		return true
-	}
-}
-
-// ruleCatches отвечает, ловит ли правило домен. Второе значение — уверенность:
-// false означает, что у правила есть наборы, состав которых знает только ядро,
-// и «не ловит» по видимым условиям ещё не значит «не ловит».
+// ruleCatches reports domain matches and possible address-based matches.
+// CIDRs cannot be excluded by a domain-only check; unknown native content is
+// likewise retained as uncertain instead of claiming direct routing (ADR 0024).
 func (s *Server) ruleCatches(r store.Rule, domain string) (hit bool, certain bool) {
-	certain = true
+	certain = len(r.Subnets) == 0
 	for _, d := range r.Domains {
 		if domainCovers(d, domain) {
 			return true, true
@@ -449,14 +419,16 @@ func (s *Server) ruleCatches(r store.Rule, domain string) (hit bool, certain boo
 			certain = false
 			continue
 		}
+		if len(list.Subnets) > 0 {
+			certain = false
+		}
 		for _, d := range list.Domains {
 			if domainCovers(d, domain) {
 				return true, true
 			}
 		}
 	}
-	// Подсети правила здесь не смотрятся: домен с ними сравнивать нечем, а по
-	// адресу трафик ловит nft-сет, а не это правило.
+	// Address conditions remain candidates; DNS projection does not cover them.
 	return !certain, certain
 }
 

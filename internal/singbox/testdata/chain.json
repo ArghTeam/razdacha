@@ -33,7 +33,7 @@
         "rule_set": [
           "list-youtube",
           "list-google",
-          "rule-r1"
+          "rule-r1-dns"
         ],
         "server": "fakeip",
         "rewrite_ttl": 60
@@ -42,19 +42,18 @@
         "source_ip_cidr": "10.8.0.2/32",
         "rule_set": [
           "list-youtube",
-          "rule-r2",
           "rule-r2-remote-0",
-          "rule-r2-plain-1"
+          "rule-r2-plain-1-dns"
         ],
         "server": "fakeip",
         "rewrite_ttl": 60
       },
       {
-        "rule_set": "rule-r4",
+        "rule_set": "rule-r4-dns",
         "action": "reject"
       },
       {
-        "rule_set": "rule-r6",
+        "rule_set": "rule-r6-dns",
         "action": "reject"
       }
     ],
@@ -206,6 +205,14 @@
         ]
       },
       {
+        "tag": "rule-r1-dns",
+        "rules": [
+          {
+            "domain_suffix": "rutracker.org"
+          }
+        ]
+      },
+      {
         "tag": "rule-r2",
         "rules": [
           {
@@ -234,7 +241,26 @@
         ]
       },
       {
+        "tag": "rule-r2-plain-1-dns",
+        "rules": [
+          {
+            "domain_suffix": [
+              "blocked.example",
+              "news.example"
+            ]
+          }
+        ]
+      },
+      {
         "tag": "rule-r3",
+        "rules": [
+          {
+            "domain_suffix": "sberbank.ru"
+          }
+        ]
+      },
+      {
+        "tag": "rule-r3-dns",
         "rules": [
           {
             "domain_suffix": "sberbank.ru"
@@ -250,7 +276,23 @@
         ]
       },
       {
+        "tag": "rule-r4-dns",
+        "rules": [
+          {
+            "domain_suffix": "doubleclick.net"
+          }
+        ]
+      },
+      {
         "tag": "rule-r6",
+        "rules": [
+          {
+            "domain_suffix": "habr.com"
+          }
+        ]
+      },
+      {
+        "tag": "rule-r6-dns",
         "rules": [
           {
             "domain_suffix": "habr.com"

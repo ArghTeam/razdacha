@@ -1,7 +1,8 @@
 # Staging security validation
 
-Status: #214 is implemented locally; isolated wire validation and final security acceptance
-are pending. Later tasks remain planned. No production deployment is claimed.
+Status: #222 completed its isolated wire regression; the remaining delivery queue
+is pending. Only the evidence explicitly linked below is complete. No product or
+production deployment is claimed.
 
 ## Environment boundary and privacy
 
@@ -24,12 +25,19 @@ one change before advancing to the next. These are sequential delivery dependenc
 
 | Order | Specification | Primary staging observation | Current status |
 |---|---|---|---|
-| 1 | [#214: coherent plain-list network state](../tasks/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Implemented locally; staging not executed |
-| 2 | [#220: remote list coherence](https://github.com/ArghTeam/razdacha/issues/220) | Coordinate autonomous remote matching and subnet interception | Planned, not executed |
-| 3 | [#215: safe peer deletion](../tasks/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Planned, not executed |
-| 4 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
-| 5 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
-| 6 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
+| 1 | [#222: domain-only DNS matching](../tasks/done/222-dns-rule-scope.md) | Unrelated DNS succeeds while matching domains/CIDRs remain protected | Validated: 8 expected baseline failures, 8 fixed passes; no product deployment |
+| 2 | [#214: coherent network state](../tasks/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Prerequisite merged; observer hardening and rebuilt baseline pending; original four cases not executed |
+| 3 | [#220: native rule-set coherence](https://github.com/ArghTeam/razdacha/issues/220) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Planned, not executed |
+| 4 | [#215: safe peer deletion](../tasks/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Planned, not executed |
+| 5 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
+| 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
+| 7 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
+
+All three unsuccessful #214 attempts remain failed: initial UDP echo, initial DNS with unknown response status, and initial DNS REFUSED (5). Core refresh/failure observations were not reached. #222 does not replace its four
+original-watcher baseline cases. After merging the prerequisite, merge the updated
+base into #214 without rebasing and rebuild that baseline with its original watcher.
+For #222, attempt 1 remains incomplete (one baseline failure, seven baseline cases
+and all fixed cases not run); only attempt 2 completed the 8/8 matrix.
 
 ## Preconditions before each staging run
 
@@ -92,7 +100,7 @@ The author cannot approve their own implementation. Use two gates:
 2. After staging evidence is available, review the final diff, tests, maintained context,
    negative results and cleanup/recovery outcome before declaring merge/release readiness.
 
-For #214, #220 and #217, require two independent reviewer passes: a threat/failure-model review
+For #222, #214, #220 and #217, require two independent reviewer passes: a threat/failure-model review
 and a final diff/tests/docs/evidence review, performed by two distinct reviewers
 independent of the author and each other. Two rereads by one reviewer do not qualify. For #215,
 #216 and #218, require a reviewer separate from the author plus primary owner review.
@@ -108,8 +116,8 @@ only redacted assertions. Avoid claiming that an unobserved path was tested.
 
 The review evidence records redacted test commands, revision, expected/observed results,
 review findings and disposition, approved scope, and a rollback summary. Never include
-private host output or connection/credential values. These are future implementation
-gates; this planning document does not claim that any fix passed them.
+private host output or connection/credential values. These gates apply to each
+implementation; completion is claimed only by its linked revision-specific evidence.
 
 ## Cleanup and rollback
 

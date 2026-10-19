@@ -186,7 +186,8 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 			}
 		}
 
-		sets, tags, missing := buildRuleSets(r, snap.Settings, plain)
+		built := buildRuleSets(r, snap.Settings, plain)
+		sets, tags, missing := built.Sets, built.RouteTags, built.Missing
 		for _, url := range missing {
 			// Списка ещё нет в кэше — его домены и подсети в конфиг не попали.
 			// Правило от этого может остаться и вовсе без условий, поэтому
@@ -226,7 +227,7 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 		denied := unavailable != ""
 		diags = append(diags, RuleDiag{ID: r.ID, Name: r.Name, Reason: unavailable})
 		routeRules = append(routeRules, routeRule(r, tags, sources, tunnelTag, denied))
-		if dnsRule, ok := dnsRuleFor(r, tags, sources, denied); ok {
+		if dnsRule, ok := dnsRuleFor(r, built.DNSTags, sources, denied); ok {
 			dns.Rules = append(dns.Rules, dnsRule)
 		}
 	}
@@ -380,16 +381,14 @@ func routeRule(r store.Rule, tags, sources []string, tunnelTag string, denied bo
 	}
 }
 
-// dnsRuleFor собирает запись dns.rules[] для правила.
-//
-// Правило в туннель получает FakeIP: без него трафик к домену пошёл бы на
-// настоящий адрес мимо nft-метки, то есть мимо туннеля. Правило block получает
-// отказ по той же причине — без FakeIP запись в route.rules ловила бы только
-// подсети, а домены уходили бы напрямую. Правило с недоступным туннелем (denied)
-// отказывает ровно поэтому же (ADR 0013). Правилу direct DNS-запись не нужна: его
-// трафик и так идёт мимо sing-box. Не нужна и правилу с resolve_real_ip — там
-// клиенту нужен настоящий адрес.
+// dnsRuleFor applies immediate DNS actions only to domain-capable tags.
+// Full destination sets remain in route rules. Reject precedes real resolution
+// for block and unavailable policies; empty projections are omitted (ADR 0024).
 func dnsRuleFor(r store.Rule, tags, sources []string, denied bool) (option.DNSRule, bool) {
+	// Empty projections must never become unrestricted DNS actions (ADR 0024).
+	if len(tags) == 0 {
+		return option.DNSRule{}, false
+	}
 	raw := option.RawDefaultDNSRule{RuleSet: tags, SourceIPCIDR: sources}
 	switch {
 	case denied, r.Action == store.ActionBlock:

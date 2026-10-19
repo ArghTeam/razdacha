@@ -432,13 +432,13 @@ sing-box (docs/04-dns-fakeip.md). Состояние едет вместе с п
 выиграли бы, окажись домен и в их списках. Единственный кандидат при выданном FakeIP
 тоже становится `rule`: поймать домен было больше некому.
 
-**Ответ резолвера — доказательство, а не украшение.** Настоящий адрес означает, что не
-сработало ни одно правило с записью в `dns.rules`: FakeIP выдаётся правилу в туннель,
-отказ — правилу «блокировать» и правилу с недоступным туннелем ([ADR
-0013](decisions/0013-unavailable-tunnel-rejects.md)); записи нет только у `direct` и у
-`resolve_real_ip` (docs/04-dns-fakeip.md). Такие кандидаты из ответа снимаются: ядро уже
-доказало, что они не совпали. Отказ резолвера, наоборот, не снимает ничего — он сам и
-означает, что сработало правило с отказом.
+**A real DNS answer does not prove direct routing.** Manual/plain CIDRs remain in
+full destination route sets while immediate DNS actions use domain-only projections
+([ADR 0024](decisions/0024-domain-only-dns-projections.md)). Native sets may also
+contain address predicates unknown to the daemon. Such possible CIDR matches stay
+in `candidates` with `certain: false`; a real address cannot eliminate them. Refused
+DNS likewise does not eliminate candidates. This endpoint reports policy evidence,
+not a packet-level proof of the connection's eventual destination route.
 
 **Отказ резолва приезжает кодом `200` и ненулевым `Status` в теле** (проверено на стенде
 с sing-box 1.12.25): `3` — домена нет (NXDOMAIN), `5` — запрос отклонён правилом
