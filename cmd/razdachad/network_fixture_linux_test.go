@@ -684,7 +684,11 @@ func TestNetworkGenerationWire(t *testing.T) {
 		wireMust(t, err)
 		parentMount, err := os.Readlink("/proc/self/ns/mnt")
 		wireMust(t, err)
-		cmd := exec.Command(os.Args[0], "-test.run=^TestNetworkGenerationWire$", "-test.timeout=80s")
+		args := []string{"-test.run=^TestNetworkGenerationWire$", "-test.timeout=80s"}
+		if testing.Verbose() {
+			args = append(args, "-test.v")
+		}
+		cmd := exec.Command(os.Args[0], args...)
 		cmd.Env = append(wireEnv("RAZDACHA_WIRE_ROLE", "gateway"), "RAZDACHA_WIRE_PARENT="+parent, "RAZDACHA_WIRE_PARENT_MOUNT="+parentMount, "RAZDACHA_WIRE_BIN="+bin)
 		cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: unix.CLONE_NEWNET | unix.CLONE_NEWNS}
 		out, err := cmd.CombinedOutput()

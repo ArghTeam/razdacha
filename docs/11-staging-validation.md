@@ -33,9 +33,13 @@ one change before advancing to the next. These are sequential delivery dependenc
 | 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
 | 7 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
 
-All three unsuccessful #214 attempts remain failed: initial UDP echo, initial DNS with unknown response status, and initial DNS REFUSED (5). Core refresh/failure observations were not reached. #222 does not replace its four
+The first three unsuccessful #214 attempts remain failed: initial UDP echo, initial DNS with unknown response status, and initial DNS REFUSED (5). Core refresh/failure observations were not reached. #222 does not replace its four
 original-watcher baseline cases. After merging the prerequisite, merge the updated
 base into #214 without rebasing and rebuild that baseline with its original watcher.
+The fourth #214 fixed attempt ended with top-level Go PASS but hid all child evidence
+markers because verbose mode was not forwarded. It remains uncertified; all four
+baseline cases were not run. Forwarding verbose mode changes visibility only and
+requires a new reviewed execution with the same marker contract.
 For #222, attempt 1 remains incomplete (one baseline failure, seven baseline cases
 and all fixed cases not run); only attempt 2 completed the 8/8 matrix.
 

@@ -154,3 +154,19 @@ and a successful capture barrier before the explicit `214-BASELINE-LEAK-OBSERVED
 A generic test error is not an expected baseline failure. The fixed matrix emits its
 success marker only after all assertions and the last observer barrier pass. No new
 wire execution or acceptance is claimed by these preparations.
+
+
+### Fourth isolated attempt: result visibility not certified
+
+The fourth actual fixed-fixture attempt at `16c9dc2` ended with top-level Go PASS
+in 9.77 seconds. It did not expose the four capture-barrier markers or the final
+matrix marker: the gateway self-exec omitted `-test.v`, so successful child `t.Log`
+output was discarded. This is not certified wire acceptance. All four baseline cases
+remained not run. Cleanup removed pinned artifacts and owned processes, and service,
+file and host structural checks matched their pre-run state.
+
+The gateway now forwards `testing.Verbose()` as `-test.v` while preserving the exact
+selector and 80-second child timeout. Marker requirements and negative assertions are
+unchanged. New compilation, review and controlled execution are required; no pass is
+inferred from the hidden child logs. The three earlier failed precondition attempts
+retain their recorded outcomes.
