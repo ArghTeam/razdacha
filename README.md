@@ -82,6 +82,7 @@ Networking integration checks need a suitable Linux environment. Local linting r
 | [Installation](docs/08-install-upgrade.md) | Install, update, restore and uninstall |
 | [Notifications](docs/09-notifications.md) | Telegram setup |
 | [Router clients](docs/10-router-client.md) | WireGuard router configuration |
+| [Staging validation](docs/11-staging-validation.md) | Ordered security checks, privacy and rollback |
 | [Decisions](docs/decisions/README.md) | Architectural decisions and rationale |
 | [Maintained context](context/index.md) | Layer invariants and work history |
 | [Podkop analysis](docs/research/podkop-analysis.md) | Architectural source material |

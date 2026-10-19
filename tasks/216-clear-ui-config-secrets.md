@@ -1,0 +1,49 @@
+---
+type: spec
+tracker: "#216"
+---
+# Clear configuration secrets from the panel
+
+## Goal and problem
+The peer modal retains private configuration in persistent dataset attributes after
+its HTML is cleared. Closing, replacing or logging out must clear configuration data
+and filenames from persistent DOM and UI caches while preserving download when open.
+
+## Domains touched
+- [UI](../context/ui/index.md): peer modal, shared shell and logout cleanup.
+
+## Decisions
+Implement after [#215](215-safe-peer-deletion.md). Keep secrets only for the active
+configuration interaction. Invalidate or ignore in-flight configuration responses when
+the modal/session lifecycle changes, so stale asynchronous work cannot restore secrets.
+This localized cleanup needs no ADR unless it introduces a
+broader secret-storage decision. Update maintained UI context with the final lifetime.
+
+## Acceptance criteria
+- [ ] Close button, backdrop and Escape remove configuration/filename attributes and caches.
+- [ ] Replacing the configuration modal clears its previous data.
+- [ ] Logout clears an open modal even when the request fails due to an expired session.
+- [ ] Delayed configuration responses cannot reopen or repopulate secret data after
+      close, modal replacement, logout or session expiry.
+- [ ] A synthetic-key browser regression verifies successful download while open.
+- [ ] Without reloading, the same test verifies that configuration/key data is absent
+      from persistent DOM/UI state after close, replacement and logout; inspection
+      requires no authenticated API request.
+
+## Validation
+Planned; not executed by this planning change. Use fixture credentials in local browser
+checks, including expired-session logout and delayed fetch completion after each
+modal/session lifecycle change. On staging use only a disposable synthetic peer
+and apply the [staging runbook](../docs/11-staging-validation.md). Never inspect or export
+real peer configurations. Track redacted evidence in
+[issue #216](https://github.com/ArghTeam/razdacha/issues/216).
+
+## Security review gates
+The implementation author cannot approve their own change. Before an isolated staging
+canary, an independent reviewer must assess the local regression, threat/failure model
+and proposed scope/rollback. Require a separate reviewer and primary owner review of the
+final diff, tests, documentation and staging evidence.
+Final acceptance requires baseline-fails/fix-passes evidence, adversarial negative
+cases and controlled staging observations under the [runbook](../docs/11-staging-validation.md).
+No unresolved P0/P1 findings may be marked ready to merge. Unknown results stay explicit.
+Review approval does not authorize merge or release. These reviews are planned, not completed.
