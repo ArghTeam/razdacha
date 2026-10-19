@@ -70,3 +70,19 @@ runs and all four original-watcher baseline cases remain unexecuted. The rebuilt
 uses the prerequisite main with its original watcher. Fixture evidence now requires a
 same-receiver nonce ACK and zero reported packet drops; receiver/output failures invalidate
 an observation. These finite isolated checks make no universal lossless-capture claim.
+
+
+## 2026-10-20
+
+### #214 — Controlled generation validation
+
+**Validation:** canonical attempt 5 at `50aa62a` passed the fixed matrix with four
+zero-drop collector ACKs and one final PASS marker. All four original-watcher cases
+on prerequisite base `085cbf7` produced the expected ordered desired-protection
+failures. Cleanup preserved service/file/host state and removed owned processes and
+uploaded payloads. Earlier failed/uncertified attempts remain historical evidence.
+**Limits:** actual nft/route/sing-box with a veth WG-address adapter, no encrypted WG
+handshake; finite queued capture observations, no universal lossless claim; native
+SRS/JSON remains #220. No application or production deployment occurred.
+**Review:** pre-canary and owner gates passed; distinct final evidence/docs review is
+pending. See the [completed implementation record](../../tasks/done/214-coherent-network-state.md).

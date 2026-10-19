@@ -1,8 +1,8 @@
 # Staging security validation
 
-Status: #222 completed its isolated wire regression; the remaining delivery queue
-is pending. Only the evidence explicitly linked below is complete. No product or
-production deployment is claimed.
+Status: #222 completed its isolated wire regression. #214 completed the controlled
+attempt-5 matrix; final distinct review is pending. Later delivery tasks remain pending.
+Only linked evidence is complete. No product or production deployment is claimed.
 
 ## Environment boundary and privacy
 
@@ -26,7 +26,7 @@ one change before advancing to the next. These are sequential delivery dependenc
 | Order | Specification | Primary staging observation | Current status |
 |---|---|---|---|
 | 1 | [#222: domain-only DNS matching](../tasks/done/222-dns-rule-scope.md) | Unrelated DNS succeeds while matching domains/CIDRs remain protected | Validated: 8 expected baseline failures, 8 fixed passes; no product deployment |
-| 2 | [#214: coherent network state](../tasks/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Prerequisite merged; observer hardened locally; rebuilt checks and wire validation pending; original four cases not executed |
+| 2 | [#214: coherent network state](../tasks/done/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Attempt 5: fixed matrix PASS and four expected original-watcher failures; final distinct evidence/docs review pending; no product deployment |
 | 3 | [#220: native rule-set coherence](https://github.com/ArghTeam/razdacha/issues/220) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Planned, not executed |
 | 4 | [#215: safe peer deletion](../tasks/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Planned, not executed |
 | 5 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
@@ -130,7 +130,7 @@ Any reported drop, receiver/statistics error, output EOF/scanner failure or miss
 invalidates the observation. These low-volume finite checks cover packets queued before
 the barrier; they do not claim universal lossless capture or future traffic protection.
 The rebuilt baseline uses prerequisite main `085cbf7d4a5898615da343453755ab13f3bd4e7a`
-with its unchanged original watcher. All four baseline cases still require actual runs.
+with its unchanged original watcher. All four baseline cases completed with the expected failures in canonical attempt 5.
 
 ## Cleanup and rollback
 
@@ -204,3 +204,22 @@ manual block and restore its direct control. A separate second list generation q
 `ApplyCurrent` behind a paused watcher, proves it cannot finish or open the guard,
 then waits for two acknowledged publications before stable wire probes. Established
 TCP/UDP observations and post-restart publication-failure controls remain in the matrix.
+
+
+## Issue 214 accepted wire observation and limits
+
+Canonical attempt 5 used fixed source `50aa62a` and original-watcher baseline
+`085cbf7`. Fixed Go PASS included exactly four zero-drop capture ACKs and one final
+matrix PASS marker. Each baseline case (`list-tcp`, `list-udp`, `list-dns`, `pending`)
+emitted one ordered positive-control/watcher/zero-drop-ACK/desired-leak sequence and
+Go FAIL. No observer/panic/runtime-error gate was present. Downloaded result hashes
+matched; all uploaded payloads and owned processes were removed, and pre-run service,
+file and host inventories were unchanged. The [completed specification](../tasks/done/214-coherent-network-state.md)
+retains all earlier failed or uncertified attempts. Final independent review remains
+required on the final documentation revision.
+
+This matrix exercises actual nft, route and sing-box behavior with a veth adapter for
+WG address reconciliation. It does not exercise an encrypted WG handshake. Zero-drop
+collector barriers cover a finite queued observation, not universal lossless capture.
+Native SRS/JSON semantics and refresh remain unresolved in #220. No active application
+or production deployment is part of this evidence.

@@ -80,3 +80,15 @@ up like the database. Recovery validates its configuration again. Operators must
 explicit Apply once when upgrading a legacy installation. Publication failures prioritize
 visible interruption over silent direct egress. Tests must inspect guard ordering, every
 failure boundary, retries, restart, pending edits and forbidden fixture traffic.
+
+
+## Validation boundary
+
+The controlled source-`50aa62a` matrix exercised this protocol with real nft, routing
+and sing-box operations and a disposable veth adapter for WG address reconciliation.
+The original watcher on prerequisite base `085cbf7` reproduced all four selected
+failures. This is not an encrypted WG-handshake test or a universal lossless-capture
+claim; native SRS/JSON remains outside the decision's bounded implementation.
+The [implementation record](../../tasks/done/214-coherent-network-state.md) preserves
+failed attempts, observed results and review status. Accepted decision status does
+not imply release or production-deployment approval.
