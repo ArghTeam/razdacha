@@ -42,3 +42,5 @@ description: генерация option.Options из состояния БД, п�
 - `internal/singbox/testdata/proxy-urls.txt` — корпус ссылок из `podkop/String-example.md`; фикстуры живут в репозитории, а не в чужом каталоге.
 
 - Native local paths are content-addressed and owner-only; runtime file watchers make replacement/removal unsafe. Generation v2 pins original format/hash, DNS hash and projection version, verifies all blobs and rederives nft/DNS before prepare and before durable publication. Explicit no-op Apply also verifies active artifacts. Legacy v1 native policy cannot recover autonomously; administrative access remains guarded until supported sources are acquired and explicit Apply succeeds.
+
+- Relative daemon `-db` arguments resolve once before opening storage; native verification also canonicalizes its generation-relative artifact root with propagated path errors. Apply, no-op active audits and fresh committed recovery therefore verify the same absolute native store.

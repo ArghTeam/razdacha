@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/bits"
 	"net/netip"
 	"reflect"
 	"regexp"
+	"sort"
 
 	"github.com/sagernet/sing-box/common/srs"
 	C "github.com/sagernet/sing-box/constant"
@@ -19,10 +21,11 @@ import (
 
 // ProjectionVersion pins the native semantic compiler contract.
 const (
-	ProjectionVersion = 1
-	maxNativeNodes    = 10000
-	maxNativeDepth    = 32
-	maxNativeValues   = 200000
+	ProjectionVersion       = 1
+	maxNativeNodes          = 10000
+	maxNativeDepth          = 32
+	maxNativeValues         = 200000
+	maxNativeProjectionWork = 4 << 20
 )
 
 var ErrUnsupportedNative = errors.New("unsupported native predicate")
@@ -37,6 +40,25 @@ type nativeExpr struct {
 	domain      *option.HeadlessRule
 	address     *netipx.IPSet
 	emptyDomain bool
+	ranges      []netipx.IPRange
+}
+
+// Projection work counts range visits and a conservative normalization log factor
+// across the entire AST, including intermediate complements and intersections.
+type nativeWork struct {
+	remaining int
+	regex     nativeRegexBudget
+}
+
+func (w *nativeWork) charge(n int, normalize bool) error {
+	if normalize && n > 0 {
+		n *= bits.Len(uint(n)) + 1
+	}
+	if n > w.remaining {
+		return fmt.Errorf("%w: native projection work budget", ErrUnsupportedNative)
+	}
+	w.remaining -= n
+	return nil
 }
 
 // ProjectNative accepts only an exact separable D(domain) OR A(address) expression.
@@ -81,15 +103,16 @@ func ProjectNative(body []byte, format Format) (out NativeProjection, err error)
 		return out, fmt.Errorf("%w: empty native set", ErrUnsupportedNative)
 	}
 	nodes, values := 0, 0
+	work := &nativeWork{remaining: maxNativeProjectionWork}
 	exprs := make([]nativeExpr, 0, len(set.Rules))
 	for _, r := range set.Rules {
-		e, eerr := compileNative(r, 0, &nodes, &values)
+		e, eerr := compileNative(r, 0, &nodes, &values, work)
 		if eerr != nil {
 			return out, eerr
 		}
 		exprs = append(exprs, e)
 	}
-	e, err := combineNative(exprs, C.LogicalTypeOr, false)
+	e, err := combineNative(exprs, C.LogicalTypeOr, false, work)
 	if err != nil {
 		return out, err
 	}
@@ -114,7 +137,7 @@ func ProjectNative(body []byte, format Format) (out NativeProjection, err error)
 	return out, err
 }
 
-func compileNative(r option.HeadlessRule, depth int, nodes, values *int) (nativeExpr, error) {
+func compileNative(r option.HeadlessRule, depth int, nodes, values *int, work *nativeWork) (nativeExpr, error) {
 	*nodes++
 	bad := func(reason string) (nativeExpr, error) {
 		return nativeExpr{}, fmt.Errorf("%w: %s", ErrUnsupportedNative, reason)
@@ -129,13 +152,13 @@ func compileNative(r option.HeadlessRule, depth int, nodes, values *int) (native
 		}
 		ee := make([]nativeExpr, 0, len(l.Rules))
 		for _, rr := range l.Rules {
-			e, err := compileNative(rr, depth+1, nodes, values)
+			e, err := compileNative(rr, depth+1, nodes, values, work)
 			if err != nil {
 				return e, err
 			}
 			ee = append(ee, e)
 		}
-		return combineNative(ee, l.Mode, l.Invert)
+		return combineNative(ee, l.Mode, l.Invert, work)
 	}
 	if r.Type != "" && r.Type != C.RuleTypeDefault {
 		return bad("rule type")
@@ -158,6 +181,9 @@ func compileNative(r option.HeadlessRule, depth int, nodes, values *int) (native
 		return bad("predicate value budget")
 	}
 	for _, v := range d.DomainRegex {
+		if err := work.regex.admit(v); err != nil {
+			return nativeExpr{}, err
+		}
 		if _, err := regexp.Compile(v); err != nil {
 			return bad("invalid domain regex")
 		}
@@ -173,6 +199,9 @@ func compileNative(r option.HeadlessRule, depth int, nodes, values *int) (native
 		e.domain = &rr
 	}
 	if len(d.IPCIDR) > 0 {
+		if err := work.charge(len(d.IPCIDR), true); err != nil {
+			return e, err
+		}
 		var b netipx.IPSetBuilder
 		for _, v := range d.IPCIDR {
 			p, err := netip.ParsePrefix(v)
@@ -192,14 +221,15 @@ func compileNative(r option.HeadlessRule, depth int, nodes, values *int) (native
 		if err != nil {
 			return bad("invalid address set")
 		}
+		e.ranges = e.address.Ranges()
 	}
 	if e.domain == nil && e.address == nil {
 		return bad("empty default node")
 	}
-	return invertNative(e, d.Invert)
+	return invertNative(e, d.Invert, work)
 }
 
-func combineNative(ee []nativeExpr, mode string, invert bool) (nativeExpr, error) {
+func combineNative(ee []nativeExpr, mode string, invert bool, work *nativeWork) (nativeExpr, error) {
 	out := nativeExpr{}
 	if mode == C.LogicalTypeAnd {
 		allD, allA := true, true
@@ -212,7 +242,8 @@ func combineNative(ee []nativeExpr, mode string, invert bool) (nativeExpr, error
 		}
 	}
 	var dr []option.HeadlessRule
-	var addr *netipx.IPSet
+	var addressSets [][]netipx.IPRange
+	totalRanges := 0
 	empty := mode == C.LogicalTypeAnd
 	for _, e := range ee {
 		if e.domain != nil {
@@ -224,24 +255,50 @@ func combineNative(ee []nativeExpr, mode string, invert bool) (nativeExpr, error
 			empty = empty || e.emptyDomain
 		}
 		if e.address != nil {
-			var b netipx.IPSetBuilder
-			if addr == nil {
-				b.AddSet(e.address)
-			} else {
-				b.AddSet(addr)
-				if mode == C.LogicalTypeAnd {
-					b.Intersect(e.address)
-				} else {
-					b.AddSet(e.address)
-				}
-			}
-			var err error
-			addr, err = b.IPSet()
-			if err != nil {
-				return out, err
-			}
+			addressSets = append(addressSets, e.ranges)
+			totalRanges += len(e.ranges)
 		}
 	}
+	var addr *netipx.IPSet
+	if len(addressSets) > 0 {
+		var builder netipx.IPSetBuilder
+		if mode == C.LogicalTypeOr {
+			// Accumulate all siblings and normalize once; repeated cumulative union is quadratic.
+			if err := work.charge(totalRanges, true); err != nil {
+				return out, err
+			}
+			for _, ranges := range addressSets {
+				for _, r := range ranges {
+					builder.AddRange(r)
+				}
+			}
+		} else {
+			sort.Slice(addressSets, func(i, j int) bool { return len(addressSets[i]) < len(addressSets[j]) })
+			ranges := addressSets[0]
+			for _, next := range addressSets[1:] {
+				if err := work.charge(len(ranges)+len(next), false); err != nil {
+					return out, err
+				}
+				ranges = intersectNativeRanges(ranges, next)
+				if len(ranges) == 0 {
+					break
+				}
+			}
+			if err := work.charge(len(ranges), true); err != nil {
+				return out, err
+			}
+			for _, r := range ranges {
+				builder.AddRange(r)
+			}
+		}
+		var err error
+		addr, err = builder.IPSet()
+		if err != nil {
+			return out, err
+		}
+		out.ranges = addr.Ranges()
+	}
+
 	if len(dr) == 1 {
 		out.domain = &dr[0]
 	} else if len(dr) > 1 {
@@ -250,10 +307,10 @@ func combineNative(ee []nativeExpr, mode string, invert bool) (nativeExpr, error
 	}
 	out.address = addr
 	out.emptyDomain = empty
-	return invertNative(out, invert)
+	return invertNative(out, invert, work)
 }
 
-func invertNative(e nativeExpr, invert bool) (nativeExpr, error) {
+func invertNative(e nativeExpr, invert bool, work *nativeWork) (nativeExpr, error) {
 	if !invert {
 		return e, nil
 	}
@@ -271,6 +328,9 @@ func invertNative(e nativeExpr, invert bool) (nativeExpr, error) {
 		e.emptyDomain = !e.emptyDomain
 	}
 	if e.address != nil {
+		if err := work.charge(len(e.ranges)+1, true); err != nil {
+			return e, err
+		}
 		var b netipx.IPSetBuilder
 		b.AddPrefix(netip.MustParsePrefix("0.0.0.0/0"))
 		b.RemoveSet(e.address)
@@ -279,8 +339,32 @@ func invertNative(e nativeExpr, invert bool) (nativeExpr, error) {
 		if err != nil {
 			return e, err
 		}
+		e.ranges = e.address.Ranges()
 	}
 	return e, nil
+}
+
+// Inputs are canonical sorted disjoint ranges; a linear merge preserves that order.
+func intersectNativeRanges(a, b []netipx.IPRange) []netipx.IPRange {
+	var out []netipx.IPRange
+	for i, j := 0, 0; i < len(a) && j < len(b); {
+		from, to := a[i].From(), a[i].To()
+		if b[j].From().Compare(from) > 0 {
+			from = b[j].From()
+		}
+		if b[j].To().Compare(to) < 0 {
+			to = b[j].To()
+		}
+		if from.Compare(to) <= 0 {
+			out = append(out, netipx.IPRangeFrom(from, to))
+		}
+		if a[i].To().Compare(b[j].To()) < 0 {
+			i++
+		} else {
+			j++
+		}
+	}
+	return out
 }
 
 // Token validation rejects duplicate and unknown fields even when null/zero.

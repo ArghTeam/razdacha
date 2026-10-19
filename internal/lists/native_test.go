@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -371,5 +373,96 @@ func TestNativeFIFOAndCanonicalMarker(t *testing.T) {
 		if _, err := ProjectNative(b.Bytes(), FormatSRS); err != nil {
 			t.Fatalf("canonical version%d rejected: %v", version, err)
 		}
+	}
+}
+
+// This admitted shape previously normalized the cumulative union after each of
+// 4,000 siblings and took over 25 seconds despite only 80,000 values/1.6 MiB.
+func nativeAdversarialBody(nodes, perNode int, invert, grouped bool) []byte {
+	rules := make([]any, 0, nodes)
+	for i := 0; i < nodes; i++ {
+		cidrs := make([]string, perNode)
+		for j := range cidrs {
+			v := uint32((i*perNode+j)*7919 + 1)
+			cidrs[j] = fmt.Sprintf("11.%d.%d.%d/32", (v>>16)&255, (v>>8)&255, v&255)
+		}
+		rules = append(rules, map[string]any{"ip_cidr": cidrs, "invert": invert})
+	}
+	if grouped {
+		var groups []any
+		for start := 0; start < len(rules); start += 100 {
+			end := start + 100
+			if end > len(rules) {
+				end = len(rules)
+			}
+			groups = append(groups, map[string]any{"type": "logical", "mode": "or", "rules": rules[start:end]})
+		}
+		rules = groups
+	}
+	if invert {
+		rules = []any{map[string]any{"type": "logical", "mode": "and", "rules": rules}}
+	}
+	body, _ := json.Marshal(map[string]any{"version": 3, "rules": rules})
+	return body
+}
+
+func TestNativeManySiblingAddressProjection(t *testing.T) {
+	var flat NativeProjection
+	for _, grouped := range []bool{false, true} {
+		t.Run(fmt.Sprintf("nested=%v", grouped), func(t *testing.T) {
+			body := nativeAdversarialBody(4000, 20, false, grouped)
+			start := time.Now()
+			projection, err := ProjectNative(body, FormatJSON)
+			elapsed := time.Since(start)
+			t.Logf("80,000-address projection body=%d elapsed=%s", len(body), elapsed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(projection.Subnets) != 80000 || len(projection.DNS) != 0 {
+				t.Fatalf("many-sibling semantics changed: subnets=%d DNS=%d", len(projection.Subnets), len(projection.DNS))
+			}
+			if grouped {
+				if !reflect.DeepEqual(projection, flat) {
+					t.Fatal("nested OR changed exact address projection")
+				}
+			} else {
+				flat = projection
+			}
+			// The deterministic shared work budget is the primary bound. This generous
+			// regression ceiling catches the former quadratic path, including under race.
+			if elapsed > 10*time.Second {
+				t.Fatalf("address projection exceeded regression ceiling: %s", elapsed)
+			}
+		})
+	}
+}
+
+func TestNativeIntermediateWorkBudgetPreservesLastGood(t *testing.T) {
+	f, err := NewFetcher(Options{Dir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "https://example.invalid/work.json"
+	if _, err = f.acceptNative(url, nativeBody(`{"domain":["last-good.example"]}`), meta{URL: url, ETag: "good"}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(f.nativeManifest(url))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := nativeAdversarialBody(4000, 20, true, false)
+	start := time.Now()
+	_, err = f.acceptNative(url, body, meta{URL: url, ETag: "bad"})
+	elapsed := time.Since(start)
+	t.Logf("intermediate-range budget body=%d elapsed=%s", len(body), elapsed)
+	if !errors.Is(err, ErrUnsupportedNative) || !strings.Contains(err.Error(), "projection work budget") {
+		t.Fatalf("intermediate work was not explicitly bounded: %v", err)
+	}
+	after, readErr := os.ReadFile(f.nativeManifest(url))
+	if readErr != nil || !bytes.Equal(before, after) {
+		t.Fatal("work-budget failure changed last-good body/validators")
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("work admission exceeded regression ceiling: %s", elapsed)
 	}
 }

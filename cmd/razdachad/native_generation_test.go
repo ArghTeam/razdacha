@@ -15,6 +15,7 @@ import (
 
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/networkstate"
+	"github.com/ArghTeam/razdacha/internal/store"
 )
 
 func nativePublication(t *testing.T) (*publicationFixture, *lists.Manager, *atomic.Int32, string) {
@@ -212,5 +213,58 @@ func TestActiveNativeCorruptionClosesGuardBeforeCandidateValidation(t *testing.T
 				t.Fatalf("validated replacement did not recover: %v", err)
 			}
 		})
+	}
+}
+
+func TestNativeRelativeDatabaseApplyAndFreshRecovery(t *testing.T) {
+	ctx := context.Background()
+	f, mgr, _, url := nativePublication(t)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	absoluteManifest := f.g.network.path
+	relativeManifest, err := filepath.Rel(cwd, absoluteManifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relativeDB := filepath.Join(filepath.Dir(relativeManifest), "relative-state.db")
+	st, err := store.Open(ctx, relativeDB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if err = st.SaveSettings(ctx, policy().Settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.CreateRule(ctx, store.Rule{Name: "Relative native policy", Enabled: true, PeerScope: store.ScopeAll, Action: store.ActionBlock, RemoteLists: []string{url}}); err != nil {
+		t.Fatal(err)
+	}
+	f.g.network.path = relativeManifest
+	if _, err = f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatalf("relative-db native Apply: %v", err)
+	}
+	gen, err := readGeneration(absoluteManifest)
+	if err != nil || gen.Lists[url].Native == nil {
+		t.Fatalf("relative-db authority missing: %v", err)
+	}
+	// A fresh gate recovers from the relative authority path without editable DB
+	// fallback or a changed working directory; the original cache paths stay absolute.
+	fresh := newPublicationFixture(t, mgr)
+	fresh.g.network.path = relativeManifest
+	if err = fresh.g.recover(ctx, filepath.Join(filepath.Dir(relativeDB), networkstate.BootstrapFile)); err != nil {
+		t.Fatalf("relative-db fresh recovery: %v", err)
+	}
+	if fresh.isGuarded() || fresh.g.network.contents[url].Native.Hash != gen.Lists[url].Native.Hash {
+		t.Fatal("relative-db recovery did not restore exact authority")
+	}
+	if _, err = fresh.g.refreshLists(ctx); err != nil {
+		t.Fatalf("relative-db healthy no-op: %v", err)
+	}
+	if err = os.Chmod(gen.Lists[url].Native.Path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = fresh.g.refreshLists(ctx); err == nil || !fresh.isGuarded() || !fresh.g.network.uncertain {
+		t.Fatal("relative-db active artifact failure did not close ingress")
 	}
 }

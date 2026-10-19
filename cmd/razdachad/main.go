@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -67,6 +68,10 @@ func main() {
 }
 
 func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
+	dbPath, err := filepath.Abs(dbPath)
+	if err != nil {
+		return fmt.Errorf("resolve database path: %w", err)
+	}
 	st, err := store.Open(ctx, dbPath)
 	if err != nil {
 		return err

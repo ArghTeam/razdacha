@@ -28,6 +28,8 @@ func TestNativeOriginalAndProjectionRuntime(t *testing.T) {
 		{"exact-suffix-OR", `{"domain":["selected.example"],"domain_suffix":["excluded.example",".sub.example"]}`},
 		{"regex-all-names", `{"domain_regex":[".*"]}`},
 		{"regex-empty", `{"domain_regex":["^$"]}`},
+		{"regex-zero-repeat", `{"domain_regex":["a{0}"]}`},
+		{"regex-class-repeat-capture", `{"domain_regex":["^(?P<label>[a-z]{1,16})[.]example$","^\\pL+[.]example$"]}`},
 		{"address-AND", `{"type":"logical","mode":"and","rules":[{"ip_cidr":["203.0.113.0/24"]},{"ip_cidr":["203.0.113.10/32"]}]}`},
 		{"false-address", `{"type":"logical","mode":"and","rules":[{"ip_cidr":["203.0.113.0/24"]},{"ip_cidr":["192.0.2.0/24"]}]}`},
 		{"double-domain-NOT", `{"type":"logical","mode":"and","invert":true,"rules":[{"domain":["selected.example"],"invert":true}]}`},

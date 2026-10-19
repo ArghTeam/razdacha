@@ -54,13 +54,17 @@ func writeGeneration(path string, gen networkGeneration) error {
 // publication boundary. The separate kernel guard survives daemon failure.
 func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, repair bool) (singbox.ApplyResult, error) {
 	n := g.network
+	artifactDir, err := filepath.Abs(filepath.Join(filepath.Dir(n.path), "lists", "native"))
+	if err != nil {
+		return singbox.ApplyResult{}, fmt.Errorf("resolve native artifact root: %w", err)
+	}
 	// A detected failure of an active watched artifact is runtime uncertainty,
 	// even when the pending candidate removes that source. Close immediately;
 	// a later validated publication can repair it using a new immutable artifact.
 	if n.initialized && !n.uncertain {
 		for _, l := range n.contents {
 			if l.Native != nil {
-				if err := l.Native.Verify(filepath.Join(filepath.Dir(n.path), "lists", "native"), l.Subnets); err != nil {
+				if err := l.Native.Verify(artifactDir, l.Subnets); err != nil {
 					guardErr := n.guard(true)
 					n.uncertain = true
 					return singbox.ApplyResult{}, fmt.Errorf("clients remain guarded: active native artifact verification: %w", errors.Join(err, guardErr))
@@ -99,7 +103,7 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 				if l.Native == nil {
 					return singbox.ApplyResult{}, fmt.Errorf("%w: native artifact authority missing", singbox.ErrGenerateFailed)
 				}
-				if err := l.Native.Verify(filepath.Join(filepath.Dir(n.path), "lists", "native"), l.Subnets); err != nil {
+				if err := l.Native.Verify(artifactDir, l.Subnets); err != nil {
 					return singbox.ApplyResult{}, fmt.Errorf("%w: native artifact verification: %w", singbox.ErrGenerateFailed, err)
 				}
 			}
@@ -157,7 +161,7 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	}
 	for _, l := range selected {
 		if l.Native != nil {
-			if err := l.Native.Verify(filepath.Join(filepath.Dir(n.path), "lists", "native"), l.Subnets); err != nil {
+			if err := l.Native.Verify(artifactDir, l.Subnets); err != nil {
 				return res, fmt.Errorf("clients remain guarded: native artifact changed during publication: %w", err)
 			}
 		}

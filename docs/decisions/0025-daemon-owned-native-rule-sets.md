@@ -32,6 +32,24 @@ are never used as accidental DNS true constants. If the full expression matches 
 literal-IP traffic, reject it rather than silently enabling gateway-wide interception.
 Existing DNS/local-address exemptions remain the enforcement boundary.
 
+Address projection uses one normalization per OR node and sorted linear range
+intersections for AND. Each compilation shares a 4-Mi-unit address-work budget:
+range visits cost one unit, normalization reserves `N * (bit_length(N) + 1)` units
+before the operation, and leaf sets, complements, nested/intermediate unions and
+intersections all charge the same counter. This bounds intermediate growth rather
+than relying on raw input counts alone. Work exhaustion explicitly rejects the
+candidate before cache/validator promotion and preserves healthy last-good authority.
+Regex admission separately caps each source at 1,024 patterns and 32 KiB aggregate
+raw regex bytes (4,096 bytes per pattern). Before program expansion, a compact Go
+syntax AST estimate reserves both runtime copies (original and DNS): at most 64 Ki
+AST/rune units, 64 Ki expanded instructions including program bookends, and 128 Ki
+expanded rune entries. Saturating count/repetition arithmetic rejects excessive
+programs before Simplify/Compile; Unicode class tables and cheap-pattern overhead
+also count. These are conservative compatibility limits, not matcher rewrites.
+Database paths and native artifact roots are canonical absolute paths; relative
+`-db` values select the same source store during Apply and committed recovery.
+
+
 Generation v2 verifies original and DNS artifact permissions, format, hash and projection
 version and rederives projections before publication/recovery. Legacy v1 native records
 remain guarded until explicit administrator recovery; never reopen an autonomous remote

@@ -71,3 +71,31 @@ Active artifact failures are audited independently from pending selection and cl
 client ingress before any attempted candidate validation. New invalid input alone
 retains healthy last-good service. Local cache/gate/runtime regression checks pass;
 full validation, CI, exact independent review and isolated staging are pending.
+
+
+## Review corrections before staging
+
+Canonicalize relative database and native-store roots for Apply, no-op active audit
+and fresh committed recovery; path-resolution errors propagate. The regression opens
+an actual relative database, applies its native policy, recovers through a fresh gate
+and checks that later active-file failure still closes ingress.
+
+Replace cumulative sibling address unions with one normalization per OR node. Pure
+AND uses size-ordered linear range intersections. A shared 4-Mi-unit address-work
+budget charges range visits and `N * (bit_length(N) + 1)` normalization reservations
+before leaf/complement/intermediate work. Exhaustion rejects before source/cache
+promotion, leaving last-good body and validators unchanged. A deterministic adversarial
+4,000-node/80,000-CIDR regression checks flat and nested OR equivalence; a separate
+inverted-AND case checks intermediate-work rejection and last-good retention. Timing
+assertions use a generous 10-second ceiling to detect the former quadratic path;
+shared deterministic operation admission is the primary bound, not a wall-clock promise.
+
+
+Regex admission now estimates compact Go syntax trees before program expansion.
+Per source, cap 1,024 patterns/32 KiB aggregate raw regex bytes and reserve both
+original/DNS runtime copies against 64 Ki AST/rune units, 64 Ki expanded instructions
+including program bookends and 128 Ki expanded rune entries. Saturating arithmetic
+handles repeated programs and Unicode classes without allocating an oversized
+program to measure it. Tiny estimator-versus-actual tests cover zero repeats,
+empty alternatives, nullable stars, captures, foldcase and Unicode; duplicate-pattern
+and cross-leaf JSON/SRS budget tests preserve accepted bodies and HTTP validators.
