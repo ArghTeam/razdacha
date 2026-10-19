@@ -221,7 +221,7 @@ vless, shadowsocks и trojan живут в одном пуле
   "servers_alive": 121,
   "current": {"name": "VLESS 11293", "latency_ms": 210},
   "updated_at": "2026-08-17T03:52:00Z",
-  "next_update_at": "2026-08-17T15:52:00Z"
+  "next_update_at": "2026-08-17T04:52:00Z"
 }
 ```
 
@@ -245,10 +245,11 @@ Clash API: живых считает сам `urltest`, по которому и 
 с кодом `not_ready`. Ответ — сам туннель вместе с блоком `pool`, чтобы карточке не
 пришлось делать второй запрос за списком.
 
-Пулы с общим каталогом обходятся **один раз на группу**: подписки igareck тянутся
-однократно, все прошедшие парсер ключи идут в пул целиком, без раскладки по странам
-([ADR 0018](decisions/0018-unified-pool.md)). Два обхода одного и того же файла дедуп
-обхода отдал бы только первому пулу, поэтому такт группирует пулы по каталогу.
+Pools sharing a catalog are crawled **once per group**: igareck subscriptions are
+fetched once, then supported keys are filtered by the configured country blocklist
+and transport encryption before entering the pool ([ADR 0020](decisions/0020-pool-country-blocklist.md)).
+Keys are not split into country pools; no geo-IP lookup is performed. Grouping prevents
+the crawl deduplicator from delivering a shared catalog only to the first pool.
 
 Обход по требованию не ждёт расписания: пул ручка уже прочитала из БД и передаёт его
 расписанию целиком, а не по идентификатору. Раньше расписание искало пул в своём наборе,
@@ -273,13 +274,15 @@ Clash API: живых считает сам `urltest`, по которому и 
 
 ### Встроенный пул
 
-Демон заводит его сам при первом запуске — один общий пул, выключенным
-([ADR 0018](decisions/0018-unified-pool.md)). У него `builtin: true`; заводит его
-`store.EnsureBuiltinPool` идемпотентно по паре (`builtin`, `source = pool`) — встроенный
-пул уже есть, второй рядом не появляется. Источник — подписки igareck по всем странам,
-без geo-IP: все прошедшие парсер ключи идут в пул. Апгрейд с версии со странами
-([ADR 0017](decisions/0017-country-default-tunnels.md)) сворачивает семь пулов в один, а
-ссылавшиеся правила отвязывает — не молча (см. [модель данных](02-data-model.md)).
+The daemon creates one disabled built-in pool on first start
+([ADR 0018](decisions/0018-unified-pool.md)). It has `builtin: true`;
+`store.EnsureBuiltinPool` is idempotent by (`builtin`, `source = pool`), so it does not
+create a second built-in pool. The source is igareck subscriptions, filtered by country
+labels and transport encryption ([ADR 0020](decisions/0020-pool-country-blocklist.md));
+no geo-IP lookup is used. Upgrading from country-specific pools
+([ADR 0017](decisions/0017-country-default-tunnels.md)) collapses seven pools into one
+and detaches referencing rules with an explicit warning; see the
+[data model](02-data-model.md).
 
 `DELETE /api/tunnels/{id}` на встроенном отвечает `409` с кодом `conflict` и текстом про
 то, что встроенный пул выключают, а не удаляют: прятать кнопку в панели, оставляя

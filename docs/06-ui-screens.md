@@ -3,9 +3,10 @@
 Четыре экрана. Любая новая настройка должна либо вытеснить существующую, либо быть
 отклонена — см. [принципы](00-vision.md#ключевые-продуктовые-принципы).
 
-Стек: статика без сборщика — HTML, CSS и ES-модули в `ui/dist`, встраивается в бинарник
-демона через `go:embed`. Тёмная тема по системной настройке. Почему не Svelte + Vite —
-в [спеке задачи #22](../tasks/22-ui.md#decisions).
+The panel uses HTML, CSS and ES modules in `ui/dist`, embedded in the daemon with
+`go:embed` and no frontend build step. Dark mode follows the system preference.
+The [task #22 specification](../tasks/done/22-ui.md#decisions) records why Svelte + Vite
+was rejected.
 
 ## 1. Клиенты
 
@@ -281,9 +282,10 @@ Cloudflare 1020); вердикт красится по классу и прих�
 
 Причина отложенного применения — в [API](05-api.md#applying).
 
-**Настройки** — не отдельный пункт навигации, а иконка шестерёнки в шапке. Модальное
-окно: порт WireGuard, внешний адрес, MTU клиентов, DNS, частота обновления списков,
-частота обновления пула, проверка туннелей. Всё прочее живёт в `config.yaml`.
+**Settings** open from the header gear icon in a modal: WireGuard port, external
+address, client MTU, DNS, list/pool refresh intervals and tunnel checks. The pool country
+blocklist is configurable through the settings API. Settings are persisted in SQLite;
+there is no `config.yaml` file.
 
 Селектор **«Обновление пула»** — как часто демон обходит каталог ключей встроенного
 пула. Нижний пункт — 30 минут: чаще нельзя, демон отвергнет (`store.MinPoolUpdateInterval`),

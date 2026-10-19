@@ -1,7 +1,7 @@
 ---
 type: invariants
 title: Packaging
-description: systemd-юнит, nfpm, install/uninstall, матрица поддерживаемых ОС
+description: nginx, TLS, systemd, install/restore/uninstall, release archives and supported platforms
 ---
 
 ## Invariants
@@ -36,7 +36,7 @@ description: systemd-юнит, nfpm, install/uninstall, матрица подд�
 
 ## Key entry points
 - `.github/workflows/ci.yml` — все автоматические проверки репозитория.
-- `Makefile` — те же команды локально (`build`, `test`, `lint`, `build-linux`, `deb`).
+- `Makefile` — local build, test, lint and Linux cross-build commands. The dormant `deb` target references a missing nfpm configuration and is not a supported packaging path.
 - `cmd/razdachad/main.go` — точка входа демона.
 - `internal/packaging/nginx.go` — `SiteConfig.Validate` и `Render`: генерация конфига nginx.
 - `internal/packaging/tls.go` — `EnsureCertificate`: самоподписанный сертификат панели.

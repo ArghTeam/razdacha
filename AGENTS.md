@@ -1,188 +1,143 @@
-# razdacha — конституция
+# razdacha — project instructions
 
-## Pitch
+## Product and current versions
 
-Селективный VPN-шлюз для Debian/Ubuntu: сервер поднимает WireGuard для клиентов, весь их
-трафик приходит на `wg0`, выбранные списки уходят в настроенные туннели, остальное —
-напрямую. Клиенты используют штатный WireGuard без дополнительного ПО.
+Selective VPN gateway for Debian/Ubuntu. Standard WireGuard clients send traffic to
+`wg0`; selected resources go through configured tunnels and everything else directly.
+No additional client software is required.
 
-**Статус: работает.** Селективная маршрутизация проверена на живом сервере: клиент
-подключается штатным WireGuard, домены из правил уходят в туннель, остальное — напрямую
-с адреса сервера. Установка и обновление одной командой, релизы по тегу (`v0.2.5`).
+The latest published daemon release is **v0.10.0** (2026-08-21). This repository also
+contains **razvedka 0.3.0**, a Chrome DevTools extension developed after that release.
+It has its own version and is not part of the daemon build or release archive.
 
-Есть один встроенный туннель-пул: он ротирует бесплатные ключи из источника igareck
-([ADR 0018](docs/decisions/0018-unified-pool.md)) — кроме нод из стран чёрного списка
-(дефолт RU, BY) и ключей без шифрования транспорта
-([ADR 0020](docs/decisions/0020-pool-country-blocklist.md)). Сервер сам берёт ключи,
-держится за живой и переключается без перезапуска
-([ADR 0010](docs/decisions/0010-tunnel-pool-urltest.md)). Конкретных клиентов вешают на
-пул правилами по пирам, чтобы не пускать сторонних на личные туннели. Заводится
-выключенным — пока не включили, наружу за ключами никто не ходит.
+One built-in pool rotates free igareck keys ([ADR 0018](docs/decisions/0018-unified-pool.md)).
+It excludes blocklisted countries (RU and BY by default) and keys without transport
+encryption ([ADR 0020](docs/decisions/0020-pool-country-blocklist.md)). It starts disabled;
+no catalog requests are made until enabled. Assign clients through peer-scoped rules.
 
-Состояние туннелей снимается по расписанию и переживает перезапуск
-([ADR 0011](docs/decisions/0011-tunnel-check-schedule.md)), а падение и восстановление
-уходят в телеграм — с подтверждением из трёх проверок, чтобы флап не превращался в
-сотню сообщений ([Оповещения](docs/09-notifications.md)). Тоже выключено по умолчанию.
+Tunnel health is checked on a schedule and persisted ([ADR 0011](docs/decisions/0011-tunnel-check-schedule.md)).
+Optional Telegram notifications confirm changes across three checks and start disabled.
+Full backups include peer keys and are encrypted before external delivery
+([ADR 0016](docs/decisions/0016-backup-full-and-encrypted.md)).
 
-Чего нет: настоящего сертификата (самоподписанный), обфускации входящего канала,
-пакетов `.deb`, WebSocket (обещание убрано — панель живёт опросом, потребителя у канала
-не нашлось).
+The installer generates a self-signed certificate. Incoming WireGuard obfuscation,
+published `.deb` packages, and WebSocket updates are not implemented. The panel polls REST.
+The dormant `make deb` target is not a supported packaging path.
 
-## Stack
+## Stack and layout
 
-- Go ≥ 1.23 (зависимость `sing-box/option`), в системе 1.26.5; `CGO_ENABLED=0`
-- `modernc.org/sqlite`, `google/nftables`, `vishvananda/netlink`, `wgctrl`, `sing-box/option`
-- Интерфейс — статика без сборщика (HTML + CSS + ES-модули) в `ui/dist`, встраивается
-  через `go:embed`. SvelteKit отвергнут: node в цепочке сборки демона нет, а панель
-  обязана собираться одной командой `go build` (`tasks/done/22-ui.md`)
-- Модуль `github.com/ArghTeam/razdacha`, remote `git@github.com:ArghTeam/razdacha.git`
+- Go: `go.mod` is authoritative (currently 1.23.1); `CGO_ENABLED=0`.
+- SQLite: `modernc.org/sqlite`; networking: `google/nftables`, `netlink`, `wgctrl`.
+- Typed configuration: `sing-box/option`; sing-box runs as a separate service.
+- Panel: HTML, CSS and ES modules in `ui/dist`, embedded with `go:embed`.
+  No frontend build step or Node dependency for the daemon.
+- Module: `github.com/ArghTeam/razdacha`; remote: `git@github.com:ArghTeam/razdacha.git`.
 
-Раскладка:
+| Path | Responsibility |
+|---|---|
+| `cmd/razdachad/` | Daemon and scheduler wiring |
+| `cmd/razdacha/` | Setup, restore, uninstall CLI |
+| `internal/store/` | SQLite, migrations, peer keys, settings |
+| `internal/netstack/` | `wg0`, nftables, routing via netlink |
+| `internal/singbox/` | Full config generation, URL parsing, validation and apply |
+| `internal/lists/` | Rule lists, pool catalogs, cache and scheduling |
+| `internal/clash/`, `internal/diag/`, `internal/api/` | Runtime API, diagnostics, authentication and panel |
+| `internal/packaging/` | nginx, TLS, sysctl, systemd, sing-box installation |
+| `internal/qr/` | Terminal QR codes without an external binary |
+| `ui/dist/` | Embedded panel assets |
+| `packaging/install.sh` | Release installer |
+| `tools/razvedka/` | Independent Chrome DevTools extension |
 
-```
-cmd/razdachad/          демон
-cmd/razdacha/           CLI: setup, uninstall
-internal/store/         SQLite, миграции, ключи
-internal/netstack/      wg0 (wgctrl), nft-правила, маршрутизация — всё через netlink
-internal/singbox/       генерация option.Options, парсеры proxy-URL, применение конфига
-internal/lists/         загрузка .srs и plain-списков, кэш, расписание
-internal/clash/         клиент Clash API sing-box
-internal/api/           REST, авторизация, диагностика, отдача статики
-internal/packaging/     nginx, TLS, sysctl, юниты, установка sing-box
-internal/qr/            QR в терминал, без внешнего qrencode
-ui/dist/                статика панели, уезжает в бинарник
-packaging/install.sh    установщик
-tools/razvedka/         расширение Chrome: что на странице блокируется и кто трогает страну, вне сборки демона
-```
+Wrap errors with `fmt.Errorf("...: %w", err)` and log with `log/slog`.
+All newly written repository content, comments, logs, commit messages, PR text and
+tracker content must be English. User conversation is Russian. Existing Russian runtime
+text is legacy content, not an exception for new text.
 
-Соглашения: ошибки оборачиваются `fmt.Errorf("...: %w", err)`; текст ошибок, доходящих
-до UI, — на русском, он показывается пользователю как есть; логи — `log/slog`.
+## Maintained context
 
-## Layers
+Read relevant invariants before editing. [Context index](context/index.md) links seven
+layers: store, singbox, netstack, lists, api, ui and packaging. The api layer includes
+`internal/diag` and `internal/clash`. Update maintained invariants and context in the
+same PR when final behavior, constraints or rationale change. Preserve historical
+ADRs, task records and logs as records of their original work.
 
-Пакеты `internal/*` группируются в семь слоёв памяти (`context/<слой>/`):
+## Codex workflow
 
-- **store** — SQLite: схема четырёх сущностей, миграции, хранение ключей пиров
-- **singbox** — генерация `option.Options` из состояния БД, парсеры proxy-URL, check и reload
-- **netstack** — `wg0`, nft-правила и маршрутизация через netlink; обратимость изменений
-- **lists** — загрузка и кэш `.srs`/plain-списков, расписание, дублирование подсетей в nft-сет
-- **api** — REST, встроенная SPA, диагностика и клиент Clash API (`internal/api`,
-  `internal/diag`, `internal/clash`)
-- **ui** — интерфейс: вход и четыре экрана, дефолты вместо опций
-- **packaging** — nginx, TLS, юниты systemd, install.sh, релизы, матрица ОС
+- Modify only repositories explicitly authorized by the user, including their worktrees.
+  Inspect other repositories only for context; editing requires separate authorization.
+- Use the Codex-native `codex-flow` skill and `.codex/workflow.json` when available.
+  Do not consult `.claude/`, `CLAUDE.md`, or Claude-specific orchestration configuration.
+- Track substantive tasks in GitHub Issues in `ArghTeam/razdacha` with `in-progress`
+  and `layer:<name>` labels. Record goals and acceptance criteria; use
+  `tasks/<number>-<slug>.md` for nontrivial specifications.
+- Before branching, fetch the intended remote base. Record the absolute designated
+  primary checkout, remote, target branch and verified base SHA. Explicitly offline
+  work uses the agreed local base with its freshness limitation stated.
+- Keep the primary checkout available for builds. Implement in `.codex/worktrees/<branch>`;
+  one task and one writing agent own each worktree. For substantial work, delegate
+  independent exploration, mechanical checks, implementation and final review.
+  Parallel writers must own disjoint files or domains; keep trivial work in the primary thread.
+- Use explorer/mechanical for bounded checks, thinker for ambiguous analysis, strategist
+  only for unusually difficult decisions, worker for implementation, reviewer for final review.
+- Run relevant checks, inspect the diff, update maintained context, commit, push and open
+  a PR when a GitHub remote is available. Implementation agents return an open PR and
+  never merge. PR readiness does not grant merge authority.
+- Never rebase, force-push, or amend a pushed commit. Merge the fresh target branch into
+  an outdated branch or use `gh pr update-branch`.
+- After an authorized, confirmed merge, the primary agent safely synchronizes the
+  designated primary checkout with a fast-forward-only update, preserves local edits,
+  verifies the merged commit is reachable and rereads updated instructions/context.
+  Report blockers before dependent work. Follow `codex-flow` for the procedure.
+- After successful synchronization, remove the completed worktree/local branch and prune
+  stale refs. Move the specification to `tasks/done/`, update the layer log, close the
+  issue and remove `in-progress` as appropriate. Preserve uncommitted work.
 
-## Цикл задачи
+## Decisions and source material
 
-Трекер — GitHub Issues в `ArghTeam/razdacha`. Статусов у него нет, поэтому состояние
-выражается метками: `in-progress` — взято в работу, `layer:<name>` — затронутые слои.
+Read [docs/decisions/](docs/decisions/README.md) before architectural proposals.
+Name any decision a proposal supersedes and explain why. Add a new ADR and mark the
+previous one superseded instead of rewriting it. Document intended behavior before
+changing code; layer invariants link to ADRs rather than duplicate their rationale.
 
-**Роли.** Сессия в основном чекауте — оркестратор: он ставит задачи, запускает агентов,
-проверяет результат, мержит и чистит. Исполнение — агент задачи: он живёт в своём
-воркtree и наружу отдаёт открытый PR, не больше.
+`~/Web/podkop` is a read-only architectural reference: never edit or commit there.
+Verify Podkop `file:line` references with a search before writing them. Existing analysis:
+[docs/research/podkop-analysis.md](docs/research/podkop-analysis.md). Code reuse is allowed
+under GPL-2.0-or-later ([ADR 0007](docs/decisions/0007-license-gplv2.md)).
 
-1. `/capture` — обсуждение сходится в issue (цель и критерии приёмки в описании) и,
-   для нетривиальной работы, в спеку `tasks/<номер>-<slug>.md`.
-2. `/pickup <номер>` — ветка `<handle>/<номер>-<slug>`, метка `in-progress`, спека.
-3. **Работа идёт в воркtree** `.claude/worktrees/<номер>-<slug>`, а не в основном чекауте.
-   Правило общее: код в основном чекауте не пишет никто, включая оркестратора. Причина —
-   `main` остаётся чистым и пригодным для сборки и заливки на стенд, пока в ветках идёт
-   работа, а параллельные задачи не толкаются в одних файлах.
-4. `/ledger:preflight` — чтение конституции и инвариантов затронутых слоёв до кода.
-   Читает агент задачи в своём воркtree: бюджет чтения тратится там, а не в сессии
-   оркестратора.
-5. Работа, затем PR. **Мержит оркестратор** — агент задачи и скиллы ветку не мержат:
-   диф должен быть просмотрен снаружи воркtree, прежде чем попасть в `main`.
-   **Ребейз запрещён.** Ветка отстала от `main` — `git merge main` или
-   `gh pr update-branch`, никогда `git rebase`. Причина: ребейз переписывает
-   историю, а ветки здесь пушатся сразу, и после него остаётся только форс-пуш.
-   `--force`, `--force-with-lease` и `commit --amend` по запушенному — туда же.
-6. **После мержа подчистить за собой:** `git checkout main && git pull`,
-   `git worktree remove .claude/worktrees/<номер>-<slug>` и `git worktree prune`, удалить
-   локальную ветку, `git fetch --prune` (GitHub удаляет удалённую ветку сам при мерже,
-   локально остаётся протухшая ссылка). Незакрытый воркtree держит ветку живой и
-   не даёт её удалить — подчистка не отдельная любезность, а часть закрытия задачи.
-7. `/close <номер>` — запись в лог слоя, перенос спеки в `tasks/done/`, закрытие issue,
-   снятие метки `in-progress`.
+## Required runtime invariants
 
-Одна задача — один воркtree и один агент: `/ledger:preflight` тянет только нужные слои,
-а агент, ведущий две задачи сразу, ломает бюджет чтения. Сессия оркестратора живёт дольше
-одной задачи — она не читает слои, а раздаёт работу.
+- Default client and server `wg0` MTU: **1280**. Configurable range: **1280–1420**,
+  bounded by `store.MinClientMTU` and `store.MaxClientMTU` ([ADR 0004](docs/decisions/0004-client-mtu-1280.md)).
+- sing-box DNS uses `strategy: ipv4_only`; FakeIP has only `inet4_range`. Client IPv6
+  is disabled by DNS, `AllowedIPs = ::/0` without a client IPv6 address, and nft rejection.
+- Outgoing WireGuard tunnels use sing-box userspace `endpoints`, never kernel `wg1`/`wg2`
+  interfaces or `bind_interface`.
+- Generate the entire sing-box configuration from the database. Run `sing-box check`
+  before applying; keep the previous configuration on validation failure.
+- A rule with an unavailable tunnel remains in both `route.rules` and `dns.rules` with
+  `reject` ([ADR 0013](docs/decisions/0013-unavailable-tunnel-rejects.md)); never silently remove it.
+- Use netlink libraries instead of `nft`, `ip`, `wg`, or `wg-quick` subprocesses.
+- Build static binaries with `CGO_ENABLED=0` and `modernc.org/sqlite`.
+- Client configs always include `DNS = 10.8.0.1`, `MTU`,
+  `AllowedIPs = 0.0.0.0/0, ::/0`, and `PersistentKeepalive = 25`; these are not per-peer settings.
 
-## Порядок работы
+## Commands and installation
 
-1. **Перед любым архитектурным предложением читай `docs/decisions/`.** Девять решений уже
-   приняты с обоснованием. Если предложение противоречит принятому решению — это не
-   ошибка сама по себе, но нужно явно сказать, какое решение оно заменяет, и почему.
-2. Решения не переписываются. Меняется — заводится новое ADR со статусом
-   «заменяет NNNN», старое получает «заменено». Индекс — `docs/decisions/README.md`.
-3. Документация ведёт код, а не наоборот. Меняется поведение — сначала документ.
-
-`docs/` остаётся источником решений; инварианты слоя ссылаются на ADR, а не пересказывают их.
-
-## podkop — источник, только для чтения
-
-`~/Web/podkop` — репозиторий Podkop (OpenWrt), откуда взята архитектура. Разбор с
-готовыми ссылками `file:line` — `docs/research/podkop-analysis.md`.
-
-- **Никогда не редактируй и не коммить в `~/Web/podkop`.** Это чужой проект, у нас он
-  только читается.
-- Ссылки `file:line` на podkop **обязательно проверять грепом** перед тем, как записать
-  их в документ. Строки уже разъезжались один раз.
-- Заимствование кода разрешено: оба проекта под GPL-2.0
-  (`docs/decisions/0007-license-gplv2.md`).
-
-## Инварианты, которые код обязан соблюдать
-
-Взяты из ADR, нарушение — баг, а не стилистика:
-
-- **MTU клиентов 1280**, тот же MTU на `wg0` сервера. Не 1420 и не «по умолчанию» —
-  речь о дефолте: `wg-quick` ставит 1420, и брать его нельзя. Настройка остаётся
-  (ADR 0004 оставляет 1420 в UI осознанному пользователю), но диапазон — 1280–1420,
-  и на обеих границах его держат `store.MinClientMTU` / `store.MaxClientMTU`.
-- **`strategy: ipv4_only`** в DNS sing-box, FakeIP только `inet4_range`. IPv6 для
-  клиентов отключён тремя слоями — DNS, `AllowedIPs ::/0` без v6-адреса, nft `reject`.
-- **Исходящие WireGuard-туннели — userspace**, через `endpoints` sing-box. Никаких
-  kernel-интерфейсов `wg1`/`wg2` и `bind_interface`.
-- **Конфиг sing-box генерируется целиком** из состояния БД, никогда не патчится частично.
-  Перед применением — `sing-box check`; при ошибке остаётся прежний конфиг.
-- **Правило с недоступным туннелем отказывает, а не исчезает** (ADR 0013). Выключенный
-  туннель, пустой пул, оборванная цепь — правило остаётся в конфиге с `reject` и в
-  `route.rules`, и в `dns.rules`. Отказ виден, утечка не видна.
-- **Netlink вместо вызова бинарников.** Не вызываем `nft`, `ip`, `wg`, `wg-quick` —
-  работаем через `google/nftables`, `netlink`, `wgctrl`. Это условие широкой матрицы ОС.
-- **`CGO_ENABLED=0`.** Статический бинарник, `modernc.org/sqlite`, не `mattn`.
-- Клиентские конфиги всегда содержат `DNS = 10.8.0.1`, `MTU`, `AllowedIPs = 0.0.0.0/0, ::/0`,
-  `PersistentKeepalive = 25`. Ничего из этого не настраивается per-peer.
-
-## Команды
-
-```
-make build      сборка демона
-make test       go test ./...
-make lint       golangci-lint run
+```sh
+make build      # Build the daemon
+make build-cli  # Build the setup/restore/uninstall CLI
+make test       # go test ./...
+make lint       # golangci-lint run
 ```
 
-Интерфейс не собирается: `ui/dist` — готовая статика в репозитории.
+`ui/dist` is embedded as committed. Install local lint/format tools separately; CI runs
+lint. Runtime integration checks require the appropriate Linux environment.
 
-Установка на сервер:
-
-```
+```sh
 curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install.sh | sh
 ```
 
-`RAZDACHA_PUBLIC=1` — панель на всех интерфейсах, `RAZDACHA_PUBLIC=0` — обратно только
-из VPN; без переменной режим остаётся прежним, он хранится в БД. `--dry-run` — только
-фаза проверок.
-Релиз собирается пушем тега `v*`.
-
-`golangci-lint` и `gofumpt` в системе не установлены — линт отрабатывает в CI.
-
-## Brand
-
-не задан — визуальной идентичности пока нет
-
-## Скиллы проекта
-
-- `/adr` — завести новое решение в `docs/decisions/` по принятому формату.
-- `/podkop-source` — найти, как что-то устроено в Podkop, с проверенными ссылками
-  `file:line`.
+`RAZDACHA_PUBLIC=1` exposes the panel on all interfaces; `RAZDACHA_PUBLIC=0` restricts it
+to the VPN again. With no override, the saved database mode is retained; a fresh install
+is private. `--dry-run` performs preflight checks only. A `v*` tag triggers Linux
+amd64/arm64 archives, `install.sh` and checksums.

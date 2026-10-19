@@ -1,58 +1,91 @@
 # razdacha
 
-Селективный VPN-шлюз для Debian/Ubuntu. Ставится на сервер одной командой, поднимает
-WireGuard для клиентов и маршрутизирует выбранные списки ресурсов через ваши туннели —
-остальное идёт напрямую.
+Selective VPN gateway for Debian/Ubuntu. Install it on a server with one command;
+standard WireGuard clients connect to it, selected resources use your outgoing tunnels,
+and everything else goes directly from the server.
 
-Клиентам не нужно ничего, кроме штатного WireGuard: телефон, ноутбук, телевизор.
-
-```
-[телефон] ─┐
-[ноутбук] ─┼─→ wg0 ─→ razdacha ─→ [ваш wg / vless / hysteria2] ─→ выбранные ресурсы
-[десктоп] ─┘                   └─→ напрямую ────────────────────→ всё остальное
+```text
+[phone] ───┐
+[laptop] ──┼─→ wg0 ─→ razdacha ─→ [WireGuard / VLESS / Hysteria2] ─→ selected resources
+[desktop] ─┘                 └─→ direct ──────────────────────────→ everything else
 ```
 
-## Установка
+## Current versions
+
+The latest published daemon release is [v0.10.0](https://github.com/ArghTeam/razdacha/releases/tag/v0.10.0)
+(2026-08-21). Releases contain Linux amd64/arm64 archives, an installer and checksums.
+There is no published `.deb` package.
+
+[razvedka](tools/razvedka/README.md), version **0.3.0**, is a separate Chrome DevTools
+extension developed after that daemon release. Open its DevTools panel before reloading
+a page to inspect blocked requests and country signals, then copy domains for a rule.
+Optional A/B comparison lives in the collapsed comparison section. The extension is
+loaded from `tools/razvedka/`; it is not embedded in the daemon or its release archive.
+
+## Install or update
 
 ```sh
 curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install.sh | sh
 ```
 
-Скрипт сначала проверяет машину целиком и только потом что-то меняет: не прошла
-проверка — система не тронута. Прогнать одни проверки, ничего не устанавливая:
+The installer runs preflight checks before making changes. To run checks only:
 
 ```sh
 curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install.sh | sh -s -- --dry-run
 ```
 
-В конце установщик печатает QR-код первого клиента, адрес панели и пароль к ней.
-Пароль показывается один раз. Удаление — `razdacha uninstall`.
+It prints the first client's QR code, panel URL and generated password. Save the password;
+it is printed once. A fresh installation exposes the panel inside the VPN only and uses
+a self-signed certificate. `RAZDACHA_PUBLIC=1` explicitly enables public access;
+`RAZDACHA_PUBLIC=0` returns to VPN-only access. Updates retain the saved mode when no
+override is supplied. See [installation and upgrades](docs/08-install-upgrade.md).
 
-Состояние переносится на другой сервер целиком: копия скачивается из панели или
-приезжает в телеграм по расписанию, а поднимается командой
-`razdacha restore <файл>` — с ключами пиров, поэтому выданные клиентские конфиги
-продолжают работать ([восстановление](docs/08-install-upgrade.md#восстановление-состояния)).
+The built-in free-key pool starts disabled. When enabled, it rotates igareck keys,
+excluding RU/BY by default and keys without transport encryption. Configure tunnels and
+rules in the panel; the starter rule preset is offered for explicit acceptance.
 
-Требования: Debian 12+ или Ubuntu 22.04+, ядро ≥ 5.15, KVM/Xen/железо (не OpenVZ),
-`amd64` или `arm64`. Подробности — [матрица](docs/07-platform-support.md).
+Download a full backup from the panel or schedule encrypted Telegram delivery.
+`razdacha restore <file>` restores peer keys as well as settings, so issued client
+configurations keep working. Remove the installation with `razdacha uninstall`.
 
-## Что читать
+Requirements: Debian 12+ or Ubuntu 22.04+, kernel 5.15+, KVM/Xen/bare metal (not OpenVZ),
+`amd64` or `arm64`. See the [platform matrix](docs/07-platform-support.md).
 
-| | |
+## Develop
+
+The required Go version is declared in `go.mod` (currently 1.23.1). Builds use
+`CGO_ENABLED=0`. The panel is committed HTML/CSS/ES modules in `ui/dist`, embedded as-is;
+no Node or frontend build step is needed.
+
+```sh
+make build
+make build-cli
+make test
+make lint
+```
+
+Networking integration checks need a suitable Linux environment. Local linting requires
+`golangci-lint`; CI runs the repository lint configuration.
+
+## Documentation
+
+| Guide | Contents |
 |---|---|
-| [Vision](docs/00-vision.md) | зачем это и чем отличается от существующих решений |
-| [Архитектура](docs/01-architecture.md) | компоненты и поток трафика |
-| [Модель данных](docs/02-data-model.md) | Tunnel / Rule / Peer / Settings |
-| [Сеть](docs/03-networking.md) | nftables, tproxy, MTU, IPv6 |
-| [DNS и FakeIP](docs/04-dns-fakeip.md) | как работает селективность |
-| [API](docs/05-api.md) | контракт демона |
-| [Экраны UI](docs/06-ui-screens.md) | четыре экрана, не больше |
-| [Поддерживаемые ОС](docs/07-platform-support.md) | матрица и требования |
-| [Установка](docs/08-install-upgrade.md) | установка, обновление, удаление |
-| [Оповещения](docs/09-notifications.md) | как подключить телеграм |
-| [Решения (ADR)](docs/decisions/) | принятые решения с обоснованием |
-| [Разбор Podkop](docs/research/podkop-analysis.md) | источник архитектуры |
+| [Vision](docs/00-vision.md) | Product goals and boundaries |
+| [Architecture](docs/01-architecture.md) | Current components and traffic flow |
+| [Data model](docs/02-data-model.md) | Tunnels, rules, peers and settings |
+| [Networking](docs/03-networking.md) | nftables, tproxy, MTU and IPv6 |
+| [DNS and FakeIP](docs/04-dns-fakeip.md) | Selective routing |
+| [API](docs/05-api.md) | Daemon API contract |
+| [Panel](docs/06-ui-screens.md) | Panel behavior |
+| [Platforms](docs/07-platform-support.md) | Supported systems and requirements |
+| [Installation](docs/08-install-upgrade.md) | Install, update, restore and uninstall |
+| [Notifications](docs/09-notifications.md) | Telegram setup |
+| [Router clients](docs/10-router-client.md) | WireGuard router configuration |
+| [Decisions](docs/decisions/README.md) | Architectural decisions and rationale |
+| [Maintained context](context/index.md) | Layer invariants and work history |
+| [Podkop analysis](docs/research/podkop-analysis.md) | Architectural source material |
 
-## Лицензия
+## License
 
-GPL-2.0-or-later. См. [NOTICE.md](NOTICE.md) об используемых наработках.
+GPL-2.0-or-later. See [NOTICE.md](NOTICE.md) for acknowledgments.
