@@ -33,6 +33,10 @@ jobs:
 
       - run: go test ./...
 
+      - name: Test pinned DNS runtime regression
+        working-directory: tests/dnsruntime
+        run: go test -mod=readonly ./... -count=1
+
   build:
     runs-on: ubuntu-latest
     strategy:

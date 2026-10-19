@@ -30,60 +30,60 @@ type PlainList struct {
 // достаётся заливка nft.
 type PlainLists func(url string) (PlainList, bool)
 
-// buildRuleSets собирает наборы совпадений одного правила и их теги в порядке
-// «community-списки, свои домены и подсети, свои внешние списки».
-//
-// На один и тот же набор ссылаются и route.rules, и dns.rules — так DNS и
-// маршрутизация не разъезжаются. Пустой список тегов означает правило без единого
-// условия: вызывающий обязан такое правило пропустить, иначе оно поймает всё.
-//
-// Третье значение — адреса plain-списков, содержимого которых у генератора нет.
-// Молчать про них нельзя: их домены в конфиг не попали, и если других условий у
-// правила не осталось, оно выпадет целиком (issue #125).
-func buildRuleSets(r store.Rule, s store.Settings, plain PlainLists) ([]option.RuleSet, []string, []string) {
-	var (
-		sets    []option.RuleSet
-		tags    []string
-		missing []string
-	)
+// ruleSets separates full destination matching from immediate DNS matching.
+// Missing contains unavailable or empty plain sources, preserving diagnostics.
+type ruleSets struct {
+	Sets      []option.RuleSet
+	RouteTags []string
+	DNSTags   []string
+	Missing   []string
+}
 
+// buildRuleSets reads each plain source once for both projections (ADR 0024).
+// Native formats retain their predicates and shared tags; see issue #220.
+func buildRuleSets(r store.Rule, s store.Settings, plain PlainLists) ruleSets {
+	var result ruleSets
+	addInline := func(tag string, content PlainList) bool {
+		set, ok := inlineRuleSet(tag, content)
+		if !ok {
+			return false
+		}
+		result.Sets = append(result.Sets, set)
+		result.RouteTags = append(result.RouteTags, tag)
+		if dns, ok := inlineRuleSet(tag+"-dns", PlainList{Domains: content.Domains}); ok {
+			result.Sets = append(result.Sets, dns)
+			result.DNSTags = append(result.DNSTags, dns.Tag)
+		}
+		return true
+	}
 	for _, key := range r.CommunityLists {
 		tag := communityTag(key)
-		sets = append(sets, remoteRuleSet(tag, fmt.Sprintf(communityListURL, key), s))
-		tags = append(tags, tag)
+		result.Sets = append(result.Sets, remoteRuleSet(tag, fmt.Sprintf(communityListURL, key), s))
+		result.RouteTags = append(result.RouteTags, tag)
+		result.DNSTags = append(result.DNSTags, tag)
 	}
-
-	if inline, ok := inlineRuleSet(ruleSetTag(r.ID), PlainList{Domains: r.Domains, Subnets: r.Subnets}); ok {
-		sets = append(sets, inline)
-		tags = append(tags, inline.Tag)
-	}
-
+	addInline(ruleSetTag(r.ID), PlainList{Domains: r.Domains, Subnets: r.Subnets})
 	for i, raw := range r.RemoteLists {
-		format, ok := ruleSetFormat(raw)
-		if !ok {
-			// Не .srs и не .json — sing-box такой список не прочитает, но
-			// слой lists его качает и разбирает. Содержимое уходит в
-			// inline-набор правила: иначе домены списка пропадали бы молча, а
-			// правило, у которого он единственный, выпадало бы из конфига —
-			// и его трафик забирал бы route.final, то есть прямой выход
-			// (issue #125, docs/04-dns-fakeip.md).
-			set, ok := plainRuleSet(plainListTag(r.ID, i), raw, plain)
-			if !ok {
-				missing = append(missing, raw)
-				continue
+		format, native := ruleSetFormat(raw)
+		if !native {
+			var content PlainList
+			var found bool
+			if plain != nil {
+				content, found = plain(raw)
 			}
-			sets = append(sets, set)
-			tags = append(tags, set.Tag)
+			if !found || !addInline(plainListTag(r.ID, i), content) {
+				result.Missing = append(result.Missing, raw)
+			}
 			continue
 		}
 		tag := remoteListTag(r.ID, i)
 		set := remoteRuleSet(tag, raw, s)
 		set.Format = format
-		sets = append(sets, set)
-		tags = append(tags, tag)
+		result.Sets = append(result.Sets, set)
+		result.RouteTags = append(result.RouteTags, tag)
+		result.DNSTags = append(result.DNSTags, tag)
 	}
-
-	return sets, tags, missing
+	return result
 }
 
 // RuleInConfig — попадёт ли включённое правило в конфиг.
@@ -103,22 +103,7 @@ func RuleInConfig(r store.Rule, plain PlainLists) bool {
 	}
 	// Настройки влияют только на период обновления remote-наборов, на состав
 	// тегов — нет: считать их ради счёта незачем.
-	_, tags, _ := buildRuleSets(r, store.Settings{}, plain)
-	return len(tags) > 0
-}
-
-// plainRuleSet собирает набор из скачанного plain-списка. Второе значение
-// false — содержимого нет вовсе: список не скачан либо в нём не нашлось ни
-// одного домена и ни одной подсети.
-func plainRuleSet(tag, url string, plain PlainLists) (option.RuleSet, bool) {
-	if plain == nil {
-		return option.RuleSet{}, false
-	}
-	l, ok := plain(url)
-	if !ok {
-		return option.RuleSet{}, false
-	}
-	return inlineRuleSet(tag, l)
+	return len(buildRuleSets(r, store.Settings{}, plain).RouteTags) > 0
 }
 
 // inlineRuleSet собирает набор из доменов и подсетей: своих у правила либо

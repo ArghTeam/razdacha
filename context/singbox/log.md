@@ -3,6 +3,23 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-10-19
+
+### #222 — Separate immediate DNS matching from destination CIDRs
+
+**Changed:** Manual/plain DNS projections contain domains only; complete route
+sets and source-peer constraints remain. Empty projections omit DNS actions.
+Diagnostics retain possible CIDR routes after real DNS answers.
+**Decision:** ADR 0024 clarifies ADR 0013; native predicates stay unchanged and
+remain part of #220. Actual pinned-runtime regression fails on the original base
+and passes on the fix. The isolated wire run on `2c18017` reached eight expected
+baseline DNS refusals and eight fixed passes; config/nft restoration, restart and
+cleanup passed without a product deployment. Attempt 1 remains incomplete/failed.
+The nonce barrier covers queued observations; no packet-drop statistics or universal
+leakage guarantee is claimed. See [completed evidence](../../tasks/done/222-dns-rule-scope.md).
+Separate independent pre-run and final reviews remain required.
+
+
 ## 2026-08-21
 
 ### #202 — отсеянный член пула не доходит до конфига

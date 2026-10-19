@@ -114,8 +114,11 @@ under GPL-2.0-or-later ([ADR 0007](docs/decisions/0007-license-gplv2.md)).
   interfaces or `bind_interface`.
 - Generate the entire sing-box configuration from the database. Run `sing-box check`
   before applying; keep the previous configuration on validation failure.
-- A rule with an unavailable tunnel remains in both `route.rules` and `dns.rules` with
-  `reject` ([ADR 0013](docs/decisions/0013-unavailable-tunnel-rejects.md)); never silently remove it.
+- An unavailable-tunnel policy retains destination route rejection, including CIDRs
+  ([ADR 0013](docs/decisions/0013-unavailable-tunnel-rejects.md)). Manual/plain DNS
+  rejection uses domain-only projections; CIDR-only sources have no DNS matcher,
+  never an empty-tag match-all action ([ADR 0024](docs/decisions/0024-domain-only-dns-projections.md)).
+  Native rule-set DNS semantics remain unresolved in #220.
 - Use netlink libraries instead of `nft`, `ip`, `wg`, or `wg-quick` subprocesses.
 - Build static binaries with `CGO_ENABLED=0` and `modernc.org/sqlite`.
 - Client configs always include `DNS = 10.8.0.1`, `MTU`,
