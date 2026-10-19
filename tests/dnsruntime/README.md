@@ -28,7 +28,11 @@ forbidden TCP/UDP probes and escaped port-53 traffic independently of socket err
 After all probes, a fresh UDP nonce to the permitted sink must be acknowledged by
 the same raw collector. The gateway waits until its output scanner receives that
 barrier before inspecting forbidden reports; an echo response or fixed delay does
-not establish observer completion. Verbose mode propagates to the isolated gateway
+not establish observer completion. The raw socket is bound to the disposable sink
+interface; nonce decoding checks IPv4 header/total lengths and UDP payload bounds.
+Collector errors or unexpected output termination fail evidence collection. This
+drains frames queued before the barrier, not packets sent after the observation
+interval. Verbose mode propagates to the isolated gateway
 so all eight subtests are visible. The global success summary is emitted only after
 the raw barrier and absence checks pass and no subtest has failed.
 The fixture verifies unrelated DNS over TCP/UDP, domain rejects, permitted traffic,

@@ -191,11 +191,15 @@ func wireSink(t *testing.T) {
 	protocol = (protocol << 8) | (protocol >> 8)
 	raw, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(protocol))
 	wireMust(t, err)
+	sinkInterface, err := net.InterfaceByName("sink0")
+	wireMust(t, err)
+	wireMust(t, unix.Bind(raw, &unix.SockaddrLinklayer{Protocol: protocol, Ifindex: sinkInterface.Index}))
 	go func() {
 		buf := make([]byte, 65536)
 		for {
 			n, _, err := unix.Recvfrom(raw, buf, 0)
 			if err != nil {
+				fmt.Println("OBSERVER-ERROR:raw receive failed: " + err.Error())
 				return
 			}
 			if n < 34 || binary.BigEndian.Uint16(buf[12:14]) != unix.ETH_P_IP {
@@ -203,9 +207,11 @@ func wireSink(t *testing.T) {
 			}
 			ip := buf[14:n]
 			ihl := int(ip[0]&15) * 4
-			if len(ip) < ihl+4 {
+			totalLength := int(binary.BigEndian.Uint16(ip[2:4]))
+			if ihl < 20 || totalLength < ihl+4 || totalLength > len(ip) {
 				continue
 			}
+			ip = ip[:totalLength]
 			if ip[9] != unix.IPPROTO_TCP && ip[9] != unix.IPPROTO_UDP {
 				continue
 			}
@@ -213,8 +219,11 @@ func wireSink(t *testing.T) {
 			if port == 12080 && net.IP(ip[16:20]).String() == "203.0.113.20" {
 				fmt.Println("CONTROL-PACKET")
 			}
-			if port == 12080 && net.IP(ip[16:20]).String() == "203.0.113.20" && ip[9] == unix.IPPROTO_UDP && len(ip) >= ihl+8 && string(ip[ihl+8:]) == barrierNonce {
-				fmt.Println("BARRIER:" + barrierNonce)
+			if port == 12080 && net.IP(ip[16:20]).String() == "203.0.113.20" && ip[9] == unix.IPPROTO_UDP && len(ip) >= ihl+8 {
+				udpLength := int(binary.BigEndian.Uint16(ip[ihl+4 : ihl+6]))
+				if udpLength >= 8 && udpLength <= len(ip)-ihl && string(ip[ihl+8:ihl+udpLength]) == barrierNonce {
+					fmt.Println("BARRIER:" + barrierNonce)
+				}
 			}
 
 			if port == 53 {
@@ -380,6 +389,13 @@ func dnsWireExercise(t *testing.T) {
 	var mu sync.Mutex
 	var observations []string
 	ready := make(chan struct{})
+	observerErrors := make(chan string, 1)
+	reportObserverError := func(message string) {
+		select {
+		case observerErrors <- message:
+		default:
+		}
+	}
 	barrierObserved := make(chan struct{})
 	var barrierOnce sync.Once
 	go func() {
@@ -392,12 +408,18 @@ func dnsWireExercise(t *testing.T) {
 			mu.Lock()
 			observations = append(observations, line)
 			mu.Unlock()
+			if strings.HasPrefix(line, "OBSERVER-ERROR:") {
+				reportObserverError(line)
+			}
 			if line == "BARRIER:"+barrierNonce {
 				barrierOnce.Do(func() { close(barrierObserved) })
 			}
 		}
+		reportObserverError(fmt.Sprintf("observer output ended unexpectedly: %v", scanner.Err()))
 	}()
 	select {
+	case failure := <-observerErrors:
+		t.Fatal(failure)
 	case <-ready:
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
@@ -553,9 +575,16 @@ func dnsWireExercise(t *testing.T) {
 	// acknowledgement, then the scanner has also consumed earlier raw reports.
 	probe("udp4", "203.0.113.20:12080", barrierNonce, true)
 	select {
+	case failure := <-observerErrors:
+		t.Fatal(failure)
 	case <-barrierObserved:
 	case <-ctx.Done():
 		t.Fatal("raw collector barrier was not observed: ", ctx.Err())
+	}
+	select {
+	case failure := <-observerErrors:
+		t.Fatal(failure)
+	default:
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -564,7 +593,7 @@ func dnsWireExercise(t *testing.T) {
 		if line == "CONTROL-PACKET" {
 			controlObserved = true
 		}
-		if strings.HasPrefix(line, "FORBIDDEN-") {
+		if strings.HasPrefix(line, "FORBIDDEN-") || strings.HasPrefix(line, "OBSERVER-ERROR:") {
 			t.Fatalf("forbidden packet observed at disposable sink: %s", line)
 		}
 	}
