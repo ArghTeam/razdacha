@@ -18,10 +18,12 @@ import (
 )
 
 // ProjectionVersion pins the native semantic compiler contract.
-const ProjectionVersion = 1
-const maxNativeNodes = 10000
-const maxNativeDepth = 32
-const maxNativeValues = 200000
+const (
+	ProjectionVersion = 1
+	maxNativeNodes    = 10000
+	maxNativeDepth    = 32
+	maxNativeValues   = 200000
+)
 
 var ErrUnsupportedNative = errors.New("unsupported native predicate")
 
@@ -51,17 +53,18 @@ func ProjectNative(body []byte, format Format) (out NativeProjection, err error)
 		return out, fmt.Errorf("%w: native body size", ErrUnsupportedNative)
 	}
 	var compat option.PlainRuleSetCompat
-	if format == FormatSRS {
+	switch format {
+	case FormatSRS:
 		if err = preflightSRS(body); err != nil {
 			return out, err
 		}
 		compat, err = srs.Read(bytes.NewReader(body), true)
-	} else if format == FormatJSON {
+	case FormatJSON:
 		if err = checkNativeJSON(body); err != nil {
 			return out, err
 		}
 		err = SJSON.Unmarshal(body, &compat)
-	} else {
+	default:
 		return out, fmt.Errorf("%w: native format", ErrUnsupportedNative)
 	}
 	if err != nil {
@@ -286,8 +289,7 @@ func checkNativeJSON(body []byte) error {
 	nodes, values := 0, 0
 	bad := func(reason string) error { return fmt.Errorf("%w: %s", ErrUnsupportedNative, reason) }
 	var object func(int, bool) error
-	var rules func(int) error
-	rules = func(depth int) error {
+	rules := func(depth int) error {
 		t, e := dec.Token()
 		if e != nil || t != json.Delim('[') {
 			return bad("invalid rules array")
@@ -412,11 +414,12 @@ func checkNativeJSON(body []byte) error {
 		if e != nil {
 			return e
 		}
-		if top {
+		switch {
+		case top:
 			if !seen["version"] || !seen["rules"] {
 				return bad("missing document fields")
 			}
-		} else if kind == "logical" {
+		case kind == "logical":
 			if !seen["rules"] || !seen["mode"] {
 				return bad("missing logical fields")
 			}
@@ -425,7 +428,7 @@ func checkNativeJSON(body []byte) error {
 					return bad("default field in logical node")
 				}
 			}
-		} else if seen["rules"] || seen["mode"] {
+		case seen["rules"] || seen["mode"]:
 			return bad("logical field in default node")
 		}
 		return nil
@@ -433,7 +436,7 @@ func checkNativeJSON(body []byte) error {
 	if e := object(0, true); e != nil {
 		return e
 	}
-	if _, e := dec.Token(); e != io.EOF {
+	if _, e := dec.Token(); !errors.Is(e, io.EOF) {
 		return bad("trailing JSON")
 	}
 	return nil

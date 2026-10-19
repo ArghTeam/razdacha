@@ -96,6 +96,7 @@ func newNativeWire(t *testing.T) *nativeWireFixture {
 	wireMust(t, n.h.mgr.Refresh(n.h.ctx))
 	return n
 }
+
 func (n *nativeWireFixture) runtime(t *testing.T) (*wireReload, *singbox.Applier, store.Snapshot) {
 	t.Helper()
 	r := &wireReload{bin: os.Getenv("RAZDACHA_WIRE_BIN"), path: filepath.Join(n.dir, "config.json"), entered: make(chan struct{}), release: make(chan struct{})}
@@ -104,6 +105,7 @@ func (n *nativeWireFixture) runtime(t *testing.T) (*wireReload, *singbox.Applier
 	snap := store.Snapshot{Settings: n.h.settings, Rules: []store.Rule{{ID: "native", Name: "Synthetic native policy", Enabled: true, Action: store.ActionBlock, PeerScope: store.ScopeAll, RemoteLists: []string{n.h.url}}}}
 	return r, a, snap
 }
+
 func (n *nativeWireFixture) nft(ctx context.Context, snap store.Snapshot, content map[string]lists.List) (int, error) {
 	nf, err := netstack.NewNft()
 	if err != nil {
@@ -116,6 +118,7 @@ func (n *nativeWireFixture) nft(ctx context.Context, snap store.Snapshot, conten
 	}
 	return len(sub), err
 }
+
 func (n *nativeWireFixture) preconditions(t *testing.T) {
 	t.Helper()
 	for _, proto := range []string{"tcp4", "udp4"} {

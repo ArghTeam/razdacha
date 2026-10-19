@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/sagernet/sing-box/common/srs"
 	"github.com/sagernet/sing-box/option"
@@ -35,6 +36,7 @@ func nativeBinary(t *testing.T, body []byte) []byte {
 	}
 	return b.Bytes()
 }
+
 func TestNativeProjectionAdmission(t *testing.T) {
 	cases := []struct {
 		name, rule string
@@ -98,6 +100,7 @@ func TestNativeProjectionAdmission(t *testing.T) {
 		}
 	}
 }
+
 func compressedSRS(payload []byte) []byte {
 	var b bytes.Buffer
 	b.WriteString("SRS")
@@ -107,6 +110,7 @@ func compressedSRS(payload []byte) []byte {
 	_ = z.Close()
 	return b.Bytes()
 }
+
 func TestNativeSRSHostileBounds(t *testing.T) {
 	var huge [10]byte
 	n := binary.PutUvarint(huge[:], ^uint64(0))
@@ -127,6 +131,7 @@ func TestNativeSRSHostileBounds(t *testing.T) {
 		t.Fatal("deep SRS accepted")
 	}
 }
+
 func TestNativeLastGoodValidatorsAnd304(t *testing.T) {
 	var mu sync.Mutex
 	mode := "good"
@@ -217,6 +222,7 @@ func TestNativeLastGoodValidatorsAnd304(t *testing.T) {
 		t.Fatalf("retry validators: %v", requests)
 	}
 }
+
 func TestNativeManifestQuotaAndOrphans(t *testing.T) {
 	dir := t.TempDir()
 	f, err := NewFetcher(Options{Dir: dir})
@@ -254,6 +260,7 @@ func TestNativeManifestQuotaAndOrphans(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
 func TestNativeConcurrentQuotaReservation(t *testing.T) {
 	dir := t.TempDir()
 	f, _ := NewFetcher(Options{Dir: dir})
@@ -291,6 +298,7 @@ func TestNativeConcurrentQuotaReservation(t *testing.T) {
 		t.Fatalf("concurrent reservation successes=%d", success)
 	}
 }
+
 func TestNativeArtifactOwnerModeAndProjection(t *testing.T) {
 	f, _ := NewFetcher(Options{Dir: t.TempDir()})
 	url := "https://example.invalid/a.json"
@@ -337,6 +345,7 @@ func TestNativeJSONPredecodeBudgets(t *testing.T) {
 		}
 	}
 }
+
 func TestNativeFIFOAndCanonicalMarker(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "artifact")
 	if err := unix.Mkfifo(path, 0o600); err != nil {

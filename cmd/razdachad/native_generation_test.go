@@ -45,6 +45,7 @@ func nativePublication(t *testing.T) (*publicationFixture, *lists.Manager, *atom
 	f.g.network.manager = mgr
 	return f, mgr, phase, url
 }
+
 func TestNativePublicationPinsBothProjectionsAndRecovery(t *testing.T) {
 	ctx := context.Background()
 	f, mgr, phase, url := nativePublication(t)
@@ -105,6 +106,7 @@ func TestNativePublicationPinsBothProjectionsAndRecovery(t *testing.T) {
 		t.Fatal("changed DNS artifact escaped publication guard")
 	}
 }
+
 func TestNativeLegacyAuthorityKeepsAdminAndRequiresApply(t *testing.T) {
 	ctx := context.Background()
 	f, mgr, _, url := nativePublication(t)
@@ -144,6 +146,7 @@ func TestNativeLegacyAuthorityKeepsAdminAndRequiresApply(t *testing.T) {
 		t.Fatal("explicit Apply did not upgrade native authority")
 	}
 }
+
 func TestNativeNeverLoadedOrMissingRecoveryArtifactStaysGuarded(t *testing.T) {
 	ctx := context.Background()
 	f := newPublicationFixture(t, nil)

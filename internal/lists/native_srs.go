@@ -5,14 +5,17 @@ import (
 	"compress/zlib"
 	"encoding/binary"
 	"fmt"
-	"github.com/sagernet/sing/common/domain"
-	"go4.org/netipx"
 	"io"
 	"net/netip"
+
+	"github.com/sagernet/sing/common/domain"
+	"go4.org/netipx"
 )
 
-const maxNativeExpanded = 32 << 20
-const maxNativeLabels = 1 << 20
+const (
+	maxNativeExpanded = 32 << 20
+	maxNativeLabels   = 1 << 20
+)
 
 // Preflight the supported binary grammar before the upstream reader allocates
 // from untrusted counts. Complete decompression verifies EOF/checksum first.
@@ -69,6 +72,7 @@ func (p *srsPreflight) boolean() error {
 	}
 	return nil
 }
+
 func (p *srsPreflight) strings() error {
 	n, e := p.count(maxNativeValues - p.values)
 	if e != nil || n == 0 {
@@ -84,6 +88,7 @@ func (p *srsPreflight) strings() error {
 	}
 	return nil
 }
+
 func (p *srsPreflight) rule(depth int) error {
 	p.nodes++
 	if depth > maxNativeDepth || p.nodes > maxNativeNodes {
@@ -140,6 +145,7 @@ func (p *srsPreflight) rule(depth int) error {
 		}
 	}
 }
+
 func (p *srsPreflight) words() ([]uint64, error) {
 	n, e := p.count(maxNativeLabels / 8)
 	if e != nil || n > p.r.Len()/8 {
@@ -153,9 +159,11 @@ func (p *srsPreflight) words() ([]uint64, error) {
 	}
 	return v, nil
 }
+
 func bit(words []uint64, i int) bool {
 	return i >= 0 && i/64 < len(words) && (words[i/64]&(1<<uint(i%64))) != 0
 }
+
 func (p *srsPreflight) matcher() error {
 	start := p.r.Size() - int64(p.r.Len())
 	reserved, e := p.byte()
@@ -247,6 +255,7 @@ func (p *srsPreflight) matcher() error {
 	}
 	return nil
 }
+
 func (p *srsPreflight) ipset() error {
 	version, e := p.byte()
 	if e != nil || version != 1 {

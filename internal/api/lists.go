@@ -34,9 +34,6 @@ const (
 	listFailed = "failed"
 	// listNever — источник в наборе, но обновления не было ни разу.
 	listNever = "never"
-	// listCore — демон этот список не качает: домены ведёт сам sing-box
-	// набором типа remote, и состояния обновления у демона нет.
-	listCore = "core"
 	// listUnknown — источника состояния нет: планировщик не поднялся. Пустоту
 	// не заполняем нулём — так и говорим.
 	listUnknown = "unknown"
@@ -52,7 +49,7 @@ type listStatus struct {
 	URL string `json:"url,omitempty"`
 	// Source — адрес, который качает демон. Пусто означает, что не качает.
 	Source string `json:"source,omitempty"`
-	// State — одно из listUpdated, listFailed, listNever, listCore, listUnknown.
+	// State reports updated, failed, never or unknown acquisition status.
 	State string `json:"state"`
 	// SubnetsOnly — демон качает только подсети сервиса, домены ведёт sing-box.
 	SubnetsOnly bool `json:"subnets_only,omitempty"`

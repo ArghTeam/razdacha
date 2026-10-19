@@ -53,6 +53,7 @@ func hashOK(s string) bool {
 	b, e := hex.DecodeString(s)
 	return e == nil && len(b) == 32 && strings.ToLower(s) == s
 }
+
 func controlled(info os.FileInfo, dir bool) bool {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	mode := os.FileMode(0o600)
@@ -61,6 +62,7 @@ func controlled(info os.FileInfo, dir bool) bool {
 	}
 	return ok && st.Uid == uint32(os.Geteuid()) && info.Mode().Perm() == mode && ((dir && info.IsDir()) || (!dir && info.Mode().IsRegular()))
 }
+
 func ensureNativeDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -81,7 +83,7 @@ func privateRead(path string, max int64) ([]byte, error) {
 		return nil, err
 	}
 	f := os.NewFile(uintptr(fd), path)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -146,6 +148,7 @@ func (a NativeArtifact) Verify(dir string, subnets []string) error {
 func (f *Fetcher) nativeManifest(rawURL string) string {
 	return filepath.Join(nativeDir(f.cache.dir), f.cache.key(rawURL)+".accepted.json")
 }
+
 func (f *Fetcher) accepted(rawURL string) (nativeAccepted, error) {
 	var out nativeAccepted
 	body, err := privateRead(f.nativeManifest(rawURL), defaultMaxBytes)
@@ -171,9 +174,9 @@ func nativeQuota(dir string, addBytes int64, addFiles int) error {
 	if err != nil {
 		return err
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	entries, err := d.ReadDir(NativeStorageFiles + 1)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
 	if len(entries)+addFiles > NativeStorageFiles {
@@ -195,21 +198,23 @@ func nativeQuota(dir string, addBytes int64, addFiles int) error {
 	}
 	return nil
 }
+
 func syncNativeDir(dir string) error {
 	f, err := os.Open(dir)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return f.Sync()
 }
+
 func writeNativeFile(path string, body []byte, immutable bool) error {
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, ".native-tmp-*")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 	if err = f.Chmod(0o600); err == nil {
 		_, err = f.Write(body)
 	}
@@ -233,6 +238,7 @@ func writeNativeFile(path string, body []byte, immutable bool) error {
 	}
 	return syncNativeDir(dir)
 }
+
 func (f *Fetcher) acceptNative(rawURL string, body []byte, m meta) (nativeAccepted, error) {
 	projection, err := ProjectNative(body, FormatOf(rawURL))
 	if len(projection.DNS) > defaultMaxBytes {
@@ -269,13 +275,14 @@ func (f *Fetcher) acceptNative(rawURL string, body []byte, m meta) (nativeAccept
 	files := 1
 	for path, data := range blobs {
 		existing, e := privateRead(path, defaultMaxBytes)
-		if errors.Is(e, os.ErrNotExist) {
+		switch {
+		case errors.Is(e, os.ErrNotExist):
 			newBlobs[path] = data
 			reserve += int64(len(data))
 			files++
-		} else if e != nil {
+		case e != nil:
 			return accepted, e
-		} else if !bytes.Equal(existing, data) {
+		case !bytes.Equal(existing, data):
 			return accepted, errors.New("immutable native artifact corruption")
 		}
 	}
@@ -342,6 +349,7 @@ func (f *Fetcher) fetchNative(ctx context.Context, rawURL string) (Result, error
 	}
 	return res, fmt.Errorf("%w: unconditional native retry did not return verified body", ErrBadResponse)
 }
+
 func (f *Fetcher) updateNative(ctx context.Context, rawURL string) (Refreshed, error) {
 	res, fetchErr := f.fetchNative(ctx, rawURL)
 	accepted, err := f.accepted(rawURL)
