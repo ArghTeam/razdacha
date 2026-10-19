@@ -45,8 +45,16 @@ publication and last-good generation preservation.
 
 Use the staging supervisor required by `docs/11-staging-validation.md` for bounded
 process-group cleanup. No source-host access, host service changes or external
-traffic is permitted. Public evidence contains only synthetic assertions. Staging
-execution and independent final acceptance remain pending until explicitly recorded.
+traffic is permitted. Public evidence contains only synthetic assertions. Independent final acceptance
+remains a required merge gate.
 Attempt 1 on `bc013e7` stopped after one baseline failure because helpers captured
 the parent test; seven baseline cases and all fixed cases were not run. That
 attempt is failed evidence, not a completed baseline or fixed wire validation.
+
+Attempt 2 on `2c18017` completed all eight original-base cases with the expected
+permitted-DNS REFUSED failure and all eight fixed cases with PASS. The checked
+source/artifact identities, cleanup and scoped observations are recorded in
+[the completed task](../../tasks/done/222-dns-rule-scope.md). No product deployment
+occurred. The nonce barrier drains queued observations only: without
+`PACKET_STATISTICS`, these checks make no zero-drop, lossless or universal no-leak
+claim. They are not #214 publication-order or actual FakeIP-allocator validation.
