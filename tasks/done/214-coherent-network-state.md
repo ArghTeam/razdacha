@@ -45,8 +45,8 @@ documentation and staging evidence. Two rereads by the same reviewer do not qual
 Final acceptance requires baseline-fails/fix-passes evidence, adversarial negative
 cases and controlled staging observations under the [runbook](../../docs/11-staging-validation.md).
 No unresolved P0/P1 findings may be marked ready to merge. Unknown results stay explicit.
-Review approval does not authorize merge or release. The pre-canary threat review and primary-owner review passed. The distinct final
-diff/documentation/actual-evidence review remains pending on the final documentation commit.
+Review approval does not authorize merge or release. The pre-canary threat review and primary-owner review passed. Distinct final review of the diff, documentation and actual evidence, and current CI,
+are required before merge.
 
 
 ## Implementation and local evidence (2026-10-19)
@@ -192,7 +192,7 @@ run at those times.
 | Baseline `pending` | Same ordered gates, then desired-protection leak marker and Go FAIL |
 
 Each baseline emitted exactly one ordered precondition/watcher/ACK/leak sequence.
-No observer error, panic or runtime-error gate was present. The eight downloaded
+No observer errors, panics or runtime errors were reported. The eight downloaded
 result files matched their remote hashes. Cleanup removed all four uploaded payloads,
 left no owned processes and preserved the pre-run service/file/host inventory.
 Private addresses, raw logs and connection data are not published.
@@ -210,5 +210,5 @@ or production change occurred.
 Full tests, relevant race suites, vet and static Linux amd64/arm64 builds passed at
 `16c9dc2`; production code is unchanged at `50aa62a`. Focused tests, both fixture builds
 and CI run `39333671624` passed at `50aa62a`. The pre-canary threat gate and owner review
-passed. The final distinct reviewer must assess this documentation commit and actual
-evidence before merge readiness; this record grants no merge or release authority.
+passed. Distinct final review of the documentation and actual evidence, and current CI,
+are required before merge; this record grants no merge or release authority.

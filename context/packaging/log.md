@@ -120,5 +120,5 @@ uploaded payloads. Earlier failed/uncertified attempts remain historical evidenc
 **Limits:** actual nft/route/sing-box with a veth WG-address adapter, no encrypted WG
 handshake; finite queued capture observations, no universal lossless claim; native
 SRS/JSON remains #220. No application or production deployment occurred.
-**Review:** pre-canary and owner gates passed; distinct final evidence/docs review is
-pending. See the [completed implementation record](../../tasks/done/214-coherent-network-state.md).
+**Review:** pre-canary and owner gates passed. Distinct final review and current CI
+are required before merge. See the [completed implementation record](../../tasks/done/214-coherent-network-state.md).

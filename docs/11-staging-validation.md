@@ -1,7 +1,8 @@
 # Staging security validation
 
 Status: #222 completed its isolated wire regression. #214 completed the controlled
-attempt-5 matrix; final distinct review is pending. Later delivery tasks remain pending.
+attempt-5 matrix. Distinct final review and current CI are required before merge.
+Later delivery tasks remain pending.
 Only linked evidence is complete. No product or production deployment is claimed.
 
 ## Environment boundary and privacy
@@ -26,7 +27,7 @@ one change before advancing to the next. These are sequential delivery dependenc
 | Order | Specification | Primary staging observation | Current status |
 |---|---|---|---|
 | 1 | [#222: domain-only DNS matching](../tasks/done/222-dns-rule-scope.md) | Unrelated DNS succeeds while matching domains/CIDRs remain protected | Validated: 8 expected baseline failures, 8 fixed passes; no product deployment |
-| 2 | [#214: coherent network state](../tasks/done/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Attempt 5: fixed matrix PASS and four expected original-watcher failures; final distinct evidence/docs review pending; no product deployment |
+| 2 | [#214: coherent network state](../tasks/done/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Attempt 5: fixed matrix PASS and four expected original-watcher failures; distinct final review and current CI required before merge; no product deployment |
 | 3 | [#220: native rule-set coherence](https://github.com/ArghTeam/razdacha/issues/220) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Planned, not executed |
 | 4 | [#215: safe peer deletion](../tasks/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Planned, not executed |
 | 5 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
@@ -212,11 +213,10 @@ Canonical attempt 5 used fixed source `50aa62a` and original-watcher baseline
 `085cbf7`. Fixed Go PASS included exactly four zero-drop capture ACKs and one final
 matrix PASS marker. Each baseline case (`list-tcp`, `list-udp`, `list-dns`, `pending`)
 emitted one ordered positive-control/watcher/zero-drop-ACK/desired-leak sequence and
-Go FAIL. No observer/panic/runtime-error gate was present. Downloaded result hashes
+Go FAIL. No observer errors, panics or runtime errors were reported. Downloaded result hashes
 matched; all uploaded payloads and owned processes were removed, and pre-run service,
 file and host inventories were unchanged. The [completed specification](../tasks/done/214-coherent-network-state.md)
-retains all earlier failed or uncertified attempts. Final independent review remains
-required on the final documentation revision.
+retains all earlier failed or uncertified attempts. Distinct final review and current CI are required before merge.
 
 This matrix exercises actual nft, route and sing-box behavior with a veth adapter for
 WG address reconciliation. It does not exercise an encrypted WG handshake. Zero-drop
