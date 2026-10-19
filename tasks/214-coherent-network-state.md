@@ -66,8 +66,8 @@ explicit unchanged Apply repairs network state without restarting a known runtim
 | Daemon publication unit matrix | Passed locally: ordered guard/WG/route/runtime/nft, validation/guard/WG/route/restart/nft/manifest/bootstrap/release faults, identical-byte retry, cancellation, restart, pending edits and concurrency |
 | Peer identity/address matrix | Passed locally: deleted address remains reserved across restart, both allocation/Apply orderings, concurrent creates, legacy refusal, pending allocation mismatch, stored-peer/server/pool validation |
 | Restore/bootstrap unit matrix | Passed locally: fresh orphan authority refusal, distinct seed/commit kinds, private permissions, interrupted invalidation ordering and fsync retry, guarded restore restart |
-| Linux wire fixture | Compiled locally; execution pending independent threat gate and controlled staging |
-| Archived original watcher baseline | Adapter prepared; compile/execution pending; no wire-level baseline result claimed |
+| Linux wire fixture | Three attempts stopped at initial positive preconditions; core matrix not reached; corrected fixture requires fresh review and execution |
+| Archived original watcher baseline | Previous adapter compiled; all four cases not run; rebuild uses DNS-corrected prerequisite main |
 
 The baseline-only adapter invokes the original `startNetfilter` and `watchLists` from an
 archive of the unfixed base, using shared disposable namespace helpers. Run separate
@@ -125,3 +125,32 @@ plain-list generation keeps subnet intent stable, adds a domain, and queues the 
 acknowledgments are required before stable postcondition probes. These are prepared
 observations, not executed acceptance evidence. Existing established-flow, DNS, repair,
 restart, failure and recovery checks are retained with unchanged per-probe deadlines.
+
+
+### DNS prerequisite and observer follow-up
+
+The third fixed run at `fe16166` passed local DNS upstream readiness, all four UDP
+alias preconditions and initial TCP/UDP controls, then its first application DNS query
+returned REFUSED (5), no answers and no transport error. All four original-watcher
+baseline cases remained not run; cleanup restored the same host structural snapshot
+and left no fixture process group. A private local reproduction using the actual pinned
+runtime identified premature CIDR-only DNS reject matching. Prerequisite #222 corrected
+that independent defect and merged as `085cbf7d4a5898615da343453755ab13f3bd4e7a`.
+Its successful matrix does not replace any #214 wire observation.
+
+The prerequisite is merged into this branch without rebasing. A new baseline archive
+must use that exact main revision with its original watcher unchanged, copying only
+the three documented test helpers. The observer now requires a fresh random UDP nonce
+seen by the same AF_PACKET receiver, zero `PACKET_STATISTICS` drops since the preceding
+barrier, and scanner consumption of the matching ACK before each evidence snapshot.
+Receiver/statistics errors, output EOF/scanner failure and missing or mismatched ACKs
+invalidate evidence. Raw payload markers are checked per TCP flow, including split
+markers, and UDP packet; forwarded DNS and fresh guarded packets remain monitored.
+The bounds cover packets queued before the barrier in this low-volume fixture, not
+universal lossless capture or unobserved future traffic.
+
+Baseline result classification requires positive controls, original-watcher publication
+and a successful capture barrier before the explicit `214-BASELINE-LEAK-OBSERVED` failure.
+A generic test error is not an expected baseline failure. The fixed matrix emits its
+success marker only after all assertions and the last observer barrier pass. No new
+wire execution or acceptance is claimed by these preparations.

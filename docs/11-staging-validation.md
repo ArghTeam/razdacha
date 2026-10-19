@@ -26,7 +26,7 @@ one change before advancing to the next. These are sequential delivery dependenc
 | Order | Specification | Primary staging observation | Current status |
 |---|---|---|---|
 | 1 | [#222: domain-only DNS matching](../tasks/done/222-dns-rule-scope.md) | Unrelated DNS succeeds while matching domains/CIDRs remain protected | Validated: 8 expected baseline failures, 8 fixed passes; no product deployment |
-| 2 | [#214: coherent network state](../tasks/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Prerequisite merged; observer hardening and rebuilt baseline pending; original four cases not executed |
+| 2 | [#214: coherent network state](../tasks/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Prerequisite merged; observer hardened locally; rebuilt checks and wire validation pending; original four cases not executed |
 | 3 | [#220: native rule-set coherence](https://github.com/ArghTeam/razdacha/issues/220) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Planned, not executed |
 | 4 | [#215: safe peer deletion](../tasks/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Planned, not executed |
 | 5 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
@@ -118,6 +118,15 @@ The review evidence records redacted test commands, revision, expected/observed 
 review findings and disposition, approved scope, and a rollback summary. Never include
 private host output or connection/credential values. These gates apply to each
 implementation; completion is claimed only by its linked revision-specific evidence.
+
+The #214 observer consumes a fresh random UDP barrier in the same AF_PACKET loop
+that records forbidden packets, checks `PACKET_STATISTICS` at every barrier, and
+requires the stdout scanner to consume its matching ACK before an evidence snapshot.
+Any reported drop, receiver/statistics error, output EOF/scanner failure or missing ACK
+invalidates the observation. These low-volume finite checks cover packets queued before
+the barrier; they do not claim universal lossless capture or future traffic protection.
+The rebuilt baseline uses prerequisite main `085cbf7d4a5898615da343453755ab13f3bd4e7a`
+with its unchanged original watcher. All four baseline cases still require actual runs.
 
 ## Cleanup and rollback
 

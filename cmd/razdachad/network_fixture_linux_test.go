@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -176,11 +177,17 @@ func wireSink(t *testing.T) {
 	protocol = (protocol << 8) | (protocol >> 8)
 	raw, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(protocol))
 	wireMust(t, err)
+	sinkInterface, err := net.InterfaceByName("sink0")
+	wireMust(t, err)
+	wireMust(t, unix.Bind(raw, &unix.SockaddrLinklayer{Protocol: protocol, Ifindex: sinkInterface.Index}))
+	// This receiver is the only authority for capture barriers and packet losses.
 	go func() {
+		streams := make(map[string]*wirePayloadDetector)
 		buf := make([]byte, 65536)
 		for {
 			n, _, err := unix.Recvfrom(raw, buf, 0)
 			if err != nil {
+				fmt.Printf("COLLECTOR-ERROR:receive: %v\n", err)
 				return
 			}
 			if n < 34 || binary.BigEndian.Uint16(buf[12:14]) != unix.ETH_P_IP {
@@ -188,13 +195,55 @@ func wireSink(t *testing.T) {
 			}
 			ip := buf[14:n]
 			ihl := int(ip[0]&15) * 4
-			if len(ip) < ihl+4 {
+			totalLength := int(binary.BigEndian.Uint16(ip[2:4]))
+			if ihl < 20 || totalLength < ihl+4 || totalLength > len(ip) {
 				continue
 			}
+			ip = ip[:totalLength]
 			if ip[9] != unix.IPPROTO_TCP && ip[9] != unix.IPPROTO_UDP {
 				continue
 			}
 			port := binary.BigEndian.Uint16(ip[ihl+2 : ihl+4])
+			if ip[9] == unix.IPPROTO_UDP && len(ip) >= ihl+8 {
+				udpLength := int(binary.BigEndian.Uint16(ip[ihl+4 : ihl+6]))
+				if udpLength < 8 || udpLength > len(ip)-ihl {
+					fmt.Println("COLLECTOR-ERROR:invalid UDP length")
+					return
+				}
+				payload := ip[ihl+8 : ihl+udpLength]
+				if port == 12082 && strings.HasPrefix(string(payload), "capture-barrier-") {
+					stats, statsErr := unix.GetsockoptTpacketStats(raw, unix.SOL_PACKET, unix.PACKET_STATISTICS)
+					if statsErr != nil {
+						fmt.Printf("COLLECTOR-ERROR:statistics: %v\n", statsErr)
+						return
+					}
+					if stats.Drops != 0 {
+						fmt.Printf("COLLECTOR-ERROR:dropped packets: %d\n", stats.Drops)
+						return
+					}
+					fmt.Printf("COLLECTOR-ACK:%s\n", payload)
+				}
+				var detector wirePayloadDetector
+				if port == 12080 && detector.feed(payload) {
+					fmt.Println("FORBIDDEN-UDP-PACKET-PAYLOAD")
+				}
+			}
+			if ip[9] == unix.IPPROTO_TCP && len(ip) >= ihl+20 {
+				header := int(ip[ihl+12]>>4) * 4
+				if header >= 20 && len(ip) >= ihl+header && port == 12080 {
+					// Separate directions and connection tuples; the bounded detector
+					// also catches markers split across captured TCP payloads.
+					key := string(ip[12:20]) + string(ip[ihl:ihl+4])
+					detector := streams[key]
+					if detector == nil {
+						detector = new(wirePayloadDetector)
+						streams[key] = detector
+					}
+					if detector.feed(ip[ihl+header:]) {
+						fmt.Println("FORBIDDEN-TCP-PACKET-PAYLOAD")
+					}
+				}
+			}
 			if port == 53 {
 				fmt.Println("FORBIDDEN-DIRECT-DNS-PACKET")
 			}
@@ -432,15 +481,18 @@ func (r *wireReload) Reload(ctx context.Context) error {
 }
 
 type wireHarness struct {
-	ctx      context.Context
-	client   netns.NsHandle
-	mgr      *lists.Manager
-	next     atomic.Bool
-	extended atomic.Bool
-	url      string
-	settings store.Settings
-	mu       sync.Mutex
-	seen     map[string]bool
+	ctx           context.Context
+	client        netns.NsHandle
+	mgr           *lists.Manager
+	next          atomic.Bool
+	extended      atomic.Bool
+	url           string
+	settings      store.Settings
+	mu            sync.Mutex
+	seen          map[string]bool
+	collectorErr  error
+	collectorDone chan struct{}
+	collectorACK  chan string
 }
 
 func newWireHarness(t *testing.T) *wireHarness {
@@ -448,7 +500,7 @@ func newWireHarness(t *testing.T) *wireHarness {
 	clientNS, sinkNS := wireTopology(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	t.Cleanup(cancel)
-	h := &wireHarness{ctx: ctx, client: clientNS, seen: make(map[string]bool)}
+	h := &wireHarness{ctx: ctx, client: clientNS, seen: make(map[string]bool), collectorDone: make(chan struct{}), collectorACK: make(chan string, 16)}
 	sink := wireExec(t, sinkNS, "sink")
 	pipe, err := sink.StdoutPipe()
 	wireMust(t, err)
@@ -457,9 +509,24 @@ func newWireHarness(t *testing.T) *wireHarness {
 	t.Cleanup(func() { _ = sink.Process.Kill(); _ = sink.Wait() })
 	ready := make(chan struct{})
 	go func() {
+		defer close(h.collectorDone)
 		s := bufio.NewScanner(pipe)
 		for s.Scan() {
 			v := s.Text()
+			if strings.HasPrefix(v, "COLLECTOR-ERROR:") {
+				h.mu.Lock()
+				h.collectorErr = errors.New(v)
+				h.mu.Unlock()
+			}
+			if strings.HasPrefix(v, "COLLECTOR-ACK:") {
+				select {
+				case h.collectorACK <- strings.TrimPrefix(v, "COLLECTOR-ACK:"):
+				default:
+					h.mu.Lock()
+					h.collectorErr = errors.New("collector ACK queue overflow")
+					h.mu.Unlock()
+				}
+			}
 			if v == "READY" {
 				close(ready)
 			}
@@ -469,8 +536,13 @@ func newWireHarness(t *testing.T) *wireHarness {
 				h.mu.Unlock()
 			}
 		}
+		h.mu.Lock()
+		h.collectorErr = fmt.Errorf("collector output ended: %w", errors.Join(io.EOF, s.Err()))
+		h.mu.Unlock()
 	}()
 	select {
+	case <-h.collectorDone:
+		t.Fatal("collector stopped before readiness")
 	case <-ready:
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
@@ -544,9 +616,44 @@ func (h *wireHarness) probe(t *testing.T, proto, addr, nonce string, want bool) 
 	}
 }
 
+// captureBarrier observes only packets queued before its nonce in the isolated
+// receiver. It checks zero reported kernel drops; it is not a lossless-network claim.
+func (h *wireHarness) captureBarrier(t *testing.T) {
+	t.Helper()
+	var random [24]byte
+	_, err := rand.Read(random[:])
+	wireMust(t, err)
+	nonce := fmt.Sprintf("capture-barrier-%x", random)
+	conn, err := net.Dial("udp4", "192.0.2.2:12082")
+	wireMust(t, err)
+	_, err = conn.Write([]byte(nonce))
+	_ = conn.Close()
+	wireMust(t, err)
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case ack := <-h.collectorACK:
+		if ack != nonce {
+			t.Fatalf("unexpected capture barrier ACK: %q", ack)
+		}
+	case <-h.collectorDone:
+		t.Fatal("collector output ended before evidence barrier")
+	case <-timer.C:
+		t.Fatal("capture barrier ACK timed out")
+	case <-h.ctx.Done():
+		t.Fatal(h.ctx.Err())
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.collectorErr != nil {
+		t.Fatal(h.collectorErr)
+	}
+	t.Log("214-CAPTURE-BARRIER-PASS drops=0")
+}
+
 func (h *wireHarness) assertNoForbidden(t *testing.T) {
 	t.Helper()
-	time.Sleep(100 * time.Millisecond)
+	h.captureBarrier(t)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for nonce := range h.seen {

@@ -135,6 +135,7 @@ func wireExercise(t *testing.T) {
 	for proto, stream := range streams {
 		stream.exchange(t, "guarded-established-"+proto, false)
 	}
+	h.assertNoForbidden(t)
 	close(r.release)
 	deadline := time.Now().Add(6 * time.Second)
 	for {
@@ -196,6 +197,7 @@ func wireExercise(t *testing.T) {
 		t.Fatalf("queued Apply completed while watcher held ingress guard: %v", err)
 	default:
 	}
+	h.assertNoForbidden(t)
 	close(r.release)
 	select {
 	case err := <-manualDone:
@@ -242,6 +244,7 @@ func wireExercise(t *testing.T) {
 		h.probe(t, proto, "203.0.113.30:12081", "guarded-failure-"+proto, false)
 	}
 	h.probe(t, "dns", "203.0.113.20:53", "guarded-failure.example.", false)
+	h.assertNoForbidden(t)
 	gate.mu.Lock()
 	n.nft = realNft
 	gate.mu.Unlock()
@@ -252,4 +255,5 @@ func wireExercise(t *testing.T) {
 		h.probe(t, proto, "203.0.113.20:12080", "control-recovery-"+proto, true)
 	}
 	h.assertNoForbidden(t)
+	t.Log("214-FIXED-WIRE-MATRIX-PASS")
 }

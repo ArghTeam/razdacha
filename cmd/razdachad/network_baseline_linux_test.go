@@ -57,6 +57,7 @@ func wireExercise(t *testing.T) {
 	h.probe(t, "tcp4", "203.0.113.20:12080", "baseline-control", true)
 	h.probe(t, "dns", "203.0.113.20:53", "unrelated.example.", true)
 	h.probe(t, "tcp4", "203.0.113.30:12080", "baseline-manual-initial", false)
+	t.Logf("214-BASELINE-PRECONDITIONS-PASS case=%s", mode)
 	if mode == "pending" {
 		manual.Subnets = []string{"203.0.113.99/32"}
 		wireMust(t, st.UpdateRule(h.ctx, manual))
@@ -88,16 +89,25 @@ func wireExercise(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("baseline premise invalid: runtime config changed")
 	}
-	t.Logf("original watcher refreshed nft while runtime config stayed stale: case=%s", mode)
+	t.Logf("214-BASELINE-WATCHER-PUBLISHED case=%s", mode)
+	var proto, addr, nonce string
 	switch mode {
 	case "list-tcp":
-		h.probe(t, "tcp4", "203.0.113.10:12080", "blocked-final-baseline-tcp", false)
+		proto, addr, nonce = "tcp4", "203.0.113.10:12080", "blocked-final-baseline-tcp"
 	case "list-udp":
-		h.probe(t, "udp4", "203.0.113.10:12080", "blocked-final-baseline-udp", false)
+		proto, addr, nonce = "udp4", "203.0.113.10:12080", "blocked-final-baseline-udp"
 	case "list-dns":
-		h.probe(t, "dns", "203.0.113.20:53", "blocked.example.", false)
+		proto, addr, nonce = "dns", "203.0.113.20:53", "blocked.example."
 	case "pending":
-		h.probe(t, "tcp4", "203.0.113.30:12080", "blocked-final-baseline-unapplied", false)
+		proto, addr, nonce = "tcp4", "203.0.113.30:12080", "blocked-final-baseline-unapplied"
+	}
+	cmd := wireExec(t, h.client, "probe", proto, addr, nonce)
+	_, probeErr := cmd.CombinedOutput()
+	// A successful forbidden probe is evidence only after the observer consumed
+	// its nonce and checked drops. Observer failure must never look like the bug.
+	h.captureBarrier(t)
+	if probeErr == nil {
+		t.Fatalf("214-BASELINE-LEAK-OBSERVED case=%s: desired protection failed", mode)
 	}
 	h.assertNoForbidden(t)
 }

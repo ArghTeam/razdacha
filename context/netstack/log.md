@@ -60,3 +60,13 @@ legacy setup and DB restore require explicit policy authorization when authority
 Linux fixture compilation are in progress. Staging wire execution and final independent
 security acceptance remain pending; no production deployment is claimed.
 **Limit:** autonomous remote `.srs`/`.json` synchronization remains [#220](https://github.com/ArghTeam/razdacha/issues/220).
+
+
+### Issue 214 prerequisite integration and observer gate
+
+Merged the domain-only DNS prerequisite (ADR 0024) without changing guarded generation
+semantics (ADR 0023). The three earlier wire attempts remain unsuccessful precondition
+runs and all four original-watcher baseline cases remain unexecuted. The rebuilt baseline
+uses the prerequisite main with its original watcher. Fixture evidence now requires a
+same-receiver nonce ACK and zero reported packet drops; receiver/output failures invalidate
+an observation. These finite isolated checks make no universal lossless-capture claim.
