@@ -188,10 +188,11 @@ IPv4-подсетью, `wg_server_address` — IPv4-адресом внутри 
 сети», которое ADR 0004 оставляет в UI. Прежние 576–1500 границами решения не были и
 пропускали и дефолт системы, и значения, режущие полезную нагрузку без причины.
 
-Всё, что можно вывести автоматически — выводится. В UI показываются только
-`wg_listen_port`, `endpoint_host`, `client_mtu`, `dns_upstream`,
-`list_update_interval`, `tunnel_check_interval`; остальное — в `config.yaml` для тех,
-кому надо.
+Settings are persisted in SQLite through `store.Settings`, not `config.yaml`.
+The panel exposes the supported controls, including WireGuard port, endpoint, MTU, DNS,
+list/pool refresh intervals, tunnel checks, notifications and backups. The country
+blocklist is configurable through the settings API. See the [settings API](05-api.md)
+for fields and secret handling.
 
 ## Отображение в конфиг sing-box
 

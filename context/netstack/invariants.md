@@ -5,7 +5,7 @@ description: wg0, nft-правила и маршрутизация через ne
 ---
 
 ## Invariants
-- MTU интерфейса `wg0` ровно 1280 — тот же, что у клиентов (ADR 0004). Не 1420 и не «по умолчанию».
+- Server `wg0` and client MTU both follow `Settings.ClientMTU`: default 1280, allowed range 1280–1420 (`store.MinClientMTU` / `store.MaxClientMTU`, ADR 0004). `WGConfigFromSettings` propagates this value to the server interface.
 - Только netlink: `wgctrl`, `google/nftables`, `vishvananda/netlink`. Ни `wg`, ни `wg-quick`, ни `nft`, ни `ip` бинарниками.
 - Интервальные сеты задаются парой элементов — начало и адрес, следующий за концом, с `IntervalEnd`. Поле `KeyEnd` живое ядро 6.12 отвергает с EINVAL, и это не видно в тестах с подменённым соединением.
 - Подсети сливаются через `netipx` до заливки: пересекающиеся интервалы ядро отвергает всей транзакцией, а `auto-merge` есть только в userspace-утилите.

@@ -1,7 +1,7 @@
 ---
 type: invariants
 title: Ui
-description: "статика без сборщика: вход и четыре экрана, дефолты вместо опций"
+description: Static HTML/CSS/ES modules embedded from ui/dist; defaults instead of options
 ---
 
 ## Invariants

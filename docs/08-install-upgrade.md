@@ -51,11 +51,11 @@ curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install
 16. `systemctl enable` + `systemctl restart` для `sing-box`, `razdachad` и nginx;
     `wg0` и nft-правила поднимает демон при старте
 
-**Бинарник, а не `.deb`.** Пакета пока нет: он требует `nfpm` в сборке и
-репозитория для обновлений, а до первого релиза важнее, чтобы установка вообще
-существовала. Отсюда `/usr/local/bin`, а не `/usr/bin`: этот каталог не
-принадлежит пакетному менеджеру, и апгрейд системы наш файл не тронет.
-`ExecStart` в юните подставляется по факту, а не зашит.
+**Release archives, not `.deb` packages.** Published releases contain Linux amd64/arm64
+archives, `install.sh` and checksums. The dormant `make deb` target references a missing
+nfpm configuration and is not a supported installation path. The installer writes to
+`/usr/local/bin`, outside the distribution package manager's binary directory, and
+renders `ExecStart` with the actual installed path.
 
 **Фаза 3 — вывод**
 ```
@@ -175,10 +175,10 @@ address» — юнит уходит в `failed`, панель недоступн
 
 ## Режимы доступа к панели
 
-По умолчанию nginx слушает только `10.8.0.1` — попасть на панель можно исключительно из
-VPN ([модель привилегий](01-architecture.md#модель-привилегий)). Отсюда порядок:
-установщик создаёт первого пира и печатает конфиг сам, иначе система была бы недоступна
-для настройки.
+By default nginx listens only on `10.8.0.1`, so the panel is reachable through the
+VPN ([panel access and privileges](01-architecture.md#privileges-panel-access-and-tls)).
+The installer creates the first peer and prints its configuration before the user
+needs panel access.
 
 В публичном режиме ([ADR 0009](decisions/0009-public-panel-access.md)) nginx слушает
 `443` и `80` на всех интерфейсах; отдельного `listen` на `10.8.0.1` не нужно — он уже
