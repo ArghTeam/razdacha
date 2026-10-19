@@ -163,3 +163,8 @@ The baseline archive copies `network_fixture_linux_test.go`,
 `network_payload_test.go` and `network_baseline_linux_test.go` into `cmd/razdachad`
 and builds with `-tags security214_baseline`. The current fixed runner uses the default
 build tags and `network_generation_linux_test.go`; do not copy that runner into baseline.
+
+UDP echo listeners bind each synthetic destination address explicitly. Connected UDP
+probes reject replies from a different source; a wildcard sink must not turn that fixture
+error into a product failure. Every alias must pass a positive UDP echo precondition
+before application policy is installed. Deadlines and negative assertions remain fixed.

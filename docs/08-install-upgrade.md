@@ -373,14 +373,14 @@ WantedBy=multi-user.target
 запись сгенерированного конфига падает по правам, и в панели это выглядит как
 «внутренняя ошибка» на кнопке «Применить».
 
-**Юнит sing-box.** Если рантайм пришёл пакетом дистрибутива, используется его штатный
-юнит и ничего не подменяется: обновляет его пакетный менеджер, а наш файл в
-`/etc/systemd/system` перекрыл бы его навсегда. Если бинарник положили мы, юнит пишем
-тоже мы — с маркером в первой строке и **без `ExecReload`**. Это не упущение:
-`systemctl restart` is unconditional, including for packaged units: a signal-based
-`ExecReload` could acknowledge success while the old policy is still active. We require
-the old process to terminate before publishing nft. A restart is also required — конфиг генерируется целиком, и кэш FakeIP обязан обнулиться
-вместе с ним, иначе клиент с закэшированным адресом уходит в никуда.
+A packaged sing-box unit remains package-owned; an `/etc/systemd/system` replacement
+would mask its future updates. When the installer supplies the binary, it writes a
+marked local unit without `ExecReload`. Runtime publication unconditionally uses
+`systemctl restart`, including with packaged units: a signal-based `ExecReload` can
+acknowledge success while the old policy remains active. The old process must terminate
+before nft publication. Restart also clears FakeIP cache when the full config changes,
+so clients cannot retain stale runtime mappings.
+
 
 ## Удаление
 

@@ -157,8 +157,15 @@ func wireRole(t *testing.T) bool {
 }
 
 func wireSink(t *testing.T) {
-	udp, err := net.ListenPacket("udp4", ":12080")
-	wireMust(t, err)
+	// Wildcard UDP WriteTo can choose the main interface as reply source, which
+	// connected probes correctly reject. Bind each destination explicitly so
+	// its reply keeps the synthetic address that received the request.
+	var udpSockets []net.PacketConn
+	for _, addr := range []string{"203.0.113.10:12080", "203.0.113.20:12080", "203.0.113.30:12080"} {
+		udp, err := net.ListenPacket("udp4", addr)
+		wireMust(t, err)
+		udpSockets = append(udpSockets, udp)
+	}
 	tcp, err := net.Listen("tcp4", ":12080")
 	wireMust(t, err)
 	protocol := uint16(unix.ETH_P_IP)
@@ -198,17 +205,20 @@ func wireSink(t *testing.T) {
 			}
 		}
 	}()
-	go func() {
-		buf := make([]byte, 2048)
-		for {
-			n, a, err := udp.ReadFrom(buf)
-			if err != nil {
-				return
+	for _, udp := range udpSockets {
+		go func(udp net.PacketConn) {
+			buf := make([]byte, 2048)
+			for {
+				n, addr, err := udp.ReadFrom(buf)
+				if err != nil {
+					return
+				}
+				fmt.Printf("SINK:%s\n", buf[:n])
+				_, _ = udp.WriteTo(buf[:n], addr)
 			}
-			fmt.Printf("SINK:%s\n", buf[:n])
-			_, _ = udp.WriteTo(buf[:n], a)
-		}
-	}()
+		}(udp)
+	}
+
 	go func() {
 		for {
 			c, err := tcp.Accept()
@@ -480,6 +490,11 @@ func newWireHarness(t *testing.T) *wireHarness {
 	select {
 	case <-h.mgr.Updates():
 	default:
+	}
+	// Prove UDP echo reply identity on every synthetic alias before installing
+	// application policy; a broken fixture cannot satisfy negative leak tests.
+	for i, addr := range []string{"203.0.113.10:12080", "203.0.113.20:12080", "203.0.113.30:12080"} {
+		h.probe(t, "udp4", addr, fmt.Sprintf("fixture-udp-precondition-%d", i), true)
 	}
 	h.settings = store.DefaultSettings()
 	h.settings.DNSType = "udp"

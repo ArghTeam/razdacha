@@ -227,7 +227,7 @@ func (a *Applier) prepare(ctx context.Context, snap store.Snapshot, forceCheck b
 
 		dir := filepath.Dir(res.Path)
 		if err := os.MkdirAll(dir, configDirMode); err != nil {
-			return nil, fmt.Errorf("создание каталога %s: %w", dir, err)
+			return nil, fmt.Errorf("create configuration directory %s: %w", dir, err)
 		}
 
 		tmp, err := writeTemp(res.Path, data)

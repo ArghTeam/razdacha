@@ -88,3 +88,14 @@ now retains a bounded per-connection marker tail and detects forbidden epoch sub
 across arbitrary fragmentation/coalescing. A portable regression exercises every marker
 split and one-byte reads. The baseline archive also copies `network_payload_test.go`.
 CI formatting and minor static-analysis findings were corrected without product changes.
+
+
+### First isolated fixture observation
+
+The first fixed-fixture run stopped at the initial positive UDP echo timeout, after a
+positive TCP echo and before list refresh. Baseline cases were not executed. Cleanup
+completed and the host structural state matched its pre-run snapshot. The wildcard UDP
+sink did not pin reply source identity; the fixture now binds a listener per synthetic
+alias and checks positive UDP echo for each before installing application policy. No
+product defect or successful wire acceptance is inferred from that failed precondition.
+The corrected fixture requires a new build, review and controlled execution.
