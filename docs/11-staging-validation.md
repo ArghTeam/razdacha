@@ -92,7 +92,8 @@ The author cannot approve their own implementation. Use two gates:
    negative results and cleanup/recovery outcome before declaring merge/release readiness.
 
 For #214 and #217, require two independent reviewer passes: a threat/failure-model review
-and a final diff/tests/docs/evidence review, performed by independent reviewers. For #215,
+and a final diff/tests/docs/evidence review, performed by two distinct reviewers
+independent of the author and each other. Two rereads by one reviewer do not qualify. For #215,
 #216 and #218, require a reviewer separate from the author plus primary owner review.
 Re-review subsequent material changes. No unresolved P0/P1 finding may be marked ready to
 merge; unknown or untested behavior is recorded explicitly. Approval grants no automatic

@@ -39,8 +39,9 @@ Track delivery and evidence in [issue #214](https://github.com/ArghTeam/razdacha
 ## Security review gates
 The implementation author cannot approve their own change. Before an isolated staging
 canary, an independent reviewer must assess the local regression, threat/failure model
-and proposed scope/rollback. Require two independent reviewer passes: one focused on the
-threat/failure model and one on the final diff, tests, documentation and staging evidence.
+and proposed scope/rollback. Require two distinct reviewers, independent of the author and each other:
+one reviews the threat/failure model; the other reviews the final diff, tests,
+documentation and staging evidence. Two rereads by the same reviewer do not qualify.
 Final acceptance requires baseline-fails/fix-passes evidence, adversarial negative
 cases and controlled staging observations under the [runbook](../docs/11-staging-validation.md).
 No unresolved P0/P1 findings may be marked ready to merge. Unknown results stay explicit.
