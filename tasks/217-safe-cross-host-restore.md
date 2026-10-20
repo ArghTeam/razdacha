@@ -157,3 +157,21 @@ may release restore safety state. Setup/update/uninstall cannot provide an escap
 
 These are implementation obligations, not completed tests or review approval. The
 revised frozen ADR must receive independent re-review before implementation starts.
+
+## Guarded runtime publication phase (proposed clarification)
+
+Removing the runtime marker to perform a checked restart is not completed activation.
+After guard installation and checked config installation/sync, durably BeginPublishing;
+only then remove the runtime inhibitor for controlled restart. The `publishing` phase
+blocks daemon startup/reset and is protected restore state for installer capability
+checks and recovery. Finish only after runtime/nft/authority/bootstrap publication is
+coherent and durable; release client ingress last. Abort durably reinstalls the runtime
+inhibitor before restoring a retryable complete-but-runtime-inhibited record. An Abort
+failure or interrupted record/marker combination remains fail-closed and requires
+explicit recovery. No pending WG enable is published by this phase.
+
+Add injected failures/crashes immediately before/after BeginPublishing, marker removal,
+runtime restart, committed authority save, bootstrap invalidation, Finish and ingress
+release. Assert that missing markers never imply completion and reset cannot open
+clients during an unfinished publication. This is a contract clarification pending
+independent review, not completed implementation proof.

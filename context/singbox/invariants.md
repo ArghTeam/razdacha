@@ -52,3 +52,9 @@ description: генерация option.Options из состояния БД, п�
 current runtime invariants above remain the implementation record until validated.
 
 Independent runtime remains boot-inhibited after restore; no quarantined config replay. Only checked explicit guarded Apply may release that inhibitor. Paused first/second hops retain scoped rejection.
+
+Proposed publication clarification: runtime marker removal occurs only inside a durable
+restore-only publishing phase after checked config sync and ingress guarding. Finish
+requires coherent runtime/nft/authority/bootstrap publication; Abort recreates inhibition
+before restoring retryable state. Startup/reset/installer/recovery fail closed on an
+interrupted publishing phase. See ADR 0027; this is not validated runtime behavior yet.

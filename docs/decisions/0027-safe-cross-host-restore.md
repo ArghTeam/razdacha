@@ -217,7 +217,19 @@ After acquisition, explicit Apply prepares/checks a full configuration using pau
 and preserves unavailable-tunnel domain/CIDR rejection and selected-orphan handling.
 Only a fully prepared guarded publication that has installed and synced its checked
 paused-safe config at the sole supported runtime path may durably remove the runtime
-inhibitor and start sing-box; startup still cannot recover any quarantined config. Failed publication
+inhibitor and start sing-box. This release is a small durable `publishing` phase, not
+completed activation: install/verify the client guard and install/sync the checked
+candidate first, then persist BeginPublishing before removing the runtime marker for
+controlled restart. Startup, reset, installer/setup and recovery treat `publishing`
+and uncertain marker/record combinations as protected/incomplete. Imported callbacks
+cannot interpret them as explicit resume or successful policy publication. Finish
+publishing only after the checked runtime, nft policy, committed authority and bootstrap
+invalidation are coherent and durable; release client ingress last. If publication
+fails before that commit, Abort must durably recreate the runtime inhibitor before
+returning the record to complete-but-runtime-inhibited state. Failed Abort remains an
+uncertain protected phase requiring explicit recovery; never infer completion from an
+absent runtime marker. A crash at any intermediate marker/record boundary fails closed.
+This phase changes no WG enabled flags. Startup still cannot recover quarantined config. Failed publication
 stays guarded under ADR 0023 and never restores old runtime. A separate explicit tunnel
 enable plus subsequent Apply is required to activate chosen outgoing WG credentials;
 background work/reboot cannot publish that pending edit. Resume alone never releases
