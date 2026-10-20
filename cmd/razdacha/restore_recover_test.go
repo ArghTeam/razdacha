@@ -212,3 +212,32 @@ func TestRecoveryActivationFailureRetryPreservesDisabledRuntime(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoreRecoveryRejectsNativeParentSymlinkBeforeQuarantine(t *testing.T) {
+	opts, op, _ := recoveryFixture(t, false, false)
+	dir := filepath.Dir(opts.dbPath)
+	// Complete snapshot has no native files. Even this case must inspect the
+	// intermediate parent before the actual rollback's destructive traversal.
+	if e := os.RemoveAll(filepath.Join(dir, "lists")); e != nil {
+		t.Fatal(e)
+	}
+	sibling := t.TempDir()
+	native := filepath.Join(sibling, "native")
+	if e := os.Mkdir(native, 0o700); e != nil {
+		t.Fatal(e)
+	}
+	sentinel := filepath.Join(native, "external-sentinel")
+	if e := os.WriteFile(sentinel, []byte("synthetic sibling must remain unchanged"), 0o600); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.Symlink(sibling, filepath.Join(dir, "lists")); e != nil {
+		t.Fatal(e)
+	}
+	if e := recoverRestore(context.Background(), opts, op, false); e == nil {
+		t.Fatal("actual recovery followed external native parent")
+	}
+	b, e := os.ReadFile(sentinel)
+	if e != nil || string(b) != "synthetic sibling must remain unchanged" {
+		t.Fatalf("recovery touched sibling sentinel: %v", e)
+	}
+}

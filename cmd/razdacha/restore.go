@@ -413,6 +413,9 @@ func collectDestinationRecovery(ctx context.Context, op, dbPath, serviceRoot str
 	}
 	// Preserve every native artifact file, not just the latest mutable accepted manifest.
 	native := filepath.Join(dir, "lists", "native")
+	if err = ensureRecoveryParent(filepath.Join(native, ".recovery-parent-check"), dir); err != nil {
+		return recovery, err
+	}
 	if err = filepath.WalkDir(native, func(path string, d os.DirEntry, e error) error {
 		if errors.Is(e, os.ErrNotExist) && path == native {
 			return nil

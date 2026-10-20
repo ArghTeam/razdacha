@@ -369,6 +369,9 @@ func quarantineExtraNative(ctx context.Context, operation, dir string, recovery 
 		expected[file.Target] = true
 	}
 	root := filepath.Join(dir, "lists", "native")
+	if e := ensureRecoveryParent(filepath.Join(root, ".recovery-parent-check"), dir); e != nil {
+		return e
+	}
 	return filepath.WalkDir(root, func(path string, entry os.DirEntry, e error) error {
 		if errors.Is(e, os.ErrNotExist) && path == root {
 			return nil
@@ -384,6 +387,9 @@ func quarantineExtraNative(ctx context.Context, operation, dir string, recovery 
 		}
 		if expected[path] {
 			return nil
+		}
+		if e = ensureRecoveryParent(path, dir); e != nil {
+			return e
 		}
 		if _, e = restorestate.CaptureFile(operation, path); e != nil {
 			return e
