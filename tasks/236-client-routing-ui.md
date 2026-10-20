@@ -35,3 +35,18 @@ Ownership: `ui/dist`, `context/ui`, this specification.
   runtime publication, encrypted WireGuard, external connectivity or installed deployment.
   No real hosts or client profiles were used. Existing secret-download implementation
   remains unchanged; this task does not claim new heap-erasure or cookie-timing coverage.
+
+
+## Independent evaluation refinement
+The first visual evaluation passed composition but required two presentation corrections:
+shared rules may tunnel, go direct or block; source-specific forwarding restrictions apply
+only to Whole Internet mode. Both descriptions are now mode-accurate. Repeated connectivity
+caveats were removed while configured labels, target warnings and Save → Apply remain.
+Focused browser verification checks mode-specific help, neutral shared copy, unavailable
+warnings and final desktop/mobile layouts; it does not rerun unrelated lifetime cases.
+
+
+Refinement verification: focused browser checks passed 4/4, embedded UI Go tests,
+module syntax and diff checks passed. Evidence is under the same private directory's
+`revision2/` subdirectory, including desktop and 320/375 screenshots. This supplements
+rather than replaces the previous 13-case behavior results.

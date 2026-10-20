@@ -61,8 +61,9 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 - Saving routing marks global pending state; Apply activates configuration. Authenticated
   Apply status restores global dirty state after reload, but cannot identify which peer
   changed or its individual active route. Health and enabled status never imply successful
-  client connectivity. Help states IPv4 TCP/UDP scope, blocked IPv6/ping/other protocols/
-  private forwarding, gateway access and no direct fallback (ADR 0028).
+  client connectivity. Whole Internet mode alone shows its IPv4 TCP/UDP scope, blocked
+  IPv6/ping/other protocols/private forwarding, gateway access and no direct fallback.
+  Shared-mode guidance describes tunnel, direct and block rule actions neutrally (ADR 0028).
 - Routing loading, retry and save callbacks obey modal/session lifetime; an old response
   cannot replace a newer editor. Existing configuration download/QR cleanup is unchanged.
 

@@ -57,11 +57,11 @@ export function view() {
       <span><strong>${selected}</strong> selected exit</span>
       <span><strong>${state.peers.length - selected}</strong> shared rules</span>
     </div>
-    <div class="client-apply-note"><strong>Configure → Save → Apply</strong>
-      <span>Routes below show saved configuration, not a live connectivity test. Use Apply to activate changes.${state.dirty ? ' Unapplied changes exist; individual active routes are not shown.' : ''}</span>
+    <div class="client-apply-note"><strong>Save → Apply</strong>
+      <span>Saved configuration is shown below. Apply activates changes.${state.dirty ? ' Unapplied changes exist.' : ''}</span>
     </div>
     <div class="card client-inventory">${rows || '<div class="empty"><strong>No clients yet</strong><p>Add a device to create its WireGuard configuration, then choose its route.</p><button class="btn" data-act="add-peer">Add client</button></div>'}</div>
-    <p class="screen-sub" style="margin-top:10px">Traffic counters are measured on the gateway interface since it started. They do not verify that a selected exit works.</p>`;
+    <p class="screen-sub" style="margin-top:10px">Traffic counters are measured since the gateway interface started.</p>`;
 }
 
 const head = () => `
@@ -247,7 +247,7 @@ export const actions = {
 };
 
 function routingSummary(peer) {
-  if (!peer.egress_tunnel_id) return '<div class="client-route-name">Shared rules</div><div class="row-meta">Selected resources use tunnels; everything else goes direct.</div>';
+  if (!peer.egress_tunnel_id) return '<div class="client-route-name">Shared rules</div><div class="row-meta">Follows shared resource rules; unmatched Internet traffic goes direct.</div>';
   if (state.missing.has('tunnels') || state.missing.has('peer-tunnels')) return '<div class="client-route-name">Selected exit</div><div class="row-meta">Tunnel details unavailable. Open Routing to retry.</div>';
   const tunnel = tunnelById(peer.egress_tunnel_id);
   const unavailable = !tunnel || !tunnel.enabled;
@@ -272,15 +272,15 @@ async function modalPeerRouting(id) {
     openModal(modalShell(`Routing: ${peer.name}`, `
       <fieldset class="routing-choices"><legend>Internet routing</legend>
         <label class="routing-choice"><input type="radio" name="peer-routing-mode" value="shared"${current ? '' : ' checked'}>
-          <span><strong>Shared rules</strong><span>Use the gateway's resource rules. Other Internet traffic goes directly from the gateway.</span></span></label>
+          <span><strong>Shared rules</strong><span>Follow shared resource rules, including their tunnel, direct or block actions. Unmatched traffic goes direct.</span></span></label>
         <label class="routing-choice"><input type="radio" name="peer-routing-mode" value="tunnel"${current ? ' checked' : ''}>
           <span><strong>Whole Internet through a tunnel</strong><span>Send this client's supported Internet traffic and DNS through one exit, overriding shared rules.</span></span></label>
       </fieldset>
       <div class="field" id="peer-routing-target-field"><label for="peer-routing-target">Outgoing tunnel</label>
         <select id="peer-routing-target" aria-describedby="peer-routing-target-status"><option value="">Select a tunnel</option>${missing}${options}</select>
         <div class="hint" id="peer-routing-target-status" role="status"></div></div>
-      <div class="routing-scope"><strong>Supported traffic</strong><p>IPv4 TCP/UDP and DNS. IPv6, ping, other IP protocols and forwarding to private networks are blocked. Gateway dashboard access remains available.</p><p>An unavailable exit blocks traffic; there is no direct fallback. Tunnel health does not verify this client's connection.</p></div>
-      <p class="routing-save-note">Save changes configuration only. <strong>Apply activates it.</strong> The configured route may differ from the running route.</p>
+      <div class="routing-scope" id="peer-routing-scope"><strong>Whole Internet mode supports</strong><p>IPv4 TCP/UDP and DNS. IPv6, ping, other IP protocols and private-network forwarding are blocked. Gateway dashboard access remains available.</p></div>
+      <p class="routing-save-note">Save changes configuration. <strong>Then Apply to activate it.</strong></p>
       <div id="peer-routing-error" class="gate-error" role="alert" hidden></div>`,
       '<button class="btn" data-act="close-modal">Cancel</button><button class="btn btn-primary" data-act="save-peer-routing">Save routing</button>'), (modal) => {
         modal.dataset.peerId = id;
@@ -290,6 +290,7 @@ async function modalPeerRouting(id) {
         const sync = () => {
           const mode = modal.querySelector('[name="peer-routing-mode"]:checked').value;
           field.hidden = mode !== 'tunnel';
+          modal.querySelector('#peer-routing-scope').hidden = mode !== 'tunnel';
           target.disabled = mode !== 'tunnel' || !tunnels.length && !missing;
           const selected = tunnels.find((t) => t.id === target.value);
           status.textContent = !tunnels.length && !missing ? 'No tunnels available. Add a tunnel on the Tunnels screen first.' : !target.value ? 'Choose the exit for this client.' : !selected || !selected.enabled ? 'This target is missing or disabled. Traffic will be blocked after Apply.' : 'No direct fallback if this exit becomes unavailable.';

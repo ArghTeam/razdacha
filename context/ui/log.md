@@ -199,7 +199,8 @@ Implementation and verification record: [task 231](../../tasks/done/231-peer-egr
 
 The client inventory now separates identity/activity from the configured route and
 exposes Routing and Configuration directly. A named radio editor explains shared rules
-versus one Internet exit, target availability and protocol scope. Save errors stay inline;
+versus one Internet exit, target availability and protocol scope only in exit mode.
+Shared summaries preserve direct/block rule semantics. Save errors stay inline;
 Save and Apply remain explicitly separate. Global dirty state is never presented as a
 per-client activation fact. No remote assets or frontend build step were added.
 
