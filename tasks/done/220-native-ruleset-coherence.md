@@ -16,8 +16,9 @@ configuration uses only local immutable paths. No autonomous remote set remains.
 Do not overwrite or collect blobs: active, prepared and recovery generations retain
 all references, including rollback history. A serialized aggregate storage admission
 budget bounds disk use; quota exhaustion rejects new candidates without deleting or
-repairing referenced files. Compressed, expanded, AST and projection budgets apply. Community companion subnet lists and
-SRS are independent upstream artifacts, paired only in a local publication.
+repairing referenced files. Compressed, expanded, AST and projection budgets apply.
+Community companion subnet lists and SRS are independent upstream artifacts, paired
+only in a local publication.
 
 ## Semantic admission
 
@@ -69,9 +70,13 @@ Original JSON and canonical SRS v1/v2/v3 are supported within the explicit predi
 whitelist. Context predicates and true mixed domain/address expressions are refused.
 Active artifact failures are audited independently from pending selection and close
 client ingress before any attempted candidate validation. New invalid input alone
-retains healthy last-good service. Local cache/gate/runtime regression checks pass;
-full validation, CI, exact independent review and isolated staging are pending.
-
+retains healthy last-good service. Full Go/race/vet, nested runtime/race and static
+Linux amd64/arm64 daemon/CLI checks passed on initial frozen source `81d7858`.
+The subsequent relative-path/resource changes at `d5cb9c1` passed affected package
+and native race tests, pinned runtime tests and lint. CI run `39339932615` passed
+all five jobs on `d5cb9c1`. Independent source, artifact-provenance and actual
+eight-case evidence reviews passed. The final documentation and current CI remain
+merge gates; this record grants no merge, release or deployment authority.
 
 ## Review corrections before staging
 
@@ -90,7 +95,6 @@ inverted-AND case checks intermediate-work rejection and last-good retention. Ti
 assertions use a generous 10-second ceiling to detect the former quadratic path;
 shared deterministic operation admission is the primary bound, not a wall-clock promise.
 
-
 Regex admission now estimates compact Go syntax trees before program expansion.
 Per source, cap 1,024 patterns/32 KiB aggregate raw regex bytes and reserve both
 original/DNS runtime copies against 64 Ki AST/rune units, 64 Ki expanded instructions
@@ -99,3 +103,77 @@ handles repeated programs and Unicode classes without allocating an oversized
 program to measure it. Tiny estimator-versus-actual tests cover zero repeats,
 empty alternatives, nullable stars, captures, foldcase and Unicode; duplicate-pattern
 and cross-leaf JSON/SRS budget tests preserve accepted bodies and HTTP validators.
+
+
+## Accepted controlled wire evidence
+
+Tested source: `d5cb9c1a2ba6531127801ce79494c321ac65533a`.
+The baseline uses prerequisite `d5b8ad3d939a2a1faa3548b70fc8090782d59e4b`
+with exactly four reviewed fixture overlays. Independent provenance verified all
+414 unchanged original tracked files, both role-specific source inventories and
+both compiled Linux binaries. The installed fixture runtime was sing-box v1.12.25.
+
+Canonical B4 completed all eight cases in the required order:
+
+| Format | Controlled skew | Fixed | Original baseline |
+|---|---|---|---|
+| JSON | Daemon new, runtime old | Go PASS; zero autonomous requests | Expected Go FAIL after positive TCP/UDP leak proof |
+| JSON | Runtime new, daemon old | Go PASS; zero autonomous requests | Expected Go FAIL after positive TCP/UDP leak proof |
+| SRS | Daemon new, runtime old | Go PASS; zero autonomous requests | Expected Go FAIL after positive TCP/UDP leak proof |
+| SRS | Runtime new, daemon old | Go PASS; zero autonomous requests | Expected Go FAIL after positive TCP/UDP leak proof |
+
+Each case produced exactly two same-receiver nonce ACK barriers with zero reported
+packet drops: 16 barriers total. Fixed success followed exact accepted-generation
+protection, unrelated DNS success, selected-domain REFUSED and committed recovery.
+Each baseline proved positive initial controls, the served body versions and actual
+nft membership before both forbidden TCP and UDP echoes succeeded; the final raw
+barrier preceded its explicit desired-leak marker. Generic failures were never
+accepted as baseline evidence. Both nested and outer Go summaries were checked.
+The supervisor exited zero, with no supervisor/wrapper/collector errors.
+
+All 11 downloaded files matched their independently checked remote size/SHA inventory.
+The private evidence manifest SHA-256 is
+`5c312d8c45ae6dcafef05ab730c90d74d57618db35245fedfcac832bb2d58828`.
+The exact case-log SHA-256 values are:
+
+| Case | SHA-256 |
+|---|---|
+| Fixed JSON, daemon new | `e9d2b2095a3a3fcd19c42092f8597a3dcd6555ebaf4f6f4445596e32f741ad28` |
+| Fixed JSON, runtime new | `595c3bf38037ed12f24769105fbbdf03f15585d011609fc22a6809882a1b3d4c` |
+| Fixed SRS, daemon new | `b919883cdf1183bd7e2ecf4c4c9417ec9d4313ec4531820af1adc15e02461be3` |
+| Fixed SRS, runtime new | `450903215c71b1b2a4e944949671b78aed2edde67d26409a61b05c4fe169cc31` |
+| Baseline JSON, daemon new | `0e469df9261d582cdd57daf16de335883619713d101adda66a8ced14d49d8963` |
+| Baseline JSON, runtime new | `d2ac4808f259695febc4c4b16b5b19a15ea8f6cf6bb82ff782062cbf5de81177` |
+| Baseline SRS, daemon new | `ed2ad8da6e14e2a38c9a0ca11d8d54cc3d226d2f118e6a9ed32d8593e2039a2e` |
+| Baseline SRS, runtime new | `f8ac95d56d2756cdcde7756a13353e894bde66f279156653d3e41afa9d4a2ca7` |
+
+Snapshot-to-BEFORE differed only in the previously reviewed health timestamps:
+seven `checked_at` cells and three `ok_at` cells. BEFORE-to-AFTER full database
+semantics and policy semantics were exactly equal, with zero timestamp changes.
+Policy identity, host/file inventories, installed source files and services were
+stable. All four pinned uploaded payloads were removed; no owned processes/groups
+or private case-directory processes remained. Private result records were retained.
+Neither full snapshot byte identity nor generic database stability is inferred from
+a comparison which deliberately distinguishes health timestamps.
+
+## Earlier attempts and observation limits
+
+The earlier native wire attempt stopped after its first fixed case returned Go PASS:
+the private supervisor rejected the nested/outer Go summary envelope, and seven
+cases were not run. It remains uncertified. Prelaunch state-check stops ran no
+fixture cases; observed pool/catalog drift required a fresh current snapshot rather
+than weakening the policy/identity gate. Only canonical B4 supplies the accepted
+complete matrix above.
+
+These tests exercise actual nft/route/sing-box behavior and disposable veth address
+control flow. They do not test an encrypted WireGuard handshake. Zero-drop nonce
+barriers bound finite queued observations, not universal lossless capture or future
+traffic protection. Wire cases use source-peer scope all; selected-peer behavior is
+covered by local pinned-runtime tests. Unsupported native predicates remain explicit
+admission failures, not silently rewritten matchers. No active application deployment,
+provider-credential activation, production change or release occurred.
+
+The author, threat/failure reviewer and final implementation/evidence reviewer were
+distinct. The final reviewer independently accepted the actual eight-case evidence
+and transfer/cleanup assertions. Review of this documentation and current CI remains
+required before the primary agent may exercise separately granted merge authority.

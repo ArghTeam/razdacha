@@ -1,6 +1,6 @@
 # 0025. Daemon-owned immutable native rule sets
 
-Date: 2026-10-20 · Status: proposed; extends ADR 0023 and ADR 0024
+Date: 2026-10-20 · Status: accepted; extends ADR 0023 and ADR 0024
 
 ## Context
 
@@ -19,8 +19,9 @@ same accepted AST. No sing-box remote rule sets or mutable active paths are emit
 There is no garbage collection until reachability across active, prepared and recovery
 records can be proved. Serialized aggregate storage and file-count quotas reject new
 artifacts before writes, preserving existing references on exhaustion; compressed,
-expanded, AST and projection budgets also bound each candidate. Community SRS and companion subnets are independently versioned
-upstream; the guard creates a coherent local pair, not upstream atomicity.
+expanded, AST and projection budgets also bound each candidate. Community SRS and
+companion subnets are independently versioned upstream; the guard creates a coherent
+local pair, not upstream atomicity.
 
 Admission is explicit: separable domain expression OR address expression, preserving
 native boolean semantics. Default domain and destination CIDR conditions share an OR
@@ -49,7 +50,6 @@ also count. These are conservative compatibility limits, not matcher rewrites.
 Database paths and native artifact roots are canonical absolute paths; relative
 `-db` values select the same source store during Apply and committed recovery.
 
-
 Generation v2 verifies original and DNS artifact permissions, format, hash and projection
 version and rederives projections before publication/recovery. Legacy v1 native records
 remain guarded until explicit administrator recovery; never reopen an autonomous remote
@@ -66,3 +66,18 @@ authority requires out-of-band administrator access, validated acquisition and e
 Apply. Domain-only regex may match every nonempty name while still not matching literal
 IP traffic; runtime tests establish this distinction. Unbounded literal-IP predicates
 require a separate capacity/admin decision. No universal egress or DoH guarantee is made.
+
+
+## Validation boundary
+
+Source `d5cb9c1` completed the controlled JSON/SRS matrix: four fixed passes and four
+explicit original-baseline protection failures across both skew directions. Each
+case supplied two zero-drop collector ACKs; baseline failures required positive
+TCP/UDP leak proof. Distinct independent source and actual-evidence review passed.
+The [implementation record](../../tasks/done/220-native-ruleset-coherence.md) pins
+the exact tested source, earlier uncertified attempts and redacted evidence hashes.
+
+This covers supported native predicates and finite fixture observations with a veth
+WG-address adapter. It is not an encrypted WireGuard handshake, universal egress
+protection or a lossless-capture guarantee. Accepted decision status does not grant
+merge, release or production-deployment authority.

@@ -158,3 +158,21 @@ handshake; finite queued capture observations, no universal lossless claim; nati
 SRS/JSON remains #220. No application or production deployment occurred.
 **Review:** pre-canary and owner gates passed. Distinct final review and current CI
 are required before merge. See the [completed implementation record](../../tasks/done/214-coherent-network-state.md).
+
+
+## 2026-10-20
+
+### #220 — Daemon-owned native generations validated
+
+**Changed:** supported native JSON/SRS originals, exact DNS projections and finite
+nft projections share daemon-owned immutable authority and the guarded generation.
+Unsupported predicates and resource-budget failures retain healthy last-good data;
+active artifact failures close ingress. [ADR 0025](../../docs/decisions/0025-daemon-owned-native-rule-sets.md)
+records compatibility, quotas and guarded legacy recovery.
+**Validation:** source `d5cb9c1` passed four fixed JSON/SRS skew cases and four expected
+original-baseline TCP/UDP protection failures, with 16 zero-drop capture barriers.
+Distinct independent source/evidence review accepted the result and cleanup. Full
+BEFORE-to-AFTER database semantics, policy identity and host/services were stable.
+**Limits:** finite isolated nft/route/sing-box observations, a veth address adapter,
+no encrypted WG handshake, no application or production deployment. Final docs/current
+CI remain merge gates. See the [implementation record](../../tasks/done/220-native-ruleset-coherence.md).
