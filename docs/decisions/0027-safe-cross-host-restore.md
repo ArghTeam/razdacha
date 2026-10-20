@@ -63,7 +63,11 @@ paths and verifies ownership/permissions. Reject packaged/custom units, unknown
 drop-ins, additional config directories/files, wrappers, aliases, symlinks, alternate
 DB/config paths and unknown service-state query results before mutation. Never guess
 that a failed state query means inactive. This explicit compatibility restriction can
-be widened only with equally strong quarantine proof.
+be widened only with equally strong quarantine proof. The required permanent managed
+start-condition drop-ins and capable CLI helper must already be installed and loaded:
+a new daemon binary with older units lacking independent runtime start enforcement
+fails preflight. A compatible managed setup/update is a separate prerequisite, not an
+implicit upgrade performed by restore.
 
 Before installing inhibitors or changing services, attest the installed daemon's exact
 executable using a new metadata-only `-restore-capabilities` mode. It reports the
@@ -229,15 +233,27 @@ new CLI's metadata-only `runtime-start-allowed` command. It reads trusted restor
 without opening SQLite, probing services or producing network traffic. When held,
 incomplete or uncertain it denies. A completed/resumed installation permits only its
 coherent runtime contract. During `publishing`, it permits a controlled start only with
-a private explicit permit matching the record's operation, publication nonce and exact
+a strictly decoded private explicit permit matching the record's operation, publication nonce and exact
 checked config hash. The permit additionally binds the current Linux boot ID, the
 authorizing daemon PID plus process-start identity and a bounded monotonic lifetime
-(maximum 60 seconds of boot uptime). Verify that process identity is still alive and
+(maximum 60 seconds using cross-process kernel `CLOCK_BOOTTIME` or `CLOCK_MONOTONIC`,
+not wall time or a serialized Go `time.Time` monotonic component). State and permit
+files require exact versioned schemas: every safety field exactly once, no omitted,
+unknown, duplicate or null defaults, private owner-controlled regular files and no
+symlink path substitution. The helper validates authoritative phase, marker consistency,
+current boot/deadline and process identity before allowing a start. Verify that the
+process identity is still alive and
 the sole effective runtime config still hashes to the attested candidate. A stale permit
 cannot authorize reboot startup, a reused PID, another candidate or an unrelated later
 start. The daemon never rewrites systemd drop-ins; it writes only its private state and
 permit. Record/permit/marker uncertainty denies the runtime independently of daemon
-startup order. Existing installs without restore state keep ordinary runtime behavior.
+startup order. Existing installs without restore state keep ordinary runtime behavior. The installer
+and restore preflight recognize only these exact permanent drop-ins and capable helper
+as supported managed topology; missing or changed enforcement is a preflight error.
+ExecCondition and permit revocation control future starts only. They do not stop an
+already-running checked candidate after authorizing-daemon failure. ADR 0023 guarded
+failure remains the containment contract; no immediate process-stop claim follows from
+a marker, permit expiry, revocation or daemon crash.
 
 After durable BeginPublishing and permit creation, remove the ordinary runtime marker
 and perform the controlled restart. Require positive local readiness of that candidate

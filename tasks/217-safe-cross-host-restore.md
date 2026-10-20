@@ -198,3 +198,13 @@ readiness failure, Abort stop failure and every record/permit/marker fsync bound
 
 This is a docs-first clarification for independent threat review; production phase
 integration remains uncommitted and unvalidated at this checkpoint.
+
+The permit deadline must be a cross-process kernel CLOCK_BOOTTIME/CLOCK_MONOTONIC value,
+not wall time or serialized Go time monotonic metadata. Every state/permit safety field
+is mandatory exactly once, with strict types and null/duplicate/unknown rejection;
+private ownership, canonical config and no-symlink checks apply. Capable binaries with
+older units missing the permanent independent runtime condition fail restore preflight;
+compatible managed setup is a separate prerequisite. A live checked runtime can survive
+authorizing-daemon failure: permit revocation/expiry denies future starts, while the
+ADR 0023 ingress guard contains uncertain publication. Only positive stop verification
+supports an inhibited/stopped claim. Test these distinctions and enforcement absence.
