@@ -49,6 +49,10 @@ func nativeTransportWireExercise(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	url := server.URL + "/transport." + format
+	fetcher, err := lists.NewFetcher(lists.Options{Dir: filepath.Join(p.dir, "lists"), Client: server.Client(), Logger: quietSlog()})
+	wireMust(t, err)
+	p.h.mgr = lists.NewManager(lists.ManagerOptions{Fetcher: fetcher, Logger: quietSlog()})
+	p.gate.network.manager = p.h.mgr
 	p.h.mgr.SetSources([]lists.Source{{URL: url, Format: lists.Format(format)}})
 	wireMust(t, p.h.mgr.Refresh(p.h.ctx))
 	p.rule.Domains = nil
@@ -57,7 +61,7 @@ func nativeTransportWireExercise(t *testing.T) {
 	p.rule.Action = store.ActionTunnel
 	p.rule.TunnelID = targetID
 	wireMust(t, p.st.UpdateRule(p.h.ctx, p.rule))
-	_, err := p.gate.ApplyCurrent(p.h.ctx, p.st)
+	_, err = p.gate.ApplyCurrent(p.h.ctx, p.st)
 	wireMust(t, err)
 	p.probe(t, p.a.Address, "udp4", "203.0.113.10:12080", "private", "transport-enabled-exit")
 	p.probe(t, p.a.Address, "tcp4", "203.0.113.10:12080", "direct", "transport-enabled-wrong-protocol")
