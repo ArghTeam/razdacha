@@ -48,6 +48,15 @@ func TestRestoreWireCLI(t *testing.T) {
 // BEGIN FIXED CLI ADAPTER
 func rwCLIActual(t *testing.T, ctx context.Context, root string) {
 	t.Helper()
+	// Model unified cgroup-v2 evidence inside the private service root. This
+	// never reads or writes a host cgroup control file.
+	controllers := filepath.Join(root, "sys/fs/cgroup/cgroup.controllers")
+	if err := os.MkdirAll(filepath.Dir(controllers), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(controllers, []byte("cpu memory pids\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	services := &packaging.RestoreServices{Root: root}
 	active := map[string]bool{}
 	services.Run = func(_ context.Context, args ...string) error {
