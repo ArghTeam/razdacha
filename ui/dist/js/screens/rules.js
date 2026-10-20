@@ -340,8 +340,7 @@ const presetLists = () => state.communityLists.filter((l) => l.in_preset);
 const liveTunnels = () => state.tunnels.filter((t) => t.enabled);
 
 function emptyView() {
-  const lead = `<div class="empty-lead">Правил пока нет — весь трафик идёт напрямую,
-    с адреса сервера. Так и задумано, пока вы не решите иначе.</div>`;
+  const lead = `<div class="empty-lead">No shared rules. Clients without a selected exit use direct routing.</div>`;
 
   const preset = presetLists();
   if (!preset.length) {
