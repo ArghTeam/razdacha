@@ -1,13 +1,12 @@
 # Staging security validation
 
-Status: #222 and #214 completed their controlled validation and were merged.
-#214 merged through [PR #221](https://github.com/ArghTeam/razdacha/pull/221) at
-`d5b8ad3` after distinct final review and passing CI. Native #220 is implemented
-in PR #224 with four fixed passes and four expected baseline failures. Distinct source
-and actual-evidence review passed; final documentation review and current CI remain
-merge gates.
-Later delivery tasks remain pending.
-Only linked evidence is complete. No product or production deployment is claimed.
+Status: #222, #214 and #220 completed their controlled validation and were merged.
+#220 merged through [PR #224](https://github.com/ArghTeam/razdacha/pull/224) at
+`8b149e0`. Safe peer deletion #215 has two fixed passes and two expected original-base
+broadening failures in [PR #225](https://github.com/ArghTeam/razdacha/pull/225).
+Final #215 documentation/evidence review and current CI remain merge gates.
+Tasks #216, #217 and #218 remain pending. Only linked evidence is complete.
+No installed application or production deployment is claimed.
 
 ## Environment boundary and privacy
 
@@ -32,8 +31,8 @@ one change before advancing to the next. These are sequential delivery dependenc
 |---|---|---|---|
 | 1 | [#222: domain-only DNS matching](../tasks/done/222-dns-rule-scope.md) | Unrelated DNS succeeds while matching domains/CIDRs remain protected | Validated: 8 expected baseline failures, 8 fixed passes; no product deployment |
 | 2 | [#214: coherent network state](../tasks/done/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Validated and merged in PR #221: attempt 5 fixed PASS and four expected original-watcher failures; no product deployment |
-| 3 | [#220: native rule-set coherence](../tasks/done/220-native-ruleset-coherence.md) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Validated on `d5cb9c1`: four fixed passes, four expected baseline failures; final docs/current CI before merge |
-| 4 | [#215: safe peer deletion](../tasks/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Planned, not executed |
+| 3 | [#220: native rule-set coherence](../tasks/done/220-native-ruleset-coherence.md) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Validated on `d5cb9c1` and merged in PR #224: four fixed passes and four expected baseline failures; no product deployment |
+| 4 | [#215: safe peer deletion](../tasks/done/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Validated on `14e28b3`: two fixed passes and two positively proven baseline broadening failures; final docs/evidence/current CI before merge |
 | 5 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
 | 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
 | 7 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
@@ -288,3 +287,46 @@ semantics were exactly equal, with no timestamp changes. Host/files, installed s
 services and policy identity were stable; four pinned payloads were removed and no
 owned process/group or private case-directory process remained. These assertions do
 not claim an application deployment or production change.
+
+## Safe peer deletion controlled fixture (#215)
+
+The [completed specification](../tasks/done/215-safe-peer-deletion.md) records the exact
+four-case contract and case-log hashes. Fixed source `14e28b3` was compared with pristine
+prerequisite `8b149e0` plus exactly three reviewed fixture overlays; source and binary
+provenance were checked before the single controlled wrapper execution. Both fixed
+cases passed; both baseline cases failed only after their explicit positive broadening
+proof. No generic probe, capture or supervisor error was accepted as baseline evidence.
+
+The grant case distinguishes direct delivery from a contained SOCKS5 relay by fresh
+nonce-matched TCP/UDP sink delivery and stamped private reply identity. The reject case
+requires valid selected-domain DNS REFUSED, protected-target TCP/UDP denial, simultaneous
+same-client unrelated DNS/TCP/UDP success and inspected loss of generated source scope.
+Every TCP, UDP and DNS probe binds and verifies its synthetic source identity.
+
+Fixed cases retain B's direct behavior through deletion, list and pool refresh, committed
+recovery, explicit Apply, applied recovery and disabled reassignment. Explicit B activation
+is a positive control. Before Apply, the deleted A address remains reserved. After Apply
+and applied recovery, new D reuses that address without inheriting the orphan's policy;
+A's live database identity is not restored. A further refresh/recovery after D allocation
+was not separately exercised. The adapter uses disposable veth source identities and
+actual nft/route/sing-box behavior, not an encrypted WireGuard handshake.
+
+Capture barrier counts were 49, 45, 12 and 8 for fixed grant, fixed reject, baseline grant
+and baseline reject: 114 same-receiver nonce ACKs with zero reported kernel drops.
+These bound finite queued observations; they do not prove universal lossless capture.
+Both nested and outer Go summaries and the exact ordered proof markers were checked.
+No installed daemon deployment, service restart or real provider credential activation
+was part of the fixture. Current staging snapshots and private evidence remain retained.
+
+All seven downloaded #215 results matched the checked remote size/SHA inventory;
+private evidence manifest SHA-256:
+`109d17c5cba48fe29c6d21fd8ed9e1b6fc019db04d83bcdd3b2d0f3788d0de7b`.
+Snapshot-to-BEFORE and snapshot-to-AFTER changed only seven `checked_at` and three
+`ok_at` health-timestamp cells. Immediate BEFORE-to-AFTER full database and policy
+semantics were exactly equal, with zero timestamp changes. Host/file inventories,
+installed source files, services and policy identity remained stable. Four pinned
+uploads were removed; no owned process/group or private case-directory process remained.
+Independent source/provenance/runner and actual evidence review passed. Synthetic
+Playwright UI validation passed on the frozen UI hashes. Per-probe path checks are
+fail-fast assertions in the pinned binaries; their individual raw transcripts are
+not printed in the case logs. Final documentation review and current CI remain gates.

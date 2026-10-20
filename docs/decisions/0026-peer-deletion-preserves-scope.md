@@ -1,6 +1,6 @@
 # 0026. Peer deletion preserves selected scope
 
-Date: 2026-10-20 · Status: proposed; clarifies ADR 0013
+Date: 2026-10-20 · Status: accepted; clarifies ADR 0013
 
 ## Context
 

@@ -9,7 +9,7 @@
 
 **Changed:** Skip selected rules without existing source addresses before any route, reject, chain or set construction. Disabled surviving clients retain scoped rejection.
 **Decision:** [ADR 0026](../../docs/decisions/0026-peer-deletion-preserves-scope.md).
-**Validation:** See the task specification; isolated wire acceptance remains pending.
+**Validation:** Local tests/static checks and controlled four-case wire observations completed on `14e28b3`: two fixed passes and two positively proven original-base broadening failures, with 114 zero-drop capture barriers. See the [completed specification](../../tasks/done/215-safe-peer-deletion.md) for evidence and limits. Final documentation/evidence review and current CI remain merge gates.
 
 ## 2026-10-19
 
