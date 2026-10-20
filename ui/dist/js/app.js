@@ -38,6 +38,7 @@ const ACTIONS = Object.assign(
 );
 
 let pollTimer = null;
+let logoutPending = false;
 
 /* ==========================================================================
    Вход
@@ -102,6 +103,7 @@ function lockLogin(seconds, baseMessage) {
 
 async function handleLogin(ev) {
   ev.preventDefault();
+  if (logoutPending) return;
   const input = $('#password');
   const btn = $('#login-submit');
   const err = $('#login-error');
@@ -387,9 +389,17 @@ async function boot() {
   $('#btn-settings').addEventListener('click', settingsScreen.modalSettings);
 
   $('#btn-logout').addEventListener('click', async () => {
-    try { await api.session.logout(); } catch { /* сессия и так недействительна */ }
-    location.hash = '';
+    if (logoutPending) return;
+    logoutPending = true;
     showGate();
+    location.hash = '';
+    // A late logout Set-Cookie must settle before a new login can issue a cookie.
+    $('#login-submit').disabled = true;
+    try { await api.session.logout(); } catch { /* Local cleanup already completed. */ }
+    finally {
+      logoutPending = false;
+      $('#login-submit').disabled = false;
+    }
   });
 
   $('#btn-apply').addEventListener('click', async () => {

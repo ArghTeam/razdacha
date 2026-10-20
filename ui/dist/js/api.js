@@ -26,6 +26,9 @@ export class ApiError extends Error {
 
 /** Слушатели «сессия кончилась». Подписывается роутер, а не экраны. */
 const unauthorizedHandlers = new Set();
+let sessionRevision = 0;
+
+// A response from an earlier login cannot invalidate the current session UI.
 
 export function onUnauthorized(fn) {
   unauthorizedHandlers.add(fn);
@@ -51,6 +54,7 @@ async function readBody(res) {
  */
 async function request(method, path, opts = {}) {
   const { body, expect = 'json', quiet401 = false } = opts;
+  const revision = sessionRevision;
 
   const init = {
     method,
@@ -72,7 +76,8 @@ async function request(method, path, opts = {}) {
     throw new ApiError(0, 'network', 'Сервер не отвечает. Проверьте соединение.', { cause: err });
   }
 
-  if (res.status === 401 && !quiet401) {
+  if (res.status === 401 && !quiet401 && revision === sessionRevision) {
+    sessionRevision++;
     for (const fn of unauthorizedHandlers) fn();
   }
 
@@ -126,9 +131,19 @@ const del = (p) => request('DELETE', p);
    с экрана входа на экран входа бессмысленно. */
 
 export const session = {
-  get: () => get('/api/session', { quiet401: true }),
-  login: (password) => post('/api/login', { password }, { quiet401: true }),
-  logout: () => post('/api/logout', undefined, { quiet401: true }),
+  guard: () => {
+    const revision = sessionRevision;
+    return () => revision === sessionRevision;
+  },
+  get: () => get('/api/session'),
+  login: (password) => {
+    sessionRevision++;
+    return post('/api/login', { password }, { quiet401: true });
+  },
+  logout: () => {
+    sessionRevision++;
+    return post('/api/logout', undefined, { quiet401: true });
+  },
 };
 
 /* --- Пиры ---------------------------------------------------------------- */

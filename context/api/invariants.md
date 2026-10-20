@@ -37,3 +37,15 @@ description: REST, встроенная SPA, диагностика и клие�
 - Community list status combines daemon-owned native SRS and any companion subnet source; either failure is visible and the timestamp is the oldest successful component. Native predicates remain uncertain route-probe candidates even when loaded or real DNS answers are returned. Generation errors remain diagnostic errors rather than omitted-policy success (ADR 0025).
 
 - Peer deletion returns `ok`, `affected_rule_ids` and `inactivated_rule_ids` from one committed transaction. Rule listing computes `inactive_reason: no_selected_peers` against a consistent snapshot. A stale selected-ID PATCH cannot resurrect deleted selection; empty enabled selections are rejected (ADR 0026).
+
+- A panel session check uses normal authenticated 401 handling so an expired session
+  invalidates any open configuration interaction. Incorrect-password login and logout
+  keep their local handling; logout clears UI secrets before waiting for the response.
+  The opt-in UI security fixture serves only disposable synthetic state and is not a
+  daemon startup mode; it never runs schedulers or initializes installed networking.
+- Frontend requests capture a session revision. Login/logout attempts and the first
+  current authenticated 401 advance it; a stale 401 cannot invalidate a newer login.
+  Peer-creation callbacks from an earlier session cannot repopulate current UI state.
+  Backend invalid-session 401 cookie expiry is unchanged; a delayed expiry cookie
+  may still require another login. The frontend guard does not control cookie timing.
+  This browser lifetime guard does not replace backend session authentication.

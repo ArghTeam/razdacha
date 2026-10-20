@@ -330,3 +330,78 @@ Independent source/provenance/runner and actual evidence review passed. Syntheti
 Playwright UI validation passed on the frozen UI hashes. Per-probe path checks are
 fail-fast assertions in the pinned binaries; their individual raw transcripts are
 not printed in the case logs. Final documentation review and current CI remain gates.
+
+
+## Configuration UI lifetime fixture (#216)
+
+Use `TestUISecretsFixture` in `internal/api/ui_secrets_fixture_test.go` only with
+synthetic state. The fixture runs the actual API handler and embedded panel with
+its own SQLite database, two deterministic test peers and one disabled synthetic
+SOCKS tunnel. It does not call `Server.Run`, start schedulers or initialize netstack.
+Its explicit endpoint allowlist rejects Apply, WARP, backups, logs, route probing,
+domain probing and unrelated mutations. The configured runtime address is loopback
+port zero, never an installed service. Do not replace fixture data with real keys.
+
+For a local browser check, set `RAZDACHA_UI_SECRETS_FIXTURE=local` and run the API
+test binary with `-test.run '^TestUISecretsFixture$' -test.v -test.timeout 9m`.
+Read the ephemeral loopback address from `UI-SECRETS-FIXTURE-READY`. Authenticate
+using the public fixture-only password `synthetic-ui-password-only`. The fixture
+fails after eight minutes without an authorized graceful stop. Browser scripts remain optional verification
+tools; Node is not part of the daemon build. Block the release-check request to
+GitHub so the test performs no external browser request.
+
+On staging, the root operator must first approve and pin source, test adapter,
+binaries, supervisor and browser script. Use a pristine prerequisite archive plus
+exactly the same three test adapter files for baseline; do not patch baseline UI assets.
+Isolated mode requires Linux, `RAZDACHA_UI_SECRETS_FIXTURE=isolated` and an existing,
+empty, owner-only `RAZDACHA_UI_FIXTURE_ROOT`. The tracked test-only bootstrap self-execs
+with fresh network and mount namespaces. Its child proves both namespace identifiers
+differ from the parent before making propagation private recursively and mounting
+tmpfs at `/var/lib`. Parent-death protection and a parent-identity check precede those
+mutations; parent and child retain the operator-owned process group. The child then
+validates private propagation, tmpfs and the empty private root before SQLite or
+socket creation. It exposes only a private Unix socket, mode 0600. The approved
+operator can forward this socket to an ephemeral local loopback port. Never expose
+another host TCP listener or invoke installed services. READY includes a private
+`stop_token`; after verification, POST to `/__fixture/stop` with
+`Authorization: Bearer <stop_token>` and require 204 plus child/parent Go PASS.
+The control accepts only that path without a query and exact nonce authorization;
+its token must never be placed in a URL, repository or public evidence. The fixture
+waits for HTTP shutdown, closes SQLite and removes only its known owned database,
+sidecars and socket, requiring its private root to be empty. Remove that empty root
+with an empty-directory operation only. A deadline or generic process error cannot
+count as successful verification. Retain exact process/group provenance; fallback
+TERM/KILL/reaping targets only owned processes/groups and SSH forwarding.
+
+The browser matrix must inspect state without another authenticated request after
+closing by button, backdrop or Escape; replacing the modal; starting logout; failing
+logout with 401; or receiving a current-session session/poll 401. Verify dataset,
+text/form values,
+QR canvas dimensions and owned download URLs. Hold actual synthetic config responses
+across each transition, including success, failure and session expiry. Old request A
+must not replace a newer valid request B. Deliver an old-session 401 after logout,
+new login and config B; B must remain active, while a genuine current-session 401
+still clears it. This stale-response case injects no `Set-Cookie` and proves only
+frontend unauthorized-notification and rendering lifetime. The existing backend
+invalid-session 401 expires the session cookie; delayed browser processing of that
+cookie can still require another login. Backend cookie handling is unchanged.
+This residual availability limitation does not expose configuration or bypass
+authentication. Hold logout response completion, confirm button and Enter cannot
+send a login request until completion, then verify a usable new login. Browser route
+interception proves this request ordering; it does not by itself prove the timing
+of browser cookie processing. Incorrect-password login must retain its normal
+local error handling. A held successful peer creation must still
+record dirty state after ordinary close/replacement while never opening its stale
+configuration. A completed creation from a previous session must not repopulate UI
+state or mark pending changes in a new session. Exercise tunnel raw loading, pending
+input debounce, parse completion
+ordering and reopening after cleanup. Check a normal active config download against
+the actual fixture API content and filename. Baseline failures require explicit
+retained-secret or stale-render observations; browser launch/network/test errors are
+not evidence of the defect.
+
+This lifetime removes persistent application references and revokes object URLs.
+It cannot erase immutable strings from the JavaScript heap, browser-managed response
+buffers, developer tools or files the operator chose to download. No deployment or
+installed-server behavior claim follows from local fixture results. Independent
+review and controlled staging evidence remain acceptance gates for #216.

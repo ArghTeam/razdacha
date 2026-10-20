@@ -10,12 +10,19 @@ its HTML is cleared. Closing, replacing or logging out must clear configuration 
 and filenames from persistent DOM and UI caches while preserving download when open.
 
 ## Domains touched
-- [UI](../context/ui/index.md): peer modal, shared shell and logout cleanup.
+- [UI](../context/ui/index.md): peer modal, shared shell, tunnel editor cache and logout cleanup.
+- [API](../context/api/index.md): opt-in synthetic browser fixture and authenticated session-check semantics.
 
 ## Decisions
 Implement after [#215](done/215-safe-peer-deletion.md). Keep secrets only for the active
 configuration interaction. Invalidate or ignore in-flight configuration responses when
 the modal/session lifecycle changes, so stale asynchronous work cannot restore secrets.
+Use one modal revision and cleanup boundary for text, filename, canvas pixels and
+modal-owned download URLs. Capture it before asynchronous peer creation or config
+fetches; only the current interaction may render a response. Logout enters the gate
+synchronously, before its request completes. Serialize a new login behind the actual
+logout response to preserve cookie ordering; old-session responses cannot invalidate
+a newer login. Tunnel editor raw/parse caches share the same modal lifetime.
 This localized cleanup needs no ADR unless it introduces a
 broader secret-storage decision. Update maintained UI context with the final lifetime.
 
@@ -31,12 +38,20 @@ broader secret-storage decision. Update maintained UI context with the final lif
       requires no authenticated API request.
 
 ## Validation
-Planned; not executed by this planning change. Use fixture credentials in local browser
+Implementation verification is in progress; controlled staging acceptance remains pending.
+Use fixture credentials in local browser
 checks, including expired-session logout and delayed fetch completion after each
 modal/session lifecycle change. On staging use only a disposable synthetic peer
 and apply the [staging runbook](../docs/11-staging-validation.md). Never inspect or export
 real peer configurations. Track redacted evidence in
 [issue #216](https://github.com/ArghTeam/razdacha/issues/216).
+
+## Residual limitation
+The stale-401 browser case injects no `Set-Cookie` and checks frontend notification
+and rendering lifetime only. The existing backend expires cookies on invalid-session
+401 responses; delayed cookie delivery can require another login. Backend cookie
+behavior is unchanged. This is an availability limitation, not a confidentiality
+failure or authentication bypass.
 
 ## Security review gates
 The implementation author cannot approve their own change. Before an isolated staging

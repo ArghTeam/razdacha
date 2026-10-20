@@ -5,6 +5,18 @@
 
 ## 2026-10-20
 
+### #216 — isolate browser secret-lifetime verification
+
+**Changed:** A test-only fixture serves actual API handlers and embedded UI using
+private synthetic SQLite, peers and a disabled tunnel. Its endpoint allowlist and
+nonce-protected graceful stop are independent of product routing. Linux mode proves
+fresh namespaces before mount mutation and requires cleanup before successful exit.
+**Beware:** Browser session revision guards affect frontend response lifetime only;
+backend authentication is unchanged. The fixture is not a daemon startup/deploy mode.
+**Validation:** Relevant API/UI tests and local graceful-stop verification passed;
+independent browser and controlled staging review remain pending. See
+[the specification](../../tasks/216-clear-ui-config-secrets.md).
+
 ### #215 — preserve selected scope after peer deletion
 
 **Changed:** Expose transactional deletion effects and consistent-snapshot inactive reasons; reject stale selected-ID writes and empty activation.

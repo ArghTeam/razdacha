@@ -7,6 +7,7 @@ import * as api from '../api.js';
 import {
   state, tunnelById, toast, toastError, openModal, closeModal, modalShell,
   openMenu, notImplemented, refresh, markDirty,
+  currentModalRevision, isCurrentModal, onModalCleanup,
 } from '../shell.js';
 import {
   $, esc, plural, since, until, stamp, TUNNEL_LABEL, tunnelLabel, tunnelEndpoint, tunnelPool,
@@ -350,8 +351,15 @@ function modalTunnel(id) {
   (m) => {
     const raw = m.querySelector('#t-raw');
     let timer = null;
+    onModalCleanup(() => {
+      clearTimeout(timer);
+      parseRevision++;
+      lastParse = { ok: false, raw: '' };
+    });
     // Разбор по мере ввода, но не на каждую букву: это сетевой запрос.
     raw.addEventListener('input', () => {
+      parseRevision++;
+      lastParse = { ok: false, raw: '' };
       clearTimeout(timer);
       timer = setTimeout(() => runParse(raw.value), 350);
     });
@@ -369,10 +377,12 @@ function modalTunnel(id) {
    Не приехал вовсе — поле открывается пустым и говорит, что вставленный конфиг
    заменит прежний: заводить туннель заново из-за отказа одной ручки незачем. */
 async function loadTunnelRaw(t, m) {
+  const revision = currentModalRevision();
   const raw = m.querySelector('#t-raw');
   const out = m.querySelector('#t-parse');
   try {
     const got = await api.tunnels.raw(t.id);
+    if (!isCurrentModal(revision)) return;
     if (got.editable === false) {
       // Ключ сгенерировал сервер (WARP): править его руками нечего, поле
       // конфига уступает место объяснению, и правится только имя.
@@ -388,6 +398,7 @@ async function loadTunnelRaw(t, m) {
     raw.focus();
     runParse(raw.value);
   } catch (err) {
+    if (!isCurrentModal(revision)) return;
     raw.disabled = false;
     out.className = 'parse-result ' + (err.missing ? 'idle' : 'err');
     out.textContent = err.missing
@@ -400,8 +411,12 @@ async function loadTunnelRaw(t, m) {
 
 /** Результат последнего разбора: по нему решается, можно ли сохранять. */
 let lastParse = { ok: false, raw: '' };
+let parseRevision = 0;
 
 async function runParse(raw) {
+  const revision = currentModalRevision();
+  const requestRevision = ++parseRevision;
+  const current = () => isCurrentModal(revision) && requestRevision === parseRevision;
   const out = $('#t-parse');
   if (!out) return;
   const value = (raw || '').trim();
@@ -415,6 +430,7 @@ async function runParse(raw) {
   out.textContent = 'Разбираю…';
   try {
     const r = await api.tunnels.parse(value);
+    if (!current()) return;
     lastParse = { ok: true, raw: value };
     const parts = [TUNNEL_LABEL[r.type] || r.type];
     if (r.security && r.security !== 'none') parts.push(String(r.security).toUpperCase());
@@ -426,6 +442,7 @@ async function runParse(raw) {
     out.className = 'parse-result ok';
     out.innerHTML = '✓ Распознан ' + esc(parts.join(' · ')) + warn;
   } catch (err) {
+    if (!current()) return;
     lastParse = { ok: false, raw: value };
     out.className = 'parse-result ' + (err.missing ? 'idle' : 'err');
     out.textContent = err.missing

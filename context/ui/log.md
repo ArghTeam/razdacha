@@ -5,6 +5,22 @@
 
 ## 2026-10-20
 
+### #216 — bound configuration secrets to the current interaction
+
+**Changed:** Central modal cleanup clears configuration attributes, form values,
+QR pixels and modal-owned download URLs. Modal revisions reject stale configuration
+and peer-creation responses. Logout cleans up before its network request; session
+checks share normal current-session authenticated 401 handling; stale-session 401
+cannot close a newer login. Login waits for an outstanding logout response so its
+cookie cannot clear the newer session. Tunnel raw/parse state and debounce
+share the modal lifetime, with immediate invalidation on newer input.
+**Beware:** Successful peer creation still marks pending changes after ordinary modal
+closure. Cleanup removes application references; it does not promise heap erasure or
+remove a downloaded file. No frontend build step was added.
+**Validation:** Actual-API synthetic browser and independent security reviews are in
+progress; staging remains pending. See [the specification](../../tasks/216-clear-ui-config-secrets.md)
+and [fixture protocol](../../docs/11-staging-validation.md#configuration-ui-lifetime-fixture-216).
+
 ### #215 — preserve selected scope after peer deletion
 
 **Changed:** Explain affected rules at deletion and explicit reassignment/activation; refresh orphan state and retain disabled orphan editing.

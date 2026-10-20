@@ -160,7 +160,17 @@ export function download(name, text, type = 'text/plain;charset=utf-8') {
   a.href = url;
   a.download = name;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  let active = true;
+  const revoke = () => {
+    if (!active) return;
+    active = false;
+    clearTimeout(timer);
+    URL.revokeObjectURL(url);
+    a.removeAttribute('href');
+    a.removeAttribute('download');
+  };
+  const timer = setTimeout(revoke, 1000);
+  return revoke;
 }
 
 /* --- версии ---------------------------------------------------------------- */

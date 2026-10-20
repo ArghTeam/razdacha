@@ -60,15 +60,39 @@ export function toastError(err, fallback = 'Не получилось') {
 
 /* --- модальные окна ------------------------------------------------------- */
 
+let modalRevision = 0;
+const modalCleanups = new Set();
+
+// All persistent modal copies have the same lifetime, including download blobs.
+function resetModal() {
+  modalRevision++;
+  for (const cleanup of modalCleanups) cleanup();
+  modalCleanups.clear();
+  const modal = $('#modal');
+  for (const canvas of modal.querySelectorAll('canvas')) {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+  for (const field of modal.querySelectorAll('input, textarea')) field.value = '';
+  for (const key of Object.keys(modal.dataset)) delete modal.dataset[key];
+  modal.replaceChildren();
+}
+
+export const currentModalRevision = () => modalRevision;
+export const isCurrentModal = (revision) => revision === modalRevision && modalOpen();
+export const onModalCleanup = (cleanup) => modalCleanups.add(cleanup);
+
 export function openModal(html, onMount) {
+  resetModal();
   $('#modal').innerHTML = html;
   $('#modal-backdrop').hidden = false;
   if (onMount) onMount($('#modal'));
+  return modalRevision;
 }
 
 export function closeModal() {
   $('#modal-backdrop').hidden = true;
-  $('#modal').innerHTML = '';
+  resetModal();
 }
 
 export const modalOpen = () => !$('#modal-backdrop').hidden;
