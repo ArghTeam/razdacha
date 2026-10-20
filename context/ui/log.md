@@ -193,3 +193,21 @@ and [fixture protocol](../../docs/11-staging-validation.md#configuration-ui-life
 Client routing controls expose shared rules or one tunnel, preserve disabled/missing selected targets visibly, and require Apply. Cards summarize routing; save marks pending, and authenticated Apply status restores that state after reload. Help states IPv4 TCP/UDP support, blocked IPv6/ping/other protocols/private forwarding, and retained gateway access. Async routing callbacks obey modal/session lifetime (ADR 0028).
 
 Implementation and verification record: [task 231](../../tasks/done/231-peer-egress.md). The bounded isolated Linux fixture and independent synthetic-browser checks passed; the completed record retains the failed first attempt and exact evidence boundaries. The fixture uses veth identities and a synthetic SOCKS exit, not encrypted incoming WireGuard or a DO client flow.
+
+
+## 2026-10-20 — #236 visible client routing
+
+The client inventory now separates identity/activity from the configured route and
+exposes Routing and Configuration directly. A named radio editor explains shared rules
+versus one Internet exit, target availability and protocol scope only in exit mode.
+Shared summaries preserve direct/block rule semantics. Save errors stay inline;
+Save and Apply remain explicitly separate. Global dirty state is never presented as a
+per-client activation fact. No remote assets or frontend build step were added.
+
+Verification: Go UI/API tests, module syntax and diff checks passed; synthetic browser
+behavior passed 13/13, followed by 4/4 focused refinement checks. Independent final
+visual/code/context evaluation passed with mode switching and desktop/tablet/phone
+checks. This establishes frontend presentation and sequencing, not live VPN publication,
+release or deployment. The evaluator used the available OpenAI model; no review by a
+different provider is claimed. See the [completed task 236](../../tasks/done/236-client-routing-ui.md)
+for provenance, evidence and validation limits.

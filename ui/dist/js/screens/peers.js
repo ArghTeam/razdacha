@@ -7,13 +7,20 @@ import {
   currentModalRevision, isCurrentModal, onModalCleanup,
   openMenu, notImplemented, notice, refresh, markDirty,
 } from '../shell.js';
-import { $, esc, bytes, since, isOnline, download } from '../util.js';
+import { $, esc, bytes, isOnline, download } from '../util.js';
 
 export const title = 'Клиенты';
 
 /** Что нужно экрану. Настройки не обязательны: без них подписи скромнее. */
 export async function load() {
   state.peers = await api.peers.list();
+  try {
+    state.tunnels = await api.tunnels.list();
+    state.missing.delete('peer-tunnels');
+  } catch (err) {
+    if (err.status === 401) throw err;
+    state.missing.add('peer-tunnels');
+  }
 }
 
 export function view() {
@@ -22,60 +29,46 @@ export function view() {
   }
 
   const online = state.peers.filter(isOnline).length;
-  const rx = state.peers.reduce((a, p) => a + (p.rx_bytes || 0), 0);
-  const tx = state.peers.reduce((a, p) => a + (p.tx_bytes || 0), 0);
-
+  const selected = state.peers.filter((p) => p.egress_tunnel_id).length;
   const rows = state.peers.map((p) => {
     const on = isOnline(p);
-    // Счётчики живут на wg0, а не на текущем соединении: офлайн-пир их не
-    // теряет, теряет их только выключенный — демон снял его с интерфейса, и
-    // данных для него больше нет вовсе (#104). «был <когда>» остаётся рядом с
-    // цифрами: это разные вопросы — сколько прошло и когда виделись в последний
-    // раз.
-    const traffic = `↓ ${bytes(p.rx_bytes)} · ↑ ${bytes(p.tx_bytes)}`;
-    const meta = p.enabled === false
-      ? 'отключён'
-      : on
-        ? `${traffic}${p.endpoint ? ' · ' + esc(p.endpoint) : ''}`
-        : `${traffic} · ${p.last_handshake ? 'был ' + since(p.last_handshake) : 'не подключался'}`;
+    const activity = p.enabled === false ? 'Disabled' : on ? 'Connected' : p.last_handshake && Number.isFinite(Date.parse(p.last_handshake)) ? `Last handshake ${new Date(p.last_handshake).toLocaleString('en-GB')}` : 'No connection yet';
     return `
-      <div class="row${p.enabled === false ? ' dim' : ''}">
-        <span class="dot ${on ? 'on' : 'off'}" title="${on ? 'онлайн' : 'офлайн'}"></span>
-        <div class="row-main">
-          <div class="row-title">${esc(p.name)}
-            <span class="mono" style="color:var(--fg-dim);font-weight:400">${esc(p.address)}</span>
-          </div>
-          <div class="row-meta">${meta}</div>
-          <div class="row-meta">${routingSummary(p)}</div>
+      <article class="row client-row${p.enabled === false ? ' dim' : ''}" aria-label="Client ${esc(p.name)}">
+        <div class="client-identity">
+          <div class="client-name"><span class="dot ${on ? 'on' : 'off'}" aria-hidden="true"></span><h2>${esc(p.name)}</h2></div>
+          <div class="mono row-meta">${esc(p.address)}</div>
+          <div class="row-meta">${activity}</div>
+          <div class="row-meta client-traffic">↓ ${bytes(p.rx_bytes)} · ↑ ${bytes(p.tx_bytes)}</div>
         </div>
-        <div class="row-actions">
-          <button class="btn btn-sm" data-act="peer-config" data-id="${esc(p.id)}" aria-label="Configuration for client ${esc(p.name)}">Конфиг</button>
-          <div class="menu-wrap">
-            <button class="btn btn-sm btn-ghost" data-act="menu-peer" data-id="${esc(p.id)}" aria-label="Actions for client ${esc(p.name)}" aria-haspopup="menu" aria-expanded="false">⋮</button>
-          </div>
+        <div class="client-route"><div class="client-label">Configured route</div>${routingSummary(p)}</div>
+        <div class="row-actions client-actions">
+          <button class="btn btn-sm client-routing-button" data-act="peer-routing" data-id="${esc(p.id)}" aria-label="Routing for client ${esc(p.name)}">Routing</button>
+          <button class="btn btn-sm" data-act="peer-config" data-id="${esc(p.id)}" aria-label="Configuration for client ${esc(p.name)}">Configuration</button>
+          <button class="btn btn-sm btn-ghost" data-act="menu-peer" data-id="${esc(p.id)}" aria-label="Actions for client ${esc(p.name)}" aria-haspopup="menu" aria-expanded="false">⋮</button>
         </div>
-      </div>`;
+      </article>`;
   }).join('');
 
   return head() + `
-    <div class="summary">
-      <div class="stat"><div class="stat-label">Устройств</div><div class="stat-value">${state.peers.length}</div></div>
-      <div class="stat"><div class="stat-label">Онлайн сейчас</div><div class="stat-value">${online}</div></div>
-      <div class="stat"><div class="stat-label">Принято, всего</div><div class="stat-value">${bytes(rx)}</div></div>
-      <div class="stat"><div class="stat-label">Отдано, всего</div><div class="stat-value">${bytes(tx)}</div></div>
+    <div class="client-overview" aria-label="Client inventory summary">
+      <span><strong>${state.peers.length}</strong> clients</span>
+      <span><strong>${online}</strong> connected</span>
+      <span><strong>${selected}</strong> selected exit</span>
+      <span><strong>${state.peers.length - selected}</strong> shared rules</span>
     </div>
-    <div class="card">${rows || '<div class="empty">Клиентов пока нет.</div>'}</div>
-    <p class="screen-sub" style="margin-top:10px">
-      Трафик — с последнего поднятия wg0, не за всё время. Адрес, ключи, MTU и DNS
-      выставляются сами — их нельзя задать вручную.
-    </p>`;
+    <div class="client-apply-note"><strong>Save → Apply</strong>
+      <span>Saved configuration is shown below. Apply activates changes.${state.dirty ? ' Unapplied changes exist.' : ''}</span>
+    </div>
+    <div class="card client-inventory">${rows || '<div class="empty"><strong>No clients yet</strong><p>Add a device to create its WireGuard configuration, then choose its route.</p><button class="btn" data-act="add-peer">Add client</button></div>'}</div>
+    <p class="screen-sub" style="margin-top:10px">Traffic counters are measured since the gateway interface started.</p>`;
 }
 
 const head = () => `
   <div class="screen-head">
-    <h1>Клиенты</h1>
+    <div><h1>Clients</h1><p class="screen-sub client-subtitle">Choose where each device's Internet traffic goes.</p></div>
     <div class="spacer"></div>
-    <button class="btn btn-primary" data-act="add-peer">+ Добавить</button>
+    <button class="btn btn-primary" data-act="add-peer">+ Add client</button>
   </div>`;
 
 /* --- новый клиент: спрашиваем только имя ---------------------------------- */
@@ -200,7 +193,6 @@ export const actions = {
   'menu-peer': (id, btn) => {
     const p = peerById(id);
     openMenu(btn, [
-      { act: 'peer-routing', id, label: 'Routing' },
       { act: 'rename-peer', id, label: 'Переименовать' },
       { act: 'toggle-peer', id, label: p.enabled === false ? 'Включить' : 'Отключить' },
       { act: 'delete-peer', id, label: 'Удалить', danger: true },
@@ -255,50 +247,80 @@ export const actions = {
 };
 
 function routingSummary(peer) {
-  if (!peer.egress_tunnel_id) return 'Routing: shared rules';
+  if (!peer.egress_tunnel_id) return '<div class="client-route-name">Shared rules</div><div class="row-meta">Follows shared resource rules; unmatched Internet traffic goes direct.</div>';
+  if (state.missing.has('tunnels') || state.missing.has('peer-tunnels')) return '<div class="client-route-name">Selected exit</div><div class="row-meta">Tunnel details unavailable. Open Routing to retry.</div>';
   const tunnel = tunnelById(peer.egress_tunnel_id);
   const unavailable = !tunnel || !tunnel.enabled;
-  return `Internet → ${esc(tunnel ? tunnel.name : 'Missing tunnel')}${unavailable ? ' · blocked until the selected tunnel is available' : ''}`;
+  return `<div class="client-route-name selected-exit">Internet → ${esc(tunnel ? tunnel.name : 'Missing tunnel')}</div>
+    <div class="row-meta${unavailable ? ' client-route-blocked' : ''}">${unavailable ? 'Blocked target · no direct fallback' : 'IPv4 TCP/UDP + DNS · no direct fallback'}</div>`;
 }
 
 async function modalPeerRouting(id) {
   const peer = peerById(id);
   if (!peer) return;
   const currentSession = api.session.guard();
-  const revision = openModal(modalShell('Client routing', '<div class="loading">Loading tunnels…</div>', '<button class="btn" data-act="close-modal">Close</button>'));
+  const revision = openModal(modalShell(`Routing: ${peer.name}`, '<div class="loading">Loading tunnels…</div>', '<button class="btn" data-act="close-modal">Close</button>'));
   try {
     const tunnels = await api.tunnels.list();
     if (!currentSession() || !isCurrentModal(revision)) return;
     state.tunnels = tunnels;
+    state.missing.delete('tunnels');
+    state.missing.delete('peer-tunnels');
     const current = peer.egress_tunnel_id;
     const options = tunnels.map((t) => `<option value="${esc(t.id)}"${t.id === current ? ' selected' : ''}>${esc(t.name)}${t.enabled ? '' : ' (disabled — traffic blocked)'}</option>`).join('');
     const missing = current && !tunnelById(current) ? `<option value="${esc(current)}" selected>Missing tunnel — traffic blocked</option>` : '';
     openModal(modalShell(`Routing: ${peer.name}`, `
-      <div class="field"><label for="peer-routing-mode">Routing mode</label>
-        <select id="peer-routing-mode"><option value="shared"${current ? '' : ' selected'}>Shared rules</option><option value="tunnel"${current ? ' selected' : ''}>Whole Internet through a tunnel</option></select></div>
+      <fieldset class="routing-choices"><legend>Internet routing</legend>
+        <label class="routing-choice"><input type="radio" name="peer-routing-mode" value="shared"${current ? '' : ' checked'}>
+          <span><strong>Shared rules</strong><span>Follow shared resource rules, including their tunnel, direct or block actions. Unmatched traffic goes direct.</span></span></label>
+        <label class="routing-choice"><input type="radio" name="peer-routing-mode" value="tunnel"${current ? ' checked' : ''}>
+          <span><strong>Whole Internet through a tunnel</strong><span>Send this client's supported Internet traffic and DNS through one exit, overriding shared rules.</span></span></label>
+      </fieldset>
       <div class="field" id="peer-routing-target-field"><label for="peer-routing-target">Outgoing tunnel</label>
-        <select id="peer-routing-target"><option value="">Select a tunnel</option>${missing}${options}</select></div>
-      <p class="hint">This client uses the selected exit for Internet traffic and DNS, instead of shared rules. If unavailable, traffic is blocked. Supports IPv4 TCP/UDP; IPv6, ping, other IP protocols and access to other private networks are blocked. This dashboard stays accessible. Save, then Apply.</p>`,
+        <select id="peer-routing-target" aria-describedby="peer-routing-target-status"><option value="">Select a tunnel</option>${missing}${options}</select>
+        <div class="hint" id="peer-routing-target-status" role="status"></div></div>
+      <div class="routing-scope" id="peer-routing-scope"><strong>Whole Internet mode supports</strong><p>IPv4 TCP/UDP and DNS. IPv6, ping, other IP protocols and private-network forwarding are blocked. Gateway dashboard access remains available.</p></div>
+      <p class="routing-save-note">Save changes configuration. <strong>Then Apply to activate it.</strong></p>
+      <div id="peer-routing-error" class="gate-error" role="alert" hidden></div>`,
       '<button class="btn" data-act="close-modal">Cancel</button><button class="btn btn-primary" data-act="save-peer-routing">Save routing</button>'), (modal) => {
         modal.dataset.peerId = id;
-        const mode = modal.querySelector('#peer-routing-mode');
         const field = modal.querySelector('#peer-routing-target-field');
-        const sync = () => { field.hidden = mode.value !== 'tunnel'; };
-        mode.addEventListener('change', sync);
+        const target = modal.querySelector('#peer-routing-target');
+        const status = modal.querySelector('#peer-routing-target-status');
+        const sync = () => {
+          const mode = modal.querySelector('[name="peer-routing-mode"]:checked').value;
+          field.hidden = mode !== 'tunnel';
+          modal.querySelector('#peer-routing-scope').hidden = mode !== 'tunnel';
+          target.disabled = mode !== 'tunnel' || !tunnels.length && !missing;
+          const selected = tunnels.find((t) => t.id === target.value);
+          status.textContent = !tunnels.length && !missing ? 'No tunnels available. Add a tunnel on the Tunnels screen first.' : !target.value ? 'Choose the exit for this client.' : !selected || !selected.enabled ? 'This target is missing or disabled. Traffic will be blocked after Apply.' : 'No direct fallback if this exit becomes unavailable.';
+          status.classList.toggle('client-route-blocked', Boolean(target.value && (!selected || !selected.enabled)));
+          modal.querySelector('[data-act="save-peer-routing"]').disabled = mode === 'tunnel' && !target.value;
+        };
+        modal.querySelectorAll('[name="peer-routing-mode"]').forEach((input) => input.addEventListener('change', sync));
+        target.addEventListener('change', sync);
         sync();
       });
-  } catch (err) { if (currentSession() && isCurrentModal(revision)) toastError(err, 'Cannot load routing'); }
+  } catch (err) {
+    if (!currentSession() || !isCurrentModal(revision)) return;
+    openModal(modalShell(`Routing: ${peer.name}`, notice('Cannot load tunnels', err.message || 'Try again before changing routing.', 'err'),
+      `<button class="btn" data-act="close-modal">Close</button><button class="btn btn-primary" data-act="peer-routing" data-id="${esc(id)}">Retry</button>`));
+  }
 }
 
 async function savePeerRouting() {
   const modal = $('#modal');
   const id = modal.dataset.peerId;
-  const tunnel = $('#peer-routing-mode').value === 'tunnel' ? $('#peer-routing-target').value : null;
+  const tunnel = modal.querySelector('[name="peer-routing-mode"]:checked').value === 'tunnel' ? $('#peer-routing-target').value : null;
   if (tunnel === '') { toast('Select an outgoing tunnel', 'err'); return; }
   const revision = currentModalRevision();
   const currentSession = api.session.guard();
   const button = modal.querySelector('[data-act="save-peer-routing"]');
   button.disabled = true;
+  const controls = [...modal.querySelectorAll('input, select')];
+  const disabled = controls.map((control) => control.disabled);
+  controls.forEach((control) => { control.disabled = true; });
+  modal.querySelector('#peer-routing-error').hidden = true;
   try {
     const peer = await api.peers.update(id, { egress_tunnel_id: tunnel });
     if (!currentSession()) return;
@@ -311,6 +333,9 @@ async function savePeerRouting() {
   } catch (err) {
     if (!currentSession() || !isCurrentModal(revision)) return;
     button.disabled = false;
-    toastError(err, 'Routing was not saved');
+    controls.forEach((control, index) => { control.disabled = disabled[index]; });
+    const error = modal.querySelector('#peer-routing-error');
+    error.textContent = err.message || 'Routing was not saved. Try again.';
+    error.hidden = false;
   }
 }

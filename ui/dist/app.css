@@ -886,3 +886,49 @@ button:focus-visible, summary:focus-visible, a:focus-visible {
   .modal-foot { flex-wrap: wrap; }
   .rule-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Client inventory makes routing a first-class control rather than hidden metadata. */
+.client-subtitle { margin: 4px 0 0; }
+.client-overview { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 18px 0 14px; color: var(--fg-dim); font-size: 13px; }
+.client-overview strong { color: var(--fg); font-size: 18px; margin-right: 3px; font-variant-numeric: tabular-nums; }
+.client-apply-note { display: flex; flex-direction: column; gap: 4px; margin-bottom: 18px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--bg-elev); font-size: 13px; color: var(--fg-dim); }
+.client-apply-note strong { color: var(--fg); }
+.client-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(190px, 1.15fr) auto; gap: 18px; align-items: center; padding: 20px 18px; }
+.client-identity, .client-route { min-width: 0; overflow-wrap: anywhere; }
+.client-name { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.client-name h2 { font-size: 16px; line-height: 1.35; min-width: 0; overflow-wrap: anywhere; }
+.client-name .dot { flex-shrink: 0; }
+.client-label { color: var(--fg-dim); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px; }
+.client-route-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.selected-exit { color: var(--accent); }
+.client-route-blocked { color: var(--err) !important; }
+.client-actions { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.client-routing-button { grid-column: 1 / -1; border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg-elev)); }
+.routing-choices { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.routing-choices legend { font-size: 12px; font-weight: 600; color: var(--fg-dim); padding: 0 0 9px; }
+.routing-choice { display: flex; align-items: flex-start; gap: 11px; padding: 14px; border: 1px solid var(--line-strong); border-radius: 8px; cursor: pointer; }
+.routing-choice:has(input:checked) { border-color: var(--accent); box-shadow: inset 3px 0 var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg-elev)); }
+.routing-choice input { margin: 4px 0 0; flex: 0 0 auto; accent-color: var(--accent); }
+.routing-choice > span { min-width: 0; }
+.routing-choice strong, .routing-choice span span { display: block; }
+.routing-choice span span { font-size: 13px; color: var(--fg-dim); line-height: 1.5; margin-top: 4px; }
+.routing-scope { padding: 12px 14px; background: var(--bg-sunken); border-radius: 8px; font-size: 12px; color: var(--fg-dim); line-height: 1.5; }
+.routing-scope strong { color: var(--fg); font-size: 13px; }
+.routing-scope p { margin: 5px 0 0; }
+.routing-save-note { margin: 0; color: var(--fg-dim); font-size: 13px; line-height: 1.5; }
+.modal:has(.routing-choices) { width: min(580px, 100%); }
+.modal:has(.routing-choices) select { width: 100%; min-width: 0; }
+@media (max-width: 760px) {
+  .client-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 16px; }
+  .client-actions { grid-column: 1 / -1; width: 100%; display: flex; justify-content: flex-start; }
+  .client-actions .btn { min-height: 44px; }
+  .client-routing-button { flex: 1; }
+  .client-subtitle { max-width: 26ch; }
+}
+@media (max-width: 420px) {
+  .client-row { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .client-route { padding-left: 11px; border-left: 2px solid var(--line-strong); }
+  .client-overview { gap: 8px 15px; }
+  .screen-head:has(.client-subtitle) { flex-wrap: wrap; gap: 12px; }
+  .screen-head:has(.client-subtitle) .spacer { display: none; }
+}

@@ -53,7 +53,19 @@ promising heap erasure or immunity to delayed cookie expiry. A dataset marker al
 does not prove visible rendering. Keep case-specific coverage and inconclusive
 observations explicit in the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md).
 
-- Client routing controls expose shared rules or one tunnel, preserve disabled/missing selected targets visibly, and require Apply. Cards summarize routing; save marks pending, and authenticated Apply status restores that state after reload. Help states IPv4 TCP/UDP support, blocked IPv6/ping/other protocols/private forwarding, and retained gateway access. Async routing callbacks obey modal/session lifetime (ADR 0028).
+- The client inventory exposes a direct Routing action beside Configuration and labels
+  its route as configured, never inferred active. The editor uses explicit Shared rules
+  and Whole Internet radio choices with a conditional exit selector. Disabled/missing
+  exits remain selected and visibly blocked; an empty inventory cannot save an empty
+  target. Save failures stay in the editor with its selection preserved.
+- Saving routing marks global pending state; Apply activates configuration. Authenticated
+  Apply status restores global dirty state after reload, but cannot identify which peer
+  changed or its individual active route. Health and enabled status never imply successful
+  client connectivity. Whole Internet mode alone shows its IPv4 TCP/UDP scope, blocked
+  IPv6/ping/other protocols/private forwarding, gateway access and no direct fallback.
+  Shared-mode guidance describes tunnel, direct and block rule actions neutrally (ADR 0028).
+- Routing loading, retry and save callbacks obey modal/session lifetime; an old response
+  cannot replace a newer editor. Existing configuration download/QR cleanup is unchanged.
 
 - Tunnel usage includes client exit references; rule assignment identifies clients whose whole-Internet mode takes precedence. Domain diagnostics are explicitly labeled as shared-rule scope and do not claim to evaluate a selected client exit.
 
