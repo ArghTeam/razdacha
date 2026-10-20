@@ -6,9 +6,11 @@ Selective VPN gateway for Debian/Ubuntu. Standard WireGuard clients send traffic
 `wg0`; selected resources go through configured tunnels and everything else directly.
 No additional client software is required.
 
-The latest published daemon release is **v0.10.0** (2026-08-21). This repository also
+The latest stable daemon release is **v0.10.0** (2026-08-21). This repository also
 contains **razvedka 0.3.0**, a Chrome DevTools extension developed after that release.
 It has its own version and is not part of the daemon build or release archive.
+Staging candidates report their running version through `/api/version`; do not infer
+the deployed candidate version from the latest stable release number.
 
 One built-in pool rotates free igareck keys ([ADR 0018](docs/decisions/0018-unified-pool.md)).
 It excludes blocklisted countries (RU and BY by default) and keys without transport
