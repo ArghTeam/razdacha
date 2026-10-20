@@ -169,15 +169,33 @@ Unsupported filesystems or failed synchronization are errors. Test the following
 No automatic rollback reactivates credentials. An explicit local `restore-recover`
 operation, serialized under the same lifecycle lock, restores the **current destination**
 recovery set with both services stopped/inhibited, journal-safe DB replacement and
-coherent authority/artifact recovery. Preserve original DB flags and original hold
-in that set without adding a second activation schema. Recovery remains held/guarded;
-a distinct explicit recovery activation acknowledges reusing destination credentials
-before restoring runtime/service enable intent. It never enables imported WireGuard.
-If interrupted, retry/recovery inspects the durable phase and verifies contents rather
-than treating absent markers as success. The completed restore record remains durable and identifies whether callback hold or
-explicit resume is expected; a missing hold is not inferred as resume. Uncertain/corrupt
-phase, hold, resume record or recovery material fails closed. Recovery data contains secrets and is never printed or exported
-by diagnostics. No automatic garbage collection is added.
+coherent authority/artifact recovery. Its durable `recovering` phase remains held and
+inhibited throughout restoration; only after every file succeeds may it persist
+`recovered`. That passive phase still requires both inhibitors and never authorizes
+callbacks, daemon startup or runtime. Retry may repeat the same verified recovery set;
+DB byte equality alone never proves a complete rollback or grants activation.
+
+A distinct `restore-recover -activate-destination` acknowledges reusing **original
+current-destination** credentials/callbacks and requires a complete `recovered` record,
+validated private manifest and unchanged recovered DB. It preserves the original prior
+callback hold and service enabled/active intent. The daemon starts only if originally
+active. Both original enabled/disabled unit settings are restored, but even an
+originally active runtime stays stopped/inhibited and ingress stays guarded until
+another explicit Apply; this is a deliberate availability restriction. Activation
+may be retried after enable/start failure without granting imported activation.
+The mandatory exactly-once `recovery_activated` boolean distinguishes this reviewed
+original-destination intent from paused imported policy, allowing that subsequent Apply
+to retain original destination WG flags. It never enables imported WireGuard. The
+field rejects omission, null, duplicate or wrong type; no default grants activation.
+A destination without an original DB stays safely inhibited and reports that explicit
+fresh-install recovery is required instead of inferring activation from absence.
+
+The original hold/runtime/service metadata remains in the private recovery set. Marker
+removal and record writes are separate durable crash boundaries: any interruption or
+mismatch fails closed, and only explicit serialized recovery may inspect/repair those
+transitions. A missing/corrupt record cannot become an ordinary installation while any
+inhibitor, permit or recovery manifest remains. Recovery data contains secrets and is
+never printed or exported by diagnostics. No automatic garbage collection is added.
 
 ### Trusted hold, administration and explicit intent
 

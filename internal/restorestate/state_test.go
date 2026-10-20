@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -250,5 +251,35 @@ func TestConcurrentResumeApplyAndDuplicateResumeCompleteWithoutLockInversion(t *
 	}
 	if e := ctl.ApplyAllowed(); e != nil {
 		t.Fatal("positive post-start Apply control rejected")
+	}
+}
+
+func TestRecoveryActivationFieldRequiresExplicitBoolean(t *testing.T) {
+	dir := t.TempDir()
+	if e := os.Chmod(dir, 0o700); e != nil {
+		t.Fatal(e)
+	}
+	s := State{Version: Protocol, Operation: "fixture", Recovery: filepath.Join(dir, ".restore-fixture"), Phase: "complete", Held: false, RuntimeInhibited: true}
+	if e := WritePrivate(filepath.Join(dir, Runtime), []byte("1\n")); e != nil {
+		t.Fatal(e)
+	}
+	if e := Save(dir, s); e != nil {
+		t.Fatal(e)
+	}
+	valid, e := ReadPrivate(filepath.Join(dir, File), 64<<10)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, replacement := range []string{"", `"recovery_activated":null`, `"recovery_activated":false,"recovery_activated":true`, `"recovery_activated":"false"`} {
+		payload := strings.Replace(string(valid), `"recovery_activated":false`, replacement, 1)
+		if replacement == "" {
+			payload = strings.Replace(payload, ",}", "}", 1)
+		}
+		if e = WritePrivate(filepath.Join(dir, File), []byte(payload)); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = Read(dir); e == nil {
+			t.Fatalf("ambiguous recovery activation admitted: %s", replacement)
+		}
 	}
 }

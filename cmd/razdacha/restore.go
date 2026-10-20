@@ -184,6 +184,7 @@ func restore(ctx context.Context, opts restoreOptions) error {
 	if err != nil {
 		return fmt.Errorf("installed runtime start helper is incompatible: %w", err)
 	}
+	fmt.Printf("Destination checklist acknowledged. Private current-destination recovery: %s\n", op)
 	record := restorestate.State{Version: restorestate.Protocol, Operation: filepath.Base(op), Recovery: op, Phase: "preparing", Held: true, RuntimeInhibited: true}
 	recovery := restorestate.Recovery{}
 	recovery.Services, err = json.Marshal(services)
@@ -191,7 +192,7 @@ func restore(ctx context.Context, opts restoreOptions) error {
 		return err
 	}
 	// Save the original safety/drop-in metadata BEFORE any inhibitor installation.
-	metadata := []string{filepath.Join(dir, restorestate.File), filepath.Join(dir, restorestate.Incomplete), filepath.Join(dir, restorestate.Runtime)}
+	metadata := []string{filepath.Join(dir, restorestate.File), filepath.Join(dir, restorestate.Incomplete), filepath.Join(dir, restorestate.Runtime), filepath.Join(dir, restorestate.PermitFile)}
 	for _, unit := range []string{packaging.DaemonUnit, packaging.SingboxUnit} {
 		metadata = append(metadata, filepath.Join(opts.services.Root, packaging.DefaultUnitDir, unit+".d", packaging.RestoreDropIn))
 	}
@@ -217,64 +218,11 @@ func restore(ctx context.Context, opts restoreOptions) error {
 	if err = opts.closeIngress(); err != nil {
 		return err
 	}
-	// A stable SQLite snapshot includes committed WAL pages and does not migrate old state.
-	if _, e := os.Stat(dbPath); e == nil {
-		snapshot := filepath.Join(op, "destination.db")
-		if err = store.BackupAt(ctx, dbPath, snapshot); err != nil {
-			return err
-		}
-		if err = os.Chmod(snapshot, 0o600); err != nil {
-			return err
-		}
-		if err = restorestate.SyncFile(snapshot); err != nil {
-			return err
-		}
-		f, e := restorestate.CaptureFile(op, snapshot)
-		if e != nil {
-			return e
-		}
-		f.Target = dbPath
-		recovery.Files = append(recovery.Files, f)
-		recovery.DatabasePresent = true
-	} else if !errors.Is(e, os.ErrNotExist) {
-		return e
+	recovery, err = collectDestinationRecovery(ctx, op, dbPath, opts.services.Root, recovery)
+	if err != nil {
+		return err
 	}
 	runtime := filepath.Join(opts.services.Root, singbox.DefaultConfigPath)
-	for _, path := range []string{runtime, filepath.Join(dir, networkstate.CommittedFile), filepath.Join(dir, networkstate.BootstrapFile)} {
-		f, e := restorestate.CaptureFile(op, path)
-		if e != nil {
-			return e
-		}
-		recovery.Files = append(recovery.Files, f)
-	}
-	// Preserve every native artifact file, not just the latest mutable accepted manifest.
-	native := filepath.Join(dir, "lists", "native")
-	if err = filepath.WalkDir(native, func(path string, d os.DirEntry, e error) error {
-		if errors.Is(e, os.ErrNotExist) && path == native {
-			return nil
-		}
-		if e != nil {
-			return e
-		}
-		if d.IsDir() {
-			return nil
-		}
-		f, e := restorestate.CaptureFile(op, path)
-		if e != nil {
-			return e
-		}
-		recovery.Files = append(recovery.Files, f)
-		return nil
-	}); err != nil {
-		return err
-	}
-	recovery.Complete = true
-	if err = restorestate.SaveRecovery(op, recovery); err != nil {
-		return err
-	}
-	if _, err = restorestate.ReadRecovery(op); err != nil {
-		return err
-	}
 	// Runtime is stopped and persistently inhibited; remove its sole effective config.
 	if err = restorestate.Remove(runtime); err != nil {
 		return err
@@ -416,4 +364,80 @@ func describeState(v store.StateSummary) string {
 // daemonActive отвечает, работает ли демон сейчас.
 func daemonActive(ctx context.Context) bool {
 	return systemctlQuiet(ctx, "is-active", "--quiet", packaging.DaemonUnit)
+}
+
+// collectDestinationRecovery is legal only before imported DB/runtime/authority
+// mutation. A durable Complete manifest is the authority for all later rollback.
+func collectDestinationRecovery(ctx context.Context, op, dbPath, serviceRoot string, recovery restorestate.Recovery) (restorestate.Recovery, error) {
+	dir := filepath.Dir(dbPath)
+	var err error
+	// A stable SQLite snapshot includes committed WAL pages and does not migrate old state.
+	if _, e := os.Stat(dbPath); e == nil {
+		snapshotFile, e := os.CreateTemp(op, "destination-*.db")
+		if e != nil {
+			return recovery, e
+		}
+		snapshot := snapshotFile.Name()
+		if e = snapshotFile.Close(); e != nil {
+			return recovery, e
+		}
+		if e = os.Remove(snapshot); e != nil {
+			return recovery, e
+		}
+		if err = store.BackupAt(ctx, dbPath, snapshot); err != nil {
+			return recovery, err
+		}
+		if err = os.Chmod(snapshot, 0o600); err != nil {
+			return recovery, err
+		}
+		if err = restorestate.SyncFile(snapshot); err != nil {
+			return recovery, err
+		}
+		f, e := restorestate.CaptureFile(op, snapshot)
+		if e != nil {
+			return recovery, e
+		}
+		f.Target = dbPath
+		recovery.Files = append(recovery.Files, f)
+		recovery.DatabasePresent = true
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return recovery, e
+	}
+	runtime := filepath.Join(serviceRoot, singbox.DefaultConfigPath)
+	for _, path := range []string{runtime, filepath.Join(dir, networkstate.CommittedFile), filepath.Join(dir, networkstate.BootstrapFile)} {
+		f, e := restorestate.CaptureFile(op, path)
+		if e != nil {
+			return recovery, e
+		}
+		recovery.Files = append(recovery.Files, f)
+	}
+	// Preserve every native artifact file, not just the latest mutable accepted manifest.
+	native := filepath.Join(dir, "lists", "native")
+	if err = filepath.WalkDir(native, func(path string, d os.DirEntry, e error) error {
+		if errors.Is(e, os.ErrNotExist) && path == native {
+			return nil
+		}
+		if e != nil {
+			return e
+		}
+		if d.IsDir() {
+			return nil
+		}
+		f, e := restorestate.CaptureFile(op, path)
+		if e != nil {
+			return e
+		}
+		recovery.Files = append(recovery.Files, f)
+		return nil
+	}); err != nil {
+		return recovery, err
+	}
+	recovery.Complete = true
+	if err = restorestate.SaveRecovery(op, recovery); err != nil {
+		return recovery, err
+	}
+	if _, err = restorestate.ReadRecovery(op); err != nil {
+		return recovery, err
+	}
+	return recovery, nil
 }

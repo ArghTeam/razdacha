@@ -13,7 +13,7 @@ import (
 
 // fixtureRestore contains ALL service/config effects in an independent temporary root.
 // Existing archive/preservation tests exercise the production transaction with this adapter.
-func fixtureRestore(t *testing.T, ctx context.Context, opts restoreOptions) error {
+func fixtureRestore(t *testing.T, ctx context.Context, opts restoreOptions, capture ...func(restoreOptions)) error {
 	t.Helper()
 	dir := filepath.Dir(opts.dbPath)
 	if e := os.Chmod(dir, 0o700); e != nil {
@@ -105,6 +105,9 @@ func fixtureRestore(t *testing.T, ctx context.Context, opts restoreOptions) erro
 	opts.checklist = true
 	if opts.closeIngress == nil {
 		opts.closeIngress = func() error { return nil }
+	}
+	for _, save := range capture {
+		save(opts)
 	}
 	return restore(ctx, opts)
 }

@@ -24,7 +24,7 @@ func (s *Server) handleRestoreStatus(w http.ResponseWriter, r *http.Request) {
 		held = status.Held
 		inhibited = status.RuntimeInhibited
 	}
-	writeJSON(w, s.log, http.StatusOK, map[string]any{"restored": status != nil, "held": held, "runtime_inhibited": inhibited, "checklist": restoreChecklist})
+	writeJSON(w, s.log, http.StatusOK, map[string]any{"restored": status != nil, "held": held, "runtime_inhibited": inhibited, "checklist": restoreChecklist, "recovery_activated": status != nil && status.RecoveryActivated})
 }
 func (s *Server) handleRestoreResume(w http.ResponseWriter, r *http.Request) {
 	var request struct {

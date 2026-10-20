@@ -22,7 +22,7 @@ func (g *applyGate) restoreApplyAllowed(snap store.Snapshot) error {
 	if e != nil {
 		return e
 	}
-	if s == nil || !s.RuntimeInhibited {
+	if s == nil || !s.RuntimeInhibited || s.RecoveryActivated {
 		return nil
 	}
 	ids, e := singbox.RestoreWireGuardIDs(snap.Tunnels)

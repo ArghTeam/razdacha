@@ -208,3 +208,20 @@ compatible managed setup is a separate prerequisite. A live checked runtime can 
 authorizing-daemon failure: permit revocation/expiry denies future starts, while the
 ADR 0023 ingress guard contains uncertain publication. Only positive stop verification
 supports an inhibited/stopped claim. Test these distinctions and enforcement absence.
+
+
+## Recovery implementation contract clarification
+
+Passive `restore-recover` records `recovering` before mutation and `recovered` only
+after the complete current-destination file set is restored. Both phases stay held,
+transaction/runtime inhibited and guarded; repeated passive recovery never starts a
+service. Separate `-activate-destination` requires `recovered`, unchanged verified DB,
+original private metadata and explicit destination-credential acknowledgment. It
+preserves original callback hold and service enable/active intent, leaves runtime
+inhibited for explicit Apply, and sets strict required-once `recovery_activated` so only
+recovered destination WG intent may survive that Apply. Imported WG stays paused.
+Null/missing/duplicate fields, incomplete rollback and byte equality without a complete
+passive phase grant no authority. An original destination without a DB remains safely
+inhibited with an explicit fresh-install recovery limitation. Local synthetic recovery
+checks cover passive retry, premature activation, prior hold/active intent, failed stop,
+changed recovered DB and symlink parents; isolated runtime/staging proof remains pending.

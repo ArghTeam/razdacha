@@ -142,7 +142,7 @@ func TestRestoreForceKeepsPreviousState(t *testing.T) {
 		t.Fatalf("пиры после восстановления: %v", got)
 	}
 
-	saved, err := filepath.Glob(filepath.Join(dir, ".restore-*", "destination.db"))
+	saved, err := filepath.Glob(filepath.Join(dir, ".restore-*", "destination-*.db"))
 	if err != nil {
 		t.Fatalf("Glob: %v", err)
 	}
