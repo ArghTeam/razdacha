@@ -31,6 +31,7 @@ func permitFixture(t *testing.T) (string, string, State, Permit, KernelFacts) {
 	writePermit(t, dir, p)
 	return dir, config, s, p, facts
 }
+
 func writePermit(t *testing.T, dir string, p Permit) {
 	t.Helper()
 	b, e := json.Marshal(p)

@@ -60,6 +60,7 @@ func Acquire(dir string, inherited int) (*Lock, error) {
 	}
 	return &Lock{file: f}, nil
 }
+
 func (l *Lock) Close() error {
 	if l == nil || l.file == nil {
 		return nil

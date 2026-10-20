@@ -34,7 +34,7 @@ operator action. Keep unavailable-tunnel rules fail closed under
 - [ ] Packaging, store, singbox and netstack context and backup/restore docs are updated.
 
 ## Validation
-Planned; not executed by this planning change. Start with synthetic databases and disposable
+Local implementation and bounded independent corrective reviews are in progress. Use synthetic databases and disposable
 instances/namespaces. Use independently generated fixture server/client credentials;
 never enable cloned provider keys. Follow the [staging runbook](../docs/11-staging-validation.md)
 for any smoke test, using current destination state for rollback, never the original
@@ -50,12 +50,13 @@ documentation and staging evidence. Two rereads by the same reviewer do not qual
 Final acceptance requires baseline-fails/fix-passes evidence, adversarial negative
 cases and controlled staging observations under the [runbook](../docs/11-staging-validation.md).
 No unresolved P0/P1 findings may be marked ready to merge. Unknown results stay explicit.
-Review approval does not authorize merge or release. These reviews are planned, not completed.
+Review approval does not authorize merge or release. Threat-design and bounded corrective code reviews are recorded below; final integrated
+acceptance remains pending.
 
-## Proposed contract for independent review
+## Approved design contract
 
-[ADR 0027](../docs/decisions/0027-safe-cross-host-restore.md) is proposed, not accepted
-or implemented. It applies safe defaults to every restore, rejects unsupported service
+[ADR 0027](../docs/decisions/0027-safe-cross-host-restore.md) has an independently approved
+design; its implementation is under final review. It applies safe defaults to every restore, rejects unsupported service
 topologies before mutation, preserves full incoming identity and policy, pauses all
 effective WG variants using existing enabled flags and retains other protocol intent.
 A metadata-only capability attestation prevents a new restore CLI from starting an
@@ -79,9 +80,9 @@ in the UI. Ordinary PATCH, restart and Apply cannot clear the hold. Explicit ena
 Apply is required for any chosen outgoing WG endpoint. A destination endpoint/WAN/NAT,
 firewall, panel exposure and certificate SAN checklist precedes client cutover.
 
-## Planned local proof matrix
+## Required proof matrix
 
-No checks below have been executed for this design-only phase. Capture pinned baseline
+The local evidence record below identifies completed checks and remaining proof. Capture pinned baseline
 and fixed revisions, observers and exact assertions; a generic command failure does not
 prove forbidden activation or callback prevention.
 
@@ -208,3 +209,54 @@ compatible managed setup is a separate prerequisite. A live checked runtime can 
 authorizing-daemon failure: permit revocation/expiry denies future starts, while the
 ADR 0023 ingress guard contains uncertain publication. Only positive stop verification
 supports an inhibited/stopped claim. Test these distinctions and enforcement absence.
+
+
+## Recovery implementation contract clarification
+
+Passive `restore-recover` records `recovering` before mutation and `recovered` only
+after the complete current-destination file set is restored. Both phases stay held,
+transaction/runtime inhibited and guarded; repeated passive recovery never starts a
+service. Separate `-activate-destination` requires `recovered`, unchanged verified DB,
+original private metadata and explicit destination-credential acknowledgment. It
+preserves original callback hold and service enable/active intent, leaves runtime
+inhibited for explicit Apply, and sets strict required-once `recovery_activated` so only
+recovered destination WG intent may survive that Apply. Imported WG stays paused.
+Null/missing/duplicate fields, incomplete rollback and byte equality without a complete
+passive phase grant no authority. An original destination without a DB remains safely
+inhibited with an explicit fresh-install recovery limitation. Local synthetic recovery
+checks cover passive retry, premature activation, prior hold/active intent, failed stop,
+changed recovered DB and symlink parents; isolated runtime/staging proof remains pending.
+
+
+## Local integration evidence and remaining gates
+
+- Independent foundation review closed strict JSON omission/duplicate/null and inherited
+  original-FD CLOEXEC defects at `428186c8`.
+- Independent backend review closed canonical-reset aliasing, canonical CLI helper
+  attestation, Resume/Apply lock inversion and orphan publishing permit defects at
+  `afcb31d6`; unchanged private regressions retained old-fail/new-pass evidence.
+- Independent recovery review closed intermediate native-parent traversal at `1417456`,
+  including an actual rollback sibling-sentinel old-fail/new-pass negative.
+- Local authored tests exercise exact identity/schema/WG classification, held API/scheduler
+  gating, current saved list/pool/backup/notification destinations, duplicate/concurrent
+  Resume, aborted-candidate startup, passive recovery and activation failure/retry.
+- Real child-exec tests cover shell-style inherited descriptors, unrelated descendant
+  CLOEXEC, lease retention and signal release. Real installer functions execute with
+  only private canonical-path/owner overlays, synthetic archives/download and equivalent
+  real flock; incompatible retained-evidence downgrade, publication/setup contention and
+  SIGTERM stop/reap are checked. No host systemd or live download is used.
+- Replacement fault adapters delegate real operations except one injected file fsync,
+  source/destination directory fsync or rename failure. The fixture asserts actual old
+  versus new complete DB and current-destination rollback; injected failure is not a
+  physical disk failure. Ten real restore child SIGKILL cuts verify restrictive state
+  and explicit recovery without Go defers; no physical power-loss/reboot claim.
+- Local headless browser tests use actual synthetic localhost API and Secure/HttpOnly
+  cookies, both Resume acknowledgments, unknown-status denial and mobile layout. All
+  browser external requests are intercepted: the resumed release-check positive proves
+  frontend request intent, not external delivery or whole-daemon zero egress. Exact
+  frozen source/artifact/script hashes are retained in the private execution report.
+
+Final full diff/security review, the separate #228 contained true-WireGuard baseline/fix
+fixture, its reviewed runner/artifact/isolation gate, staging observations and final CI
+are still required. No namespace/staging/SSH/installed-service operation, merge or release
+is authorized by these local results.

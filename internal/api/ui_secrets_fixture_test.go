@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -97,7 +98,25 @@ func TestUISecretsFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv, err := New(ctx, Config{Store: st, ClashAddr: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), ServerPublicKey: func(context.Context) (string, error) { return key, nil }, Applier: uiFixtureRejectApply{}})
+	restoreHold := os.Getenv("RAZDACHA_UI_RESTORE_HOLD") == "1"
+	var restoreController *restorestate.Controller
+	if restoreHold {
+		if mode != "local" {
+			t.Fatal("restore browser fixture is local-only")
+		}
+		if e := os.Chmod(root, 0o700); e != nil {
+			t.Fatal(e)
+		}
+		record := restorestate.State{Version: restorestate.Protocol, Operation: "synthetic-browser", Recovery: filepath.Join(root, "synthetic-recovery"), Phase: "complete", Held: true, RuntimeInhibited: true}
+		if e := restorestate.WritePrivate(filepath.Join(root, restorestate.Runtime), []byte("1\n")); e != nil {
+			t.Fatal(e)
+		}
+		if e := restorestate.Save(root, record); e != nil {
+			t.Fatal(e)
+		}
+		restoreController = &restorestate.Controller{Dir: root}
+	}
+	srv, err := New(ctx, Config{Store: st, Restore: restoreController, ClashAddr: "127.0.0.1:0", Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), ServerPublicKey: func(context.Context) (string, error) { return key, nil }, Applier: uiFixtureRejectApply{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +148,7 @@ func TestUISecretsFixture(t *testing.T) {
 			control.ServeHTTP(w, r)
 			return
 		}
-		allowed := uiFixtureAllowed(r.Method, r.URL.Path)
+		allowed := uiFixtureAllowed(r.Method, r.URL.Path) || restoreHold && (r.Method == http.MethodGet && r.URL.Path == "/api/restore" || r.Method == http.MethodPost && r.URL.Path == "/api/restore/resume")
 		if !allowed {
 			http.Error(w, "synthetic fixture endpoint denied", http.StatusForbidden)
 			return
@@ -274,7 +293,7 @@ func uiFixtureControl(token string, stop func()) http.Handler {
 
 func cleanupUIFixtureFiles(t *testing.T, root string) {
 	t.Helper()
-	for _, name := range []string{"ui.sock", "synthetic-ui.db-wal", "synthetic-ui.db-shm", "synthetic-ui.db"} {
+	for _, name := range []string{restorestate.File, restorestate.Runtime, "ui.sock", "synthetic-ui.db-wal", "synthetic-ui.db-shm", "synthetic-ui.db"} {
 		path := filepath.Join(root, name)
 		info, err := os.Lstat(path)
 		if errors.Is(err, os.ErrNotExist) {

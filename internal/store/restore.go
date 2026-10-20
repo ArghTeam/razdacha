@@ -124,41 +124,43 @@ func allRestoreRows(ctx context.Context, db *sql.DB) (restoreRows, error) {
 			continue
 		}
 		name := `"` + strings.ReplaceAll(o.Name, `"`, `""`) + `"`
-		rows, e := db.QueryContext(ctx, "SELECT * FROM "+name+" ORDER BY rowid")
-		if e != nil {
-			return nil, e
-		}
-		cols, e := rows.Columns()
-		if e != nil {
-			_ = rows.Close()
-			return nil, e
-		}
-		var data [][]any
-		for rows.Next() {
-			v := make([]any, len(cols))
-			ptr := make([]any, len(cols))
-			for i := range v {
-				ptr[i] = &v[i]
-			}
-			if e = rows.Scan(ptr...); e != nil {
-				_ = rows.Close()
-				return nil, e
-			}
-			for i, x := range v {
-				if b, ok := x.([]byte); ok {
-					v[i] = append([]byte(nil), b...)
-				}
-			}
-			data = append(data, v)
-		}
-		e = rows.Err()
-		_ = rows.Close()
+		data, e := restoreTableRows(ctx, db, name)
 		if e != nil {
 			return nil, e
 		}
 		out[o.Name] = data
 	}
 	return out, nil
+}
+
+func restoreTableRows(ctx context.Context, db *sql.DB, quotedTable string) ([][]any, error) {
+	rows, e := db.QueryContext(ctx, "SELECT * FROM "+quotedTable+" ORDER BY rowid")
+	if e != nil {
+		return nil, e
+	}
+	defer func() { _ = rows.Close() }()
+	cols, e := rows.Columns()
+	if e != nil {
+		return nil, e
+	}
+	var data [][]any
+	for rows.Next() {
+		values := make([]any, len(cols))
+		pointers := make([]any, len(cols))
+		for i := range values {
+			pointers[i] = &values[i]
+		}
+		if e = rows.Scan(pointers...); e != nil {
+			return nil, e
+		}
+		for i, value := range values {
+			if blob, ok := value.([]byte); ok {
+				values[i] = append([]byte(nil), blob...)
+			}
+		}
+		data = append(data, values)
+	}
+	return data, rows.Err()
 }
 
 // PrepareRestore migrates an admitted private copy and changes only selected WG flags.
@@ -213,12 +215,14 @@ func PrepareRestore(ctx context.Context, path string, classify func([]Tunnel) ([
 	for _, id := range ids {
 		pause[id] = true
 	}
-	rows, e := st.db.QueryContext(ctx, "SELECT * FROM tunnels LIMIT 0")
-	if e != nil {
-		return nil, e
-	}
-	cols, e := rows.Columns()
-	_ = rows.Close()
+	cols, e := func() ([]string, error) {
+		rows, e := st.db.QueryContext(ctx, "SELECT * FROM tunnels LIMIT 0")
+		if e != nil {
+			return nil, e
+		}
+		defer func() { _ = rows.Close() }()
+		return rows.Columns()
+	}()
 	if e != nil {
 		return nil, e
 	}

@@ -36,4 +36,4 @@
 
 | [0026](0026-peer-deletion-preserves-scope.md) | Peer deletion preserves selected scope | 2026-10-20 | accepted; clarifies 0013 |
 
-| [0027](0027-safe-cross-host-restore.md) | Restore with paused credentials and explicit destination activation | 2026-10-20 | proposed; would partially supersede 0016 |
+| [0027](0027-safe-cross-host-restore.md) | Restore with paused credentials and explicit destination activation | 2026-10-20 | design accepted; implementation under review; partially supersedes 0016 |

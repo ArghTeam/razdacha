@@ -3,6 +3,7 @@ package restorestate
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,14 +27,15 @@ var ErrHeld = errors.New("restore holds external activity; review destination se
 
 // State persists even after resume/Apply so missing safety files never imply activation.
 type State struct {
-	Version          int    `json:"version"`
-	Operation        string `json:"operation"`
-	Recovery         string `json:"recovery"`
-	Phase            string `json:"phase"`
-	Held             bool   `json:"held"`
-	RuntimeInhibited bool   `json:"runtime_inhibited"`
-	Publication      string `json:"publication"`
-	ConfigHash       string `json:"config_sha256"`
+	Version           int    `json:"version"`
+	Operation         string `json:"operation"`
+	Recovery          string `json:"recovery"`
+	Phase             string `json:"phase"`
+	Held              bool   `json:"held"`
+	RuntimeInhibited  bool   `json:"runtime_inhibited"`
+	Publication       string `json:"publication"`
+	ConfigHash        string `json:"config_sha256"`
+	RecoveryActivated bool   `json:"recovery_activated"`
 }
 
 func (s State) Validate() error {
@@ -41,12 +43,14 @@ func (s State) Validate() error {
 		return errors.New("invalid restore state identity")
 	}
 	switch s.Phase {
-	case "preparing", "recovering":
+	case "preparing", "recovering", "recovered":
 		if !s.Held || !s.RuntimeInhibited {
 			return errors.New("incomplete restore must remain held and runtime inhibited")
 		}
 	case "publishing":
-		if len(s.Publication) != 32 || len(s.ConfigHash) != 64 {
+		_, nonceErr := hex.DecodeString(s.Publication)
+		_, hashErr := hex.DecodeString(s.ConfigHash)
+		if len(s.Publication) != 32 || len(s.ConfigHash) != 64 || nonceErr != nil || hashErr != nil {
 			return errors.New("publishing lacks exact candidate identity")
 		}
 		if s.Held || s.RuntimeInhibited {
@@ -107,7 +111,7 @@ func Read(dir string) (*State, error) {
 	}
 	// Extra inhibitors are safe and block startup until explicit recovery repairs them.
 	for _, name := range []string{Incomplete, Runtime} {
-		required := name == Incomplete && (s.Phase == "preparing" || s.Phase == "recovering") || name == Runtime && s.RuntimeInhibited
+		required := name == Incomplete && (s.Phase == "preparing" || s.Phase == "recovering" || s.Phase == "recovered") || name == Runtime && s.RuntimeInhibited
 		b, e := ReadPrivate(filepath.Join(dir, name), 64)
 		if e == nil && string(b) != "1\n" {
 			return nil, errors.New("invalid restore inhibitor")
@@ -193,6 +197,7 @@ func SyncDir(dir string) error {
 	}
 	return ce
 }
+
 func SyncFile(path string) error {
 	f, e := os.OpenFile(path, os.O_RDWR, 0)
 	if e != nil {
@@ -242,7 +247,7 @@ func Remove(path string) error {
 // Every safety field must occur exactly once. Standard struct decoding alone accepts
 // omitted false booleans and duplicate last-key-wins values, which could imply resume.
 func decodeState(data []byte, s *State) error {
-	return decodeRequired(data, []string{"version", "operation", "recovery", "phase", "held", "runtime_inhibited", "publication", "config_sha256"}, s)
+	return decodeRequired(data, []string{"version", "operation", "recovery", "phase", "held", "runtime_inhibited", "publication", "config_sha256", "recovery_activated"}, s)
 }
 
 func decodeRequired(data []byte, fields []string, dst any) error {

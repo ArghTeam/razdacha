@@ -1,6 +1,6 @@
 # 0027. Restore with paused credentials and explicit destination activation
 
-Date: 2026-10-20 · Status: proposed; implementation and independent review pending
+Date: 2026-10-20 · Status: design accepted; implementation under independent review
 
 Partially supersedes [ADR 0016](0016-backup-full-and-encrypted.md): restoration
 preserves incoming identity, but does not automatically restore outgoing activation
@@ -17,7 +17,7 @@ DB-only backups omit native artifacts, so prohibiting acquisition until successf
 Apply would prevent recovery. Current destination state, rather than the imported
 archive, must be the rollback authority.
 
-## Proposed decision
+## Decision
 
 ### Scope and preserved data
 
@@ -63,7 +63,11 @@ paths and verifies ownership/permissions. Reject packaged/custom units, unknown
 drop-ins, additional config directories/files, wrappers, aliases, symlinks, alternate
 DB/config paths and unknown service-state query results before mutation. Never guess
 that a failed state query means inactive. This explicit compatibility restriction can
-be widened only with equally strong quarantine proof. The required permanent managed
+be widened only with equally strong quarantine proof. Restore/recovery additionally
+require readable unified cgroup-v2 evidence before mutation, so process-descendant
+verification never silently assumes a v1 filesystem layout. This is a restore-specific
+availability restriction, not a change to the normal installation OS matrix.
+The required permanent managed
 start-condition drop-ins and capable CLI helper must already be installed and loaded:
 a new daemon binary with older units lacking independent runtime start enforcement
 fails preflight. A compatible managed setup/update is a separate prerequisite, not an
@@ -169,15 +173,33 @@ Unsupported filesystems or failed synchronization are errors. Test the following
 No automatic rollback reactivates credentials. An explicit local `restore-recover`
 operation, serialized under the same lifecycle lock, restores the **current destination**
 recovery set with both services stopped/inhibited, journal-safe DB replacement and
-coherent authority/artifact recovery. Preserve original DB flags and original hold
-in that set without adding a second activation schema. Recovery remains held/guarded;
-a distinct explicit recovery activation acknowledges reusing destination credentials
-before restoring runtime/service enable intent. It never enables imported WireGuard.
-If interrupted, retry/recovery inspects the durable phase and verifies contents rather
-than treating absent markers as success. The completed restore record remains durable and identifies whether callback hold or
-explicit resume is expected; a missing hold is not inferred as resume. Uncertain/corrupt
-phase, hold, resume record or recovery material fails closed. Recovery data contains secrets and is never printed or exported
-by diagnostics. No automatic garbage collection is added.
+coherent authority/artifact recovery. Its durable `recovering` phase remains held and
+inhibited throughout restoration; only after every file succeeds may it persist
+`recovered`. That passive phase still requires both inhibitors and never authorizes
+callbacks, daemon startup or runtime. Retry may repeat the same verified recovery set;
+DB byte equality alone never proves a complete rollback or grants activation.
+
+A distinct `restore-recover -activate-destination` acknowledges reusing **original
+current-destination** credentials/callbacks and requires a complete `recovered` record,
+validated private manifest and unchanged recovered DB. It preserves the original prior
+callback hold and service enabled/active intent. The daemon starts only if originally
+active. Both original enabled/disabled unit settings are restored, but even an
+originally active runtime stays stopped/inhibited and ingress stays guarded until
+another explicit Apply; this is a deliberate availability restriction. Activation
+may be retried after enable/start failure without granting imported activation.
+The mandatory exactly-once `recovery_activated` boolean distinguishes this reviewed
+original-destination intent from paused imported policy, allowing that subsequent Apply
+to retain original destination WG flags. It never enables imported WireGuard. The
+field rejects omission, null, duplicate or wrong type; no default grants activation.
+A destination without an original DB stays safely inhibited and reports that explicit
+fresh-install recovery is required instead of inferring activation from absence.
+
+The original hold/runtime/service metadata remains in the private recovery set. Marker
+removal and record writes are separate durable crash boundaries: any interruption or
+mismatch fails closed, and only explicit serialized recovery may inspect/repair those
+transitions. A missing/corrupt record cannot become an ordinary installation while any
+inhibitor, permit or recovery manifest remains. Recovery data contains secrets and is
+never printed or exported by diagnostics. No automatic garbage collection is added.
 
 ### Trusted hold, administration and explicit intent
 
@@ -308,8 +330,19 @@ until out-of-band recovery is simpler but removes local panel administration. Th
 narrow hold retains administration, with explicit runtime inhibition and fail-closed
 unsupported topology. Availability interruptions and extra destination review are accepted.
 
-## Required proof before acceptance
+## Required proof before implementation acceptance
 
 See [task 217](../../tasks/217-safe-cross-host-restore.md) for the baseline, failure,
-crash/restart, rollback and synthetic handshake matrix. This ADR is a proposal only:
-no implementation, test pass, independent approval, staging, merge or release is claimed.
+crash/restart, rollback and synthetic handshake matrix. The design passed independent
+review; implementation and bounded corrective reviews are recorded there. Final
+integrated review and isolated runtime/staging evidence remain required. Local process
+SIGKILL tests prove process-interruption ordering, not physical power loss, kernel reboot
+or storage-controller flush behavior. No merge, deployment or release is claimed.
+
+The private unexported restore test options expose only real-default DB file/parent sync
+and rename adapters plus a post-durable-cut observer. No environment, CLI or HTTP fault
+switch exists in production. Tests inject a single exact syscall failure or SIGKILL a
+real child after metadata, preparing record, dual inhibitors, verified stop, ingress
+guard, coherent recovery, runtime quarantine, authority invalidation, DB publication or
+complete record. These controls do not replace the production ordering or claim physical
+filesystem crash simulation. Both inhibitor files are synced before the first unit reload.

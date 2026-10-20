@@ -25,6 +25,7 @@ func (c *Controller) Status() (*State, error) {
 	}
 	return Read(c.Dir)
 }
+
 func (c *Controller) Allowed() error {
 	if c == nil {
 		return nil
@@ -38,6 +39,7 @@ func (c *Controller) Allowed() error {
 	}
 	return nil
 }
+
 func (c *Controller) StartWhenAllowed(start func() error) error {
 	if c == nil {
 		return start()
@@ -53,6 +55,7 @@ func (c *Controller) StartWhenAllowed(start func() error) error {
 	}
 	return c.startExternal()
 }
+
 func (c *Controller) Resume() error {
 	if c == nil {
 		return errors.New("installation has no restore hold")

@@ -3,10 +3,10 @@
 Дата: 2026-08-15 · Статус: принято
 
 
-Proposed partial supersession: [ADR 0027](0027-safe-cross-host-restore.md) replaces
-automatic cross-host activation and unconditional client continuity if accepted.
-Complete backups and encrypted external delivery remain unchanged. ADR 0027 is not yet
-accepted or implemented.
+Partial supersession: [ADR 0027](0027-safe-cross-host-restore.md) replaces
+automatic cross-host activation and unconditional client continuity.
+Complete backups and encrypted external delivery remain unchanged. ADR 0027 design is
+accepted; implementation acceptance and isolated validation are tracked separately.
 
 ## Контекст
 

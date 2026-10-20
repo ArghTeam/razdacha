@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/ArghTeam/razdacha/internal/lists"
-	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/ArghTeam/razdacha/internal/lists"
+	"github.com/ArghTeam/razdacha/internal/restorestate"
 
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
@@ -22,7 +23,7 @@ func (g *applyGate) restoreApplyAllowed(snap store.Snapshot) error {
 	if e != nil {
 		return e
 	}
-	if s == nil || !s.RuntimeInhibited {
+	if s == nil || !s.RuntimeInhibited || s.RecoveryActivated {
 		return nil
 	}
 	ids, e := singbox.RestoreWireGuardIDs(snap.Tunnels)

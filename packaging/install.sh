@@ -373,7 +373,7 @@ install_binaries() {
 		SETUP_INHERITS_LOCK=1
 	else
 		# Old candidates may not start against ANY retained trusted restore state.
-		for restore_record in "$install_state_dir/restore-state.json" "$install_state_dir/restore-incomplete" "$install_state_dir/restore-runtime-inhibit" "$install_state_dir"/.restore-*/recovery.json; do
+		for restore_record in "$install_state_dir/restore-state.json" "$install_state_dir/restore-incomplete" "$install_state_dir/restore-runtime-inhibit" "$install_state_dir/restore-runtime-permit.json" "$install_state_dir"/.restore-*/recovery.json; do
 			[ ! -e "$restore_record" ] && [ ! -L "$restore_record" ] || die "incompatible update/downgrade refused while trusted restore state exists"
 		done
 	fi

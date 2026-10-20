@@ -119,3 +119,15 @@
 **Changed:** `docs/02-data-model.md` — дописаны владение приоритетом, чистка `peer_ids`, key/value-настройки, обязательность `PRAGMA foreign_keys`. `go.mod` — первая зависимость.
 **New surface:** `internal/store` — CRUD четырёх сущностей, `ReorderRules`, `Snapshot`, сентинелы ошибок.
 **Beware:** соединение одно (`SetMaxOpenConns(1)`) — запрос через `s.db` внутри транзакции вешает демон.
+
+
+## 2026-10-20
+
+### #217 — Safe restore and explicit destination activation
+
+Offline supported-schema admission precedes migration and WG pause, with exact row-difference verification and private current-destination WAL-aware snapshots. Trusted safety records reject omission, null, duplicate and orphan evidence.
+**Decision:** [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md).
+**Validation boundary:** local regression/process/browser checks and bounded independent
+corrective reviews are recorded in the [task](../../tasks/217-safe-cross-host-restore.md).
+Final integrated review, contained true-WireGuard fixture and isolated staging acceptance
+remain pending; no installed application, source host, deployment or release is changed.

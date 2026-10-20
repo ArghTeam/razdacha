@@ -854,3 +854,17 @@ textarea.bad { border-color: color-mix(in srgb, var(--err) 55%, var(--line-stron
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-sunken));
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
+
+
+/* Restore consent stays outside screen rerenders so local edits remain available. */
+.restore-banner {
+  max-width: 1040px; margin: 20px auto; padding: 18px 20px;
+  border: 1px solid var(--warn); border-radius: var(--radius);
+  background: var(--bg-elev); color: var(--fg);
+}
+.restore-banner h2 { font-size: 18px; }
+.restore-banner p, .restore-banner ul { margin: 10px 0; }
+.restore-banner label { display: flex; align-items: start; gap: 9px; margin: 12px 0; }
+.restore-banner input { flex: 0 0 auto; margin-top: 4px; }
+.restore-banner button { margin-top: 6px; }
+@media (max-width: 700px) { .restore-banner { margin: 12px; padding: 14px; } }

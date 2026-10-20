@@ -13,12 +13,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ArghTeam/razdacha/internal/restorestate"
-	"github.com/ArghTeam/razdacha/internal/singbox"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/ArghTeam/razdacha/internal/restorestate"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 )
 
 // version подставляется линкером при сборке, см. Makefile и workflow релиза.
@@ -29,6 +30,7 @@ const usage = `razdacha — управление установкой селек
 Команды:
   setup       установить или обновить: sing-box, файлы, юниты, первый пир
   restore     поднять состояние из резервной копии
+  restore-recover  recover the current destination snapshot without automatic activation
   uninstall   снять razdacha и вернуть систему в исходное состояние
   version     показать версию
 
@@ -62,6 +64,8 @@ func run() int {
 		err = installPreflight(ctx, os.Args[2:])
 	case "setup":
 		err = runSetup(ctx, os.Args[2:])
+	case "restore-recover":
+		err = runRestoreRecovery(ctx, os.Args[2:])
 	case "restore":
 		err = runRestore(ctx, os.Args[2:])
 	case "uninstall":
