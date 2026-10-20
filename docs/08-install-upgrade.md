@@ -450,6 +450,9 @@ A new CLI alone cannot safely restore into an older installed daemon/helper. Res
 recovery require readable unified cgroup-v2 evidence; custom/packaged units, extra drop-ins,
 alternate config paths and uncertain service topology fail before mutation. This restriction
 applies to restore/recovery, without changing the general installation OS matrix.
+The canonical DB and SQLite journals must be owner-controlled mode 0600 regular files
+with no symlink/hardlink aliases inside the private installation directory. Unsupported
+file topology is refused before SQLite access or safety/service mutation.
 
 Before cutover review the destination endpoint/public hostname, WAN interface and routes,
 UDP port, firewall/NAT mapping, panel exposure and TLS SANs/trust. Retain out-of-band SSH.

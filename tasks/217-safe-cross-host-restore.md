@@ -260,3 +260,23 @@ Final full diff/security review, the separate #228 contained true-WireGuard base
 fixture, its reviewed runner/artifact/isolation gate, staging observations and final CI
 are still required. No namespace/staging/SSH/installed-service operation, merge or release
 is authorized by these local results.
+
+
+## Final-local destination-file admission correction
+
+The independent 7e974369 review found canonical DB aliases could reach summary, snapshot
+and checkpoint before replacement. Shared metadata admission now validates the private
+canonical parent and every existing DB/WAL/SHM/rollback-journal file before SQLite or
+initial safety/service mutation, then repeats at snapshot/checkpoint/replacement/recovery
+and protected password boundaries. Existing files must be owned mode-0600 single-link
+regular files; symlinks, hardlinks, directories/FIFOs, shared modes, orphan journals and
+missing/untrusted parents fail closed. Verified fresh DB absence is allowed.
+
+Authored actual restore tests cover twenty DB/journal alias/type/mode cases with unchanged
+private sibling contents and zero service/guard/safety mutation. Recovery/replacement
+and SQLite entry points reject aliases; missing-parent/orphan and controlled owner-metadata
+negatives are separate from an actual current SQLite committed-WAL snapshot positive.
+The independent unchanged transaction regression is rerun through a read-only overlay;
+old-fail/new-pass evidence and final corrective acceptance are recorded privately.
+The staging runbook now distinguishes executed local checks from unexecuted isolated
+namespace/staging checks. No host, source, deployment or namespace action follows.

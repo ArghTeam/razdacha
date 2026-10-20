@@ -72,3 +72,9 @@ Canonical trusted state is validated before managed early-exit flags or DB open.
 held panel is reachable through configured daemon loopback HTTP with an SSH forward to
 `localhost`; it does not depend on imported incoming WG peers being installed. Apply
 waits for the once-only Resume worker transition, which never runs under its state mutex.
+
+Destination DB, WAL, SHM and rollback-journal admission precedes SQLite access and
+initial restore safety/service mutation. The shared check requires a private canonical
+parent and owner-controlled mode-0600 single-link regular files, rejects aliases and
+orphan sidecars, and repeats in snapshot/checkpoint/replacement/recovery and protected
+password writes. A rejected alias never changes its sibling target.

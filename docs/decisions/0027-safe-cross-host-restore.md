@@ -62,7 +62,11 @@ fragment and drop-in properties with supported managed templates, resolves canon
 paths and verifies ownership/permissions. Reject packaged/custom units, unknown
 drop-ins, additional config directories/files, wrappers, aliases, symlinks, alternate
 DB/config paths and unknown service-state query results before mutation. Never guess
-that a failed state query means inactive. This explicit compatibility restriction can
+that a failed state query means inactive. Before any destination SQLite access or
+initial safety/service mutation, admit its private canonical parent and DB plus WAL,
+SHM and rollback journals with Lstat: owner-controlled mode 0600 regular files, no
+symlinks or hardlink aliases, and no orphan journal without a DB. Repeat admission at
+snapshot, checkpoint, replacement, recovery and protected password-write boundaries. This explicit compatibility restriction can
 be widened only with equally strong quarantine proof. Restore/recovery additionally
 require readable unified cgroup-v2 evidence before mutation, so process-descendant
 verification never silently assumes a v1 filesystem layout. This is a restore-specific

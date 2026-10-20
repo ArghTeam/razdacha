@@ -46,3 +46,9 @@ null/default/duplicate inference. Retained inhibitor/permit/recovery evidence wi
 authority fails closed. `recovery_activated` is granted only by acknowledged original
 destination recovery; imported WG remains paused. Held/inhibited startup opens only an
 existing current schema, without bootstrap migration or built-in pool reconciliation.
+
+Destination DB, WAL, SHM and rollback-journal admission precedes SQLite access and
+initial restore safety/service mutation. The shared check requires a private canonical
+parent and owner-controlled mode-0600 single-link regular files, rejects aliases and
+orphan sidecars, and repeats in snapshot/checkpoint/replacement/recovery and protected
+password writes. A rejected alias never changes its sibling target.

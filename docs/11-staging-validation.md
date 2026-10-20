@@ -471,7 +471,8 @@ trusted restore-state phase. All use fixture executable/unit roots and service a
 Adversarial SQLite schema fixtures must reject triggers/views/virtual or unknown objects
 before migration; legitimate fixtures must preserve all rows except supported migrations
 and intended WG pause. Test reset-network refusal and zero implicit runtime publication
-from resumed workers before first Apply. None of these additional checks has run yet.
+from resumed workers before first Apply. These requirements now have the local evidence summarized below; isolated namespace
+and staging execution of the additional matrix has not run yet.
 
 
 ### Task 217 local evidence boundary

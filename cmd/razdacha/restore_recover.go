@@ -45,6 +45,9 @@ func recoverRestore(ctx context.Context, opts restoreOptions, operation string, 
 		return e
 	}
 	defer func() { _ = lock.Close() }()
+	if _, e = store.AdmitRestoreDestination(dbPath); e != nil {
+		return e
+	}
 	current, stateErr := restorestate.RecoveryState(dir)
 	if operation == "" {
 		if stateErr != nil {
@@ -236,7 +239,7 @@ func recoverRestore(ctx context.Context, opts restoreOptions, operation string, 
 		} else if !errors.Is(e, os.ErrNotExist) {
 			return e
 		}
-		for _, suffix := range []string{"-wal", "-shm", ""} {
+		for _, suffix := range []string{"-wal", "-shm", "-journal", ""} {
 			if e = restorestate.Remove(dbPath + suffix); e != nil {
 				return e
 			}

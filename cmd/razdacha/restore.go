@@ -116,6 +116,9 @@ func restore(ctx context.Context, opts restoreOptions) error {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
+	if _, err = store.AdmitRestoreDestination(dbPath); err != nil {
+		return err
+	}
 	previous, err := restorestate.Read(dir)
 	if err != nil {
 		return err
@@ -349,14 +352,21 @@ func replaceDBUsing(staged, dbPath string, configured *restoreDBFiles) error {
 	if ops.syncFile == nil || ops.syncDir == nil || ops.rename == nil {
 		return errors.New("incomplete restore DB filesystem adapter")
 	}
-	if _, e := os.Stat(dbPath); e == nil {
+	present, e := store.AdmitRestoreDestination(dbPath)
+	if e != nil {
+		return e
+	}
+	if ready, e := store.AdmitRestoreDestination(staged); e != nil {
+		return e
+	} else if !ready {
+		return errors.New("staged restore database is missing")
+	}
+	if present {
 		if e = store.CheckpointAt(context.Background(), dbPath); e != nil {
 			return e
 		}
-	} else if !errors.Is(e, os.ErrNotExist) {
-		return e
 	}
-	for _, suffix := range []string{"-wal", "-shm"} {
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
 		if e := restorestate.Remove(dbPath + suffix); e != nil {
 			return e
 		}
@@ -421,7 +431,9 @@ func collectDestinationRecovery(ctx context.Context, op, dbPath, serviceRoot str
 	dir := filepath.Dir(dbPath)
 	var err error
 	// A stable SQLite snapshot includes committed WAL pages and does not migrate old state.
-	if _, e := os.Stat(dbPath); e == nil {
+	if present, e := store.AdmitRestoreDestination(dbPath); e != nil {
+		return recovery, e
+	} else if present {
 		snapshotFile, e := os.CreateTemp(op, "destination-*.db")
 		if e != nil {
 			return recovery, e
@@ -449,8 +461,6 @@ func collectDestinationRecovery(ctx context.Context, op, dbPath, serviceRoot str
 		f.Target = dbPath
 		recovery.Files = append(recovery.Files, f)
 		recovery.DatabasePresent = true
-	} else if !errors.Is(e, os.ErrNotExist) {
-		return recovery, e
 	}
 	runtime := filepath.Join(serviceRoot, singbox.DefaultConfigPath)
 	for _, path := range []string{runtime, filepath.Join(dir, networkstate.CommittedFile), filepath.Join(dir, networkstate.BootstrapFile)} {

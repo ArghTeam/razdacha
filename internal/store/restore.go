@@ -7,10 +7,56 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
+	"syscall"
 )
+
+// AdmitRestoreDestination validates the private canonical DB and every SQLite
+// sidecar without opening SQLite or following leaf aliases. Lifecycle callers hold
+// their installation lease; every later SQLite entry point repeats this admission.
+func AdmitRestoreDestination(path string) (bool, error) {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return false, errors.New("restore database path must be absolute and clean")
+	}
+	parent, e := os.Lstat(filepath.Dir(path))
+	if e != nil {
+		return false, fmt.Errorf("inspect restore database parent: %w", e)
+	}
+	stat, ok := parent.Sys().(*syscall.Stat_t)
+	if !parent.IsDir() || parent.Mode().Perm() != 0o700 || !ok || stat.Uid != uint32(os.Geteuid()) {
+		return false, errors.New("restore database parent must be a private owner-controlled nonsymlink directory")
+	}
+	present := false
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		info, e := os.Lstat(path + suffix)
+		if errors.Is(e, os.ErrNotExist) {
+			continue
+		}
+		if e != nil {
+			return false, fmt.Errorf("inspect restore database file: %w", e)
+		}
+		if e = restoreOwnedRegular(info); e != nil {
+			return false, e
+		}
+		if suffix == "" {
+			present = true
+		} else if !present {
+			return false, errors.New("orphan SQLite sidecar requires explicit local repair")
+		}
+	}
+	return present, nil
+}
+
+func restoreOwnedRegular(info os.FileInfo) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 || !ok || stat.Uid != uint32(os.Geteuid()) || stat.Nlink != 1 {
+		return errors.New("restore database and journals must be private owner-controlled regular files without aliases")
+	}
+	return nil
+}
 
 type schemaObject struct{ Type, Name, Table, SQL string }
 
@@ -282,6 +328,16 @@ func PrepareRestore(ctx context.Context, path string, classify func([]Tunnel) ([
 
 // BackupAt preserves committed WAL contents without migrating the destination.
 func BackupAt(ctx context.Context, path, dst string) error {
+	if present, e := AdmitRestoreDestination(path); e != nil {
+		return e
+	} else if !present {
+		return errors.New("current destination database is missing")
+	}
+	if present, e := AdmitRestoreDestination(dst); e != nil {
+		return e
+	} else if present {
+		return errors.New("restore snapshot target already exists")
+	}
 	db, e := restoreDB(ctx, path)
 	if e != nil {
 		return e
@@ -302,6 +358,11 @@ func BackupAt(ctx context.Context, path, dst string) error {
 
 // CheckpointAt drains journals without migrating or changing logical destination rows.
 func CheckpointAt(ctx context.Context, path string) error {
+	if present, e := AdmitRestoreDestination(path); e != nil {
+		return e
+	} else if !present {
+		return errors.New("cannot checkpoint missing destination database")
+	}
 	db, e := sql.Open("sqlite", dsn(path))
 	if e != nil {
 		return e
@@ -320,11 +381,14 @@ func CheckpointAt(ctx context.Context, path string) error {
 
 // RestoreSummary reads a destination without journal-mode changes or creation.
 func RestoreSummary(ctx context.Context, path string) (StateSummary, error) {
-	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
-		return StateSummary{}, nil
-	} else if e != nil {
+	present, e := AdmitRestoreDestination(path)
+	if e != nil {
 		return StateSummary{}, e
 	}
+	if !present {
+		return StateSummary{}, nil
+	}
+
 	db, e := restoreDB(ctx, path)
 	if e != nil {
 		return StateSummary{}, e
@@ -347,6 +411,11 @@ func RestoreSummary(ctx context.Context, path string) (StateSummary, error) {
 
 // OpenRestoreCurrent refuses to create or migrate live DBs owned by trusted restore.
 func OpenRestoreCurrent(ctx context.Context, path string) (*Store, error) {
+	if present, e := AdmitRestoreDestination(path); e != nil {
+		return nil, e
+	} else if !present {
+		return nil, errors.New("trusted restore database is missing")
+	}
 	if e := ValidateRestoreSchema(ctx, path); e != nil {
 		return nil, e
 	}

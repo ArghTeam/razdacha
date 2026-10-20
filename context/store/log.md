@@ -131,3 +131,10 @@ Offline supported-schema admission precedes migration and WG pause, with exact r
 corrective reviews are recorded in the [task](../../tasks/217-safe-cross-host-restore.md).
 Final integrated review, contained true-WireGuard fixture and isolated staging acceptance
 remain pending; no installed application, source host, deployment or release is changed.
+
+**Final-local correction:** independent review reproduced a canonical DB symlink
+passing destination summary/checkpoint. Shared owner/type/no-alias DB/journal admission
+now precedes SQLite and initial safety/service mutation, including recovery/replacement
+and protected password writes. Actual transaction negatives retain sibling bytes and
+zero service/guard mutations; normal committed-WAL snapshot remains a positive control.
+Corrective independent retest and exact-head CI remain separate acceptance gates.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -13,7 +14,11 @@ func sqlOpenFixture(path string) (*sql.DB, error) { return sql.Open("sqlite", ds
 
 func restoreFixture(t *testing.T) *Store {
 	t.Helper()
-	st, e := Open(context.Background(), filepath.Join(t.TempDir(), "state.db"))
+	dir := t.TempDir()
+	if e := os.Chmod(dir, 0o700); e != nil {
+		t.Fatal(e)
+	}
+	st, e := Open(context.Background(), filepath.Join(dir, "state.db"))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -160,7 +165,11 @@ func TestRestoreCurrentDestinationSnapshotIncludesCommittedWAL(t *testing.T) {
 	if e != nil || info.Size() <= 32 {
 		t.Fatal("positive committed WAL fixture missing")
 	}
-	snapshot := filepath.Join(t.TempDir(), "current-destination.db")
+	snapshotDir := t.TempDir()
+	if e := os.Chmod(snapshotDir, 0o700); e != nil {
+		t.Fatal(e)
+	}
+	snapshot := filepath.Join(snapshotDir, "current-destination.db")
 	if e = BackupAt(ctx, path, snapshot); e != nil {
 		t.Fatal(e)
 	}
@@ -172,5 +181,55 @@ func TestRestoreCurrentDestinationSnapshotIncludesCommittedWAL(t *testing.T) {
 	peers, e := recovered.Peers(ctx)
 	if e != nil || len(peers) != 1 || peers[0].ID != peer.ID || peers[0].PrivateKey != "synthetic-private" || peers[0].PresharedKey != "synthetic-psk" {
 		t.Fatalf("snapshot lost committed WAL identity: %+v %v", peers, e)
+	}
+}
+
+func TestRestoreDestinationAdmissionRejectsMissingParentAndOrphanJournal(t *testing.T) {
+	root := t.TempDir()
+	if e := os.Chmod(root, 0o700); e != nil {
+		t.Fatal(e)
+	}
+	missing := filepath.Join(root, "missing", "state.db")
+	if _, e := AdmitRestoreDestination(missing); e == nil {
+		t.Fatal("missing destination parent admitted")
+	}
+	if _, e := os.Lstat(filepath.Dir(missing)); !os.IsNotExist(e) {
+		t.Fatal("admission created missing parent")
+	}
+	db := filepath.Join(root, "state.db")
+	if present, e := AdmitRestoreDestination(db); e != nil || present {
+		t.Fatal("positive verified absence rejected")
+	}
+	if e := os.WriteFile(db+"-wal", []byte("synthetic orphan"), 0o600); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := AdmitRestoreDestination(db); e == nil {
+		t.Fatal("orphan journal admitted without DB")
+	}
+}
+
+type restoreOwnerInfo struct {
+	os.FileInfo
+	stat syscall.Stat_t
+}
+
+func (i restoreOwnerInfo) Sys() any { return &i.stat }
+func TestRestoreDestinationOwnershipAdmission(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "synthetic.db")
+	if e := os.WriteFile(path, []byte("synthetic owner control"), 0o600); e != nil {
+		t.Fatal(e)
+	}
+	info, e := os.Lstat(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = restoreOwnedRegular(info); e != nil {
+		t.Fatal("positive kernel-owned regular file rejected")
+	}
+	stat := *info.Sys().(*syscall.Stat_t)
+	stat.Uid++
+	// Only the owner metadata is substituted; no privileged chown/host file is used.
+	if e = restoreOwnedRegular(restoreOwnerInfo{FileInfo: info, stat: stat}); e == nil {
+		t.Fatal("different owner admitted")
 	}
 }

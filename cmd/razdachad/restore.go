@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -177,12 +176,10 @@ func passwordLifecycle(dbPath, canonicalDB string) (*restorestate.Lock, error) {
 		if state.Phase != "complete" {
 			return fail(errors.New("password changes refuse incomplete restore state"))
 		}
-		info, e := os.Lstat(canonical)
-		if e != nil {
+		if present, e := store.AdmitRestoreDestination(canonical); e != nil {
 			return fail(e)
-		}
-		if !info.Mode().IsRegular() {
-			return fail(errors.New("password changes refuse symlink or nonregular restored databases"))
+		} else if !present {
+			return fail(errors.New("password changes refuse missing restored databases"))
 		}
 	}
 	return lock, nil
