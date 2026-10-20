@@ -6,9 +6,11 @@ Selective VPN gateway for Debian/Ubuntu. Standard WireGuard clients send traffic
 `wg0`; selected resources go through configured tunnels and everything else directly.
 No additional client software is required.
 
-The latest published daemon release is **v0.10.0** (2026-08-21). This repository also
+The latest stable daemon release is **v0.10.0** (2026-08-21). This repository also
 contains **razvedka 0.3.0**, a Chrome DevTools extension developed after that release.
 It has its own version and is not part of the daemon build or release archive.
+Staging candidates report their running version through `/api/version`; do not infer
+the deployed candidate version from the latest stable release number.
 
 One built-in pool rotates free igareck keys ([ADR 0018](docs/decisions/0018-unified-pool.md)).
 It excludes blocklisted countries (RU and BY by default) and keys without transport
@@ -119,8 +121,11 @@ under GPL-2.0-or-later ([ADR 0007](docs/decisions/0007-license-gplv2.md)).
   ([ADR 0013](docs/decisions/0013-unavailable-tunnel-rejects.md)). Manual/plain DNS
   rejection uses domain-only projections; CIDR-only sources have no DNS matcher,
   never an empty-tag match-all action ([ADR 0024](docs/decisions/0024-domain-only-dns-projections.md)).
-  Supported native sources use immutable local original/DNS artifacts (ADR 0025);
-  unsupported mixed/context predicates fail before acceptance.
+  Supported native sources use immutable local original/DNS artifacts (ADR 0025).
+  Bounded positive TCP/UDP and destination-port address branches use separate
+  transport interception (ADR 0029); unsupported mixed/context predicates fail
+  before acceptance. Projection v2 and generation v4 pin transport authority;
+  supported older projection authority retains legacy verification.
 - Publish plain-list policy through the serialized guarded generation protocol ([ADR 0023](docs/decisions/0023-coherent-network-generation.md)): prepare/check first, guard client ingress, reconcile WG/route/runtime/nft, persist authority, discard bootstrap authority, release last. Post-guard failure remains closed; recovery never restores live peers/authentication. Peer allocation shares the gate and reserves committed addresses. Native JSON/SRS share this protocol through daemon-owned immutable artifacts (ADR 0025). Active artifact corruption closes ingress; legacy v1 native authority requires guarded administrator recovery.
 
 - Peer deletion never broadens selected rules. Empty selected orphans remain disabled; generators skip sources with no existing client, while existing disabled clients retain scoped rejection (ADR 0026). Background refresh/recovery preserve committed policy until explicit Apply.

@@ -176,3 +176,17 @@ BEFORE-to-AFTER database semantics, policy identity and host/services were stabl
 **Limits:** finite isolated nft/route/sing-box observations, a veth address adapter,
 no encrypted WG handshake, no application or production deployment. Final docs/current
 CI remain merge gates. See the [implementation record](../../tasks/done/220-native-ruleset-coherence.md).
+
+### #235 — Bounded native transport compatibility
+
+Projection v2 admits positive bounded TCP/UDP and destination-port address branches
+while preserving immutable originals and domain-only DNS. Generation v4 publishes
+separate transport envelopes; old projection authority retains legacy verification.
+JSON/SRS, last-good validators, legacy recovery, active tampering and snapshot-copy
+regressions pass locally. Source `5e4995a` also passed the pinned-runtime isolated
+JSON/SRS matrix with 24 zero-drop receiver acknowledgments. Host application state
+remained unchanged and owned fixture artifacts were removed. This covers finite
+veth/synthetic-exit observations, not encrypted WireGuard, provider tunnels or
+deployment. [The implementation record](../../tasks/done/235-native-transport.md)
+pins source, ELF and private evidence hashes; independent evidence review and final
+CI remain release gates. See ADR 0029.

@@ -34,14 +34,14 @@ func startNetfilter(ctx context.Context) (netfilter, error) {
 		if err != nil {
 			return 0, err
 		}
-		rs, err := nft.Apply(netstack.NftConfig{WANInterface: wan, ResolverAddr: snap.Settings.WGServerAddress, Subnets: subnets, PeerEgress: netstack.PeerEgressSources(snap.Peers)})
+		rs, err := nft.Apply(netstack.NftConfig{WANInterface: wan, ResolverAddr: snap.Settings.WGServerAddress, Subnets: subnets, TransportSubnets: generationTransportSubnets(snap, contents), PeerEgress: netstack.PeerEgressSources(snap.Peers)})
 		if err != nil {
 			return 0, err
 		}
 		if rs.SkippedSubnets != 0 {
 			return 0, fmt.Errorf("candidate contains %d invalid subnets", rs.SkippedSubnets)
 		}
-		return len(subnets), nil
+		return len(subnets) + len(generationTransportSubnets(snap, contents)), nil
 	}
 	return netfilter{stop: func() {}, nftState: netstack.DiagNft, routeState: netstack.DiagRoute, guard: netstack.SetClientGuard, ensureRoute: func(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {

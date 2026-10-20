@@ -55,6 +55,24 @@ func TestNativePublicationPinsBothProjectionsAndRecovery(t *testing.T) {
 	if _, err := f.g.Apply(ctx, snap); err != nil {
 		t.Fatal(err)
 	}
+	// Existing v3 envelopes with projection-v1 authority retain their legacy
+	// verification contract and recover without acquisition or editable replay.
+	legacy, err := readGeneration(f.g.network.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.Version = 3
+	legacy.Lists[url].Native.Version = 1
+	if err = writeGeneration(f.g.network.path, legacy); err != nil {
+		t.Fatal(err)
+	}
+	f.g.network.uncertain = true
+	if err = f.g.recover(ctx, filepath.Join(filepath.Dir(f.g.network.path), "absent-legacy-seed")); err != nil {
+		t.Fatal(err)
+	}
+	if f.isGuarded() {
+		t.Fatal("legacy supported authority stayed guarded")
+	}
 	old := f.g.network.contents[url]
 	oldBody, err := os.ReadFile(old.Native.Path)
 	if err != nil {
@@ -84,7 +102,7 @@ func TestNativePublicationPinsBothProjectionsAndRecovery(t *testing.T) {
 		t.Fatal("autonomous native source remains in runtime")
 	}
 	gen, err := readGeneration(f.g.network.path)
-	if err != nil || gen.Version != 3 || gen.Lists[url].Native.Hash != current.Native.Hash {
+	if err != nil || gen.Version != 4 || gen.Lists[url].Native.Hash != current.Native.Hash {
 		t.Fatalf("authority not pinned: %v", err)
 	}
 	// Refreshed malformed candidate did not advance accepted/cache authority.
@@ -143,7 +161,7 @@ func TestNativeLegacyAuthorityKeepsAdminAndRequiresApply(t *testing.T) {
 		t.Fatal("explicit native Apply failed to initialize")
 	}
 	gen, err := networkstate.Read(f.g.network.path, networkstate.CommittedKind)
-	if err != nil || gen.Version != 3 {
+	if err != nil || gen.Version != 4 {
 		t.Fatal("explicit Apply did not upgrade native authority")
 	}
 }
@@ -266,5 +284,21 @@ func TestNativeRelativeDatabaseApplyAndFreshRecovery(t *testing.T) {
 	}
 	if _, err = fresh.g.refreshLists(ctx); err == nil || !fresh.isGuarded() || !fresh.g.network.uncertain {
 		t.Fatal("relative-db active artifact failure did not close ingress")
+	}
+}
+
+func TestNativeTransportProjectionTamperingGuardsActivePolicy(t *testing.T) {
+	ctx := context.Background()
+	f, _, _, url := nativePublication(t)
+	snap := policy()
+	snap.Rules[0].RemoteLists = []string{url}
+	if _, err := f.g.Apply(ctx, snap); err != nil {
+		t.Fatal(err)
+	}
+	current := f.g.network.contents[url]
+	current.TransportSubnets = []string{"203.0.113.0/24"}
+	f.g.network.contents[url] = current
+	if _, err := f.g.Apply(ctx, snap); err == nil || !f.isGuarded() || !f.g.network.uncertain {
+		t.Fatal("altered transport projection retained open ingress")
 	}
 }

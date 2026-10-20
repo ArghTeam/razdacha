@@ -30,7 +30,7 @@ func wireExercise(t *testing.T) {
 			return 0, err
 		}
 		sub := generationSubnets(snap, content)
-		rs, err := nf.Apply(netstack.NftConfig{WANInterface: "wan0", ResolverAddr: snap.Settings.WGServerAddress, Subnets: sub})
+		rs, err := nf.Apply(netstack.NftConfig{WANInterface: "wan0", ResolverAddr: snap.Settings.WGServerAddress, Subnets: sub, TransportSubnets: generationTransportSubnets(snap, content)})
 		if err == nil && rs.SkippedSubnets != 0 {
 			err = fmt.Errorf("invalid fixture subnets")
 		}

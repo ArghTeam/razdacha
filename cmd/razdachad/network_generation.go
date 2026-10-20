@@ -64,7 +64,7 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	if n.initialized && !n.uncertain {
 		for _, l := range n.contents {
 			if l.Native != nil {
-				if err := l.Native.Verify(artifactDir, l.Subnets); err != nil {
+				if err := l.Native.Verify(artifactDir, l.Subnets, l.TransportSubnets); err != nil {
 					guardErr := n.guard(true)
 					n.uncertain = true
 					return singbox.ApplyResult{}, fmt.Errorf("clients remain guarded: active native artifact verification: %w", errors.Join(err, guardErr))
@@ -103,7 +103,7 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 				if l.Native == nil {
 					return singbox.ApplyResult{}, fmt.Errorf("%w: native artifact authority missing", singbox.ErrGenerateFailed)
 				}
-				if err := l.Native.Verify(artifactDir, l.Subnets); err != nil {
+				if err := l.Native.Verify(artifactDir, l.Subnets, l.TransportSubnets); err != nil {
 					return singbox.ApplyResult{}, fmt.Errorf("%w: native artifact verification: %w", singbox.ErrGenerateFailed, err)
 				}
 			}
@@ -127,7 +127,7 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	needRestart := n.uncertain || prepared.Changed() || changedGeneration
 	if !repair && !needRestart {
 		res, err := prepared.Commit(ctx, false)
-		count := len(generationSubnets(snap, selected))
+		count := len(generationSubnets(snap, selected)) + len(generationTransportSubnets(snap, selected))
 		res.NftSubnets = &count
 		return res, err
 	}
@@ -161,12 +161,12 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	}
 	for _, l := range selected {
 		if l.Native != nil {
-			if err := l.Native.Verify(artifactDir, l.Subnets); err != nil {
+			if err := l.Native.Verify(artifactDir, l.Subnets, l.TransportSubnets); err != nil {
 				return res, fmt.Errorf("clients remain guarded: native artifact changed during publication: %w", err)
 			}
 		}
 	}
-	if err := writeGeneration(n.path, networkGeneration{Version: 3, Policy: snap, Lists: selected}); err != nil {
+	if err := writeGeneration(n.path, networkGeneration{Version: 4, Policy: snap, Lists: selected}); err != nil {
 		return res, fmt.Errorf("clients remain guarded: %w", err)
 	}
 	seedPath := n.bootstrapPath
@@ -322,4 +322,12 @@ func (g *applyGate) Pending(ctx context.Context, st *store.Store) (bool, error) 
 		return false, err
 	}
 	return !g.network.initialized || g.network.uncertain || !reflect.DeepEqual(g.base, snap), nil
+}
+
+func generationTransportSubnets(snap store.Snapshot, contents map[string]lists.List) []string {
+	var out []string
+	for _, src := range lists.Sources(snap) {
+		out = append(out, contents[src.URL].TransportSubnets...)
+	}
+	return out
 }

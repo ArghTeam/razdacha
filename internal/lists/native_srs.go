@@ -133,8 +133,18 @@ func (p *srsPreflight) rule(depth int) error {
 		switch item {
 		case 2:
 			e = p.matcher()
-		case 3, 4:
+		case 1, 3, 4, 10:
 			e = p.strings()
+		case 9:
+			var n int
+			n, e = p.count(maxNativeValues - p.values)
+			if e == nil {
+				if n == 0 || n > p.r.Len()/2 {
+					return fmt.Errorf("port count")
+				}
+				p.values += n
+				_, e = p.r.Seek(int64(n*2), io.SeekCurrent)
+			}
 		case 6:
 			e = p.ipset()
 		default:

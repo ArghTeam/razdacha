@@ -1,6 +1,6 @@
 # 0025. Daemon-owned immutable native rule sets
 
-Date: 2026-10-20 · Status: accepted; extends ADR 0023 and ADR 0024
+Date: 2026-10-20 · Status: accepted; extends ADR 0023 and ADR 0024; admission extended by ADR 0029
 
 ## Context
 

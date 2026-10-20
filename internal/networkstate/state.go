@@ -59,8 +59,15 @@ func Read(path, kind string) (Generation, error) {
 	if err := json.Unmarshal(data, &gen); err != nil {
 		return gen, fmt.Errorf("decode committed network generation: %w", err)
 	}
-	if (gen.Version != 1 && gen.Version != 2 && gen.Version != 3) || gen.Kind != kind || gen.Lists == nil {
+	if (gen.Version != 1 && gen.Version != 2 && gen.Version != 3 && gen.Version != 4) || gen.Kind != kind || gen.Lists == nil {
 		return gen, errors.New("invalid committed network generation")
+	}
+	if gen.Version < 4 {
+		for _, l := range gen.Lists {
+			if len(l.TransportSubnets) > 0 || (l.Native != nil && l.Native.Version > 1) {
+				return gen, errors.New("native transport requires generation version 4")
+			}
+		}
 	}
 	if gen.Version < 3 {
 		for _, p := range gen.Policy.Peers {

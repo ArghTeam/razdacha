@@ -216,12 +216,12 @@ func wireSink(t *testing.T) {
 			}
 			ip = ip[:totalLength]
 			if ip[9] != unix.IPPROTO_TCP && ip[9] != unix.IPPROTO_UDP {
-				if os.Getenv("RAZDACHA_WIRE_EGRESS") == "1" && (ip[9] == 1 || ip[9] == 253) {
+				if (os.Getenv("RAZDACHA_WIRE_EGRESS") == "1" || os.Getenv("RAZDACHA_WIRE_TRANSPORT") != "") && (ip[9] == 1 || ip[9] == 253) {
 					payload := ip[ihl:]
 					if ip[9] == 1 && len(payload) >= 8 {
 						payload = payload[8:]
 					}
-					if strings.HasPrefix(string(payload), "egress-raw-") || strings.HasPrefix(string(payload), "blocked-final-egress-raw-") {
+					if strings.HasPrefix(string(payload), "egress-raw-") || strings.HasPrefix(string(payload), "blocked-final-egress-raw-") || (os.Getenv("RAZDACHA_WIRE_TRANSPORT") != "" && strings.HasPrefix(string(payload), "transport-raw-")) {
 						fmt.Printf("SINK:%s\n", payload)
 					}
 				}
@@ -740,6 +740,8 @@ func TestNetworkGenerationWire(t *testing.T) {
 	wireMust(t, unix.Mount("tmpfs", "/var/lib", "tmpfs", 0, "size=16m"))
 	wireMust(t, os.MkdirAll("/var/lib/sing-box", 0o700))
 	switch {
+	case os.Getenv("RAZDACHA_WIRE_TRANSPORT") != "":
+		nativeTransportWireExercise(t)
 	case os.Getenv("RAZDACHA_WIRE_EGRESS") == "1":
 		peerEgressWireExercise(t)
 	case os.Getenv("RAZDACHA_WIRE_PEER_CASE") != "":
