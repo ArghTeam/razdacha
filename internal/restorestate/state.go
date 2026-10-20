@@ -32,6 +32,8 @@ type State struct {
 	Phase            string `json:"phase"`
 	Held             bool   `json:"held"`
 	RuntimeInhibited bool   `json:"runtime_inhibited"`
+	Publication      string `json:"publication"`
+	ConfigHash       string `json:"config_sha256"`
 }
 
 func (s State) Validate() error {
@@ -43,12 +45,22 @@ func (s State) Validate() error {
 		if !s.Held || !s.RuntimeInhibited {
 			return errors.New("incomplete restore must remain held and runtime inhibited")
 		}
+	case "publishing":
+		if len(s.Publication) != 32 || len(s.ConfigHash) != 64 {
+			return errors.New("publishing lacks exact candidate identity")
+		}
+		if s.Held || s.RuntimeInhibited {
+			return errors.New("invalid guarded publication phase")
+		}
 	case "complete":
 		if s.Held && !s.RuntimeInhibited {
 			return errors.New("held restore cannot activate runtime")
 		}
 	default:
 		return errors.New("invalid restore phase")
+	}
+	if s.Phase != "publishing" && (s.Publication != "" || s.ConfigHash != "") {
+		return errors.New("unexpected publication identity")
 	}
 	return nil
 }
@@ -59,14 +71,6 @@ func (s *State) Blocked() bool {
 
 // Read validates the record and required markers before callers open/migrate the DB.
 func Read(dir string) (*State, error) {
-	if i, e := os.Lstat(dir); e == nil {
-		st, ok := i.Sys().(*syscall.Stat_t)
-		if !i.IsDir() || i.Mode().Perm() != 0o700 || !ok || st.Uid != uint32(os.Geteuid()) {
-			return nil, errors.New("invalid trusted restore directory")
-		}
-	} else if !errors.Is(e, os.ErrNotExist) {
-		return nil, e
-	}
 	data, err := ReadPrivate(filepath.Join(dir, File), 64<<10)
 	if errors.Is(err, os.ErrNotExist) {
 		for _, name := range []string{Incomplete, Runtime} {
@@ -79,6 +83,14 @@ func Read(dir string) (*State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read trusted restore state: %w", err)
 	}
+	if i, e := os.Lstat(dir); e == nil {
+		st, ok := i.Sys().(*syscall.Stat_t)
+		if !i.IsDir() || i.Mode().Perm() != 0o700 || !ok || st.Uid != uint32(os.Geteuid()) {
+			return nil, errors.New("invalid trusted restore directory")
+		}
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return nil, e
+	}
 	var s State
 	if err := decodeState(data, &s); err != nil {
 		return nil, fmt.Errorf("decode restore state: %w", err)
@@ -88,7 +100,7 @@ func Read(dir string) (*State, error) {
 	}
 	// Extra inhibitors are safe and block startup until explicit recovery repairs them.
 	for _, name := range []string{Incomplete, Runtime} {
-		required := name == Incomplete && s.Phase != "complete" || name == Runtime && s.RuntimeInhibited
+		required := name == Incomplete && (s.Phase == "preparing" || s.Phase == "recovering") || name == Runtime && s.RuntimeInhibited
 		b, e := ReadPrivate(filepath.Join(dir, name), 64)
 		if e == nil && string(b) != "1\n" {
 			return nil, errors.New("invalid restore inhibitor")
@@ -223,12 +235,19 @@ func Remove(path string) error {
 // Every safety field must occur exactly once. Standard struct decoding alone accepts
 // omitted false booleans and duplicate last-key-wins values, which could imply resume.
 func decodeState(data []byte, s *State) error {
+	return decodeRequired(data, []string{"version", "operation", "recovery", "phase", "held", "runtime_inhibited", "publication", "config_sha256"}, s)
+}
+
+func decodeRequired(data []byte, fields []string, dst any) error {
 	d := json.NewDecoder(bytes.NewReader(data))
 	token, e := d.Token()
 	if e != nil || token != json.Delim('{') {
-		return errors.New("restore state must be an object")
+		return errors.New("private record must be an object")
 	}
-	required := map[string]bool{"version": false, "operation": false, "recovery": false, "phase": false, "held": false, "runtime_inhibited": false}
+	required := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		required[f] = false
+	}
 	for d.More() {
 		token, e = d.Token()
 		if e != nil {
@@ -236,11 +255,11 @@ func decodeState(data []byte, s *State) error {
 		}
 		key, ok := token.(string)
 		if !ok {
-			return errors.New("invalid restore field")
+			return errors.New("invalid private record field")
 		}
 		seen, known := required[key]
 		if !known || seen {
-			return errors.New("duplicate or unknown restore field")
+			return errors.New("duplicate or unknown private record field")
 		}
 		required[key] = true
 		var raw json.RawMessage
@@ -248,19 +267,19 @@ func decodeState(data []byte, s *State) error {
 			return e
 		}
 		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			return errors.New("null restore safety field")
+			return errors.New("null private record safety field")
 		}
 	}
 	if _, e = d.Token(); e != nil {
 		return e
 	}
 	if e = d.Decode(new(any)); e != io.EOF {
-		return errors.New("trailing restore state data")
+		return errors.New("trailing private record data")
 	}
 	for _, seen := range required {
 		if !seen {
-			return errors.New("missing restore safety field")
+			return errors.New("missing private record safety field")
 		}
 	}
-	return json.Unmarshal(data, s)
+	return json.Unmarshal(data, dst)
 }

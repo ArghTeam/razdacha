@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/ArghTeam/razdacha/internal/packaging"
+	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 )
 
@@ -57,6 +58,19 @@ func runUninstall(ctx context.Context, args []string) error {
 }
 
 func uninstall(ctx context.Context, opts uninstallOptions, in *os.File) error {
+	dir := filepath.Join(opts.root, defaultStateDir)
+	lock, e := restorestate.Acquire(dir, -1)
+	if e != nil {
+		return e
+	}
+	defer func() { _ = lock.Close() }()
+	state, e := restorestate.Read(dir)
+	if e != nil {
+		return e
+	}
+	if state != nil {
+		return errors.New("uninstall refuses retained restore state; use explicit local recovery before teardown")
+	}
 	log := slog.Default()
 	var errs []error
 
@@ -202,6 +216,22 @@ func maybeRemoveState(opts uninstallOptions, in *os.File, log *slog.Logger) erro
 		log.Info("состояние оставлено", "каталог", dir)
 		fmt.Printf("Ключи и пиры оставлены в %s\n", dir)
 		return nil
+	}
+	// Keep the stable lock inode even during purge: removing it while held would
+	// let another lifecycle owner create a new inode and mutate the same install.
+	if _, e := os.Lstat(filepath.Join(dir, restorestate.LockFile)); e == nil {
+		entries, e := os.ReadDir(dir)
+		if e != nil {
+			return e
+		}
+		for _, entry := range entries {
+			if entry.Name() != restorestate.LockFile {
+				if e = os.RemoveAll(filepath.Join(dir, entry.Name())); e != nil {
+					return e
+				}
+			}
+		}
+		return restorestate.SyncDir(dir)
 	}
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("удаление %s: %w", dir, err)

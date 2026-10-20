@@ -68,6 +68,9 @@ type Reloader interface {
 // и endpoint туннеля меняются вместе, и точечная правка JSON этого не
 // гарантирует.
 type Applier struct {
+	// BeforeReload runs only after checked config bytes and their directory are durable.
+	BeforeReload func(context.Context) error
+	AfterReload  func(context.Context) error
 	// ConfigPath — путь конфига; пустой означает [DefaultConfigPath].
 	ConfigPath string
 
@@ -171,8 +174,18 @@ func (p *Prepared) Commit(ctx context.Context, force bool) (ApplyResult, error) 
 		if err != nil {
 			return res, fmt.Errorf("sync configuration directory: %w", err)
 		}
+		if p.applier.BeforeReload != nil {
+			if err := p.applier.BeforeReload(ctx); err != nil {
+				return res, err
+			}
+		}
 		if err := p.applier.reloader().Reload(ctx); err != nil {
 			return res, fmt.Errorf("%w: %w", ErrReloadFailed, err)
+		}
+		if p.applier.AfterReload != nil {
+			if err := p.applier.AfterReload(ctx); err != nil {
+				return res, fmt.Errorf("%w: %w", ErrReloadFailed, err)
+			}
 		}
 		res.Reloaded = true
 	}

@@ -330,7 +330,9 @@ install_binaries() {
 
 	tmp="$(mktemp -d)"
 	# Каталог убирается в любом исходе: сюда приезжает архив на десятки мегабайт.
-	trap 'rm -rf "$tmp"' EXIT INT TERM
+	trap 'rm -rf "$tmp"' EXIT
+ trap 'exit 130' INT
+ trap 'exit 143' TERM
 
 	asset="razdacha-linux-$ARCH.tar.gz"
 	download "$(release_url "$asset")" "$tmp/$asset"
@@ -347,6 +349,35 @@ install_binaries() {
 	fi
 
 	tar -xzf "$tmp/$asset" -C "$tmp"
+	# Own the installation before either executable can replace an attested binary.
+	# Keep descriptor 9 open through run_setup; the new CLI validates the same inode.
+	have flock || die "flock is required for serialized managed installation"
+	install_state_dir="/var/lib/razdacha"
+	[ ! -L "$install_state_dir" ] || die "installation state directory must not be a symlink"
+	(umask 077; mkdir -p "$install_state_dir")
+	[ "$(stat -c '%u:%a' "$install_state_dir")" = "0:700" ] || die "installation state directory must be root-owned mode 0700"
+	install_lock="$install_state_dir/.lifecycle.lock"
+	[ ! -L "$install_lock" ] || die "installation lifecycle lock must not be a symlink"
+	(umask 077; touch "$install_lock")
+	[ -f "$install_lock" ] && [ "$(stat -c '%u:%a' "$install_lock")" = "0:600" ] || die "installation lifecycle lock must be a private root-owned regular file"
+	exec 9<>"$install_lock"
+	flock -n 9 || die "installation lifecycle is busy"
+	for binary in razdachad razdacha; do
+		[ -f "$tmp/$binary" ] && [ ! -L "$tmp/$binary" ] || die "staged executable must be a regular file"
+	done
+	staged_daemon_caps="$("$tmp/razdachad" -restore-capabilities 2>/dev/null || true)"
+	staged_cli_caps="$("$tmp/razdacha" -restore-capabilities 2>/dev/null || true)"
+	SETUP_INHERITS_LOCK=0
+	if [ "$staged_daemon_caps" = '{"restore_protocol":1}' ] && [ "$staged_cli_caps" = '{"restore_protocol":1}' ]; then
+		"$tmp/razdacha" install-preflight --staged-daemon "$tmp/razdachad" --staged-cli "$tmp/razdacha" --lifecycle-lock-fd 9
+		SETUP_INHERITS_LOCK=1
+	else
+		# Old candidates may not start against ANY retained trusted restore state.
+		for restore_record in "$install_state_dir/restore-state.json" "$install_state_dir/restore-incomplete" "$install_state_dir/restore-runtime-inhibit" "$install_state_dir"/.restore-*/recovery.json; do
+			[ ! -e "$restore_record" ] && [ ! -L "$restore_record" ] || die "incompatible update/downgrade refused while trusted restore state exists"
+		done
+	fi
+
 	mkdir -p "$PREFIX"
 	for binary in razdachad razdacha; do
 		[ -f "$tmp/$binary" ] || die "в архиве нет файла $binary"
@@ -373,6 +404,9 @@ run_setup() {
 	# условием возвращает единицу, и скрипт молча обрывался бы на первом же
 	# незаданном необязательном параметре.
 	set -- setup --daemon "$PREFIX/razdachad"
+ if [ "${SETUP_INHERITS_LOCK:-0}" = 1 ]; then
+  set -- "$@" --lifecycle-lock-fd 9
+ fi
 	# Три состояния, а не два: переменной нет — режим панели остаётся тем,
 	# который сохранён в БД; переменная есть — она и решает. Раньше состояний
 	# было два, и обновление без переменной молча возвращало панель из
@@ -390,7 +424,19 @@ run_setup() {
 	if [ -n "${RAZDACHA_PEER:-}" ]; then
 		set -- "$@" --peer "$RAZDACHA_PEER"
 	fi
-	"$PREFIX/razdacha" "$@"
+	if [ "${SETUP_INHERITS_LOCK:-0}" = 1 ]; then
+		"$PREFIX/razdacha" "$@" &
+	else
+		# The shell retains ownership; old setup must not leak the descriptor.
+		"$PREFIX/razdacha" "$@" 9>&- &
+	fi
+	install_setup_pid=$!
+	trap 'kill -INT "$install_setup_pid" 2>/dev/null || :; wait "$install_setup_pid" || :; exit 130' INT
+	trap 'kill -TERM "$install_setup_pid" 2>/dev/null || :; wait "$install_setup_pid" || :; exit 143' TERM
+	install_setup_result=0
+	wait "$install_setup_pid" || install_setup_result=$?
+	trap - INT TERM
+	return "$install_setup_result"
 }
 
 main() {

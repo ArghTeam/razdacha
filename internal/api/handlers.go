@@ -18,6 +18,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	s.protect(mux, "POST /api/logout", s.handleLogout)
 	s.protect(mux, "GET /api/session", s.handleSession)
+	s.protect(mux, "GET /api/restore", s.handleRestoreStatus)
+	s.protect(mux, "POST /api/restore/resume", s.handleRestoreResume)
 
 	s.protect(mux, "GET /api/peers", s.handleListPeers)
 	s.protect(mux, "POST /api/peers", s.handleCreatePeer)
@@ -84,7 +86,7 @@ func (s *Server) routes() http.Handler {
 // protect регистрирует маршрут под проверкой сессии. Отдельная функция ровно для
 // того, чтобы регистрация без неё бросалась в глаза при чтении списка маршрутов.
 func (s *Server) protect(mux *http.ServeMux, pattern string, h http.HandlerFunc) {
-	mux.Handle(pattern, s.requireSession(h))
+	mux.Handle(pattern, s.requireSession(s.restoreGuard(h)))
 }
 
 // requireSession закрывает обработчик проверкой сессии и заодно продлевает её.

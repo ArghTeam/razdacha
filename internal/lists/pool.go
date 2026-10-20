@@ -112,6 +112,8 @@ func PoolTunnels(snap store.Snapshot) []PoolTunnel {
 
 // PoolManagerOptions — параметры расписания пулов.
 type PoolManagerOptions struct {
+	// Allow gates external work for trusted restored installations; nil preserves normal behavior.
+	Allow    func() error
 	Catalog  *PoolCatalog
 	Writer   PoolWriter
 	Logger   *slog.Logger
@@ -128,6 +130,7 @@ type PoolManagerOptions struct {
 // Устроен как [Manager]: набор задаётся снаружи через [PoolManager.SetTunnels],
 // первый прогон уходит в горутину, неудача повторяется чаще обычного интервала.
 type PoolManager struct {
+	allow   func() error
 	catalog *PoolCatalog
 	writer  PoolWriter
 	log     *slog.Logger
@@ -146,6 +149,7 @@ type PoolManager struct {
 // NewPoolManager создаёт расписание. Само по себе оно ничего не качает — нужен Start.
 func NewPoolManager(o PoolManagerOptions) *PoolManager {
 	m := &PoolManager{
+		allow:    o.Allow,
 		catalog:  o.Catalog,
 		writer:   o.Writer,
 		log:      o.Logger,
@@ -275,6 +279,11 @@ func (m *PoolManager) currentInterval() time.Duration {
 // каталога. Ошибка одной группы не отменяет остальные и не выбрасывает прошлый состав
 // пула из БД: устаревший список лучше пустого.
 func (m *PoolManager) Refresh(ctx context.Context) error {
+	if m.allow != nil {
+		if err := m.allow(); err != nil {
+			return err
+		}
+	}
 	m.mu.RLock()
 	tunnels := append([]PoolTunnel(nil), m.tunnels...)
 	m.mu.RUnlock()

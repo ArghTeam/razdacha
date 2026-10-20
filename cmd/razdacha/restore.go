@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +14,8 @@ import (
 
 	"github.com/ArghTeam/razdacha/internal/networkstate"
 	"github.com/ArghTeam/razdacha/internal/packaging"
+	"github.com/ArghTeam/razdacha/internal/restorestate"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -24,6 +28,9 @@ const passphraseEnv = "RAZDACHA_BACKUP_PASSPHRASE"
 
 // restoreOptions — параметры `razdacha restore`.
 type restoreOptions struct {
+	services       *packaging.RestoreServices
+	attest         func(context.Context, string) ([]byte, error)
+	checklist      bool
 	root           string
 	dbPath         string
 	file           string
@@ -50,6 +57,11 @@ func runRestore(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if opts.root != "" || opts.dbPath != defaultDBPath {
+		return errors.New("restore supports only the canonical managed installation")
+	}
+	opts.services = &packaging.RestoreServices{Query: packaging.SystemdQuery, Run: systemctl}
+	opts.attest = packaging.AttestRestoreBinary
 	opts.systemctl = systemctl
 	opts.unitActive = daemonActive
 	opts.stdin = os.Stdin
@@ -62,6 +74,7 @@ func runRestore(ctx context.Context, args []string) error {
 func parseRestoreFlags(args []string) (restoreOptions, error) {
 	flags := flag.NewFlagSet("restore", flag.ContinueOnError)
 	opts := restoreOptions{}
+	flags.BoolVar(&opts.checklist, "destination-reviewed", false, "confirm endpoint, WAN, NAT, panel exposure and certificate SAN review")
 	flags.StringVar(&opts.root, "root", "", "корень файловой системы; пустой означает /")
 	flags.StringVar(&opts.dbPath, "db", defaultDBPath, "путь к файлу состояния")
 	flags.BoolVar(&opts.force, "force", false,
@@ -79,129 +92,218 @@ func parseRestoreFlags(args []string) (restoreOptions, error) {
 }
 
 func restore(ctx context.Context, opts restoreOptions) error {
+	dbPath, err := filepath.Abs(filepath.Join(opts.root, opts.dbPath))
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(dbPath)
+	lock, err := restorestate.Acquire(dir, -1)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
+	previous, err := restorestate.Read(dir)
+	if err != nil {
+		return err
+	}
+	if previous != nil && previous.Phase != "complete" {
+		return errors.New("unfinished restore requires explicit local recovery")
+	}
+	info, err := os.Stat(opts.file)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 256<<20 {
+		return errors.New("backup must be a bounded regular file")
+	}
 	data, err := os.ReadFile(opts.file)
 	if err != nil {
-		return fmt.Errorf("чтение копии %s: %w", opts.file, err)
+		return fmt.Errorf("read restore archive: %w", err)
 	}
-
-	// Формат виден из самого файла: фразу спрашиваем только там, где она нужна,
-	// и только после того, как убедились, что файл вообще наш.
-	switch {
-	case store.IsEncryptedBackup(data):
-		phrase, err := readPassphrase(opts)
-		if err != nil {
-			return err
+	if store.IsEncryptedBackup(data) {
+		phrase, e := readPassphrase(opts)
+		if e != nil {
+			return e
 		}
-		plain, err := store.DecryptBackup(data, phrase)
-		if err != nil {
-			// Ни фраза, ни её длина в вывод не попадают.
-			return fmt.Errorf("расшифровка копии %s: %w", opts.file, err)
+		data, e = store.DecryptBackup(data, phrase)
+		if e != nil {
+			return fmt.Errorf("decrypt restore archive: %w", e)
 		}
-		data = plain
-	case store.IsStateFile(data):
-	default:
-		return fmt.Errorf("%w: %s", store.ErrNotBackup, opts.file)
 	}
 	if !store.IsStateFile(data) {
-		return fmt.Errorf("%w: расшифрованный файл не база SQLite", store.ErrNotBackup)
+		return store.ErrNotBackup
 	}
-
-	dbPath := filepath.Join(opts.root, opts.dbPath)
-	target, err := store.StateSummaryAt(ctx, dbPath)
+	op, err := os.MkdirTemp(dir, ".restore-")
 	if err != nil {
 		return err
 	}
-	if !target.Empty() && !opts.force {
-		return fmt.Errorf("в %s уже есть состояние: %s. "+
-			"Восстановление заменит его целиком — повторите с -force, если это то, что нужно",
-			dbPath, describeState(target))
-	}
-
-	// Копия раскладывается рядом с рабочим файлом, а не во временном каталоге:
-	// подмена обязана быть переименованием в пределах одной файловой системы,
-	// иначе половина копии окажется на месте базы при нехватке места.
-	staged := dbPath + ".restore"
-	if err := writeStaged(staged, data); err != nil {
+	if err = os.Chmod(op, 0o700); err != nil {
 		return err
 	}
-	// Вместе с самим файлом убираются и его журналы: открытие копии для
-	// миграций заводит рядом `-wal` и `-shm`, и оставленные после отказа они
-	// пережили бы команду.
-	defer func() {
-		for _, suffix := range []string{"", "-wal", "-shm"} {
-			_ = os.Remove(staged + suffix)
-		}
-	}()
-
-	// Проверка версии и миграции — тем же механизмом, что у демона при старте:
-	// открытие отвергает схему из будущего и накатывает недостающие шаги на
-	// схему из прошлого. Второго механизма сравнения версий в системе нет.
-	before, err := store.StateSummaryAt(ctx, staged)
-	if err != nil {
+	if err = restorestate.SyncDir(dir); err != nil {
 		return err
 	}
-	st, err := store.Open(ctx, staged)
-	if err != nil {
-		return fmt.Errorf("копия %s не принята: %w", opts.file, err)
+	staged := filepath.Join(op, "incoming.db")
+	if err = writeStaged(staged, data); err != nil {
+		return err
+	}
+	if _, err = store.PrepareRestore(ctx, staged, singbox.RestoreWireGuardIDs); err != nil {
+		return err
 	}
 	after, err := store.StateSummaryAt(ctx, staged)
-	if cerr := st.Close(); cerr != nil && err == nil {
-		err = cerr
-	}
 	if err != nil {
 		return err
 	}
 	if after.Empty() {
-		return fmt.Errorf("в копии %s нет ни пиров, ни туннелей, ни правил — "+
-			"это не состояние razdacha", opts.file)
+		return errors.New("archive contains no peers, tunnels or rules")
 	}
-
-	// Демон останавливается только теперь: до этого момента всё, что могло
-	// отказать, уже отказало, и сервер не оставался бы выключенным зря.
-	running := opts.unitActive != nil && opts.unitActive(ctx)
-	if running {
-		if err := opts.systemctl(ctx, "stop", packaging.DaemonUnit); err != nil {
-			return err
-		}
-	}
-
-	// Never allow stale committed routing to be replayed over the restored database.
-	// The daemon remains guarded until explicit Apply authorizes restored policy.
-	if opts.closeIngress != nil {
-		if err := opts.closeIngress(); err != nil {
-			return err
-		}
-	}
-	if err := networkstate.Invalidate(filepath.Dir(dbPath)); err != nil {
+	target, err := store.RestoreSummary(ctx, dbPath)
+	if err != nil {
 		return err
 	}
-
-	if !target.Empty() {
-		saved, err := backupDB(dbPath, "before-restore")
-		if err != nil {
-			return err
-		}
-		fmt.Printf("прежнее состояние сохранено: %s\n", saved)
+	if !target.Empty() && !opts.force {
+		return errors.New("destination has existing state; repeat with -force to replace it")
 	}
-	if err := replaceDB(staged, dbPath); err != nil {
+	if !opts.checklist {
+		return errors.New("review endpoint, WAN interface, UDP/NAT mapping, panel exposure and certificate SANs; repeat with -destination-reviewed")
+	}
+	if opts.services == nil || opts.attest == nil || opts.closeIngress == nil {
+		return errors.New("restore requires contained managed service, capability and ingress adapters")
+	}
+	services, err := opts.services.Preflight(ctx)
+	if err != nil {
 		return err
 	}
-
-	if running {
-		if err := opts.systemctl(ctx, "start", packaging.DaemonUnit); err != nil {
+	binary := filepath.Join(opts.services.Root, defaultDaemon)
+	attested, err := opts.attest(ctx, binary)
+	if err != nil {
+		return err
+	}
+	record := restorestate.State{Version: restorestate.Protocol, Operation: filepath.Base(op), Recovery: op, Phase: "preparing", Held: true, RuntimeInhibited: true}
+	recovery := restorestate.Recovery{}
+	recovery.Services, err = json.Marshal(services)
+	if err != nil {
+		return err
+	}
+	// Save the original safety/drop-in metadata BEFORE any inhibitor installation.
+	metadata := []string{filepath.Join(dir, restorestate.File), filepath.Join(dir, restorestate.Incomplete), filepath.Join(dir, restorestate.Runtime)}
+	for _, unit := range []string{packaging.DaemonUnit, packaging.SingboxUnit} {
+		metadata = append(metadata, filepath.Join(opts.services.Root, packaging.DefaultUnitDir, unit+".d", packaging.RestoreDropIn))
+	}
+	for _, path := range metadata {
+		f, e := restorestate.CaptureFile(op, path)
+		if e != nil {
+			return e
+		}
+		recovery.Files = append(recovery.Files, f)
+	}
+	if err = restorestate.SaveRecovery(op, recovery); err != nil {
+		return err
+	}
+	if err = restorestate.Save(dir, record); err != nil {
+		return err
+	}
+	if err = opts.services.Inhibit(ctx, dir); err != nil {
+		return err
+	}
+	if err = opts.services.Stop(ctx); err != nil {
+		return err
+	}
+	if err = opts.closeIngress(); err != nil {
+		return err
+	}
+	// A stable SQLite snapshot includes committed WAL pages and does not migrate old state.
+	if _, e := os.Stat(dbPath); e == nil {
+		snapshot := filepath.Join(op, "destination.db")
+		if err = store.BackupAt(ctx, dbPath, snapshot); err != nil {
+			return err
+		}
+		if err = os.Chmod(snapshot, 0o600); err != nil {
+			return err
+		}
+		if err = restorestate.SyncFile(snapshot); err != nil {
+			return err
+		}
+		f, e := restorestate.CaptureFile(op, snapshot)
+		if e != nil {
+			return e
+		}
+		f.Target = dbPath
+		recovery.Files = append(recovery.Files, f)
+		recovery.DatabasePresent = true
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return e
+	}
+	runtime := filepath.Join(opts.services.Root, singbox.DefaultConfigPath)
+	for _, path := range []string{runtime, filepath.Join(dir, networkstate.CommittedFile), filepath.Join(dir, networkstate.BootstrapFile)} {
+		f, e := restorestate.CaptureFile(op, path)
+		if e != nil {
+			return e
+		}
+		recovery.Files = append(recovery.Files, f)
+	}
+	// Preserve every native artifact file, not just the latest mutable accepted manifest.
+	native := filepath.Join(dir, "lists", "native")
+	if err = filepath.WalkDir(native, func(path string, d os.DirEntry, e error) error {
+		if errors.Is(e, os.ErrNotExist) && path == native {
+			return nil
+		}
+		if e != nil {
+			return e
+		}
+		if d.IsDir() {
+			return nil
+		}
+		f, e := restorestate.CaptureFile(op, path)
+		if e != nil {
+			return e
+		}
+		recovery.Files = append(recovery.Files, f)
+		return nil
+	}); err != nil {
+		return err
+	}
+	recovery.Complete = true
+	if err = restorestate.SaveRecovery(op, recovery); err != nil {
+		return err
+	}
+	if _, err = restorestate.ReadRecovery(op); err != nil {
+		return err
+	}
+	// Runtime is stopped and persistently inhibited; remove its sole effective config.
+	if err = restorestate.Remove(runtime); err != nil {
+		return err
+	}
+	if err = networkstate.Invalidate(dir); err != nil {
+		return err
+	}
+	if err = replaceDB(staged, dbPath); err != nil {
+		return err
+	}
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+	record.Phase = "complete"
+	if err = restorestate.Remove(filepath.Join(dir, restorestate.Incomplete)); err != nil {
+		return err
+	}
+	if err = restorestate.Save(dir, record); err != nil {
+		return err
+	}
+	again, err := opts.attest(ctx, binary)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(attested, again) {
+		return errors.New("installed daemon changed before startup; explicit recovery required")
+	}
+	if services[packaging.DaemonUnit].Active == "active" {
+		if err = opts.services.Run(ctx, "start", packaging.DaemonUnit); err != nil {
 			return err
 		}
 	}
-
-	fmt.Println("Restored policy requires explicit Apply; client ingress remains guarded.")
-	fmt.Printf("состояние восстановлено из %s: %s\n", opts.file, describeState(after))
-	if before.SchemaVersion != after.SchemaVersion {
-		fmt.Printf("схема БД обновлена с версии %d до %d\n",
-			before.SchemaVersion, after.SchemaVersion)
-	}
-	fmt.Println("клиентские конфиги менять не нужно: ключи пиров восстановлены как были.")
-	fmt.Println("если у нового сервера другой внешний адрес — поправьте его в настройках " +
-		"панели и перевыдайте конфиги.")
+	fmt.Printf("Restore complete. Outgoing WireGuard is paused; external activity is held; client ingress remains guarded. Recovery: %s\n", op)
+	fmt.Println("Review destination settings, explicitly resume external activity, then Apply paused policy. Enable chosen WireGuard credentials separately and Apply again. Endpoint or certificate changes may require client updates.")
 	return nil
 }
 
@@ -210,19 +312,21 @@ func restore(ctx context.Context, opts restoreOptions) error {
 // Права 0600 ставятся до записи содержимого: в файле приватные ключи пиров, и
 // окна, в котором он читается кем угодно, быть не должно.
 func writeStaged(path string, data []byte) error {
-	_ = os.Remove(path)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return fmt.Errorf("подготовка копии %s: %w", path, err)
+		return err
 	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("запись копии %s: %w", path, err)
+	if _, err = f.Write(data); err == nil {
+		err = f.Sync()
 	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("запись копии %s: %w", path, err)
+	cerr := f.Close()
+	if err != nil {
+		return err
 	}
-	return nil
+	if cerr != nil {
+		return cerr
+	}
+	return restorestate.SyncDir(filepath.Dir(path))
 }
 
 // replaceDB ставит подготовленный файл на место рабочего.
@@ -231,18 +335,28 @@ func writeStaged(path string, data []byte) error {
 // файлом, они не старое состояние, а повреждённая база — SQLite примет их за
 // журнал того, что лежит сейчас.
 func replaceDB(staged, dbPath string) error {
-	if err := os.Rename(staged, dbPath); err != nil {
-		return fmt.Errorf("подмена состояния %s: %w", dbPath, err)
+	if _, e := os.Stat(dbPath); e == nil {
+		if e = store.CheckpointAt(context.Background(), dbPath); e != nil {
+			return e
+		}
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return e
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
-		if err := os.Remove(dbPath + suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("удаление журнала %s: %w", dbPath+suffix, err)
+		if e := restorestate.Remove(dbPath + suffix); e != nil {
+			return e
 		}
 	}
-	if err := os.Chmod(dbPath, 0o600); err != nil {
-		return fmt.Errorf("права на состояние %s: %w", dbPath, err)
+	if e := restorestate.SyncFile(staged); e != nil {
+		return e
 	}
-	return nil
+	if e := os.Rename(staged, dbPath); e != nil {
+		return e
+	}
+	if e := restorestate.SyncDir(filepath.Dir(staged)); e != nil {
+		return e
+	}
+	return restorestate.SyncDir(filepath.Dir(dbPath))
 }
 
 // readPassphrase берёт фразу из файла, окружения или терминала — в этом порядке.

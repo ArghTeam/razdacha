@@ -43,6 +43,9 @@ func (s *Server) watchBackup(ctx context.Context) {
 // backupRound — один взгляд на расписание. Ничего не должен — значит ничего и
 // не делает: наружу демон ходит только тогда, когда его об этом попросили.
 func (s *Server) backupRound(ctx context.Context, lastTry *time.Time) {
+	if e := s.restore.Allowed(); e != nil {
+		return
+	}
 	cfg, err := s.store.BackupConfig(ctx)
 	if err != nil {
 		s.log.Error("чтение расписания копии", "ошибка", err)

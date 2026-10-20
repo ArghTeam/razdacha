@@ -173,7 +173,12 @@ func (u *UnitInstaller) EnsureDaemonUnit(binary string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return u.writeUnit(DaemonUnit, content)
+	changed, e := u.writeUnit(DaemonUnit, content)
+	if e != nil {
+		return false, e
+	}
+	condition, e := u.ensureRestoreCondition(DaemonUnit)
+	return changed || condition, e
 }
 
 // EnsureSingboxUnit кладёт юнит рантайма, если его не принёс пакет
@@ -190,7 +195,12 @@ func (u *UnitInstaller) EnsureSingboxUnit(binary, config string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return u.writeUnit(SingboxUnit, content)
+	changed, e := u.writeUnit(SingboxUnit, content)
+	if e != nil {
+		return false, e
+	}
+	condition, e := u.ensureRestoreCondition(SingboxUnit)
+	return changed || condition, e
 }
 
 // ErrUnitPackaged — свой юнит писать не нужно, его принёс пакет дистрибутива.

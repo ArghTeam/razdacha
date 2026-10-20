@@ -13,6 +13,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ArghTeam/razdacha/internal/restorestate"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -50,6 +52,14 @@ func run() int {
 
 	var err error
 	switch cmd := os.Args[1]; cmd {
+	case "-restore-capabilities":
+		if _, err = restorestate.Read(defaultStateDir); err == nil {
+			fmt.Printf("{\"restore_protocol\":%d}\n", restorestate.Protocol)
+		}
+	case "runtime-start-allowed":
+		err = restorestate.RuntimeStartAllowed(defaultStateDir, singbox.DefaultConfigPath)
+	case "install-preflight":
+		err = installPreflight(ctx, os.Args[2:])
 	case "setup":
 		err = runSetup(ctx, os.Args[2:])
 	case "restore":

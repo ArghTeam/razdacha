@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -273,4 +274,84 @@ func PrepareRestore(ctx context.Context, path string, classify func([]Tunnel) ([
 		return nil, errors.New("restore changed rows beyond permitted WireGuard pause")
 	}
 	return ids, nil
+}
+
+// BackupAt preserves committed WAL contents without migrating the destination.
+func BackupAt(ctx context.Context, path, dst string) error {
+	db, e := restoreDB(ctx, path)
+	if e != nil {
+		return e
+	}
+	defer func() { _ = db.Close() }()
+	f, e := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if e != nil {
+		return e
+	}
+	if e = f.Close(); e != nil {
+		return e
+	}
+	if _, e = db.ExecContext(ctx, "VACUUM INTO ?", dst); e != nil {
+		return fmt.Errorf("snapshot current destination: %w", e)
+	}
+	return nil
+}
+
+// CheckpointAt drains journals without migrating or changing logical destination rows.
+func CheckpointAt(ctx context.Context, path string) error {
+	db, e := sql.Open("sqlite", dsn(path))
+	if e != nil {
+		return e
+	}
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(1)
+	var busy, log, checkpointed int
+	if e = db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &log, &checkpointed); e != nil {
+		return e
+	}
+	if busy != 0 {
+		return errors.New("destination database still has active writers")
+	}
+	return nil
+}
+
+// RestoreSummary reads a destination without journal-mode changes or creation.
+func RestoreSummary(ctx context.Context, path string) (StateSummary, error) {
+	if _, e := os.Stat(path); errors.Is(e, os.ErrNotExist) {
+		return StateSummary{}, nil
+	} else if e != nil {
+		return StateSummary{}, e
+	}
+	db, e := restoreDB(ctx, path)
+	if e != nil {
+		return StateSummary{}, e
+	}
+	defer func() { _ = db.Close() }()
+	var out StateSummary
+	if e = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&out.SchemaVersion); e != nil {
+		return out, e
+	}
+	for _, v := range []struct {
+		name  string
+		count *int
+	}{{"peers", &out.Peers}, {"tunnels", &out.Tunnels}, {"rules", &out.Rules}} {
+		if e = db.QueryRowContext(ctx, "SELECT count(*) FROM "+v.name).Scan(v.count); e != nil {
+			return out, e
+		}
+	}
+	return out, nil
+}
+
+// OpenRestoreCurrent refuses to create or migrate live DBs owned by trusted restore.
+func OpenRestoreCurrent(ctx context.Context, path string) (*Store, error) {
+	if e := ValidateRestoreSchema(ctx, path); e != nil {
+		return nil, e
+	}
+	summary, e := RestoreSummary(ctx, path)
+	if e != nil {
+		return nil, e
+	}
+	if summary.SchemaVersion != schemaVersion() {
+		return nil, errors.New("trusted restored database needs explicit recovery, not startup migration")
+	}
+	return Open(ctx, path)
 }

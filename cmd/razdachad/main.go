@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -18,6 +19,7 @@ import (
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/packaging"
+	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -33,6 +35,7 @@ var (
 const defaultDBPath = "/var/lib/razdacha/state.db"
 
 func main() {
+	capabilities := flag.Bool("restore-capabilities", false, "report metadata-only safe restore protocol")
 	showVersion := flag.Bool("version", false, "показать версию и выйти")
 	listen := flag.String("listen", api.DefaultAddr,
 		"адрес HTTP-сервера панели; только loopback — наружу его открывает nginx")
@@ -43,6 +46,24 @@ func main() {
 		"снять nft-правила и маршрутизацию, wg0 оставить, и выйти")
 	flag.Parse()
 
+	absoluteDB, err := filepath.Abs(*dbPath)
+	if err != nil {
+		slog.Error("resolve restore state", "error", err)
+		os.Exit(2)
+	}
+	trusted, err := restorestate.Read(filepath.Dir(absoluteDB))
+	if err != nil {
+		slog.Error("invalid trusted restore state", "error", err)
+		os.Exit(2)
+	}
+	if *capabilities {
+		fmt.Printf("{\"restore_protocol\":%d}\n", restorestate.Protocol)
+		return
+	}
+	if *resetNetwork && trusted.Blocked() {
+		slog.Error("network reset refused while restore protection is active")
+		os.Exit(2)
+	}
 	if *showVersion {
 		fmt.Println(version)
 		return
@@ -59,7 +80,7 @@ func main() {
 
 	// Сигналы гасят демон мягко: принятые запросы дорабатывают.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	err := run(ctx, *listen, *dbPath, *setPassword)
+	err = run(ctx, *listen, *dbPath, *setPassword)
 	stop()
 	if err != nil {
 		slog.Error("razdachad остановлен", "ошибка", err)
@@ -72,7 +93,42 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	if err != nil {
 		return fmt.Errorf("resolve database path: %w", err)
 	}
-	st, err := store.Open(ctx, dbPath)
+	if setPassword {
+		lock, e := restorestate.Acquire(filepath.Dir(dbPath), -1)
+		if e != nil {
+			return e
+		}
+		defer func() { _ = lock.Close() }()
+	}
+	trusted, err := restorestate.Read(filepath.Dir(dbPath))
+	if err != nil {
+		return err
+	}
+	if trusted != nil && trusted.Phase != "complete" {
+		return fmt.Errorf("incomplete restore requires explicit local recovery")
+	}
+	if trusted != nil {
+		if err := store.ValidateRestoreSchema(ctx, dbPath); err != nil {
+			return err
+		}
+	}
+	var ctl *restorestate.Controller
+	if trusted != nil {
+		ctl = &restorestate.Controller{Dir: filepath.Dir(dbPath)}
+		ctl.StopRuntime = func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return (packaging.RestoreServices{Query: packaging.SystemdQuery, Run: func(ctx context.Context, args ...string) error {
+				return exec.CommandContext(ctx, "systemctl", args...).Run()
+			}}).StopRuntime(ctx)
+		}
+	}
+	var st *store.Store
+	if trusted != nil {
+		st, err = store.OpenRestoreCurrent(ctx, dbPath)
+	} else {
+		st, err = store.Open(ctx, dbPath)
+	}
 	if err != nil {
 		return err
 	}
@@ -91,33 +147,53 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	if err != nil {
 		return err
 	}
-	wg, err := startWG(ctx, st, settings)
-	if err != nil {
-		return err
+	var wg *netstack.WGManager
+	if trusted == nil || !trusted.RuntimeInhibited {
+		wg, err = startWG(ctx, st, settings)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = wg.Close() }()
+		go syncWGPeers(ctx, st, wg)
 	}
-	defer func() { _ = wg.Close() }()
-	go syncWGPeers(ctx, st, wg)
-	listsMgr := startLists(ctx, st, dbPath, slog.Default())
-	ensureBuiltinPool(ctx, st, slog.Default())
-	poolsMgr := startPools(ctx, st, slog.Default())
+	listsMgr := startLists(ctx, st, dbPath, slog.Default(), ctl)
+	if trusted == nil {
+		ensureBuiltinPool(ctx, st, slog.Default())
+	}
+	poolsMgr := startPools(ctx, st, slog.Default(), ctl)
 
 	// Применение конфига собирается здесь, а не внутри слоя api: дверей к нему
 	// две — кнопка «Применить» и расписание пулов, которое приносит свежие
 	// ключи само (issue #121).
-	apply, err := startApply(ctx, st, poolsMgr, listsMgr, nf, dbPath, slog.Default())
+	apply, err := startApply(ctx, st, poolsMgr, listsMgr, nf, dbPath, slog.Default(), ctl)
 	if err != nil {
 		return err
 	}
 
+	if err := registerRestoreActivity(ctx, st, listsMgr, poolsMgr, apply, ctl); err != nil {
+		return err
+	}
+
+	if wg == nil {
+		go syncRestoredPeers(ctx, st, apply)
+	}
+	serverKey := func(ctx context.Context) (string, error) { return netstack.WGServerPublicKey(ctx, st) }
+	var peerStats func(context.Context) (map[string]netstack.WGPeerStat, error)
+	var wgDiag func(context.Context) (netstack.DiagWGState, error)
+	if wg != nil {
+		peerStats = wg.Stats
+		wgDiag = wg.DiagState
+	}
 	// Без пароля демон не стартует: панель доступна из интернета, и запуск
 	// «пока без авторизации» отдал бы наружу root-демон (ADR 0009).
 	srv, err := api.New(ctx, api.Config{
 		Addr:            listen,
 		Store:           st,
-		ServerPublicKey: wg.PublicKey,
-		PeerStats:       wg.Stats,
+		ServerPublicKey: serverKey,
+		Restore:         ctl,
+		PeerStats:       peerStats,
 		Diag: api.DiagSources{
-			WG: wg.DiagState,
+			WG: wgDiag,
 			Nft: func(ctx context.Context) (netstack.DiagNftState, error) {
 				if err := apply.networkStatus(); err != nil {
 					return netstack.DiagNftState{}, err
