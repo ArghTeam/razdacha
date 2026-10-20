@@ -26,8 +26,22 @@ import (
 // причине токен телеграма читается установщиком из окружения (docs/09).
 const passphraseEnv = "RAZDACHA_BACKUP_PASSPHRASE"
 
-// restoreOptions — параметры `razdacha restore`.
+// restoreDBFiles is a bounded syscall seam for replacement/crash regression tests.
+// Production uses the real durable filesystem operations below.
+type restoreDBFiles struct {
+	syncFile func(string) error
+	syncDir  func(string) error
+	rename   func(string, string) error
+}
+
+func defaultRestoreDBFiles() restoreDBFiles {
+	return restoreDBFiles{restorestate.SyncFile, restorestate.SyncDir, os.Rename}
+}
+
+// restoreOptions contains private restore adapters; no production fault switch exists.
 type restoreOptions struct {
+	dbFiles        *restoreDBFiles
+	afterDurable   func(string) error
 	services       *packaging.RestoreServices
 	attest         func(context.Context, string) ([]byte, error)
 	checklist      bool
@@ -206,20 +220,38 @@ func restore(ctx context.Context, opts restoreOptions) error {
 	if err = restorestate.SaveRecovery(op, recovery); err != nil {
 		return err
 	}
+	if err = opts.observeDurable("recovery-metadata"); err != nil {
+		return err
+	}
 	if err = restorestate.Save(dir, record); err != nil {
+		return err
+	}
+	if err = opts.observeDurable("preparing-record"); err != nil {
 		return err
 	}
 	if err = opts.services.Inhibit(ctx, dir); err != nil {
 		return err
 	}
+	if err = opts.observeDurable("inhibitors-installed"); err != nil {
+		return err
+	}
 	if err = opts.services.Stop(ctx); err != nil {
+		return err
+	}
+	if err = opts.observeDurable("services-stopped"); err != nil {
 		return err
 	}
 	if err = opts.closeIngress(); err != nil {
 		return err
 	}
+	if err = opts.observeDurable("ingress-guarded"); err != nil {
+		return err
+	}
 	recovery, err = collectDestinationRecovery(ctx, op, dbPath, opts.services.Root, recovery)
 	if err != nil {
+		return err
+	}
+	if err = opts.observeDurable("recovery-complete"); err != nil {
 		return err
 	}
 	runtime := filepath.Join(opts.services.Root, singbox.DefaultConfigPath)
@@ -227,10 +259,19 @@ func restore(ctx context.Context, opts restoreOptions) error {
 	if err = restorestate.Remove(runtime); err != nil {
 		return err
 	}
+	if err = opts.observeDurable("runtime-quarantined"); err != nil {
+		return err
+	}
 	if err = networkstate.Invalidate(dir); err != nil {
 		return err
 	}
-	if err = replaceDB(staged, dbPath); err != nil {
+	if err = opts.observeDurable("authority-invalidated"); err != nil {
+		return err
+	}
+	if err = replaceDBUsing(staged, dbPath, opts.dbFiles); err != nil {
+		return err
+	}
+	if err = opts.observeDurable("database-published"); err != nil {
 		return err
 	}
 	if err = ctx.Err(); err != nil {
@@ -255,6 +296,9 @@ func restore(ctx context.Context, opts restoreOptions) error {
 		return err
 	}
 	if err = restorestate.Save(dir, record); err != nil {
+		return err
+	}
+	if err = opts.observeDurable("restore-complete"); err != nil {
 		return err
 	}
 	if services[packaging.DaemonUnit].Active == "active" {
@@ -289,12 +333,22 @@ func writeStaged(path string, data []byte) error {
 	return restorestate.SyncDir(filepath.Dir(path))
 }
 
-// replaceDB ставит подготовленный файл на место рабочего.
-//
-// Журналы `-wal` и `-shm` от прежней базы снимаются: оставленные рядом с новым
-// файлом, они не старое состояние, а повреждённая база — SQLite примет их за
-// журнал того, что лежит сейчас.
-func replaceDB(staged, dbPath string) error {
+func (opts restoreOptions) observeDurable(cut string) error {
+	if opts.afterDurable != nil {
+		return opts.afterDurable(cut)
+	}
+	return nil
+}
+
+// replaceDB checkpoints old WAL before journal removal and durable atomic publication.
+func replaceDBUsing(staged, dbPath string, configured *restoreDBFiles) error {
+	ops := defaultRestoreDBFiles()
+	if configured != nil {
+		ops = *configured
+	}
+	if ops.syncFile == nil || ops.syncDir == nil || ops.rename == nil {
+		return errors.New("incomplete restore DB filesystem adapter")
+	}
 	if _, e := os.Stat(dbPath); e == nil {
 		if e = store.CheckpointAt(context.Background(), dbPath); e != nil {
 			return e
@@ -307,16 +361,16 @@ func replaceDB(staged, dbPath string) error {
 			return e
 		}
 	}
-	if e := restorestate.SyncFile(staged); e != nil {
+	if e := ops.syncFile(staged); e != nil {
 		return e
 	}
-	if e := os.Rename(staged, dbPath); e != nil {
+	if e := ops.rename(staged, dbPath); e != nil {
 		return e
 	}
-	if e := restorestate.SyncDir(filepath.Dir(staged)); e != nil {
+	if e := ops.syncDir(filepath.Dir(staged)); e != nil {
 		return e
 	}
-	return restorestate.SyncDir(filepath.Dir(dbPath))
+	return ops.syncDir(filepath.Dir(dbPath))
 }
 
 // readPassphrase берёт фразу из файла, окружения или терминала — в этом порядке.

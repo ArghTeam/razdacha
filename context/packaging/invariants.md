@@ -36,7 +36,7 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 
 - Only a genuinely fresh setup creates the first peer and checks/writes initial runtime config. It freezes a private bootstrap seed distinct from a committed network generation; the daemon publishes it under the guard and durably removes seed authority before releasing traffic. Missing DB plus orphan bootstrap/committed authority is refused. Existing-install setup never automatically recreates a deleted first peer or writes pending DB policy into runtime config (ADR 0023).
 - Legacy installations without committed policy require explicit Apply through an out-of-band panel/SSH tunnel. Normal restarts recover committed policy/list contents while live database peer revocation remains authoritative. Corrupt authority stops under the guard.
-- Restore stops the daemon and guards ingress before replacing the DB. Bootstrap authority is moved aside and synced before committed authority; successful invalidation syncs the directory even if paths are already absent. Restored routing requires explicit Apply. This is authority invalidation, not the cross-host safe migration planned in #217.
+- Restore stops and verifies both managed services under durable inhibitors, finalizes coherent current-destination recovery, quarantines runtime config and guards ingress before DB publication. Bootstrap authority is invalidated and synced before committed authority. Restored routing requires explicit Apply (ADR 0027).
 
 ## Key entry points
 - `.github/workflows/ci.yml` — все автоматические проверки репозитория.
@@ -49,20 +49,30 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 - `internal/packaging/default_site.go` — снятие и возврат штатного сайта Debian.
 - `internal/packaging/sysctl.go` — drop-in с параметрами ядра и их применение.
 
-- Native artifact history is excluded from database backups. Restore invalidates routing authority and requires supported sources to be fetched and explicitly applied again; it never reopens references to absent blobs. In-place startup with legacy v1 native authority preserves committed WG administrative settings but keeps client ingress guarded until explicit Apply. Corrupt v2 authority/artifacts stay guarded. Safe cross-host migration remains #217 (ADR 0025).
+- Native artifact history is excluded from database backups. Restore invalidates routing authority and requires supported sources to be fetched and explicitly applied again; it never reopens references to absent blobs. In-place startup with legacy v1 native authority preserves committed WG administrative settings but keeps client ingress guarded until explicit Apply. Corrupt v2 authority/artifacts stay guarded. ADR 0027 adds held acquisition and paused outgoing WireGuard to this recovery boundary.
 
-## Proposed restore contract (not implemented)
+## Safe restore contract (ADR 0027)
 
 [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
-[task 217](../../tasks/217-safe-cross-host-restore.md) propose the following behavior;
-current runtime invariants above remain the implementation record until validated.
+[task 217](../../tasks/217-safe-cross-host-restore.md) define the implemented restore behavior below. Local validation and independent
+review are recorded in the task; isolated network/staging acceptance is separate.
 
 All-restores default, offline staging/classification, exact managed-unit capability preflight, durable dual-service inhibitors, runtime quarantine, coherent current-destination recovery and journal-safe replacement.
 
 The same lifecycle lock covers managed installer binary publication through setup/start, with a verified inherited FD handoff. Inspect staged daemon/CLI capabilities before incompatible update/downgrade when any trusted restore state requires the protocol; no publication gap or version-label bypass.
 
-Proposed runtime start enforcement also uses a permanent managed ExecCondition calling
+Runtime start enforcement also uses a permanent managed ExecCondition calling
 a metadata-only CLI check. Publishing permits only the exact candidate under a short
 boot/operation/live-daemon-identity bound permit; stale reboot permits deny independently
 of daemon startup order. Abort must stop/verify the candidate after durable inhibition,
-not merely create a marker. This is pending ADR 0027 review/implementation proof.
+not merely create a marker. A marker or expired permit alone never proves an already running process stopped.
+
+Restore/recovery additionally require readable unified cgroup-v2 evidence and exact
+managed execution/config topology before any safety/service/DB mutation. Both durable
+inhibitors precede the first unit reload. Setup refuses any retained trusted restore
+state even after a compatible binary update. Incompatible downgrade checks include
+orphan permits and recovery manifests. Global reset and DB-mutating early flags inspect
+the canonical installation under its stable lifecycle lock, including alternate-path
+and symlink aliases. Explicit recovery restores the current destination, keeps prior
+hold and enabled intent, and separates passive recovered state from acknowledged
+activation. Even originally active runtime waits for explicit Apply.

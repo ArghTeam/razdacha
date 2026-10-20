@@ -189,3 +189,15 @@ BEFORE-to-AFTER database semantics, policy identity and host/services were stabl
 **Limits:** finite isolated nft/route/sing-box observations, a veth address adapter,
 no encrypted WG handshake, no application or production deployment. Final docs/current
 CI remain merge gates. See the [implementation record](../../tasks/done/220-native-ruleset-coherence.md).
+
+
+## 2026-10-20
+
+### #217 — Safe restore and explicit destination activation
+
+Every effective outgoing WG variant is classified offline and paused through existing flags, including WARP and raw WireGuard. Explicit guarded publication uses a checked candidate permit; Abort requires positive runtime stop before retryable inhibition.
+**Decision:** [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md).
+**Validation boundary:** local regression/process/browser checks and bounded independent
+corrective reviews are recorded in the [task](../../tasks/217-safe-cross-host-restore.md).
+Final integrated review, contained true-WireGuard fixture and isolated staging acceptance
+remain pending; no installed application, source host, deployment or release is changed.

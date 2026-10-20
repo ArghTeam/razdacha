@@ -122,3 +122,15 @@ handshake; finite queued capture observations, no universal lossless claim; nati
 SRS/JSON remains #220. No application or production deployment occurred.
 **Review:** pre-canary and owner gates passed. Distinct final review and current CI
 are required before merge. See the [completed implementation record](../../tasks/done/214-coherent-network-state.md).
+
+
+## 2026-10-20
+
+### #217 — Safe restore and explicit destination activation
+
+Serialized managed restore/recovery attests both canonical executables and permanent units, requires unified cgroup v2, stops both services and finalizes current-destination recovery before quarantine/invalidation. Explicit passive rollback and separate destination activation preserve original hold/service intent; originally active runtime still waits for Apply.
+**Decision:** [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md).
+**Validation boundary:** local regression/process/browser checks and bounded independent
+corrective reviews are recorded in the [task](../../tasks/217-safe-cross-host-restore.md).
+Final integrated review, contained true-WireGuard fixture and isolated staging acceptance
+remain pending; no installed application, source host, deployment or release is changed.

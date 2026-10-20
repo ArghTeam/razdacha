@@ -1,6 +1,6 @@
 # 0027. Restore with paused credentials and explicit destination activation
 
-Date: 2026-10-20 · Status: proposed; implementation and independent review pending
+Date: 2026-10-20 · Status: design accepted; implementation under independent review
 
 Partially supersedes [ADR 0016](0016-backup-full-and-encrypted.md): restoration
 preserves incoming identity, but does not automatically restore outgoing activation
@@ -17,7 +17,7 @@ DB-only backups omit native artifacts, so prohibiting acquisition until successf
 Apply would prevent recovery. Current destination state, rather than the imported
 archive, must be the rollback authority.
 
-## Proposed decision
+## Decision
 
 ### Scope and preserved data
 
@@ -63,7 +63,11 @@ paths and verifies ownership/permissions. Reject packaged/custom units, unknown
 drop-ins, additional config directories/files, wrappers, aliases, symlinks, alternate
 DB/config paths and unknown service-state query results before mutation. Never guess
 that a failed state query means inactive. This explicit compatibility restriction can
-be widened only with equally strong quarantine proof. The required permanent managed
+be widened only with equally strong quarantine proof. Restore/recovery additionally
+require readable unified cgroup-v2 evidence before mutation, so process-descendant
+verification never silently assumes a v1 filesystem layout. This is a restore-specific
+availability restriction, not a change to the normal installation OS matrix.
+The required permanent managed
 start-condition drop-ins and capable CLI helper must already be installed and loaded:
 a new daemon binary with older units lacking independent runtime start enforcement
 fails preflight. A compatible managed setup/update is a separate prerequisite, not an
@@ -326,8 +330,19 @@ until out-of-band recovery is simpler but removes local panel administration. Th
 narrow hold retains administration, with explicit runtime inhibition and fail-closed
 unsupported topology. Availability interruptions and extra destination review are accepted.
 
-## Required proof before acceptance
+## Required proof before implementation acceptance
 
 See [task 217](../../tasks/217-safe-cross-host-restore.md) for the baseline, failure,
-crash/restart, rollback and synthetic handshake matrix. This ADR is a proposal only:
-no implementation, test pass, independent approval, staging, merge or release is claimed.
+crash/restart, rollback and synthetic handshake matrix. The design passed independent
+review; implementation and bounded corrective reviews are recorded there. Final
+integrated review and isolated runtime/staging evidence remain required. Local process
+SIGKILL tests prove process-interruption ordering, not physical power loss, kernel reboot
+or storage-controller flush behavior. No merge, deployment or release is claimed.
+
+The private unexported restore test options expose only real-default DB file/parent sync
+and rename adapters plus a post-durable-cut observer. No environment, CLI or HTTP fault
+switch exists in production. Tests inject a single exact syscall failure or SIGKILL a
+real child after metadata, preparing record, dual inhibitors, verified stop, ingress
+guard, coherent recovery, runtime quarantine, authority invalidation, DB publication or
+complete record. These controls do not replace the production ordering or claim physical
+filesystem crash simulation. Both inhibitor files are synced before the first unit reload.

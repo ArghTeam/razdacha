@@ -38,12 +38,17 @@ description: загрузка и кэш .srs/plain-списков, распис�
 
 - Native regex limits per source: 1,024 patterns, 32 KiB aggregate raw bytes (4,096 per pattern); pre-expansion estimates charge original and DNS runtime copies against 64 Ki AST/rune units, 64 Ki expanded instructions and 128 Ki expanded rune entries. Compact syntax parsing precedes saturating estimates; over-budget patterns never reach Simplify/Compile or accepted-cache promotion. Unicode classes, counted repeats and cheap-pattern overhead remain bounded.
 
-## Proposed restore contract (not implemented)
+## Safe restore contract (ADR 0027)
 
 [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
-[task 217](../../tasks/217-safe-cross-host-restore.md) propose the following behavior;
-current runtime invariants above remain the implementation record until validated.
+[task 217](../../tasks/217-safe-cross-host-restore.md) define the implemented restore behavior below. Local validation and independent
+review are recorded in the task; isolated network/staging acceptance is separate.
 
 Held restore constructs no network rounds. Explicit restore resume permits acquisition before Apply so absent native artifacts do not deadlock recovery; background work still cannot publish pending policy.
 
 After resume and before the first explicit Apply, list/pool workers may acquire content but cannot recover/start runtime or publish without a committed generation.
+
+Resume synchronizes current saved source/catalog sets, intervals, filters and tunnel
+state before starting managers; construction-time imported snapshots cannot race an
+immediate fetch. Acquisition and scheduled checks never initialize/recover runtime or
+publish pending policy while restored runtime is inhibited.

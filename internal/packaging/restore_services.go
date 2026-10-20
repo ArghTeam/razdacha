@@ -85,6 +85,9 @@ func (s RestoreServices) Show(ctx context.Context, unit string) (map[string]stri
 var managedExec = regexp.MustCompile(`^\{ path=([^ ;]+) ; argv\[\]=([^;]+) ;[^{}]*\}$`)
 
 func (s RestoreServices) Preflight(ctx context.Context) (RestoreServiceState, error) {
+	if _, e := readManaged(filepath.Join(s.Root, "/sys/fs/cgroup/cgroup.controllers")); e != nil {
+		return nil, fmt.Errorf("restore/recovery requires readable unified cgroup-v2 evidence: %w", e)
+	}
 	result := make(RestoreServiceState)
 	for _, unit := range []string{DaemonUnit, SingboxUnit} {
 		p, e := s.Show(ctx, unit)
@@ -156,6 +159,9 @@ func (s RestoreServices) Preflight(ctx context.Context) (RestoreServiceState, er
 		default:
 			return nil, errors.New("restore refuses unsupported service enable state")
 		}
+		if cg := p["ControlGroup"]; cg != "" && cg != "/system.slice/"+unit {
+			return nil, errors.New("restore refuses unsupported managed service cgroup")
+		}
 		result[unit] = RestoreUnitState{Active: p["ActiveState"], Enabled: p["UnitFileState"]}
 	}
 	// The config path must not resolve through a symlink, nor share a loaded directory.
@@ -195,6 +201,9 @@ func (s RestoreServices) Inhibit(ctx context.Context, dir string) error {
 		if e := restorestate.WritePrivate(filepath.Join(dir, marker), []byte("1\n")); e != nil {
 			return e
 		}
+	}
+	// Install both durable restrictions before any reload can fail halfway.
+	for _, unit := range []string{DaemonUnit, SingboxUnit} {
 		parent := filepath.Join(s.Root, DefaultUnitDir, unit+".d")
 		if e := os.MkdirAll(parent, 0o755); e != nil {
 			return e
@@ -236,11 +245,16 @@ func (s RestoreServices) stopUnits(ctx context.Context, units []string) error {
 		// systemd's default KillMode=control-group drains all descendants before stop returns.
 		// Reject leftover cgroup processes, including a child whose MainPID already exited.
 		if cg := p["ControlGroup"]; cg != "" {
-			if !strings.HasPrefix(cg, "/system.slice/") || strings.Contains(cg, "..") {
+			if cg != "/system.slice/"+unit {
 				return errors.New("unsupported managed unit cgroup")
 			}
-			b, e := os.ReadFile(filepath.Join(s.Root, "/sys/fs/cgroup", cg, "cgroup.procs"))
-			if e != nil && !errors.Is(e, os.ErrNotExist) {
+			group := filepath.Join(s.Root, "/sys/fs/cgroup", cg)
+			b, e := readManaged(filepath.Join(group, "cgroup.procs"))
+			if errors.Is(e, os.ErrNotExist) {
+				if _, gone := os.Lstat(group); !errors.Is(gone, os.ErrNotExist) {
+					return errors.New("managed cgroup exists without readable process evidence")
+				}
+			} else if e != nil {
 				return e
 			}
 			if len(strings.TrimSpace(string(b))) != 0 {
@@ -269,11 +283,8 @@ func AttestRestoreBinary(ctx context.Context, path string) ([]byte, error) {
 	if e != nil {
 		return nil, errors.New("installed executable lacks safe restore capability; install compatible binaries first")
 	}
-	var capability struct {
-		RestoreProtocol int `json:"restore_protocol"`
-	}
-	if e = json.Unmarshal(out, &capability); e != nil || capability.RestoreProtocol != restorestate.Protocol {
-		return nil, errors.New("incompatible safe restore capability")
+	if strings.TrimSpace(string(out)) != fmt.Sprintf(`{"restore_protocol":%d}`, restorestate.Protocol) {
+		return nil, errors.New("incompatible or ambiguous safe restore capability")
 	}
 	again, e := binaryIdentity(path)
 	if e != nil || string(digest) != string(again) {

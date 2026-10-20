@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -188,4 +190,88 @@ func TestPasswordChangeCannotAliasIncompleteCanonicalRestore(t *testing.T) {
 	if _, e = os.Lstat(canonical); !os.IsNotExist(e) {
 		t.Fatal("password guard created or opened missing restored DB")
 	}
+}
+
+func TestRestoreResumeStartsActualPoolManagerFromCurrentSavedCatalog(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	st, e := store.Open(ctx, filepath.Join(dir, "state.db"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = st.Close() }()
+	var oldHits, newHits atomic.Int32
+	observed := make(chan struct{}, 1)
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/old/") {
+			oldHits.Add(1)
+		} else {
+			newHits.Add(1)
+			select {
+			case observed <- struct{}{}:
+			default:
+			}
+		}
+		_, _ = w.Write([]byte("vless://11111111-1111-4111-8111-111111111111@127.0.0.1:9?security=tls#Synthetic\n"))
+	}))
+	defer sink.Close()
+	driver, _, e := lists.PoolDriverFor(igareckCatalogURL)
+	if e != nil {
+		t.Fatal(e)
+	}
+	undo := lists.RegisterPoolDriver("127.0.0.1", driver)
+	defer undo()
+	tunnel, e := st.CreateTunnel(ctx, store.Tunnel{Name: "Synthetic audited pool", Type: store.TunnelVLESS, Source: store.SourcePool, Raw: sink.URL + "/old/", Enabled: true})
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctl := restoreControllerFixture(t, dir, true)
+	// Every attempted request is constrained to this synthetic observer even if a
+	// production driver tries its fallback: no real provider hostname is reachable.
+	client := &http.Client{Transport: restorePoolTransport{base: http.DefaultTransport, allowed: sink.URL}}
+	pools := lists.NewPoolManager(lists.PoolManagerOptions{Allow: ctl.Allowed, Catalog: &lists.PoolCatalog{Client: client, Log: quietSlog(), CheckKey: poolKeyCheck, Pause: -1}, Writer: st, Logger: quietSlog()})
+	snap, e := st.Snapshot(ctx)
+	if e != nil {
+		t.Fatal(e)
+	}
+	pools.SetTunnels(lists.PoolTunnels(snap))
+	defer func() { cancel(); pools.Wait() }()
+	g := newApplyGate(nil, &networkPublication{}, quietSlog())
+	if e = registerRestoreActivity(ctx, st, nil, pools, g, ctl); e != nil {
+		t.Fatal(e)
+	}
+	tunnel.Raw = sink.URL + "/current/"
+	if e = st.UpdateTunnel(ctx, tunnel); e != nil {
+		t.Fatal(e)
+	}
+	if oldHits.Load() != 0 || newHits.Load() != 0 {
+		t.Fatal("held pool contacted a catalog")
+	}
+	if e = ctl.Resume(); e != nil {
+		t.Fatal(e)
+	}
+	select {
+	case <-observed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("current saved catalog positive observer missing")
+	}
+	if oldHits.Load() != 0 {
+		t.Fatal("resume fetched stale imported catalog")
+	}
+	if _, e = g.applyPools(ctx, store.Snapshot{}); e == nil {
+		t.Fatal("pool acquisition published before explicit Apply")
+	}
+}
+
+type restorePoolTransport struct {
+	base    http.RoundTripper
+	allowed string
+}
+
+func (r restorePoolTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if !strings.HasPrefix(request.URL.String(), r.allowed+"/") {
+		return nil, fmt.Errorf("synthetic pool fixture rejected non-observer URL")
+	}
+	return r.base.RoundTrip(request)
 }

@@ -31,12 +31,18 @@ description: "SQLite: схема четырёх сущностей, миграц
 - `internal/store/snapshot.go` — полный снимок состояния для `internal/singbox`.
 - `docs/02-data-model.md` — схема и обоснование решений по ней.
 
-## Proposed restore contract (not implemented)
+## Safe restore contract (ADR 0027)
 
 [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
-[task 217](../../tasks/217-safe-cross-host-restore.md) propose the following behavior;
-current runtime invariants above remain the implementation record until validated.
+[task 217](../../tasks/217-safe-cross-host-restore.md) define the implemented restore behavior below. Local validation and independent
+review are recorded in the task; isolated network/staging acceptance is separate.
 
 Preserve incoming server/peer keys and exact policy/reference identity; change only effective outgoing WG enabled flags after offline validation. Keep callback hold outside imported settings and retain original destination enable intent in recovery material.
 
 Before migration/pause writes, admit only the schema-object allowlist derived from supported migrations; reject triggers/views/virtual or unknown objects and modified definitions. Reopen and verify exact supported-migration plus WG enabled-flag differences without silent repairs.
+
+Trusted state/permit/recovery JSON requires every safety field exactly once, with no
+null/default/duplicate inference. Retained inhibitor/permit/recovery evidence without
+authority fails closed. `recovery_activated` is granted only by acknowledged original
+destination recovery; imported WG remains paused. Held/inhibited startup opens only an
+existing current schema, without bootstrap migration or built-in pool reconciliation.

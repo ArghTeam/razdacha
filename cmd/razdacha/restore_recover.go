@@ -99,7 +99,7 @@ func recoverRestore(ctx context.Context, opts restoreOptions, operation string, 
 		if !recovery.DatabasePresent {
 			return errors.New("original destination had no database; rollback is safely inhibited and requires explicit fresh-install recovery")
 		}
-		if e = verifyRecoveredDatabase(operation, dbPath, recovery); e != nil {
+		if e = verifyRecoveredDatabase(dbPath, recovery); e != nil {
 			return e
 		}
 		priorHeld, e := restorestate.PreviousHold(dir, operation, recovery)
@@ -202,7 +202,7 @@ func recoverRestore(ctx context.Context, opts restoreOptions, operation string, 
 			if e = store.ValidateRestoreSchema(ctx, path); e != nil {
 				return e
 			}
-			if e = replaceDB(path, dbPath); e != nil {
+			if e = replaceDBUsing(path, dbPath, opts.dbFiles); e != nil {
 				return e
 			}
 			continue
@@ -344,7 +344,7 @@ func ensureRecoveryParent(path, anchor string) error {
 	}
 	return nil
 }
-func verifyRecoveredDatabase(op, db string, r restorestate.Recovery) error {
+func verifyRecoveredDatabase(db string, r restorestate.Recovery) error {
 	for _, file := range r.Files {
 		if file.Target == db && !file.Missing {
 			b, e := restorestate.ReadPrivate(db, 256<<20)

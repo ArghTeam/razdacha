@@ -20,6 +20,13 @@ func fixtureRestore(t *testing.T, ctx context.Context, opts restoreOptions, capt
 		return e
 	}
 	root := t.TempDir()
+	cgroup := filepath.Join(root, "sys", "fs", "cgroup")
+	if e := os.MkdirAll(cgroup, 0o700); e != nil {
+		return e
+	}
+	if e := os.WriteFile(filepath.Join(cgroup, "cgroup.controllers"), []byte("cpu memory pids\n"), 0o600); e != nil {
+		return e
+	}
 	active := map[string]bool{packaging.DaemonUnit: opts.unitActive != nil && opts.unitActive(ctx), packaging.SingboxUnit: true}
 	for _, unit := range []string{packaging.DaemonUnit, packaging.SingboxUnit} {
 		var content string
@@ -173,5 +180,55 @@ func TestRestoreHelperIdentityChangeKeepsDaemonBootInhibited(t *testing.T) {
 	}
 	if _, e := os.Stat(filepath.Join(dir, "restore-incomplete")); e != nil {
 		t.Fatal("helper mismatch removed durable daemon boot inhibition")
+	}
+}
+
+func TestRestoreRequiresUnifiedCgroupEvidenceBeforeMutation(t *testing.T) {
+	for _, kind := range []string{"missing", "unreadable", "nonregular"} {
+		t.Run(kind, func(t *testing.T) {
+			if kind == "unreadable" && os.Geteuid() == 0 {
+				t.Skip("root can read mode-000 files; missing/nonregular evidence is separately covered")
+			}
+			dir := t.TempDir()
+			db := filepath.Join(dir, "state.db")
+			original := stateWithPeer(t, "Synthetic retained destination")
+			if e := os.WriteFile(db, original, 0o600); e != nil {
+				t.Fatal(e)
+			}
+			mutations := 0
+			opts := restoreOptions{dbPath: db, file: writeFile(t, "incoming.db", stateWithPeer(t, "Synthetic incoming")), force: true, systemctl: func(context.Context, ...string) error { mutations++; return nil }, closeIngress: func() error { mutations++; return nil }}
+			e := fixtureRestore(t, context.Background(), opts, func(opts restoreOptions) {
+				path := filepath.Join(opts.services.Root, "sys", "fs", "cgroup", "cgroup.controllers")
+				if kind == "unreadable" {
+					if e := os.Chmod(path, 0); e != nil {
+						t.Fatal(e)
+					}
+				} else {
+					if e := os.Remove(path); e != nil {
+						t.Fatal(e)
+					}
+					if kind == "nonregular" {
+						if e := os.Mkdir(path, 0o700); e != nil {
+							t.Fatal(e)
+						}
+					}
+				}
+			})
+			if e == nil {
+				t.Fatal("unproven cgroup-v2 topology admitted")
+			}
+			if mutations != 0 {
+				t.Fatal("cgroup rejection followed service/guard mutation")
+			}
+			for _, name := range []string{"restore-state.json", "restore-incomplete", "restore-runtime-inhibit"} {
+				if _, e := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(e) {
+					t.Fatal("cgroup rejection installed trusted state/inhibitor")
+				}
+			}
+			b, e := os.ReadFile(db)
+			if e != nil || string(b) != string(original) {
+				t.Fatal("cgroup rejection modified destination DB")
+			}
+		})
 	}
 }

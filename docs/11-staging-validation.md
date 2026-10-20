@@ -36,7 +36,7 @@ one change before advancing to the next. These are sequential delivery dependenc
 | 3 | [#220: native rule-set coherence](../tasks/done/220-native-ruleset-coherence.md) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Validated on `d5cb9c1` and merged in PR #224: four fixed passes and four expected baseline failures; no product deployment |
 | 4 | [#215: safe peer deletion](../tasks/done/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Validated on `14e28b3`: two fixed passes and two positively proven baseline broadening failures; merged in PR #225 at `0da7e20` after five green CI checks |
 | 5 | [#216: clear UI secrets](../tasks/done/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Fixed 31/31; five positive baseline defects; creation baseline inconclusive; controller STOP |
-| 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
+| 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Local implementation under review; isolated execution pending |
 | 7 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
 
 The first three unsuccessful #214 attempts remain failed: initial UDP echo, initial DNS with unknown response status, and initial DNS REFUSED (5). Core refresh/failure observations were not reached. #222 does not replace its four
@@ -450,7 +450,7 @@ merge gates. Private raw artifacts/READY tokens are not repository evidence.
 
 ## Task 217 proposed fixture boundary (not executed)
 
-The [proposed ADR 0027](decisions/0027-safe-cross-host-restore.md) and expanded
+The [approved-design ADR 0027](decisions/0027-safe-cross-host-restore.md) and expanded
 [task matrix](../tasks/217-safe-cross-host-restore.md) require baseline forbidden
 activation/callback proof and fixed absence observations, not generic errors. All
 imported endpoints, source URLs and delivery sinks must be synthetic and contained.
@@ -472,3 +472,27 @@ Adversarial SQLite schema fixtures must reject triggers/views/virtual or unknown
 before migration; legitimate fixtures must preserve all rows except supported migrations
 and intended WG pause. Test reset-network refusal and zero implicit runtime publication
 from resumed workers before first Apply. None of these additional checks has run yet.
+
+
+### Task 217 local evidence boundary
+
+The implementation has local schema/classification, service/filesystem error, explicit
+rollback, real child-process SIGKILL, lock handoff/signal and localhost browser tests.
+Service adapters never call host systemd; installer tests overlay only private paths
+and owner spellings, replace downloads with synthetic archives, and use real flock.
+Filesystem error injection and SIGKILL do not prove physical power-loss, kernel reboot
+or storage-controller flush behavior. Intercepted browser requests prove frontend
+intent and localhost session behavior, not delivery or whole-daemon callback containment.
+
+Separate task #228 owns new contained true-WireGuard baseline/fix fixtures. It must prove
+zero attempted UDP initiation/transport toward synthetic WG endpoints while restored,
+then observed authenticated handshake/decrypted marker only after chosen enable plus
+explicit Apply, with independent direct/reachability positive controls. Actual production
+restore adapters and shared daemon startup/hold wiring must be exercised. No host-systemd
+socket, real provider key, production DB, installed app or excluded source host is involved.
+
+Do not execute namespace fixtures until fresh artifact/source hashes, runner containment,
+independent review and root GO are recorded. Staging is a disposable fixture host only;
+the real installed v0.10.0 service remains untouched. Record finite observer windows and
+all inconclusive results. The [task record](../tasks/217-safe-cross-host-restore.md) tracks
+remaining final acceptance and CI separately from local implementation checks.

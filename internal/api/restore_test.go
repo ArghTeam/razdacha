@@ -117,3 +117,40 @@ func TestRestoreHoldResumeRequiresSessionAndPersistence(t *testing.T) {
 		t.Fatal("uncertain persisted safety state started callbacks")
 	}
 }
+
+func TestRestoreResumeUsesCurrentBackupAndNotificationRecipients(t *testing.T) {
+	ctx := context.Background()
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	requireCode(t, saveNotify(t, ts, cookie, `{"enabled":true,"token":"100:synthetic-old-token","chat_id":"100"}`), http.StatusOK)
+	requireCode(t, ts.auth(t, cookie, http.MethodPut, "/api/backup", `{"enabled":true,"interval_hours":6,"passphrase":"synthetic-old-backup-phrase"}`), http.StatusOK)
+	ctl := heldAPI(t, ts)
+	oldSink, newSink := &fakeSender{}, &fakeSender{}
+	ts.notify = func(config store.NotifyConfig) notifySender {
+		if config.Token == "200:synthetic-current-token" && config.ChatID == "200" {
+			return newSink
+		}
+		return oldSink
+	}
+	requireCode(t, saveNotify(t, ts, cookie, `{"enabled":true,"token":"200:synthetic-current-token","chat_id":"200"}`), http.StatusOK)
+	requireCode(t, ts.auth(t, cookie, http.MethodPut, "/api/backup", `{"passphrase":"synthetic-current-backup-phrase"}`), http.StatusOK)
+	var last time.Time
+	ts.backupRound(ctx, &last)
+	if len(oldSink.docs)+len(newSink.docs)+len(oldSink.sent)+len(newSink.sent) != 0 {
+		t.Fatal("held saved edit contacted a recipient")
+	}
+	if e := ctl.Resume(); e != nil {
+		t.Fatal(e)
+	}
+	ts.backupRound(ctx, &last)
+	requireCode(t, ts.auth(t, cookie, http.MethodPost, "/api/notify/test", ""), http.StatusOK)
+	if len(oldSink.docs) != 0 || len(oldSink.sent) != 0 || len(newSink.docs) != 1 || len(newSink.sent) != 1 {
+		t.Fatal("resume used stale recipients or positive current recipient missing")
+	}
+	if _, e := store.DecryptBackup(newSink.docs[0].data, "synthetic-current-backup-phrase"); e != nil {
+		t.Fatalf("current saved backup phrase not used: %v", e)
+	}
+	if _, e := store.DecryptBackup(newSink.docs[0].data, "synthetic-old-backup-phrase"); e == nil {
+		t.Fatal("stale imported backup phrase used")
+	}
+}

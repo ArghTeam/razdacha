@@ -30,12 +30,16 @@ description: wg0, nft-правила и маршрутизация через ne
 
 - Supported native original routing, exact domain-only DNS and finite IPv4 nft projection share one accepted AST generation (ADR 0025). Active watched-blob corruption installs the guard and marks runtime uncertain, including when a pending candidate removes that source; rejected new input alone retains healthy last-good service. Existing DNS-port/local-address nft exemptions remain boundaries. No implicit catch-all interception or autonomous native refresh is allowed.
 
-## Proposed restore contract (not implemented)
+## Safe restore contract (ADR 0027)
 
 [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
-[task 217](../../tasks/217-safe-cross-host-restore.md) propose the following behavior;
-current runtime invariants above remain the implementation record until validated.
+[task 217](../../tasks/217-safe-cross-host-restore.md) define the implemented restore behavior below. Local validation and independent
+review are recorded in the task; isolated network/staging acceptance is separate.
 
 Restored client ingress stays guarded until explicit coherent Apply. Restore guard alone cannot contain independent runtime endpoints; persistent runtime inhibition is also required. Endpoint/WAN/NAT adaptation is explicit.
 
 Managed reset-network refuses guard removal for incomplete, held, resumed-but-runtime-inhibited or uncertain restore state. Only specified guarded publication or serialized recovery transitions may release restore protection.
+
+Global reset rejects alternate DB paths and holds the canonical lifecycle lease through
+state validation and network mutation. A coherent candidate saved before failed Finish
+does not authorize startup recovery while restore remains runtime-inhibited.

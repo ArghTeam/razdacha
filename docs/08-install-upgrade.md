@@ -435,70 +435,109 @@ Podkop показывает, почему это важно: там неполн
 при переустановке. Все системные изменения должны быть перечислены и обратимы; тест на
 чистое удаление — часть CI.
 
-## Восстановление состояния
+## Safe state restoration
 
-Копия состояния — это вся razdacha: пиры с приватными ключами, туннели, правила,
-настройки, пароль панели ([ADR 0016](decisions/0016-backup-full-and-encrypted.md)).
-Берётся она из панели (кнопка «Скачать состояние») или приезжает в телеграм по
-расписанию ([Оповещения](09-notifications.md#копия-состояния-по-расписанию)).
+A full backup includes incoming server/peer identity, private keys, tunnels, rules,
+settings and the panel password ([ADR 0016](decisions/0016-backup-full-and-encrypted.md)).
+External delivery stays encrypted. Restoring identity does not promise unchanged client
+connectivity: a new endpoint, WAN/NAT mapping or certificate can require client updates.
+[ADR 0027](decisions/0027-safe-cross-host-restore.md) applies to **every** restore.
 
-Порядок на новом сервере: сначала обычная установка, потом восстановление.
+Prepare a compatible managed destination first. Both installed daemon and canonical CLI
+helper must attest the restore protocol; both loaded managed units must have the permanent
+restore conditions, including sing-box's independent `runtime-start-allowed` ExecCondition.
+A new CLI alone cannot safely restore into an older installed daemon/helper. Restore and
+recovery require readable unified cgroup-v2 evidence; custom/packaged units, extra drop-ins,
+alternate config paths and uncertain service topology fail before mutation. This restriction
+applies to restore/recovery, without changing the general installation OS matrix.
+
+Before cutover review the destination endpoint/public hostname, WAN interface and routes,
+UDP port, firewall/NAT mapping, panel exposure and TLS SANs/trust. Retain out-of-band SSH.
+Then use the canonical managed installation:
 
 ```sh
-curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install.sh | sh
-razdacha restore /root/razdacha-state-20260815-031500.db.enc
+sudo razdacha restore -force -destination-reviewed -passphrase-file /root/backup-phrase /root/synthetic-backup.db.enc
 ```
 
-Команда сама останавливает `razdachad` перед подменой файла и запускает обратно после:
-у файла БД писатель один, и подмена под работающим демоном оставила бы в памяти прежнее
-состояние, а на диске — новое.
+`-force` is required only when replacing nonempty destination state. The passphrase may
+also come from `RAZDACHA_BACKUP_PASSPHRASE` or the terminal; it is never a command argument.
+`-db` and `-root` alternate installation paths are unsupported for restore.
 
-Restoration preserves client keys, but routing requires explicit Apply before clients
-resume. On a live host the CLI stops the daemon, installs the persistent ingress guard,
-and moves bootstrap authority aside durably before invalidating committed authority.
-Private `.before-restore-*` records remain available for controlled recovery. It then
-replaces the database and restarts the daemon guarded. The old routing manifest must
-never be replayed over restored identities. A DB-only backup intentionally does not
-carry automatic routing-publication authority. Cross-host safe migration and paused
-outgoing credentials are separate work in #217; these changes do not claim that feature.
-Update the endpoint and reissue client configs when a destination host changes.
+The CLI serializes the operation, privately decrypts/stages the archive, admits only the
+exact supported SQLite schema before migration, validates references/JSON and preserves
+all data except existing effective outgoing WireGuard enabled flags. WARP and raw parsed
+WireGuard are paused too. No imported provider key, URL or recipient is used for validation.
+Both services are persistently inhibited, stopped and verified before a coherent private
+**current destination** DB/runtime/authority/native/service/hold recovery set is finalized.
+Only then is the effective runtime config quarantined outside loaded directories, routing
+authority invalidated and the staged DB journal-safely published. Failure retains protection.
+The ordinary migration backup is never rollback authority.
 
-### Флаги
+A successful restore keeps external callbacks held, outgoing WireGuard paused, runtime
+inhibited and client ingress guarded. The daemon restarts only if previously active.
+Use its configured loopback HTTP port for held/reboot administration. For example, when
+the daemon uses port 8080:
 
-| Флаг | Что делает |
-|---|---|
-| `-db <путь>` | файл состояния, по умолчанию `/var/lib/razdacha/state.db` |
-| `-force` | разрешить восстановление поверх непустой БД |
-| `-passphrase-file <путь>` | прочитать фразу из файла вместо запроса в терминале |
+```sh
+ssh -L 18080:127.0.0.1:8080 admin@staging.example
+```
 
-Фраза не передаётся аргументом: аргументы процесса видны в `ps` любому пользователю
-системы. Терминала нет (запуск из скрипта) — есть `RAZDACHA_BACKUP_PASSPHRASE` в
-окружении и `-passphrase-file`.
+Open `http://localhost:18080` and sign in with the restored panel password. Secure session
+cookies are supported on localhost. Use the actual configured daemon port and SSH login;
+the old VPN address/HTTPS path may be unavailable because held startup does not create wg0.
 
-### Что команда проверяет до того, как что-то трогать
+Audit or replace saved URLs, credentials, notification recipients and scheduled backup
+delivery while held. The panel checklist and **Resume external activity** require two
+explicit acknowledgments. Resume starts acquisition and all audited external callbacks
+from the current saved settings, before Apply so missing native artifacts can be acquired.
+It never enables WireGuard or publishes runtime. Apply paused policy first, then enable
+only chosen WireGuard credentials and Apply again. Page loads, settings saves, archive
+fields, restart and network reset cannot clear the hold. Browser release checks also wait
+while held or trusted status is unavailable.
 
-**Зашифрованная копия отличается от обычной первыми байтами.** Наш контейнер начинается с
-магической строки `RZDBAK1\n`, файл SQLite — с `SQLite format 3\0`. Гадать по расширению
-незачем: формат виден из самого файла, и «дайте фразу» спрашивается только там, где она
-нужна. Файл, не похожий ни на то, ни на другое, отвергается сразу — до того, как у
-пользователя спросят фразу от файла, который всё равно не подойдёт.
+Managed installation retains the same stable lifecycle lock from binary publication through
+setup/start. An incompatible staged daemon/CLI pair is rejected before replacement whenever
+any trusted restore record, inhibitor, permit or recovery evidence remains. Compatible
+binaries may be published, but setup visibly refuses mutation/start while restore state
+exists; it does not reseed bootstrap authority or rewrite safe runtime. The lock inode is
+retained even by purge so a concurrent installer cannot acquire a replacement inode.
 
-**Копия от более новой версии отвергается.** Механизм тот же, что у демона при старте на
-схеме из будущего: восстановление открывает распакованную копию через тот же `store.Open`
-и получает от него ту же ошибку — «БД версии N новее, чем понимает эта версия razdacha».
-Второй проверки версий в системе нет и заводить её незачем.
+### Explicit current-destination recovery
 
-**Копия от более старой версии прогоняет миграции** — тем же открытием, до подмены файла.
-Не прогналась — восстановление отказывает, а рабочий файл остаётся нетронутым.
+Keep the printed private `/var/lib/razdacha/.restore-<operation>` path; do not publish its
+contents. Interrupted operations require local serialized recovery, never manual DB copies
+or replay of the imported runtime. To restore the current destination snapshot safely:
 
-**Поверх непустой БД — только с `-force`.** Непустой считается база, в которой есть хоть
-один пир, туннель или правило. Без флага команда перечисляет, что именно затрёт, и
-выходит с ненулевым кодом: случайный запуск на работающем сервере не должен стоить
-владельцу его пиров. С флагом прежний файл всё равно сохраняется рядом —
-`/var/lib/razdacha/backups/state-before-restore-<время>.db`.
+```sh
+sudo razdacha restore-recover -operation /var/lib/razdacha/.restore-OPERATION
+```
 
-Файлы `-wal` и `-shm` рядом с базой снимаются вместе с подменой: журнал от прежней базы
-поверх новой — это повреждённая база, а не старое состояние.
+This restores the original destination DB/authority/artifact/config set with both services
+stopped/inhibited and ingress guarded. A durable `recovered` phase is recorded only after
+the complete set succeeds. Retries are safe; partial `recovering` state never authorizes
+activation. Review original destination credentials and callbacks before separately using:
+
+```sh
+sudo razdacha restore-recover -operation /var/lib/razdacha/.restore-OPERATION -activate-destination
+```
+
+Activation preserves the original callback hold and enabled/disabled service settings,
+starts the daemon only if originally active, and leaves even a previously active runtime
+stopped/inhibited until explicit Apply of recovered policy. This is a deliberate availability
+restriction. Only this acknowledged original-destination path permits retaining its original
+WG enabled intent; it never enables imported WG. Failed enable/start may be explicitly retried.
+A destination with no original DB is rolled back to verified absence and remains safely
+inhibited; automatic fresh-install activation is unsupported. No recovery material is
+automatically garbage-collected.
+
+### Offline archive admission
+
+Encrypted files start with `RZDBAK1\n`; plain SQLite starts with `SQLite format 3\0`.
+Future/unknown schemas, triggers, views, virtual/unknown/modified objects, malformed JSON,
+broken references and unsupported WG metadata are rejected before live service/runtime/DB
+mutation. Supported old schemas migrate privately; exact allowed row differences are checked
+after pause and reopen. WAL/SHM from the old destination are checkpointed and removed durably
+before the replacement, preventing old journal pages from applying to an imported DB.
 
 ### Формат зашифрованной копии
 
@@ -523,16 +562,12 @@ p=4). AES-GCM даёт не только шифрование, но и пров�
 Неверная фраза и повреждённый файл неразличимы по построению — GCM отвечает одинаково.
 Команда так и говорит: «фраза не подходит или файл повреждён».
 
-## Ручное восстановление
+## Guarded network reset
 
-Если демон не стартует, интернет у клиентов не должен пропадать полностью. Прямой путь
-(masquerade) не зависит от sing-box, а nft-правила остаются в ядре после остановки
-демона — теряется только селективность. Для полного сброса:
-
-```sh
-razdachad --reset-network     # снять nft-правила, ip rule, маршруты; wg0 оставить
-```
-
+`razdachad -reset-network` removes global managed network state only for the canonical
+installation under the lifecycle lock. Alternate DB paths and incomplete, held,
+runtime-inhibited or corrupt restore state are refused. Reset is never an escape from
+restore protection; use the explicit recovery/publication path above.
 
 ## Guarded network generations and first upgrade
 
@@ -592,23 +627,3 @@ succeeds. Missing or corrupt v2 authority/artifacts remain fail-closed; the daem
 not fall back to remote fetching, pending database policy or omitted native rules.
 Keep out-of-band administrative access and follow the
 [native recovery contract](11-staging-validation.md#native-rule-set-fixture-and-recovery-contract-220).
-
-## Proposed safe restore contract (task 217; not implemented)
-
-[ADR 0027](decisions/0027-safe-cross-host-restore.md) proposes offline validation,
-paused outgoing WG credentials, durable independent-runtime inhibition and a trusted
-callback hold for every restore. Local administration would remain available; a
-separate explicit resume would allow external acquisition/schedules before Apply.
-A compatible installed daemon must attest that hold capability before mutation; using
-a newer CLI alone with an older daemon is insufficient. Unsupported effective units
-and extra config paths would fail preflight. Coherent current destination recovery
-material must precede quarantine and authority invalidation. Incoming identity is
-preserved, but endpoint/DNS/WAN/NAT, panel exposure and certificate SAN changes can
-require client updates. This proposal does not change existing command behavior yet.
-
-The proposed managed install/update contract also retains the restore lifecycle lock
-from executable publication through setup and service start using a validated inherited
-lock FD. When any trusted restore state requires protocol support, incompatible staged
-daemon/CLI update or downgrade is rejected before replacement. Schema-object admission
-precedes restore migrations, and managed reset-network cannot remove protection while
-restore is incomplete, held or runtime-inhibited. These are proposal requirements only.

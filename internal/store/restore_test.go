@@ -142,3 +142,33 @@ func TestPrepareRestoreChangesOnlySelectedEnabledFlags(t *testing.T) {
 		t.Fatal("registration changed")
 	}
 }
+
+func TestRestoreCurrentDestinationSnapshotIncludesCommittedWAL(t *testing.T) {
+	ctx := context.Background()
+	st := restoreFixture(t)
+	if _, e := st.DB().ExecContext(ctx, "PRAGMA wal_autocheckpoint=0"); e != nil {
+		t.Fatal(e)
+	}
+	peer, e := st.CreatePeer(ctx, Peer{Name: "Synthetic committed WAL peer", Address: "10.8.0.2/32", PublicKey: "synthetic-public", PrivateKey: "synthetic-private", PresharedKey: "synthetic-psk", Enabled: true})
+	if e != nil {
+		t.Fatal(e)
+	}
+	path := dbPathForTest(t, st)
+	info, e := os.Stat(path + "-wal")
+	if e != nil || info.Size() <= 32 {
+		t.Fatal("positive committed WAL fixture missing")
+	}
+	snapshot := filepath.Join(t.TempDir(), "current-destination.db")
+	if e = BackupAt(ctx, path, snapshot); e != nil {
+		t.Fatal(e)
+	}
+	recovered, e := OpenRestoreCurrent(ctx, snapshot)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = recovered.Close() }()
+	peers, e := recovered.Peers(ctx)
+	if e != nil || len(peers) != 1 || peers[0].ID != peer.ID || peers[0].PrivateKey != "synthetic-private" || peers[0].PresharedKey != "synthetic-psk" {
+		t.Fatalf("snapshot lost committed WAL identity: %+v %v", peers, e)
+	}
+}
