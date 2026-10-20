@@ -3,7 +3,7 @@
 import * as api from '../api.js';
 import * as qr from '../qr.js';
 import {
-  state, peerById, toast, toastError, openModal, modalShell,
+  state, peerById, tunnelById, closeModal, toast, toastError, openModal, modalShell,
   currentModalRevision, isCurrentModal, onModalCleanup,
   openMenu, notImplemented, notice, refresh, markDirty,
 } from '../shell.js';
@@ -46,6 +46,7 @@ export function view() {
             <span class="mono" style="color:var(--fg-dim);font-weight:400">${esc(p.address)}</span>
           </div>
           <div class="row-meta">${meta}</div>
+          <div class="row-meta">${routingSummary(p)}</div>
         </div>
         <div class="row-actions">
           <button class="btn btn-sm" data-act="peer-config" data-id="${esc(p.id)}">Конфиг</button>
@@ -183,6 +184,8 @@ export const actions = {
   'add-peer': modalAddPeer,
   'create-peer': createPeer,
   'peer-config': (id) => modalPeerConfig(id),
+  'peer-routing': modalPeerRouting,
+  'save-peer-routing': savePeerRouting,
 
   'download-conf': () => {
     const m = $('#modal');
@@ -197,6 +200,7 @@ export const actions = {
   'menu-peer': (id, btn) => {
     const p = peerById(id);
     openMenu(btn, [
+      { act: 'peer-routing', id, label: 'Routing' },
       { act: 'rename-peer', id, label: 'Переименовать' },
       { act: 'toggle-peer', id, label: p.enabled === false ? 'Включить' : 'Отключить' },
       { act: 'delete-peer', id, label: 'Удалить', danger: true },
@@ -249,3 +253,64 @@ export const actions = {
     } catch (err) { toastError(err, 'Не удалён'); }
   },
 };
+
+function routingSummary(peer) {
+  if (!peer.egress_tunnel_id) return 'Routing: shared rules';
+  const tunnel = tunnelById(peer.egress_tunnel_id);
+  const unavailable = !tunnel || !tunnel.enabled;
+  return `Internet → ${esc(tunnel ? tunnel.name : 'Missing tunnel')}${unavailable ? ' · blocked until the selected tunnel is available' : ''}`;
+}
+
+async function modalPeerRouting(id) {
+  const peer = peerById(id);
+  if (!peer) return;
+  const currentSession = api.session.guard();
+  const revision = openModal(modalShell('Client routing', '<div class="loading">Loading tunnels…</div>', '<button class="btn" data-act="close-modal">Close</button>'));
+  try {
+    const tunnels = await api.tunnels.list();
+    if (!currentSession() || !isCurrentModal(revision)) return;
+    state.tunnels = tunnels;
+    const current = peer.egress_tunnel_id;
+    const options = tunnels.map((t) => `<option value="${esc(t.id)}"${t.id === current ? ' selected' : ''}>${esc(t.name)}${t.enabled ? '' : ' (disabled — traffic blocked)'}</option>`).join('');
+    const missing = current && !tunnelById(current) ? `<option value="${esc(current)}" selected>Missing tunnel — traffic blocked</option>` : '';
+    openModal(modalShell(`Routing: ${peer.name}`, `
+      <div class="field"><label for="peer-routing-mode">Routing mode</label>
+        <select id="peer-routing-mode"><option value="shared"${current ? '' : ' selected'}>Shared rules</option><option value="tunnel"${current ? ' selected' : ''}>Whole Internet through a tunnel</option></select></div>
+      <div class="field" id="peer-routing-target-field"><label for="peer-routing-target">Outgoing tunnel</label>
+        <select id="peer-routing-target"><option value="">Select a tunnel</option>${missing}${options}</select></div>
+      <p class="hint">This client uses the selected exit for Internet traffic and DNS, instead of shared rules. If unavailable, traffic is blocked. Supports IPv4 TCP/UDP; IPv6, ping, other IP protocols and access to other private networks are blocked. This dashboard stays accessible. Save, then Apply.</p>`,
+      '<button class="btn" data-act="close-modal">Cancel</button><button class="btn btn-primary" data-act="save-peer-routing">Save routing</button>'), (modal) => {
+        modal.dataset.peerId = id;
+        const mode = modal.querySelector('#peer-routing-mode');
+        const field = modal.querySelector('#peer-routing-target-field');
+        const sync = () => { field.hidden = mode.value !== 'tunnel'; };
+        mode.addEventListener('change', sync);
+        sync();
+      });
+  } catch (err) { if (currentSession() && isCurrentModal(revision)) toastError(err, 'Cannot load routing'); }
+}
+
+async function savePeerRouting() {
+  const modal = $('#modal');
+  const id = modal.dataset.peerId;
+  const tunnel = $('#peer-routing-mode').value === 'tunnel' ? $('#peer-routing-target').value : null;
+  if (tunnel === '') { toast('Select an outgoing tunnel', 'err'); return; }
+  const revision = currentModalRevision();
+  const currentSession = api.session.guard();
+  const button = modal.querySelector('[data-act="save-peer-routing"]');
+  button.disabled = true;
+  try {
+    const peer = await api.peers.update(id, { egress_tunnel_id: tunnel });
+    if (!currentSession()) return;
+    const index = state.peers.findIndex((p) => p.id === id);
+    if (index !== -1) state.peers[index] = { ...state.peers[index], ...peer };
+    markDirty();
+    refresh();
+    if (isCurrentModal(revision)) closeModal();
+    toast('Routing saved. Apply to activate it.');
+  } catch (err) {
+    if (!currentSession() || !isCurrentModal(revision)) return;
+    button.disabled = false;
+    toastError(err, 'Routing was not saved');
+  }
+}

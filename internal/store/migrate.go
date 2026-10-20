@@ -184,6 +184,11 @@ ALTER TABLE tunnel_checks ADD COLUMN ok_at INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE tunnels ADD COLUMN country TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 12,
+		stmts: `ALTER TABLE peers ADD COLUMN egress_tunnel_id TEXT REFERENCES tunnels(id) ON DELETE RESTRICT;
+CREATE INDEX peers_egress_tunnel ON peers(egress_tunnel_id);`,
+	},
 }
 
 // schemaVersion — версия схемы, которую ожидает этот код.

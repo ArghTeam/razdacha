@@ -166,7 +166,7 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 			}
 		}
 	}
-	if err := writeGeneration(n.path, networkGeneration{Version: 2, Policy: snap, Lists: selected}); err != nil {
+	if err := writeGeneration(n.path, networkGeneration{Version: 3, Policy: snap, Lists: selected}); err != nil {
 		return res, fmt.Errorf("clients remain guarded: %w", err)
 	}
 	seedPath := n.bootstrapPath
@@ -311,4 +311,15 @@ func initialWGSettings(ctx context.Context, st *store.Store, dbPath string) (sto
 		return store.Settings{}, err
 	}
 	return gen.Policy.Settings, nil
+}
+
+// Pending is a read-only policy comparison under the same publication gate.
+func (g *applyGate) Pending(ctx context.Context, st *store.Store) (bool, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	snap, err := st.Snapshot(ctx)
+	if err != nil {
+		return false, err
+	}
+	return !g.network.initialized || g.network.uncertain || !reflect.DeepEqual(g.base, snap), nil
 }

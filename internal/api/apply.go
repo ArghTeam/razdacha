@@ -117,3 +117,22 @@ func applyDetail(res singbox.ApplyResult, nft *nftResponse) string {
 	}
 	return fmt.Sprintf("%s; подсетей в nft-сете: %d", detail, nft.Subnets)
 }
+
+// PendingApplier compares editable state with committed authority without publication.
+type PendingApplier interface {
+	Pending(context.Context, *store.Store) (bool, error)
+}
+
+func (s *Server) handleApplyStatus(w http.ResponseWriter, r *http.Request) {
+	pending, ok := s.applier.(PendingApplier)
+	if !ok {
+		writeError(w, s.log, http.StatusServiceUnavailable, codeNotReady, "Applied network status is unavailable")
+		return
+	}
+	dirty, err := pending.Pending(r.Context(), s.store)
+	if err != nil {
+		s.storeError(w, err, "Applied network status unavailable")
+		return
+	}
+	writeJSON(w, s.log, http.StatusOK, map[string]bool{"dirty": dirty})
+}

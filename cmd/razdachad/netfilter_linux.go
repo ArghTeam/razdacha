@@ -34,7 +34,7 @@ func startNetfilter(ctx context.Context) (netfilter, error) {
 		if err != nil {
 			return 0, err
 		}
-		rs, err := nft.Apply(netstack.NftConfig{WANInterface: wan, ResolverAddr: snap.Settings.WGServerAddress, Subnets: subnets})
+		rs, err := nft.Apply(netstack.NftConfig{WANInterface: wan, ResolverAddr: snap.Settings.WGServerAddress, Subnets: subnets, PeerEgress: netstack.PeerEgressSources(snap.Peers)})
 		if err != nil {
 			return 0, err
 		}

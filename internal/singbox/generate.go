@@ -122,6 +122,12 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 		},
 	}}
 
+	egress, err := peerEgress(snap, dns, tunnels, skipped)
+	if err != nil {
+		return option.Options{}, nil, err
+	}
+	routeRules = append(routeRules, egress...)
+
 	var ruleSets []option.RuleSet
 	// Один community-список могут использовать несколько правил, а тег набора в
 	// конфиге обязан быть уникальным.

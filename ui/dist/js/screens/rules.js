@@ -395,7 +395,7 @@ function probeView() {
   return `
     <div class="card probe">
       <div class="probe-bar">
-        <label for="probe-domain">Проверить домен</label>
+        <label for="probe-domain">Shared rules: domain check</label>
         <input type="search" id="probe-domain" class="probe-input" autocomplete="off" spellcheck="false"
           placeholder="youtube.com" value="${esc(probe.domain)}" data-enter="probe-run"
           aria-label="Домен для проверки">
@@ -404,7 +404,7 @@ function probeView() {
         <button class="btn" data-act="reach-run" ${busy ? 'disabled' : ''}>${
   reach.busy ? 'Проверяю…' : 'Доступность напрямую'}</button>
       </div>
-      <div class="probe-hint"><b>Куда уйдёт</b> — отвечает работающий sing-box: его правила
+      <div class="probe-hint"><b>Scope: shared rules.</b> Per-client whole-Internet exits are not evaluated here. <b>Куда уйдёт</b> — отвечает работающий sing-box: его правила
         маршрутизации и его же резолвер; непримененные правки в ответ не попадают.
         <b>Доступность напрямую</b> — демон сам идёт к домену с адреса сервера и говорит, открывается
         ли тот в лоб или отдаёт геоблок (403/451, Cloudflare 1020).</div>
@@ -583,7 +583,7 @@ function modalRule(id, seed = null) {
 
   const peersHtml = state.peers.map((p) => `
     <label class="rule-item"><input type="checkbox" name="peer" value="${esc(p.id)}" ${(r.peer_ids || []).includes(p.id) ? 'checked' : ''}>
-      <span class="rule-item-name">${esc(p.name)}</span></label>`).join('');
+      <span class="rule-item-name">${esc(p.name)}${p.egress_tunnel_id ? ' · whole-Internet exit overrides this rule' : ''}</span></label>`).join('');
 
   /* Поток сверху вниз, а не две зоны: каталог из двух десятков сервисов —
      самый широкий блок формы, и в половине окна ему доставались две колонки по

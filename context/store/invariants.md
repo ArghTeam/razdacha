@@ -30,3 +30,5 @@ description: "SQLite: схема четырёх сущностей, миграц
 - `internal/store/model.go` — четыре сущности и их валидация.
 - `internal/store/snapshot.go` — полный снимок состояния для `internal/singbox`.
 - `docs/02-data-model.md` — схема и обоснование решений по ней.
+
+- Peer egress references are nullable, transactionally validated and protected by FK RESTRICT. Disabled targets remain selected. API-style peer patches read/write only supplied fields transactionally so rename/toggle cannot erase a concurrent exit choice. Backups retain the choice; existing clients migrate to shared rules (ADR 0028).

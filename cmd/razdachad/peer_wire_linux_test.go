@@ -84,7 +84,7 @@ func newPeerWire(t *testing.T) *peerWire {
 			return 0, err
 		}
 		subnets := generationSubnets(s, content)
-		result, err := nf.Apply(netstack.NftConfig{WANInterface: "wan0", ResolverAddr: s.Settings.WGServerAddress, Subnets: subnets})
+		result, err := nf.Apply(netstack.NftConfig{WANInterface: "wan0", ResolverAddr: s.Settings.WGServerAddress, Subnets: subnets, PeerEgress: netstack.PeerEgressSources(s.Peers)})
 		if err == nil && result.SkippedSubnets != 0 {
 			err = fmt.Errorf("invalid synthetic subnet")
 		}

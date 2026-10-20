@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/ArghTeam/razdacha/internal/ippolicy"
 	"go4.org/netipx"
 )
 
@@ -39,6 +40,8 @@ const (
 	SetLocalV4 = "local_v4"
 	// SetSubnets — подсети из списков (слой lists), для них FakeIP не работает.
 	SetSubnets = "razdacha_subnets"
+	// SetPeerEgress holds exact sources whose Internet traffic must enter the proxy.
+	SetPeerEgress = "peer_egress"
 )
 
 // Числа сетевого пути. FwMark и TProxy* совпадают с Podkop и с генератором
@@ -69,19 +72,12 @@ var FakeIPRange = netip.MustParsePrefix("198.18.0.0/15")
 
 // localV4 — содержимое сета local_v4 из docs/03-networking.md: адреса, до
 // которых клиент ходит напрямую, даже если они попали в список подсетей.
-var localV4 = []string{
-	"0.0.0.0/8",
-	"10.0.0.0/8",
-	"127.0.0.0/8",
-	"169.254.0.0/16",
-	"172.16.0.0/12",
-	"192.168.0.0/16",
-	"224.0.0.0/4",
-	"240.0.0.0/4",
-}
+var localV4 = ippolicy.LocalIPv4()
 
 // NftConfig — состояние, из которого строится набор правил.
 type NftConfig struct {
+	// PeerEgress contains exact IPv4 addresses from the committed peer policy.
+	PeerEgress []string
 	// WGInterface — интерфейс клиентов, пусто означает wg0.
 	WGInterface string
 	// WANInterface — внешний интерфейс, на него уходит masquerade.
@@ -136,6 +132,8 @@ type NftRule struct {
 	DstPrefixNeq bool
 	// DstSet — совпадение адреса назначения с сетом по имени.
 	DstSet string
+	// SrcSet matches IPv4 source addresses, never destination prefixes.
+	SrcSet string
 	// L4Proto — "tcp" или "udp".
 	L4Proto string
 	// DstPort — порт назначения, 0 означает «любой». Требует непустого
@@ -207,6 +205,12 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 		return NftRuleset{}, err
 	}
 
+	for _, source := range cfg.PeerEgress {
+		if a, err := netip.ParseAddr(source); err != nil || !a.Is4() {
+			return NftRuleset{}, fmt.Errorf("invalid whole-Internet source address")
+		}
+	}
+	egress, _ := MergeSubnets(cfg.PeerEgress)
 	local, _ := MergeSubnets(localV4)
 	subnets, skipped := MergeSubnets(cfg.Subnets)
 
@@ -217,6 +221,10 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 			{Name: SetSubnets, Elements: subnets},
 		},
 		SkippedSubnets: skipped,
+	}
+
+	if len(egress) > 0 {
+		rs.Sets = append(rs.Sets, NftSet{Name: SetPeerEgress, Elements: egress})
 	}
 
 	// mangle: что маркируется. Первое правило отсекает всё, что пришло не от
@@ -235,8 +243,18 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 		mangleRules = append(mangleRules,
 			portRules(NftRule{NFProto: "ipv4", DstPort: port, Action: ActionReturn})...)
 	}
+	if len(egress) > 0 {
+		mangleRules = append(mangleRules, NftRule{NFProto: "ipv4", DstPrefix: netip.PrefixFrom(resolver, 32), Action: ActionReturn})
+	}
+	mangleRules = append(mangleRules, NftRule{NFProto: "ipv4", DstSet: SetLocalV4, Action: ActionReturn})
+	if len(egress) > 0 {
+		mangleRules = append(mangleRules,
+			portRules(NftRule{NFProto: "ipv4", SrcSet: SetPeerEgress, Action: ActionMark})...)
+		// Mark is nonterminal. Return also prevents unsupported protocols from
+		// reaching ordinary FakeIP/subnet marks and routing to the local table.
+		mangleRules = append(mangleRules, NftRule{NFProto: "ipv4", SrcSet: SetPeerEgress, Action: ActionReturn})
+	}
 	mangleRules = append(mangleRules,
-		NftRule{NFProto: "ipv4", DstSet: SetLocalV4, Action: ActionReturn},
 		NftRule{NFProto: "ipv4", DstPrefix: FakeIPRange, Action: ActionMark},
 		NftRule{NFProto: "ipv4", DstSet: SetSubnets, Action: ActionMark},
 	)
@@ -295,6 +313,9 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 		{IIf: wg, NFProto: "ipv4", L4Proto: "tcp", TCPSyn: true, Action: ActionClampMSS},
 		{OIf: wg, NFProto: "ipv4", L4Proto: "tcp", TCPSyn: true, Action: ActionClampMSS},
 		{IIf: wg, NFProto: "ipv6", Action: ActionRejectICMPv6},
+	}
+	if len(egress) > 0 {
+		forwardRules = append(forwardRules, NftRule{IIf: wg, NFProto: "ipv4", SrcSet: SetPeerEgress, Action: ActionRejectICMP})
 	}
 	forwardRules = append(forwardRules, portRules(NftRule{
 		IIf: wg, NFProto: "ipv4", DstPort: DoTPort, Action: ActionRejectICMP,

@@ -250,3 +250,15 @@ net.ipv4.ip_forward = 1
 `wireguard`, `nft_tproxy`, `nft_socket`, `nf_tables`, `nft_chain_nat` (masquerade и
 перехват DNS). Проверка доступности — часть установщика, см.
 [поддержка платформ](07-platform-support.md).
+
+## Source-scoped Internet exits
+
+ADR 0028 adds an exact IPv4 source set derived from the committed peers. After DNS
+and local/gateway exemptions, selected TCP/UDP is marked for TProxy and a terminal
+source return prevents unsupported protocols from reaching ordinary destination marks.
+A source-scoped FORWARD reject blocks residual/private forwarding and old direct flows.
+Other peers retain existing interception. No destination `0.0.0.0/0` is added.
+
+The TProxy/userspace WireGuard runtime supports TCP/UDP, not arbitrary IP transport.
+IPv6 remains rejected. Local gateway INPUT/DNS remains accessible even when its
+configured WG address is outside RFC1918. Publication uses the existing ingress gate.

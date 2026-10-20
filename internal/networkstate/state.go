@@ -59,8 +59,15 @@ func Read(path, kind string) (Generation, error) {
 	if err := json.Unmarshal(data, &gen); err != nil {
 		return gen, fmt.Errorf("decode committed network generation: %w", err)
 	}
-	if (gen.Version != 1 && gen.Version != 2) || gen.Kind != kind || gen.Lists == nil {
+	if (gen.Version != 1 && gen.Version != 2 && gen.Version != 3) || gen.Kind != kind || gen.Lists == nil {
 		return gen, errors.New("invalid committed network generation")
+	}
+	if gen.Version < 3 {
+		for _, p := range gen.Policy.Peers {
+			if p.EgressTunnelID != nil {
+				return gen, errors.New("peer routing requires generation version 3")
+			}
+		}
 	}
 	return gen, nil
 }
