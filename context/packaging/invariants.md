@@ -5,6 +5,7 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 ---
 
 ## Invariants
+- Tags containing a prerelease suffix, such as `v0.11.0-rc.1`, publish as GitHub prereleases with `latest=false`. Stable tags retain the existing release behavior; staging candidates must not replace `/releases/latest/download` for normal installations.
 - Версия Go задаётся один раз — в `go.mod`; CI читает её через `go-version-file`, числом нигде не дублируется.
 - `CGO_ENABLED=0` проверяется отдельным шагом CI, а не подразумевается: нарушение роняет job (ADR 0006).
 - Линт в CI и `make lint` используют один и тот же корневой `.golangci.yml`; конфиг не передаётся флагом.
