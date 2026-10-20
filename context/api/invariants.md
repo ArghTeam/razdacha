@@ -65,3 +65,5 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 current runtime invariants above remain the implementation record until validated.
 
 Local authenticated administration remains available during a trusted restore hold. External manual actions and callbacks are blocked; a dedicated authenticated resume permits acquisition and schedules before Apply without enabling WG or releasing ingress.
+
+Purely local diagnostics and the compiled-in community catalog stay available; WARP deletion is gated before local deletion. Resumed checks cannot implicitly start runtime or publish policy.

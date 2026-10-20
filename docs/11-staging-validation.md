@@ -463,3 +463,12 @@ required for handshake claims. Crash/journal/fsync, runtime-quarantine, callback
 and coherent current-destination recovery cases are required. Independent threat-model
 review and root's explicit runner GO precede staging; a different independent reviewer
 assesses final code and actual evidence. No staging or approval is claimed here.
+
+The proposed matrix additionally requires deterministic installer/restore contention
+across attestation and ExecStart, inherited-lock handoff/cancellation checks, partial
+binary-publication failures and incompatible update/downgrade rejection for every
+trusted restore-state phase. All use fixture executable/unit roots and service adapters.
+Adversarial SQLite schema fixtures must reject triggers/views/virtual or unknown objects
+before migration; legitimate fixtures must preserve all rows except supported migrations
+and intended WG pause. Test reset-network refusal and zero implicit runtime publication
+from resumed workers before first Apply. None of these additional checks has run yet.

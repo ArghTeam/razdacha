@@ -119,3 +119,41 @@ prove forbidden activation or callback prevention.
   are authorized by this design-only phase.
 - Final code/test/docs/evidence review is by a reviewer different from the threat reviewer
   and implementation author. No unresolved P0/P1 may be declared ready.
+
+## Design-gate revisions (proposed; not implemented)
+
+The independent review of frozen planning commit `322a8f1` requested changes for the
+managed installer ownership gap. Revised ADR 0027 extends the same nonblocking lifecycle
+lock over `packaging/install.sh` executable publication, setup and service start, with
+a verified inherited file-descriptor handoff and no unlock/relock gap. Both staged
+candidates are inspected through a harmless capability mode before publication whenever
+ANY trusted restore record requires the protocol, including resumed/completed/recovery
+state. Incompatible downgrade/update, unknown state and invalid handoff fail closed;
+installed executable identity/hash is still checked before startup. No implicit upgrade.
+
+Before migrations or WG pause writes, verify the complete supported SQLite schema-object
+allowlist for the declared version. Reject triggers, views, virtual tables, unknown
+objects and modified definitions without repair. After supported migration, pause and
+reopen, verify schema identity and exact permitted row differences, including settings,
+checks, sessions and raw credentials. This prevents imported executable schema behavior
+from later undoing the pause. Integrity/version/count checks alone do not qualify.
+
+The managed reset-network command must refuse guard removal for incomplete, held or
+runtime-inhibited restore state, including resumed-before-Apply. Corrupt state also
+refuses reset. Only specified guarded publication or serialized recovery transitions
+may release restore safety state. Setup/update/uninstall cannot provide an escape hatch.
+
+| Additional deterministic cases | Required result |
+|---|---|
+| Restore paused between final daemon attestation and ExecStart; installer attempts binary replacement | Installer fails to acquire the shared lock before either executable changes; no unsupported daemon starts |
+| Installer owns lock across daemon/CLI rename, setup and start; competing restore/setup/uninstall | Competitor rejects before shared mutation; one owner throughout |
+| Valid inherited lock FD, missing/wrong FD, wrong inode/permissions, independent FD and signals | Valid handoff has no gap/deadlock; invalid ownership rejects; no leaked long-lived child lock; cancellation retains safe inhibitors |
+| Incompatible staged update/downgrade with incomplete, held, resumed, completed or recovery record | Harmless staged capability check rejects before installed binary publication; version labels cannot bypass |
+| Candidate changes after attestation; first/second binary rename fails; setup/start fails | No unverified daemon or incompatible pair starts; failure visible, restore inhibitors and coherent recovery retained |
+| Trigger on settings/check writes that would re-enable WG; view/virtual table/unknown object; altered known table/index | Reject schema before any migration/pause writes or live mutation; no silent dropping/repair |
+| Valid older/current schemas through migrate/pause/reopen | Exact supported schema and only supported migration plus intended WG enabled differences; all other rows/bytes preserved |
+| reset-network during partial restore, hold, resumed-but-inhibited and corrupt state | Guard and restore markers remain; visible refusal; no indirect publication/runtime activation |
+| Resume then scheduled checks, source edits, list/pool refresh before first Apply | Acquisition allowed but zero runtime start/recovery, ingress release or implicit policy publication |
+
+These are implementation obligations, not completed tests or review approval. The
+revised frozen ADR must receive independent re-review before implementation starts.

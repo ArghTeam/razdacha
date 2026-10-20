@@ -58,3 +58,5 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 current runtime invariants above remain the implementation record until validated.
 
 All-restores default, offline staging/classification, exact managed-unit capability preflight, durable dual-service inhibitors, runtime quarantine, coherent current-destination recovery and journal-safe replacement.
+
+The same lifecycle lock covers managed installer binary publication through setup/start, with a verified inherited FD handoff. Inspect staged daemon/CLI capabilities before incompatible update/downgrade when any trusted restore state requires the protocol; no publication gap or version-label bypass.

@@ -38,3 +38,5 @@ description: "SQLite: схема четырёх сущностей, миграц
 current runtime invariants above remain the implementation record until validated.
 
 Preserve incoming server/peer keys and exact policy/reference identity; change only effective outgoing WG enabled flags after offline validation. Keep callback hold outside imported settings and retain original destination enable intent in recovery material.
+
+Before migration/pause writes, admit only the schema-object allowlist derived from supported migrations; reject triggers/views/virtual or unknown objects and modified definitions. Reopen and verify exact supported-migration plus WG enabled-flag differences without silent repairs.

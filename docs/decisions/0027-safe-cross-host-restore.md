@@ -26,8 +26,19 @@ address or key comparison grants an exception. Restore never discovers, probes,
 contacts, disables or changes the source host. Validation is offline; no imported
 URL, provider key or notification recipient is used during validation.
 
-Migrate a private staged copy using existing migrations, then validate structural
-integrity, references and tunnel metadata before live mutation. Preserve incoming
+Before running any migration or pause write, inspect the private staged SQLite file
+read-only with extension loading disabled and untrusted schema handling. Compare its
+complete schema-object set against an allowlist derived from the supported migrations
+for its declared schema version, including expected table definitions, constraints,
+columns, foreign keys and indexes and only expected SQLite internal objects. Reject
+unsupported triggers, views, virtual tables, unknown objects and modified definitions;
+never silently drop or repair them. A plausible `user_version`, `integrity_check` and
+foreign-key checks alone are insufficient: a trigger on later settings/check writes
+could undo the WG pause. After this admission, migrate using existing migrations,
+validate references/metadata, pause effective WG and close/reopen the staged DB. Verify
+schema identity again and exact permitted row differences: supported migration output
+plus only the intended WG enabled-flag changes, including no changes to settings,
+checks, sessions or credential bytes beyond supported migrations. Preserve incoming
 server identity, every peer key, IDs, rule order, enabled intent, destinations,
 conditions, source scopes and both tunnel references. Preserve tunnel raw/parsed
 credentials, pool ordering and WARP registration material. The only intentional
@@ -65,9 +76,40 @@ allowing daemon startup; changed/missing binaries retain the boot inhibitor. A n
 against an older installed daemon must fail before mutation and instruct the operator
 to install compatible binaries first. No implicit daemon upgrade is part of restore.
 
-Take one nonblocking installation-wide lifecycle lock, also honored by setup and
-uninstall, before shared mutation. A competing restore fails without touching the
-first operation. Each operation uses a unique 0700 staging/recovery directory and
+Take one nonblocking installation-wide lifecycle lock before shared mutation. Managed
+`packaging/install.sh` install/update, setup, uninstall, restore and restore recovery
+all honor the same stable private lock inode. The shell installer must acquire it
+**before publishing either installed executable** and retain ownership through both
+binary replacements, setup and service start/verification; taking it only in setup
+leaves a capability-check-to-ExecStart race. Downloads/extraction may be private staging
+outside the lock, but no installed binary or shared install state changes there.
+
+Under that lock, inspect ANY trusted restore state, including incomplete, held,
+resumed/runtime-inhibited, completed and recovery records. Before executable replacement,
+run the staged daemon and CLI's harmless metadata-only capability mode and bind results
+to their verified trusted regular files/content hashes. Reject an incompatible update
+or downgrade before publication whenever that state requires the restore protocol;
+unknown/corrupt state is an error. Retain the installed-daemon attestation and final
+identity/hash check before startup as well. Matching version labels are insufficient.
+Binary-publication interruption preserves inhibitors and cannot report success; setup
+must never start an unverified daemon or continue with an incompatible binary pair. All managed candidate publication uses
+the lock, closing the legitimate installer/restore replacement race.
+
+Use an inherited exclusive-lock file descriptor for the shell-to-CLI handoff, not an
+environment boolean or unlocking/relocking gap. Setup validates the inherited descriptor
+against the canonical lock's inode, owner, mode and regular-file/no-symlink requirements,
+and successfully requests the same nonblocking exclusive lock before accepting it.
+The descriptor retains the same kernel open-file description; CLI callers without a
+valid inherited descriptor acquire the lock normally or fail. Keep an owner alive
+until setup/start finishes; propagate failures/signals and wait for the child before
+normal release. Mark the descriptor close-on-exec for unrelated child commands so no
+long-lived service inherits lifecycle ownership. Never unlink/replace a locked file.
+An invalid handoff fails before publication/setup, and a second independent owner is
+rejected rather than waiting or deadlocking itself. This is a bounded managed installer
+protocol, not authorization for arbitrary historical installer scripts or direct root
+binary replacement to bypass restore safety.
+
+A competing restore fails without touching the first operation. Each operation uses a unique 0700 staging/recovery directory and
 0600 files on the destination filesystem. No shared `.restore` filename or deletion
 of another operation's files is allowed. Root/host compromise and unmanaged processes
 that bypass managed unit/lifecycle controls are outside this contract.
@@ -79,7 +121,8 @@ framework. Write/sync each private file before publishing its name; sync every a
 parent after rename, create or removal, including service drop-in directories.
 Unsupported filesystems or failed synchronization are errors. Test the following order:
 
-1. Lock, decrypt, stage, migrate, classify/pause and validate offline. Inspect effective
+1. Lock, decrypt, stage, admit the exact supported schema before writes, migrate,
+   classify/pause, reopen and verify exact permitted differences offline. Inspect effective
    units/config paths and destination adaptation answers. Record initial active/enabled
    unit state, original inhibitor/drop-in contents and any existing trusted restore hold
    before mutation. Durably save this initial metadata in private recovery storage
@@ -163,6 +206,12 @@ diag collection from external checks if necessary; a GET must not accidentally p
 Saving external settings remains local and cannot launch a refresh. Manual actions do
 not individually bypass or clear the hold. After resume their existing explicit intent
 semantics apply; callbacks still cannot publish pending DB policy implicitly.
+Resumed list/pool/check workers cannot recover or start runtime, clear inhibition or
+publish anything while no committed generation exists. Once explicit Apply establishes
+a generation, background updates retain the existing committed-policy-only contract.
+The compiled-in community catalog and purely local diagnostics remain available; any
+future external variant is gated before the action. WARP deletion must check the hold
+before deleting its local row, not after the provider callback is reached.
 
 After acquisition, explicit Apply prepares/checks a full configuration using paused WG
 and preserves unavailable-tunnel domain/CIDR rejection and selected-orphan handling.
@@ -174,6 +223,15 @@ enable plus subsequent Apply is required to activate chosen outgoing WG credenti
 background work/reboot cannot publish that pending edit. Resume alone never releases
 client traffic. After successful paused Apply, ordinary direct and non-WG policy may
 operate as saved, while rules depending on paused first/second hops reject.
+
+The managed `razdachad -reset-network` entry point must inspect trusted restore state
+before removing nft/routing state. It refuses guard removal while a transaction is
+incomplete, callbacks are held or runtime is inhibited, even after callback resume.
+Corrupt/uncertain state also refuses reset. Only the explicitly specified guarded
+publication or serialized recovery transition may change restore safety state; ordinary
+reset, setup, update or uninstall cannot silently bypass it. Any destructive uninstall
+with retained restore state must either reject or use an explicitly defined serialized
+recovery/teardown path, preserving recovery material and never starting credentials.
 
 ### Destination adaptation
 

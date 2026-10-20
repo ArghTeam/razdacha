@@ -37,3 +37,5 @@ description: wg0, nft-правила и маршрутизация через ne
 current runtime invariants above remain the implementation record until validated.
 
 Restored client ingress stays guarded until explicit coherent Apply. Restore guard alone cannot contain independent runtime endpoints; persistent runtime inhibition is also required. Endpoint/WAN/NAT adaptation is explicit.
+
+Managed reset-network refuses guard removal for incomplete, held, resumed-but-runtime-inhibited or uncertain restore state. Only specified guarded publication or serialized recovery transitions may release restore protection.

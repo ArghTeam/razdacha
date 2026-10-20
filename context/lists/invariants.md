@@ -45,3 +45,5 @@ description: загрузка и кэш .srs/plain-списков, распис�
 current runtime invariants above remain the implementation record until validated.
 
 Held restore constructs no network rounds. Explicit restore resume permits acquisition before Apply so absent native artifacts do not deadlock recovery; background work still cannot publish pending policy.
+
+After resume and before the first explicit Apply, list/pool workers may acquire content but cannot recover/start runtime or publish without a committed generation.

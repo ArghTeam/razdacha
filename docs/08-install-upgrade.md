@@ -605,3 +605,10 @@ and extra config paths would fail preflight. Coherent current destination recove
 material must precede quarantine and authority invalidation. Incoming identity is
 preserved, but endpoint/DNS/WAN/NAT, panel exposure and certificate SAN changes can
 require client updates. This proposal does not change existing command behavior yet.
+
+The proposed managed install/update contract also retains the restore lifecycle lock
+from executable publication through setup and service start using a validated inherited
+lock FD. When any trusted restore state requires protocol support, incompatible staged
+daemon/CLI update or downgrade is rejected before replacement. Schema-object admission
+precedes restore migrations, and managed reset-network cannot remove protection while
+restore is incomplete, held or runtime-inhibited. These are proposal requirements only.
