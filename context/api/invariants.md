@@ -57,3 +57,5 @@ delivery or installed deployment. Cleanup removes application references without
 promising heap erasure or immunity to delayed cookie expiry. A dataset marker alone
 does not prove visible rendering. Keep case-specific coverage and inconclusive
 observations explicit in the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md).
+
+- Peer PATCH has omitted/string/null exit semantics and transactional field updates; unknown/empty references return 400 and referenced tunnel deletion returns 409. Authenticated GET /api/apply/status reads editable-versus-committed policy and uncertainty under the publication gate without mutation. Committed/bootstrap writers use generation v3; old envelopes containing new peer routing are rejected. Refresh/recovery never publish pending choices (ADR 0028).

@@ -247,7 +247,7 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 			return summary{}, err
 		}
 		// This seed is explicit installer intent, not a claim of a live publication.
-		seed := networkstate.Generation{Version: 1, Kind: networkstate.BootstrapKind, Policy: snap, Lists: map[string]lists.List{}}
+		seed := networkstate.Generation{Version: 3, Kind: networkstate.BootstrapKind, Policy: snap, Lists: map[string]lists.List{}}
 		if err := networkstate.Write(filepath.Join(filepath.Dir(dbPath), networkstate.BootstrapFile), seed); err != nil {
 			return summary{}, err
 		}

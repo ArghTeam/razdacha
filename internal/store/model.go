@@ -150,14 +150,15 @@ type Rule struct {
 // Peer — клиентское устройство. Приватный и pre-shared ключи хранятся, чтобы конфиг
 // можно было перевыдать; отсюда права 0600 на файл БД.
 type Peer struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	PublicKey    string    `json:"public_key"`
-	PrivateKey   string    `json:"private_key"`
-	PresharedKey string    `json:"preshared_key"`
-	Address      string    `json:"address"`
-	Enabled      bool      `json:"enabled"`
-	CreatedAt    time.Time `json:"created_at"`
+	EgressTunnelID *string   `json:"egress_tunnel_id"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	PublicKey      string    `json:"public_key"`
+	PrivateKey     string    `json:"private_key"`
+	PresharedKey   string    `json:"preshared_key"`
+	Address        string    `json:"address"`
+	Enabled        bool      `json:"enabled"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // Snapshot — полное состояние демона на один момент времени. Конфиг sing-box

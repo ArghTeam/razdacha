@@ -148,6 +148,9 @@ func wireRole(t *testing.T) bool {
 		wireMust(t, unix.Setns(3, unix.CLONE_NEWNET))
 		wireMust(t, unix.Exec(os.Args[0], os.Args, wireEnv("RAZDACHA_WIRE_ROLE", os.Getenv("RAZDACHA_WIRE_NEXT"))))
 		return true
+	case "egress-fake", "egress-raw", "egress-dns-failure":
+		peerEgressProbe(t)
+		return true
 	case "peer-probe":
 		peerProbe(t)
 		return true
@@ -213,6 +216,15 @@ func wireSink(t *testing.T) {
 			}
 			ip = ip[:totalLength]
 			if ip[9] != unix.IPPROTO_TCP && ip[9] != unix.IPPROTO_UDP {
+				if os.Getenv("RAZDACHA_WIRE_EGRESS") == "1" && (ip[9] == 1 || ip[9] == 253) {
+					payload := ip[ihl:]
+					if ip[9] == 1 && len(payload) >= 8 {
+						payload = payload[8:]
+					}
+					if strings.HasPrefix(string(payload), "egress-raw-") || strings.HasPrefix(string(payload), "blocked-final-egress-raw-") {
+						fmt.Printf("SINK:%s\n", payload)
+					}
+				}
 				continue
 			}
 			port := binary.BigEndian.Uint16(ip[ihl+2 : ihl+4])
@@ -728,6 +740,8 @@ func TestNetworkGenerationWire(t *testing.T) {
 	wireMust(t, unix.Mount("tmpfs", "/var/lib", "tmpfs", 0, "size=16m"))
 	wireMust(t, os.MkdirAll("/var/lib/sing-box", 0o700))
 	switch {
+	case os.Getenv("RAZDACHA_WIRE_EGRESS") == "1":
+		peerEgressWireExercise(t)
 	case os.Getenv("RAZDACHA_WIRE_PEER_CASE") != "":
 		peerWireExercise(t)
 	case os.Getenv("RAZDACHA_WIRE_NATIVE_CASE") != "":

@@ -265,6 +265,7 @@ function tunnelRow(t) {
   // Правило считается использующим туннель обоими звеньями цепи: вторым
   // звеном туннель держится так же, и удалить его сервер не даст (ADR 0012).
   const used = state.rules.filter((r) => r.tunnel_id === t.id || r.via_tunnel_id === t.id).length;
+  const clients = state.peers.filter((p) => p.egress_tunnel_id === t.id);
   const pool = tunnelPool(t);
   const off = t.enabled === false;
   const st = t.enabled === false
@@ -294,7 +295,7 @@ function tunnelRow(t) {
           ${pool ? poolCurrent(pool, off) : ''}
           <div class="row-meta">${used
             ? `используют ${used} ${plural(used, 'правило', 'правила', 'правил')}`
-            : 'ни одно правило не ссылается'}${st.label ? ' · ' + st.label : ''}${
+            : 'ни одно правило не ссылается'}${clients.length ? ` · Client exits: ${clients.map((p) => esc(p.name)).join(', ')}` : ''}${st.label ? ' · ' + st.label : ''}${
             pool ? poolSchedule(pool, off) : ''}</div>
         </div>
         <div class="row-actions">

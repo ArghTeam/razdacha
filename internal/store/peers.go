@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const peerColumns = `id, name, public_key, private_key, preshared_key, address, enabled, created_at`
+const peerColumns = `id, name, public_key, private_key, preshared_key, address, enabled, created_at, egress_tunnel_id`
 
 // CreatePeer добавляет пира. Пустые ID и CreatedAt заполняются здесь.
 func (s *Store) CreatePeer(ctx context.Context, p Peer) (Peer, error) {
@@ -23,15 +23,24 @@ func (s *Store) CreatePeer(ctx context.Context, p Peer) (Peer, error) {
 		p.CreatedAt = time.Now()
 	}
 
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO peers (`+peerColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.PublicKey, p.PrivateKey, p.PresharedKey, p.Address,
-		p.Enabled, p.CreatedAt.Unix())
-	if err != nil {
-		if isUniqueViolation(err) {
-			return Peer{}, peerConflictErr(err, p)
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		if err := validatePeerEgress(ctx, tx, p.EgressTunnelID); err != nil {
+			return err
 		}
-		return Peer{}, fmt.Errorf("добавление пира %q: %w", p.Name, err)
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO peers (`+peerColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.ID, p.Name, p.PublicKey, p.PrivateKey, p.PresharedKey, p.Address,
+			p.Enabled, p.CreatedAt.Unix(), p.EgressTunnelID)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return peerConflictErr(err, p)
+			}
+			return fmt.Errorf("добавление пира %q: %w", p.Name, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return Peer{}, err
 	}
 	return p, nil
 }
@@ -85,10 +94,17 @@ func (s *Store) UpdatePeer(ctx context.Context, p Peer) error {
 		return fmt.Errorf("%w: у обновляемого пира пустой идентификатор", ErrInvalid)
 	}
 
-	res, err := s.db.ExecContext(ctx,
+	return s.tx(ctx, func(tx *sql.Tx) error { return updatePeer(ctx, tx, p) })
+}
+
+func updatePeer(ctx context.Context, tx *sql.Tx, p Peer) error {
+	if err := validatePeerEgress(ctx, tx, p.EgressTunnelID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx,
 		`UPDATE peers SET name = ?, public_key = ?, private_key = ?, preshared_key = ?,
-		 address = ?, enabled = ? WHERE id = ?`,
-		p.Name, p.PublicKey, p.PrivateKey, p.PresharedKey, p.Address, p.Enabled, p.ID)
+		 address = ?, enabled = ?, egress_tunnel_id = ? WHERE id = ?`,
+		p.Name, p.PublicKey, p.PrivateKey, p.PresharedKey, p.Address, p.Enabled, p.EgressTunnelID, p.ID)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return peerConflictErr(err, p)
@@ -96,6 +112,47 @@ func (s *Store) UpdatePeer(ctx context.Context, p Peer) error {
 		return fmt.Errorf("обновление пира %s: %w", p.ID, err)
 	}
 	return checkAffected(res, fmt.Sprintf("пир %s", p.ID))
+}
+
+// PeerPatch distinguishes an omitted exit from an explicit null (shared rules).
+type PeerPatch struct {
+	Name            *string
+	Enabled         *bool
+	SetEgressTunnel bool
+	EgressTunnelID  *string
+}
+
+// PatchPeer reads and modifies only supplied fields in one transaction. A rename
+// or enable toggle cannot overwrite a concurrently saved routing choice.
+func (s *Store) PatchPeer(ctx context.Context, id string, patch PeerPatch) (Peer, error) {
+	var p Peer
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		var err error
+		p, err = scanPeer(tx.QueryRowContext(ctx, `SELECT `+peerColumns+` FROM peers WHERE id = ?`, id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("peer %s: %w", id, ErrNotFound)
+		}
+		if err != nil {
+			return fmt.Errorf("read peer for patch: %w", err)
+		}
+		if patch.Name != nil {
+			p.Name = strings.TrimSpace(*patch.Name)
+		}
+		if patch.Enabled != nil {
+			p.Enabled = *patch.Enabled
+		}
+		if patch.SetEgressTunnel {
+			p.EgressTunnelID = patch.EgressTunnelID
+		}
+		if err := p.validate(); err != nil {
+			return err
+		}
+		return updatePeer(ctx, tx, p)
+	})
+	if err != nil {
+		return Peer{}, err
+	}
+	return p, nil
 }
 
 // PeerDeletion describes rule changes committed together with a peer deletion.
@@ -175,7 +232,7 @@ func scanPeer(sc scanner) (Peer, error) {
 		createdAt int64
 	)
 	err := sc.Scan(&p.ID, &p.Name, &p.PublicKey, &p.PrivateKey, &p.PresharedKey,
-		&p.Address, &p.Enabled, &createdAt)
+		&p.Address, &p.Enabled, &createdAt, &p.EgressTunnelID)
 	if err != nil {
 		return Peer{}, err
 	}
@@ -189,4 +246,22 @@ func peerConflictErr(err error, p Peer) error {
 		return fmt.Errorf("%w: адрес %s уже занят другим пиром", ErrInvalid, p.Address)
 	}
 	return fmt.Errorf("%w: пир с таким публичным ключом уже есть", ErrInvalid)
+}
+
+// validatePeerEgress runs in the peer write transaction; disabled targets remain selectable.
+func validatePeerEgress(ctx context.Context, tx *sql.Tx, id *string) error {
+	if id == nil {
+		return nil
+	}
+	if strings.TrimSpace(*id) == "" {
+		return fmt.Errorf("%w: select an outgoing tunnel or clear the routing override", ErrInvalid)
+	}
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM tunnels WHERE id = ?)`, *id).Scan(&exists); err != nil {
+		return fmt.Errorf("validate peer exit: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%w: outgoing tunnel does not exist", ErrInvalid)
+	}
+	return nil
 }

@@ -845,3 +845,22 @@ Enabling an empty selection or writing a deleted selected ID returns `400`. Assi
 new clients does not enable the rule. Apply is still required to publish edited policy.
 Before Apply, background list/pool refresh and recovery retain committed source policy;
 deleted live WireGuard identities are never restored and their addresses remain reserved.
+
+## Client whole-Internet routing (ADR 0028)
+
+Peer list/create/update responses include nullable `egress_tunnel_id`. Existing clients
+default to null (shared rules). `PATCH /api/peers/{id}` accepts a tunnel ID or explicit
+null; omission preserves the choice. Name, enabled and routing fields are patched in
+one transaction, so metadata changes cannot overwrite a concurrent routing selection.
+Unknown/empty target IDs return 400. Disabled targets remain selected and fail closed.
+Deleting a referenced tunnel returns 409 naming affected clients.
+
+`GET /api/apply/status` is authenticated and read-only. It returns `{"dirty": true}`
+when editable policy differs from committed policy, or ingress requires initialization
+or guarded repair. It never activates changes. Saving client routing requires explicit
+`POST /api/apply`; polling/reload preserves the pending indication.
+
+Whole-Internet routing overrides ordinary destination rules for one source, including
+DNS. It supports IPv4 TCP/UDP; IPv6, ICMP and other forwarded protocols are blocked.
+The gateway remains accessible; private forwarding is blocked. Cached FakeIP names are
+resolved through the chosen exit and private/special resolved destinations are rejected.

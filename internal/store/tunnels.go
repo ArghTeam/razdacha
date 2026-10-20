@@ -153,6 +153,19 @@ func (s *Store) DeleteTunnel(ctx context.Context, id string) error {
 				ErrInUse)
 		}
 
+		selected, err := peers(ctx, tx)
+		if err != nil {
+			return err
+		}
+		var clients []string
+		for _, p := range selected {
+			if p.EgressTunnelID != nil && *p.EgressTunnelID == id {
+				clients = append(clients, p.Name)
+			}
+		}
+		if len(clients) > 0 {
+			return fmt.Errorf("%w: tunnel is selected by clients: %s; change their routing first", ErrInUse, strings.Join(quoteAll(clients), ", "))
+		}
 		names, err := ruleNamesByTunnel(ctx, tx, id)
 		if err != nil {
 			return err

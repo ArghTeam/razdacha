@@ -204,3 +204,17 @@ FakeIP работает, только если клиент **резолвит �
 В первых версиях не делаем: `independent_cache` sing-box достаточно для типовых
 1–20 клиентов. Если понадобится блокировка рекламы — ставить AdGuard Home перед
 sing-box отдельно, не встраивать. Границы продукта важнее функциональности.
+
+## Whole-Internet client DNS
+
+ADR 0028 places source-scoped real DNS actions after existing DNS safety guards and
+before destination rules. Each selected exit has its own upstream DNS transport with
+a detour through that tunnel. Hostname upstreams use a separate numeric bootstrap
+transport through the same exit. Independent caches separate these from ordinary DNS.
+
+A source-scoped route resolve action also uses this transport for cached FakeIP names
+before the terminal selected exit route. A following private/special destination reject
+uses the same IPv4 ranges as nft local exemptions, including resolved address matches.
+Absent/disabled/empty exits retain source-scoped DNS and route rejection. Runtime
+health observations never trigger direct fallback. Transport establishment metadata
+resolution is infrastructure traffic, outside the client destination-DNS contract.

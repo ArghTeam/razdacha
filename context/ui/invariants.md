@@ -52,3 +52,7 @@ delivery or installed deployment. Cleanup removes application references without
 promising heap erasure or immunity to delayed cookie expiry. A dataset marker alone
 does not prove visible rendering. Keep case-specific coverage and inconclusive
 observations explicit in the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md).
+
+- Client routing controls expose shared rules or one tunnel, preserve disabled/missing selected targets visibly, and require Apply. Cards summarize routing; save marks pending, and authenticated Apply status restores that state after reload. Help states IPv4 TCP/UDP support, blocked IPv6/ping/other protocols/private forwarding, and retained gateway access. Async routing callbacks obey modal/session lifetime (ADR 0028).
+
+- Tunnel usage includes client exit references; rule assignment identifies clients whose whole-Internet mode takes precedence. Domain diagnostics are explicitly labeled as shared-rule scope and do not claim to evaluate a selected client exit.

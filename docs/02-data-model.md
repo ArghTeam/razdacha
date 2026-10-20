@@ -373,3 +373,11 @@ from intentional scope (ADR 0026).
 **`sessions` — выданные сессии панели** ([ADR 0009](decisions/0009-public-panel-access.md)):
 хеш токена, а не сам токен, поэтому доступ к файлу БД не даёт готовой cookie. Смена
 пароля удаляет все строки, истёкшие убираются по расписанию.
+
+## Client exit references (schema 12)
+
+`peers.egress_tunnel_id` is nullable TEXT referencing `tunnels(id) ON DELETE RESTRICT`,
+with an index for references. Null preserves shared rules; a value selects the client's
+whole-Internet exit under ADR 0028. Reads/snapshots/backups retain it. Peer writes validate
+references transactionally; disabling a target never clears the choice. Metadata PATCH
+updates only supplied fields inside its read/write transaction.

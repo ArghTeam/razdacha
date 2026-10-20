@@ -234,3 +234,9 @@ handshake; finite queued capture observations, no universal lossless claim; nati
 SRS/JSON remains #220. No application or production deployment occurred.
 **Review:** pre-canary and owner gates passed. Distinct final review and current CI
 are required before merge. See the [completed implementation record](../../tasks/done/214-coherent-network-state.md).
+
+## 2026-10-20 — #231 per-client Internet exit
+
+Peer PATCH has omitted/string/null exit semantics and transactional field updates; unknown/empty references return 400 and referenced tunnel deletion returns 409. Authenticated GET /api/apply/status reads editable-versus-committed policy and uncertainty under the publication gate without mutation. Committed/bootstrap writers use generation v3; old envelopes containing new peer routing are rejected. Refresh/recovery never publish pending choices (ADR 0028).
+
+Implementation and verification record: [task 231](../../tasks/done/231-peer-egress.md). The bounded isolated Linux fixture and independent synthetic-browser checks passed; the completed record retains the failed first attempt and exact evidence boundaries. The fixture uses veth identities and a synthetic SOCKS exit, not encrypted incoming WireGuard or a DO client flow.

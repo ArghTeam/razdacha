@@ -189,3 +189,9 @@ BEFORE-to-AFTER database semantics, policy identity and host/services were stabl
 **Limits:** finite isolated nft/route/sing-box observations, a veth address adapter,
 no encrypted WG handshake, no application or production deployment. Final docs/current
 CI remain merge gates. See the [implementation record](../../tasks/done/220-native-ruleset-coherence.md).
+
+## 2026-10-20 — #231 per-client Internet exit
+
+Whole-Internet peer source policies precede ordinary destination rules after DNS hijack. Same-exit DNS upstream and hostname bootstrap, plus an explicit source resolve action, prevent destination DNS fallback and stale FakeIP leakage. A post-resolve source-scoped private/special CIDR reject precedes the terminal exit. Missing/disabled/empty targets retain source-only route/DNS rejection. Health never authorizes fallback (ADR 0028).
+
+Implementation and verification record: [task 231](../../tasks/done/231-peer-egress.md). The bounded isolated Linux fixture and independent synthetic-browser checks passed; the completed record retains the failed first attempt and exact evidence boundaries. The fixture uses veth identities and a synthetic SOCKS exit, not encrypted incoming WireGuard or a DO client flow.

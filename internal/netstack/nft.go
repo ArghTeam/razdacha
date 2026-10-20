@@ -258,6 +258,13 @@ func ruleExprs(r NftRule, sets map[string]*nftables.Set) ([]expr.Any, error) {
 	if r.DstPrefix.IsValid() {
 		out = append(out, dstMatch(r.DstPrefix, r.DstPrefixNeq)...)
 	}
+	if r.SrcSet != "" {
+		set, ok := sets[r.SrcSet]
+		if !ok {
+			return nil, fmt.Errorf("unknown source set %s", r.SrcSet)
+		}
+		out = append(out, &expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 12, Len: 4}, &expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID})
+	}
 	if r.DstSet != "" {
 		set, ok := sets[r.DstSet]
 		if !ok {

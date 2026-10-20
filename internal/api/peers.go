@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -30,12 +31,13 @@ var ErrNoAddress = errors.New("в пуле не осталось свободн�
 // означал бы «замерили и там ноль» — для «онлайн» и «последний хендшейк» это
 // противоположные состояния.
 type peerResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	PublicKey string    `json:"public_key"`
-	Address   string    `json:"address"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
+	EgressTunnelID *string   `json:"egress_tunnel_id"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	PublicKey      string    `json:"public_key"`
+	Address        string    `json:"address"`
+	Enabled        bool      `json:"enabled"`
+	CreatedAt      time.Time `json:"created_at"`
 
 	Online        *bool      `json:"online"`
 	LastHandshake *time.Time `json:"last_handshake"`
@@ -48,12 +50,13 @@ type peerResponse struct {
 // пока их некому заполнить.
 func newPeerResponse(p store.Peer) peerResponse {
 	return peerResponse{
-		ID:        p.ID,
-		Name:      p.Name,
-		PublicKey: p.PublicKey,
-		Address:   p.Address,
-		Enabled:   p.Enabled,
-		CreatedAt: p.CreatedAt.UTC(),
+		ID:             p.ID,
+		EgressTunnelID: p.EgressTunnelID,
+		Name:           p.Name,
+		PublicKey:      p.PublicKey,
+		Address:        p.Address,
+		Enabled:        p.Enabled,
+		CreatedAt:      p.CreatedAt.UTC(),
 	}
 }
 
@@ -177,8 +180,9 @@ func CreatePeerFromSnapshot(ctx context.Context, st *store.Store, name string, n
 // updatePeerRequest — тело `PATCH /api/peers/{id}`. Меняются только имя и признак
 // включения: адрес и ключи пира менять нельзя, это выдача нового конфига.
 type updatePeerRequest struct {
-	Name    *string `json:"name"`
-	Enabled *bool   `json:"enabled"`
+	EgressTunnelID json.RawMessage `json:"egress_tunnel_id"`
+	Name           *string         `json:"name"`
+	Enabled        *bool           `json:"enabled"`
 }
 
 // handleUpdatePeer — `PATCH /api/peers/{id}`.
@@ -192,19 +196,16 @@ func (s *Server) handleUpdatePeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := s.store.Peer(r.Context(), id)
+	patch := store.PeerPatch{Name: req.Name, Enabled: req.Enabled, SetEgressTunnel: req.EgressTunnelID != nil}
+	if req.EgressTunnelID != nil {
+		if err := json.Unmarshal(req.EgressTunnelID, &patch.EgressTunnelID); err != nil {
+			writeError(w, s.log, http.StatusBadRequest, codeBadRequest, "egress_tunnel_id must be a tunnel ID or null")
+			return
+		}
+	}
+	p, err := s.store.PatchPeer(r.Context(), id, patch)
 	if err != nil {
-		s.storeError(w, err, "Пир не найден")
-		return
-	}
-	if req.Name != nil {
-		p.Name = strings.TrimSpace(*req.Name)
-	}
-	if req.Enabled != nil {
-		p.Enabled = *req.Enabled
-	}
-	if err := s.store.UpdatePeer(r.Context(), p); err != nil {
-		s.storeError(w, err, "Пир не найден")
+		s.storeError(w, err, "Peer not found")
 		return
 	}
 	writeJSON(w, s.log, http.StatusOK, newPeerResponse(p))
