@@ -62,6 +62,33 @@ export function toastError(err, fallback = 'Не получилось') {
 
 let modalRevision = 0;
 const modalCleanups = new Set();
+let modalOpener = null;
+let backgroundInert = [];
+const usable = (el) => el instanceof HTMLElement && el.isConnected &&
+  !el.matches(':disabled') && !el.closest('[hidden], [inert]') && el.getClientRects().length > 0;
+const focusable = (root) => [...root.querySelectorAll('button, input, select, textarea, a[href], summary, [tabindex]')]
+  .filter((el) => usable(el) && el.tabIndex >= 0);
+
+// The row may rerender during a request. Keep its stable identity as a fallback.
+function focusOrigin(el) {
+  if (!(el instanceof HTMLElement)) return null;
+  return { element: el, id: el.id, act: el.dataset.act, item: el.dataset.id };
+}
+function restoreOrigin(origin) {
+  let target = origin?.element;
+  if (!usable(target) && origin?.id) target = document.getElementById(origin.id);
+  if (!usable(target) && origin?.act) {
+    target = [...document.querySelectorAll('[data-act]')].find((el) =>
+      el.dataset.act === origin.act && el.dataset.id === origin.item && usable(el));
+  }
+  if (!usable(target)) target = $('#tabs [aria-selected="true"]');
+  if (usable(target)) target.focus({ preventScroll: true });
+}
+function focusModal() {
+  const modal = $('#modal');
+  const target = modal.querySelector('[autofocus]') || modal.querySelector('h2') || focusable(modal)[0] || modal;
+  target.focus({ preventScroll: true });
+}
 
 // All persistent modal copies have the same lifetime, including download blobs.
 function resetModal() {
@@ -83,24 +110,71 @@ export const isCurrentModal = (revision) => revision === modalRevision && modalO
 export const onModalCleanup = (cleanup) => modalCleanups.add(cleanup);
 
 export function openModal(html, onMount) {
+  if (!modalOpen()) {
+    modalOpener = focusOrigin(document.activeElement);
+    backgroundInert = ['#app', '#gate'].map((selector) => {
+      const element = $(selector);
+      const previous = element.inert;
+      element.inert = true;
+      return { element, previous };
+    });
+  }
+  closeMenu(false);
   resetModal();
-  $('#modal').innerHTML = html;
+  const modal = $('#modal');
+  modal.innerHTML = html;
+  modal.tabIndex = -1;
+  const heading = modal.querySelector('h2');
+  if (heading) {
+    heading.id = 'modal-title';
+    heading.tabIndex = -1;
+    modal.setAttribute('aria-labelledby', heading.id);
+  }
   $('#modal-backdrop').hidden = false;
-  if (onMount) onMount($('#modal'));
+  if (onMount) onMount(modal);
+  if (modalOpen() && (!modal.contains(document.activeElement) || !usable(document.activeElement))) focusModal();
   return modalRevision;
 }
 
-export function closeModal() {
+export function closeModal({ restoreFocus = true } = {}) {
+  const wasOpen = modalOpen();
   $('#modal-backdrop').hidden = true;
   resetModal();
+  $('#modal').removeAttribute('aria-labelledby');
+  for (const { element, previous } of backgroundInert) element.inert = previous;
+  backgroundInert = [];
+  const origin = modalOpener;
+  modalOpener = null;
+  if (wasOpen && restoreFocus) restoreOrigin(origin);
 }
+
+// These listeners never capture a dialog's DOM or async callbacks.
+document.addEventListener('focusin', (event) => {
+  if (modalOpen() && !$('#modal').contains(event.target)) focusModal();
+});
+document.addEventListener('keydown', (event) => {
+  if (!modalOpen()) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeModal();
+  } else if (event.key === 'Tab') {
+    const modal = $('#modal');
+    const items = focusable(modal);
+    const index = items.indexOf(document.activeElement);
+    if (!items.length || (event.shiftKey ? index <= 0 : index < 0 || index === items.length - 1)) {
+      event.preventDefault();
+      (event.shiftKey ? items.at(-1) : items[0])?.focus();
+      if (!items.length) modal.focus();
+    }
+  }
+});
 
 export const modalOpen = () => !$('#modal-backdrop').hidden;
 
 export function modalShell(title, body, foot) {
   return `
     <div class="modal-head"><h2>${esc(title)}</h2>
-      <button class="icon-btn" data-act="close-modal" aria-label="Закрыть">✕</button></div>
+      <button class="icon-btn" data-act="close-modal" aria-label="Close dialog">✕</button></div>
     <div class="modal-body">${body}</div>
     <div class="modal-foot">${foot}</div>`;
 }
@@ -117,23 +191,61 @@ const MENU_GAP = 4;
  * прокрутке: `position: fixed` внутри обрезающего предка не спасает.
  */
 export function openMenu(anchor, items) {
-  closeMenu();
+  closeMenu(false);
   const menu = document.createElement('div');
   menu.className = 'menu';
+  menu.id = 'row-menu';
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', anchor.getAttribute('aria-label') || 'Actions');
+  anchor.setAttribute('aria-haspopup', 'menu');
+  anchor.setAttribute('aria-expanded', 'true');
+  anchor.setAttribute('aria-controls', menu.id);
   menu.innerHTML = items.map((it) =>
-    `<button data-act="${it.act}" data-id="${esc(it.id)}" class="${it.danger ? 'danger' : ''}">${esc(it.label)}</button>`).join('');
+    `<button role="menuitem" tabindex="-1" data-act="${it.act}" data-id="${esc(it.id)}" class="${it.danger ? 'danger' : ''}">${esc(it.label)}</button>`).join('');
   document.body.appendChild(menu);
-
-  const place = () => placeMenu(menu, anchor);
+  const origin = focusOrigin(anchor);
+  const place = () => {
+    if (!usable(anchor)) { closeMenu(false); return; }
+    placeMenu(menu, anchor);
+  };
+  const keydown = (event) => {
+    const buttons = [...menu.querySelectorAll('button:not(:disabled)')];
+    let index = buttons.indexOf(document.activeElement);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMenu();
+      return;
+    }
+    if (event.key === 'Tab') { closeMenu(); return; }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'Home') index = 0;
+    else if (event.key === 'End') index = buttons.length - 1;
+    else index = (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+    buttons.forEach((button, i) => { button.tabIndex = i === index ? 0 : -1; });
+    buttons[index]?.focus();
+  };
+  const focusin = (event) => {
+    if (!menu.contains(event.target) && event.target !== anchor) closeMenu(false);
+  };
+  state.openMenu = menu;
+  state.closeMenuExtra = (restoreFocus) => {
+    window.removeEventListener('scroll', place, true);
+    window.removeEventListener('resize', place);
+    menu.removeEventListener('keydown', keydown);
+    document.removeEventListener('focusin', focusin);
+    anchor.setAttribute('aria-expanded', 'false');
+    anchor.removeAttribute('aria-controls');
+    if (restoreFocus) restoreOrigin(origin);
+  };
   place();
   window.addEventListener('scroll', place, true);
   window.addEventListener('resize', place);
-
-  state.openMenu = menu;
-  state.closeMenuExtra = () => {
-    window.removeEventListener('scroll', place, true);
-    window.removeEventListener('resize', place);
-  };
+  menu.addEventListener('keydown', keydown);
+  document.addEventListener('focusin', focusin);
+  const first = menu.querySelector('button');
+  if (first) { first.tabIndex = 0; first.focus(); }
 }
 
 /** Прижимает меню к правому краю кнопки; если снизу не помещается — вверх. */
@@ -153,9 +265,12 @@ function placeMenu(menu, anchor) {
   menu.style.top = `${Math.round(top)}px`;
 }
 
-export function closeMenu() {
-  if (state.closeMenuExtra) { state.closeMenuExtra(); state.closeMenuExtra = null; }
+export function closeMenu(restoreFocus = true) {
+  const restore = restoreFocus && Boolean(state.openMenu?.contains(document.activeElement));
+  const cleanup = state.closeMenuExtra;
+  state.closeMenuExtra = null;
   if (state.openMenu) { state.openMenu.remove(); state.openMenu = null; }
+  if (cleanup) cleanup(restore);
 }
 
 /* --- перерисовка и плашка применения -------------------------------------- */

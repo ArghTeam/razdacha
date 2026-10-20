@@ -299,10 +299,10 @@ function tunnelRow(t) {
             pool ? poolSchedule(pool, off) : ''}</div>
         </div>
         <div class="row-actions">
-          ${pool ? `<button class="btn btn-sm" data-act="refresh-pool" data-id="${esc(t.id)}">Обновить</button>` : ''}
-          <button class="btn btn-sm" data-act="check-tunnel" data-id="${esc(t.id)}">Проверить</button>
+          ${pool ? `<button class="btn btn-sm" data-act="refresh-pool" data-id="${esc(t.id)}" aria-label="Refresh pool ${esc(t.name)}">Обновить</button>` : ''}
+          <button class="btn btn-sm" data-act="check-tunnel" data-id="${esc(t.id)}" aria-label="Check tunnel ${esc(t.name)}">Проверить</button>
           <div class="menu-wrap">
-            <button class="btn btn-sm btn-ghost" data-act="menu-tunnel" data-id="${esc(t.id)}" aria-label="Ещё">⋮</button>
+            <button class="btn btn-sm btn-ghost" data-act="menu-tunnel" data-id="${esc(t.id)}" aria-label="Actions for tunnel ${esc(t.name)}" aria-haspopup="menu" aria-expanded="false">⋮</button>
           </div>
         </div>
       </div>`;

@@ -292,8 +292,8 @@ export function view() {
       <div class="row${r.enabled ? '' : ' dim'}${dead ? ' rule-dead' : ''}${
   trouble && !dead ? ' rule-quiet' : ''}">
         <div class="rule-order">
-          <button class="ord-btn" data-act="rule-up" data-id="${esc(r.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Выше">▲</button>
-          <button class="ord-btn" data-act="rule-down" data-id="${esc(r.id)}" ${i === state.rules.length - 1 ? 'disabled' : ''} aria-label="Ниже">▼</button>
+          <button class="ord-btn" data-act="rule-up" data-id="${esc(r.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Move rule ${esc(r.name)} up">▲</button>
+          <button class="ord-btn" data-act="rule-down" data-id="${esc(r.id)}" ${i === state.rules.length - 1 ? 'disabled' : ''} aria-label="Move rule ${esc(r.name)} down">▼</button>
         </div>
         <span class="rule-num">${i + 1}</span>
         <div class="row-main">
@@ -303,10 +303,10 @@ export function view() {
           ${r.inactive_reason === 'no_selected_peers' ? '<div class="hint">Inactive: assign clients, then explicitly enable and Apply.</div>' : ''}${troubleLine}${listNote}${note}
         </div>
         <div class="row-actions">
-          <button class="toggle" role="switch" aria-checked="${Boolean(r.enabled)}" data-act="toggle-rule" data-id="${esc(r.id)}" aria-label="Включено"></button>
-          <button class="btn btn-sm" data-act="edit-rule" data-id="${esc(r.id)}">Изменить</button>
+          <button class="toggle" role="switch" aria-checked="${Boolean(r.enabled)}" data-act="toggle-rule" data-id="${esc(r.id)}" aria-label="Enable rule ${esc(r.name)}"></button>
+          <button class="btn btn-sm" data-act="edit-rule" data-id="${esc(r.id)}" aria-label="Edit rule ${esc(r.name)}">Изменить</button>
           <div class="menu-wrap">
-            <button class="btn btn-sm btn-ghost" data-act="menu-rule" data-id="${esc(r.id)}" aria-label="Ещё">⋮</button>
+            <button class="btn btn-sm btn-ghost" data-act="menu-rule" data-id="${esc(r.id)}" aria-label="Actions for rule ${esc(r.name)}" aria-haspopup="menu" aria-expanded="false">⋮</button>
           </div>
         </div>
       </div>`;
@@ -605,6 +605,7 @@ function modalRule(id, seed = null) {
               <label class="radio-pill"><input type="radio" name="action" value="direct" ${r.action === 'direct' ? 'checked' : ''}> напрямую</label>
               <label class="radio-pill"><input type="radio" name="action" value="tunnel" ${r.action === 'tunnel' ? 'checked' : ''}> в туннель</label>
               <label class="radio-pill"><input type="radio" name="action" value="block" ${r.action === 'block' ? 'checked' : ''}> блокировать</label>
+              <label class="control-label" for="r-tunnel">Tunnel</label>
               <select id="r-tunnel" class="rule-tunnel" ${r.action === 'tunnel' ? '' : 'disabled'}>${tunnelOpts}</select>
             </div>
             <div class="hint" id="r-action-hint"></div>

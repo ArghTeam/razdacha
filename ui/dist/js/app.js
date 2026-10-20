@@ -46,7 +46,8 @@ let logoutPending = false;
 
 function showGate(message) {
   stopPolling();
-  closeModal();
+  closeMenu(false);
+  closeModal({ restoreFocus: false });
   $('#app').hidden = true;
   $('#gate').hidden = false;
   const err = $('#login-error');
@@ -205,6 +206,7 @@ function render() {
   renderFreshness();
   const el = $('#screen');
   el.innerHTML = SCREENS[state.screen].view();
+  closeMenu();
   el.scrollTop = 0;
 }
 
@@ -426,7 +428,6 @@ async function boot() {
   });
 
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape') { closeModal(); closeMenu(); }
     // Enter в поле, помеченном `data-enter`, равнозначен нажатию его кнопки:
     // формы на экранах не отправляются, а искать мышь ради одного домена —
     // лишний шаг.

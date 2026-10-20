@@ -5,6 +5,19 @@
 
 ## 2026-10-20
 
+### #233 — accessible shared dashboard controls
+
+**Changed:** Dialog headings, focus entry/trapping, inert backgrounds and stable
+opener restoration; keyboard overflow menus with cleanup on every screen render.
+Long names wrap, narrow/coarse controls use 44 px hit areas, neutral hints and
+inactive rows remain readable, and repeated controls have contextual names.
+**Beware:** Authentication dismissal suppresses application focus restoration.
+Existing modal/session revisions and secret cleanup retain authority. No backend,
+routing policy, settings transaction or language migration change was made.
+**Validation:** Embedded UI guards and JavaScript syntax checks; independent
+synthetic-browser evidence is recorded in the [task specification](../../tasks/233-dashboard-controls.md).
+
+
 ### #216 — bound configuration secrets to the current interaction
 
 **Changed:** Central modal cleanup clears configuration attributes, form values,
