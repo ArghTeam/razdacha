@@ -592,3 +592,16 @@ succeeds. Missing or corrupt v2 authority/artifacts remain fail-closed; the daem
 not fall back to remote fetching, pending database policy or omitted native rules.
 Keep out-of-band administrative access and follow the
 [native recovery contract](11-staging-validation.md#native-rule-set-fixture-and-recovery-contract-220).
+
+## Proposed safe restore contract (task 217; not implemented)
+
+[ADR 0027](decisions/0027-safe-cross-host-restore.md) proposes offline validation,
+paused outgoing WG credentials, durable independent-runtime inhibition and a trusted
+callback hold for every restore. Local administration would remain available; a
+separate explicit resume would allow external acquisition/schedules before Apply.
+A compatible installed daemon must attest that hold capability before mutation; using
+a newer CLI alone with an older daemon is insufficient. Unsupported effective units
+and extra config paths would fail preflight. Coherent current destination recovery
+material must precede quarantine and authority invalidation. Incoming identity is
+preserved, but endpoint/DNS/WAN/NAT, panel exposure and certificate SAN changes can
+require client updates. This proposal does not change existing command behavior yet.

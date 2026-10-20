@@ -37,3 +37,11 @@ description: загрузка и кэш .srs/plain-списков, распис�
 - `internal/lists/fetch.go` — условные запросы, таймауты, потолок размера, откат на кэш.
 
 - Native regex limits per source: 1,024 patterns, 32 KiB aggregate raw bytes (4,096 per pattern); pre-expansion estimates charge original and DNS runtime copies against 64 Ki AST/rune units, 64 Ki expanded instructions and 128 Ki expanded rune entries. Compact syntax parsing precedes saturating estimates; over-budget patterns never reach Simplify/Compile or accepted-cache promotion. Unicode classes, counted repeats and cheap-pattern overhead remain bounded.
+
+## Proposed restore contract (not implemented)
+
+[ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
+[task 217](../../tasks/217-safe-cross-host-restore.md) propose the following behavior;
+current runtime invariants above remain the implementation record until validated.
+
+Held restore constructs no network rounds. Explicit restore resume permits acquisition before Apply so absent native artifacts do not deadlock recovery; background work still cannot publish pending policy.

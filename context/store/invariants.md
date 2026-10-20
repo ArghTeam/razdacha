@@ -30,3 +30,11 @@ description: "SQLite: схема четырёх сущностей, миграц
 - `internal/store/model.go` — четыре сущности и их валидация.
 - `internal/store/snapshot.go` — полный снимок состояния для `internal/singbox`.
 - `docs/02-data-model.md` — схема и обоснование решений по ней.
+
+## Proposed restore contract (not implemented)
+
+[ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
+[task 217](../../tasks/217-safe-cross-host-restore.md) propose the following behavior;
+current runtime invariants above remain the implementation record until validated.
+
+Preserve incoming server/peer keys and exact policy/reference identity; change only effective outgoing WG enabled flags after offline validation. Keep callback hold outside imported settings and retain original destination enable intent in recovery material.

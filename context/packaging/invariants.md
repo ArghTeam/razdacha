@@ -50,3 +50,11 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 - `internal/packaging/sysctl.go` — drop-in с параметрами ядра и их применение.
 
 - Native artifact history is excluded from database backups. Restore invalidates routing authority and requires supported sources to be fetched and explicitly applied again; it never reopens references to absent blobs. In-place startup with legacy v1 native authority preserves committed WG administrative settings but keeps client ingress guarded until explicit Apply. Corrupt v2 authority/artifacts stay guarded. Safe cross-host migration remains #217 (ADR 0025).
+
+## Proposed restore contract (not implemented)
+
+[ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
+[task 217](../../tasks/217-safe-cross-host-restore.md) propose the following behavior;
+current runtime invariants above remain the implementation record until validated.
+
+All-restores default, offline staging/classification, exact managed-unit capability preflight, durable dual-service inhibitors, runtime quarantine, coherent current-destination recovery and journal-safe replacement.

@@ -447,3 +447,19 @@ remains a P2 availability limitation, without confidentiality loss or authentica
 bypass. Heap zeroing is not promised. No installed app deployment follows from these
 fixture observations. Final documentation review and CI on the final PR head remain
 merge gates. Private raw artifacts/READY tokens are not repository evidence.
+
+## Task 217 proposed fixture boundary (not executed)
+
+The [proposed ADR 0027](decisions/0027-safe-cross-host-restore.md) and expanded
+[task matrix](../tasks/217-safe-cross-host-restore.md) require baseline forbidden
+activation/callback proof and fixed absence observations, not generic errors. All
+imported endpoints, source URLs and delivery sinks must be synthetic and contained.
+Use fresh private Linux network and mount namespaces with private `/var/lib` before
+fixture mutation; never use host systemd sockets or installed service lifecycle calls.
+The installed app is outside this fixture, including when it is v0.10.0: a new restore
+CLI must reject an old daemon's missing metadata-only hold capability before mutation.
+Real synthetic WG keypairs, contained endpoint observers and positive controls are
+required for handshake claims. Crash/journal/fsync, runtime-quarantine, callback-resume
+and coherent current-destination recovery cases are required. Independent threat-model
+review and root's explicit runner GO precede staging; a different independent reviewer
+assesses final code and actual evidence. No staging or approval is claimed here.

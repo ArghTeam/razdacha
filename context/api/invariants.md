@@ -57,3 +57,11 @@ delivery or installed deployment. Cleanup removes application references without
 promising heap erasure or immunity to delayed cookie expiry. A dataset marker alone
 does not prove visible rendering. Keep case-specific coverage and inconclusive
 observations explicit in the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md).
+
+## Proposed restore contract (not implemented)
+
+[ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
+[task 217](../../tasks/217-safe-cross-host-restore.md) propose the following behavior;
+current runtime invariants above remain the implementation record until validated.
+
+Local authenticated administration remains available during a trusted restore hold. External manual actions and callbacks are blocked; a dedicated authenticated resume permits acquisition and schedules before Apply without enabling WG or releasing ingress.

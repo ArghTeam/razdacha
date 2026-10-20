@@ -52,3 +52,11 @@ delivery or installed deployment. Cleanup removes application references without
 promising heap erasure or immunity to delayed cookie expiry. A dataset marker alone
 does not prove visible rendering. Keep case-specific coverage and inconclusive
 observations explicit in the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md).
+
+## Proposed restore contract (not implemented)
+
+[ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
+[task 217](../../tasks/217-safe-cross-host-restore.md) propose the following behavior;
+current runtime invariants above remain the implementation record until validated.
+
+Held restore displays sanitized status, destination checklist and a separate Resume external activity action that explains imported external callbacks and recipients. Settings saves, page loads and Apply cannot clear the hold.
