@@ -448,7 +448,7 @@ bypass. Heap zeroing is not promised. No installed app deployment follows from t
 fixture observations. Final documentation review and CI on the final PR head remain
 merge gates. Private raw artifacts/READY tokens are not repository evidence.
 
-## Task 217 proposed fixture boundary (not executed)
+## Task 217 contained fixture boundary (namespace execution pending)
 
 The [approved-design ADR 0027](decisions/0027-safe-cross-host-restore.md) and expanded
 [task matrix](../tasks/217-safe-cross-host-restore.md) require baseline forbidden
@@ -485,7 +485,8 @@ Filesystem error injection and SIGKILL do not prove physical power-loss, kernel 
 or storage-controller flush behavior. Intercepted browser requests prove frontend
 intent and localhost session behavior, not delivery or whole-daemon callback containment.
 
-Separate task #228 owns new contained true-WireGuard baseline/fix fixtures. It must prove
+The #228 contained true-WireGuard baseline/fix fixture source is integrated through
+PR #229. Its namespace execution remains pending. It is designed to prove
 zero attempted UDP initiation/transport toward synthetic WG endpoints while restored,
 then observed authenticated handshake/decrypted marker only after chosen enable plus
 explicit Apply, with independent direct/reachability positive controls. Actual production
@@ -497,3 +498,33 @@ independent review and root GO are recorded. Staging is a disposable fixture hos
 the real installed v0.10.0 service remains untouched. Record finite observer windows and
 all inconclusive results. The [task record](../tasks/217-safe-cross-host-restore.md) tracks
 remaining final acceptance and CI separately from local implementation checks.
+
+
+### Integrated task 217/228 wire-proof limits before execution
+
+The two CLI/daemon Linux fixture files and their portable guard stubs are now integrated.
+Ordinary local tests exercise provenance rejection and receipt framing; they do not run
+network namespaces or establish encrypted-WireGuard observations. Both modeled services
+are initially inactive. The baseline adapter invokes the genuine pinned old CLI restore,
+checks that enabled WG rows and the prior endpoint configuration remain, then explicitly
+starts that retained configuration through a contained independent runtime ExecStart
+adapter. This tests the next-start mechanism; it is not spontaneous boot or real systemd
+proof. The fixed adapter invokes the actual fixed restore and checks independent start
+refusal, paused policy and subsequent explicit enable/Apply using shared production gates.
+
+Both revisions construct the same topology and prior-config observer template with fresh
+independently generated synthetic key bytes per invocation. Their configs and archives
+are therefore not byte-identical. The prior config alone adds a loopback-only inlet for a
+fixed authenticated marker while client ingress remains guarded. Subsequent fixed Apply
+uses unmodified production Generate and asserts that this inlet disappears. A future
+positive wire result must include observed UDP attempts, authenticated handshake and
+decrypted marker, with direct reachability and unchosen-credential negative controls.
+
+The parent preserves actual successful CLI stdout in a bounded base64 receipt, its SHA256,
+mode and exit code. The reviewed observer must decode it and independently require the
+child Go test PASS envelope; a synthetic status label is insufficient. Receipt framing
+unit tests prove encoding and bounds, not an actual CLI namespace execution. Rebuild the
+fixed artifacts from the final combined freeze; retain immutable baseline provenance and
+exact source/artifact hashes. Every future run must state finite observation windows,
+tested source and whether any later documentation-only delta leaves all production and
+fixture source byte-identical. No namespace/staging observations have run at this freeze.

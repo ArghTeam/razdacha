@@ -141,3 +141,14 @@ now precedes SQLite and initial safety/service mutation, including recovery/repl
 and protected password writes. Actual transaction negatives retain sibling bytes and
 zero service/guard mutations; normal committed-WAL snapshot remains a positive control.
 Corrective independent retest and exact-head CI remain separate acceptance gates.
+
+
+### Task 217/228 integrated fixture source; namespace proof pending
+
+The merged contained fixture invokes actual old/fixed restore transactions with both
+modeled services initially inactive. Baseline retained-runtime activation uses an explicit
+contained independent start adapter; it is not spontaneous reboot or host-systemd proof.
+The common prior config has a loopback observer inlet with fresh synthetic keys per run;
+later fixed Apply uses production Generate and removes that inlet. Actual CLI stdout is
+preserved in bounded hashed receipts. Portable guards/local checks do not establish wire
+observations; reviewed artifact/runner gates and isolated execution remain pending.

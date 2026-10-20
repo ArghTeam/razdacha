@@ -256,10 +256,10 @@ changed recovered DB and symlink parents; isolated runtime/staging proof remains
   frontend request intent, not external delivery or whole-daemon zero egress. Exact
   frozen source/artifact/script hashes are retained in the private execution report.
 
-Final full diff/security review, the separate #228 contained true-WireGuard baseline/fix
-fixture, its reviewed runner/artifact/isolation gate, staging observations and final CI
-are still required. No namespace/staging/SSH/installed-service operation, merge or release
-is authorized by these local results.
+The #228 contained true-WireGuard fixture source is integrated through PR #229. Final
+combined review, rebuilt fixed artifacts, the reviewed runner/artifact/isolation gate,
+staging observations and final exact-head CI remain required. No namespace, staging, SSH,
+installed-service operation, merge or release is authorized by these local results.
 
 
 ## Final-local destination-file admission correction
@@ -280,3 +280,22 @@ The independent unchanged transaction regression is rerun through a read-only ov
 old-fail/new-pass evidence and final corrective acceptance are recorded privately.
 The staging runbook now distinguishes executed local checks from unexecuted isolated
 namespace/staging checks. No host, source, deployment or namespace action follows.
+
+
+## Combined pre-staging source freeze
+
+Independent local correction reviews closed the transaction and initial-schema canonical
+file-admission boundaries. The integrated #228 source uses actual old/fixed CLI transactions
+with synthetic contained service adapters and both services initially inactive. Baseline
+activation is an explicit subsequent independent runtime start of retained configuration,
+not a spontaneous reboot or host-systemd observation. The common prior-config observer
+inlet is fixture-only; later fixed Apply regenerates unmodified production configuration.
+Each invocation creates fresh key bytes using the same topology/template. Raw actual CLI
+stdout is preserved in bounded mode/hash/base64/exit-code receipts for independent decoding.
+
+Portable provenance and receipt tests, full safe local checks and cross-compilation are
+separate from the still-unexecuted namespace/staging matrix. The runbook records the exact
+proof limits; frozen source/artifact manifests remain private. No source host, installed
+app, real credentials, host systemd, namespace or staging operation is part of this local
+combined validation. Final stage evidence must bind the tested source and show that later
+documentation-only changes leave production and fixture source unchanged.

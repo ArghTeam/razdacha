@@ -201,3 +201,14 @@ Every effective outgoing WG variant is classified offline and paused through exi
 corrective reviews are recorded in the [task](../../tasks/217-safe-cross-host-restore.md).
 Final integrated review, contained true-WireGuard fixture and isolated staging acceptance
 remain pending; no installed application, source host, deployment or release is changed.
+
+
+### Task 217/228 integrated fixture source; namespace proof pending
+
+The merged contained fixture invokes actual old/fixed restore transactions with both
+modeled services initially inactive. Baseline retained-runtime activation uses an explicit
+contained independent start adapter; it is not spontaneous reboot or host-systemd proof.
+The common prior config has a loopback observer inlet with fresh synthetic keys per run;
+later fixed Apply uses production Generate and removes that inlet. Actual CLI stdout is
+preserved in bounded hashed receipts. Portable guards/local checks do not establish wire
+observations; reviewed artifact/runner gates and isolated execution remain pending.
