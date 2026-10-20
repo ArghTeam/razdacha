@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -321,7 +322,21 @@ func (g *applyGate) Pending(ctx context.Context, st *store.Store) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	return !g.network.initialized || g.network.uncertain || !reflect.DeepEqual(g.base, snap), nil
+	if !g.network.initialized || g.network.uncertain {
+		return true, nil
+	}
+	// Publication and recovery retain JSON-round-tripped policy. Compare the
+	// same persisted representation so RawMessage whitespace and nil versus
+	// JSON null do not turn an unchanged database snapshot into pending edits.
+	applied, err := json.Marshal(g.base)
+	if err != nil {
+		return false, fmt.Errorf("encode applied policy for pending comparison: %w", err)
+	}
+	editable, err := json.Marshal(snap)
+	if err != nil {
+		return false, fmt.Errorf("encode editable policy for pending comparison: %w", err)
+	}
+	return !bytes.Equal(applied, editable), nil
 }
 
 func generationTransportSubnets(snap store.Snapshot, contents map[string]lists.List) []string {
