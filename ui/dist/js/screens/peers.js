@@ -49,9 +49,9 @@ export function view() {
           <div class="row-meta">${routingSummary(p)}</div>
         </div>
         <div class="row-actions">
-          <button class="btn btn-sm" data-act="peer-config" data-id="${esc(p.id)}">Конфиг</button>
+          <button class="btn btn-sm" data-act="peer-config" data-id="${esc(p.id)}" aria-label="Configuration for client ${esc(p.name)}">Конфиг</button>
           <div class="menu-wrap">
-            <button class="btn btn-sm btn-ghost" data-act="menu-peer" data-id="${esc(p.id)}" aria-label="Ещё">⋮</button>
+            <button class="btn btn-sm btn-ghost" data-act="menu-peer" data-id="${esc(p.id)}" aria-label="Actions for client ${esc(p.name)}" aria-haspopup="menu" aria-expanded="false">⋮</button>
           </div>
         </div>
       </div>`;

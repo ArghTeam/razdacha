@@ -56,3 +56,22 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 - Client routing controls expose shared rules or one tunnel, preserve disabled/missing selected targets visibly, and require Apply. Cards summarize routing; save marks pending, and authenticated Apply status restores that state after reload. Help states IPv4 TCP/UDP support, blocked IPv6/ping/other protocols/private forwarding, and retained gateway access. Async routing callbacks obey modal/session lifetime (ADR 0028).
 
 - Tunnel usage includes client exit references; rule assignment identifies clients whose whole-Internet mode takes precedence. Domain diagnostics are explicitly labeled as shared-rule scope and do not claim to evaluate a selected client exit.
+
+## Shared dashboard controls
+
+- Dialogs expose their visible heading as an accessible name. Opening preserves
+  intentional form focus or focuses the heading; Tab stays inside and application
+  and login backgrounds retain and restore their prior inert state. Closing restores
+  a visible opener or matching rerendered row control, then the selected tab as
+  fallback. Replacement preserves the original opener. Auth dismissal suppresses
+  application focus restoration. Focus management does not replace modal/session
+  revision checks or configuration secret cleanup.
+- Body-mounted row menus expose menu semantics, move focus with arrow/Home/End
+  keys, close on Escape/Tab/outside interaction, and clean listeners and anchor
+  ARIA state. Every screen render dismisses stale menus after replacing rows so
+  focus can return to the current equivalent anchor.
+- At narrow widths or with a coarse pointer, shared controls have non-overlapping
+  44 px minimum hit areas. Long unbroken names wrap without displacing modal close
+  controls. Disabled rows do not use whole-row opacity; small neutral hints remain
+  readable in both system themes. Repeated controls identify their row in their
+  accessible names; the rule tunnel selector has an associated label.
