@@ -52,10 +52,8 @@ description: REST, встроенная SPA, диагностика и клие�
 
 ## Configuration lifetime verification boundary
 
-The synthetic actual-API fixture verifies frontend lifetime separately from backend
-cookie delivery and installed deployment. Staging fixed 31/31 and five positive
-baseline defects were accepted per case; baseline peer creation remained inconclusive
-and the controller stopped. A dataset marker alone does not prove visible rendering.
-Peer creation across logout/session change was reviewed but not browser-exercised.
-See the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md)
-for the health-only database drift, cleanup evidence and residual P2 cookie limit.
+The synthetic actual-API fixture verifies frontend lifetime, not backend cookie
+delivery or installed deployment. Cleanup removes application references without
+promising heap erasure or immunity to delayed cookie expiry. A dataset marker alone
+does not prove visible rendering. Keep case-specific coverage and inconclusive
+observations explicit in the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md).

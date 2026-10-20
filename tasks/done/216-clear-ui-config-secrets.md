@@ -21,7 +21,7 @@ Use one modal revision and cleanup boundary for text, filename, canvas pixels an
 modal-owned download URLs. Capture it before asynchronous peer creation or config
 fetches; only the current interaction may render a response. Logout enters the gate
 synchronously, before its request completes. Serialize a new login behind the actual
-logout response to preserve cookie ordering; old-session responses cannot invalidate
+logout response to preserve cookie ordering; old-session frontend callbacks cannot dismiss
 a newer login. Tunnel editor raw/parse caches share the same modal lifetime.
 This localized cleanup needs no ADR unless it introduces a
 broader secret-storage decision. Update maintained UI context with the final lifetime.

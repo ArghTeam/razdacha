@@ -2,9 +2,10 @@
 
 Status: #222, #214 and #220 completed their controlled validation and were merged.
 #220 merged through [PR #224](https://github.com/ArghTeam/razdacha/pull/224) at
-`8b149e0`. Safe peer deletion #215 has two fixed passes and two expected original-base
-broadening failures in [PR #225](https://github.com/ArghTeam/razdacha/pull/225).
-Final #215 documentation/evidence review and current CI remain merge gates.
+`8b149e0`. Safe peer deletion #215 was validated with two fixed passes and two positively
+proven original-base broadening failures, then merged in
+[PR #225](https://github.com/ArghTeam/razdacha/pull/225) at `0da7e20`; all five checks
+in CI run `39349128243` passed.
 Task #216 completed bounded per-case validation with the qualifications below;
 #217 and #218 remain pending. Only linked evidence is complete.
 No installed application or production deployment is claimed.
@@ -33,7 +34,7 @@ one change before advancing to the next. These are sequential delivery dependenc
 | 1 | [#222: domain-only DNS matching](../tasks/done/222-dns-rule-scope.md) | Unrelated DNS succeeds while matching domains/CIDRs remain protected | Validated: 8 expected baseline failures, 8 fixed passes; no product deployment |
 | 2 | [#214: coherent network state](../tasks/done/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Validated and merged in PR #221: attempt 5 fixed PASS and four expected original-watcher failures; no product deployment |
 | 3 | [#220: native rule-set coherence](../tasks/done/220-native-ruleset-coherence.md) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Validated on `d5cb9c1` and merged in PR #224: four fixed passes and four expected baseline failures; no product deployment |
-| 4 | [#215: safe peer deletion](../tasks/done/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Validated on `14e28b3`: two fixed passes and two positively proven baseline broadening failures; final docs/evidence/current CI before merge |
+| 4 | [#215: safe peer deletion](../tasks/done/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Validated on `14e28b3`: two fixed passes and two positively proven baseline broadening failures; merged in PR #225 at `0da7e20` after five green CI checks |
 | 5 | [#216: clear UI secrets](../tasks/done/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Fixed 31/31; five positive baseline defects; creation baseline inconclusive; controller STOP |
 | 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
 | 7 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
@@ -330,7 +331,8 @@ uploads were removed; no owned process/group or private case-directory process r
 Independent source/provenance/runner and actual evidence review passed. Synthetic
 Playwright UI validation passed on the frozen UI hashes. Per-probe path checks are
 fail-fast assertions in the pinned binaries; their individual raw transcripts are
-not printed in the case logs. Final documentation review and current CI remain gates.
+not printed in the case logs. Final review completed and all five CI checks passed
+in run `39349128243`; PR #225 was merged at `0da7e20`.
 
 
 ## Configuration UI lifetime fixture (#216)
