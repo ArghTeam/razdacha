@@ -14,8 +14,11 @@ inactive rows remain readable, and repeated controls have contextual names.
 **Beware:** Authentication dismissal suppresses application focus restoration.
 Existing modal/session revisions and secret cleanup retain authority. No backend,
 routing policy, settings transaction or language migration change was made.
-**Validation:** Embedded UI guards and JavaScript syntax checks; independent
-synthetic-browser evidence is recorded in the [task specification](../../tasks/233-dashboard-controls.md).
+**Validation:** UI guards and JavaScript syntax checks passed. Independent frozen
+source `11e2621` browser checks passed: 16 screen/viewport captures, keyboard and
+modal lifetime checks, corrected 44 px configuration disclosure, sampled contrast
+and 12 routing/Apply/logout scenarios. These use synthetic APIs, not live backend
+or formal accessibility validation. Detailed evidence is in the [completed task specification](../../tasks/done/233-dashboard-controls.md).
 
 
 ### #216 — bound configuration secrets to the current interaction

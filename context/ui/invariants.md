@@ -61,7 +61,7 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 
 - Dialogs expose their visible heading as an accessible name. Opening preserves
   intentional form focus or focuses the heading; Tab stays inside and application
-  and login backgrounds retain/restores their prior inert state. Closing restores
+  and login backgrounds retain and restore their prior inert state. Closing restores
   a visible opener or matching rerendered row control, then the selected tab as
   fallback. Replacement preserves the original opener. Auth dismissal suppresses
   application focus restoration. Focus management does not replace modal/session
