@@ -61,6 +61,7 @@ func rwValidateProof(p rwProof, f rwProofFacts, role string) error {
 	}
 	return nil
 }
+
 func TestRestoreWireGuardProvenanceValidation(t *testing.T) {
 	p := rwProof{OwnerPID: 20, HostPID: 10, OwnerStart: "200", HostStart: "100", OwnerNet: "net:[20]", OwnerMount: "mnt:[20]", HostNet: "net:[10]", HostMount: "mnt:[10]", ClientNet: "net:[40]", SinkNet: "net:[30]", Root: "/var/lib/restore-wire-fixture"}
 	valid := rwProofFacts{ParentPID: 20, OuterPID: 10, ParentStart: "200", OuterStart: "100", ParentNet: p.OwnerNet, ParentMount: p.OwnerMount, OuterNet: p.HostNet, OuterMount: p.HostMount, SelfNet: "net:[30]", SelfMount: p.OwnerMount, TargetNet: "net:[30]", Root: p.Root, Sealed: true, PrivateTmpfs: true, PrivateRoot: true}

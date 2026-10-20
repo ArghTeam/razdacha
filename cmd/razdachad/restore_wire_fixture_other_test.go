@@ -3,6 +3,9 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -63,6 +66,7 @@ func rwValidateProof(p rwProof, f rwProofFacts, role string) error {
 	}
 	return nil
 }
+
 func TestRestoreWireGuardProvenanceValidation(t *testing.T) {
 	p := rwProof{OwnerPID: 20, HostPID: 10, OwnerStart: "200", HostStart: "100", OwnerNet: "net:[20]", OwnerMount: "mnt:[20]", HostNet: "net:[10]", HostMount: "mnt:[10]", ClientNet: "net:[40]", SinkNet: "net:[30]", Root: "/var/lib/restore-wire-fixture"}
 	valid := rwProofFacts{ParentPID: 20, OuterPID: 10, ParentStart: "200", OuterStart: "100", ParentNet: p.OwnerNet, ParentMount: p.OwnerMount, OuterNet: p.HostNet, OuterMount: p.HostMount, SelfNet: "net:[30]", SelfMount: p.OwnerMount, TargetNet: "net:[30]", Root: p.Root, Sealed: true, PrivateTmpfs: true, PrivateRoot: true}
@@ -112,3 +116,57 @@ func TestRestoreWireGuardProvenanceValidation(t *testing.T) {
 }
 
 // END PORTABLE PROVENANCE VALIDATOR
+
+// BEGIN PORTABLE CLI RECEIPT
+// Preserve the actual successful CLI capture; observers verify its Go test
+// transcript independently. The frame contains only bounded synthetic output.
+func rwCLIReceipt(mode, stdout string) (string, error) {
+	if (mode != "fixed" && mode != "baseline") || len(stdout) == 0 || len(stdout) > 65536 {
+		return "", fmt.Errorf("invalid CLI receipt mode or output length")
+	}
+	receipt := struct {
+		Event        string `json:"event"`
+		Mode         string `json:"mode"`
+		StdoutSHA256 string `json:"stdout_sha256"`
+		StdoutB64    string `json:"stdout_b64"`
+		ExitCode     int    `json:"exit_code"`
+	}{"cli-receipt", mode, fmt.Sprintf("%x", sha256.Sum256([]byte(stdout))), base64.StdEncoding.EncodeToString([]byte(stdout)), 0}
+	encoded, err := json.Marshal(receipt)
+	if err != nil {
+		return "", err
+	}
+	return "RESTORE-WIRE-CLI-RECEIPT " + string(encoded), nil
+}
+
+func TestRestoreWireCLIReceipt(t *testing.T) {
+	stdout := "=== RUN   TestRestoreWireCLI\n    fixture: unchanged synthetic output\n--- PASS: TestRestoreWireCLI (0.01s)\nPASS\n"
+	for _, mode := range []string{"fixed", "baseline"} {
+		frame, err := rwCLIReceipt(mode, stdout)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var receipt struct {
+			Event, Mode  string
+			StdoutSHA256 string `json:"stdout_sha256"`
+			StdoutB64    string `json:"stdout_b64"`
+			ExitCode     int    `json:"exit_code"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(frame, "RESTORE-WIRE-CLI-RECEIPT ")), &receipt); err != nil {
+			t.Fatal(err)
+		}
+		actual, err := base64.StdEncoding.DecodeString(receipt.StdoutB64)
+		if err != nil || string(actual) != stdout || receipt.StdoutSHA256 != fmt.Sprintf("%x", sha256.Sum256(actual)) || receipt.Event != "cli-receipt" || receipt.Mode != mode || receipt.ExitCode != 0 {
+			t.Fatal("CLI capture changed")
+		}
+	}
+	for _, stdout := range []string{"", strings.Repeat("x", 65537)} {
+		if _, err := rwCLIReceipt("fixed", stdout); err == nil {
+			t.Fatal("unbounded or empty receipt accepted")
+		}
+	}
+	if _, err := rwCLIReceipt("unknown", stdout); err == nil {
+		t.Fatal("unknown mode accepted")
+	}
+}
+
+// END PORTABLE CLI RECEIPT

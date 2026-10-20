@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/packaging"
@@ -99,6 +100,7 @@ func rwValidateProof(p rwProof, f rwProofFacts, role string) error {
 	}
 	return nil
 }
+
 func TestRestoreWireGuardProvenanceValidation(t *testing.T) {
 	p := rwProof{OwnerPID: 20, HostPID: 10, OwnerStart: "200", HostStart: "100", OwnerNet: "net:[20]", OwnerMount: "mnt:[20]", HostNet: "net:[10]", HostMount: "mnt:[10]", ClientNet: "net:[40]", SinkNet: "net:[30]", Root: "/var/lib/restore-wire-fixture"}
 	valid := rwProofFacts{ParentPID: 20, OuterPID: 10, ParentStart: "200", OuterStart: "100", ParentNet: p.OwnerNet, ParentMount: p.OwnerMount, OuterNet: p.HostNet, OuterMount: p.HostMount, SelfNet: "net:[30]", SelfMount: p.OwnerMount, TargetNet: "net:[30]", Root: p.Root, Sealed: true, PrivateTmpfs: true, PrivateRoot: true}
@@ -165,6 +167,7 @@ func rwProofProcess(pid int) (int, string, error) {
 	parent, err := strconv.Atoi(fields[1])
 	return parent, fields[19], err
 }
+
 func rwPrivateVarLib() bool {
 	var stat unix.Statfs_t
 	if unix.Statfs("/var/lib", &stat) != nil || stat.Type != unix.TMPFS_MAGIC {
@@ -198,6 +201,7 @@ func rwPrivateVarLib() bool {
 	}
 	return false
 }
+
 func rwReadProof(role string) (rwProof, error) {
 	var p rwProof
 	seals, err := unix.FcntlInt(4, unix.F_GET_SEALS, 0)
@@ -206,7 +210,7 @@ func rwReadProof(role string) (rwProof, error) {
 	}
 	required := unix.F_SEAL_WRITE | unix.F_SEAL_GROW | unix.F_SEAL_SHRINK | unix.F_SEAL_SEAL
 	var stat unix.Stat_t
-	if seals != required || unix.Fstat(4, &stat) != nil || stat.Uid != uint32(os.Geteuid()) || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Mode&0777 != 0600 || stat.Size <= 0 || stat.Size > 4096 {
+	if seals != required || unix.Fstat(4, &stat) != nil || stat.Uid != uint32(os.Geteuid()) || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Mode&0o777 != 0o600 || stat.Size <= 0 || stat.Size > 4096 {
 		return p, fmt.Errorf("invalid sealed proof descriptor")
 	}
 	data := make([]byte, int(stat.Size))
@@ -254,7 +258,7 @@ func rwReadProof(role string) (rwProof, error) {
 		return p, err
 	}
 	var rootStat unix.Stat_t
-	f.PrivateRoot = unix.Lstat(p.Root, &rootStat) == nil && rootStat.Mode&unix.S_IFMT == unix.S_IFDIR && rootStat.Mode&0777 == 0700 && rootStat.Uid == uint32(os.Geteuid())
+	f.PrivateRoot = unix.Lstat(p.Root, &rootStat) == nil && rootStat.Mode&unix.S_IFMT == unix.S_IFDIR && rootStat.Mode&0o777 == 0o700 && rootStat.Uid == uint32(os.Geteuid())
 	if err = rwValidateProof(p, f, role); err != nil {
 		return p, err
 	}
@@ -267,10 +271,10 @@ func rwCLIActual(t *testing.T, ctx context.Context, root string) {
 	// Model unified cgroup-v2 evidence inside the private service root. This
 	// never reads or writes a host cgroup control file.
 	controllers := filepath.Join(root, "sys/fs/cgroup/cgroup.controllers")
-	if err := os.MkdirAll(filepath.Dir(controllers), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(controllers), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(controllers, []byte("cpu memory pids\n"), 0600); err != nil {
+	if err := os.WriteFile(controllers, []byte("cpu memory pids\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	services := &packaging.RestoreServices{Root: root}
@@ -323,10 +327,10 @@ func rwCLIActual(t *testing.T, ctx context.Context, root string) {
 			t.Fatal(err)
 		}
 		for path, body := range map[string]string{filepath.Join(root, packaging.DefaultUnitDir, unit): data, filepath.Join(root, packaging.DefaultUnitDir, unit+".d", packaging.RestoreDropIn): packaging.RestoreCondition(unit)} {
-			if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			if err = os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			if err = os.WriteFile(path, []byte(body), 0600); err != nil {
+			if err = os.WriteFile(path, []byte(body), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}

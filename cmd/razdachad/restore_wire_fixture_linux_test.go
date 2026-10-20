@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -41,8 +42,10 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-const rwTest = "^TestRestoreWireGuardContained$"
-const rwMarker = "synthetic-authenticated-marker"
+const (
+	rwTest   = "^TestRestoreWireGuardContained$"
+	rwMarker = "synthetic-authenticated-marker"
+)
 
 type rwProcess struct {
 	cmd   *exec.Cmd
@@ -103,6 +106,7 @@ func rwStart(cmd *exec.Cmd) (*rwProcess, error) {
 	}
 	return p, nil
 }
+
 func (p *rwProcess) stop() error {
 	select {
 	case <-p.done:
@@ -125,6 +129,7 @@ func (p *rwProcess) stop() error {
 		return errors.New("owned child stop timed out")
 	}
 }
+
 func rwEnv(values map[string]string) []string {
 	out := []string{}
 	for _, v := range os.Environ() {
@@ -138,11 +143,13 @@ func rwEnv(values map[string]string) []string {
 	}
 	return out
 }
+
 func rwCommand(role string) *exec.Cmd {
 	cmd := exec.Command(os.Args[0], "-test.run="+rwTest, "-test.timeout=100s", "-test.v")
 	cmd.Env = rwEnv(map[string]string{"RAZDACHA_RW_ROLE": role})
 	return cmd
 }
+
 func rwRun(t *testing.T, cmd *exec.Cmd) string {
 	t.Helper()
 	var out bytes.Buffer
@@ -165,6 +172,7 @@ func rwRun(t *testing.T, cmd *exec.Cmd) string {
 	}
 	return out.String()
 }
+
 func rwInNS(t *testing.T, ns netns.NsHandle, next string, values map[string]string) *exec.Cmd {
 	t.Helper()
 	fd, e := unix.Dup(int(ns))
@@ -236,7 +244,7 @@ func TestRestoreWireGuardContained(t *testing.T) {
 		}
 		wireMust(t, unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""))
 		wireMust(t, unix.Mount("tmpfs", "/var/lib", "tmpfs", unix.MS_NODEV|unix.MS_NOSUID, "size=64m,mode=0700"))
-		wireMust(t, os.MkdirAll("/var/lib/sing-box", 0700))
+		wireMust(t, os.MkdirAll("/var/lib/sing-box", 0o700))
 		if !rwPrivateVarLib() {
 			t.Fatal("private /var/lib tmpfs verification failed")
 		}
@@ -253,7 +261,7 @@ func TestRestoreWireGuardContained(t *testing.T) {
 			wireMust(t, e)
 			info, e := os.Stat(bin)
 			wireMust(t, e)
-			if !info.Mode().IsRegular() || info.Mode()&0111 == 0 {
+			if !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
 				t.Fatal("explicit fixture executable required")
 			}
 			values["RAZDACHA_RW_"+key] = bin
@@ -331,6 +339,7 @@ func rwValidateProof(p rwProof, f rwProofFacts, role string) error {
 	}
 	return nil
 }
+
 func TestRestoreWireGuardProvenanceValidation(t *testing.T) {
 	p := rwProof{OwnerPID: 20, HostPID: 10, OwnerStart: "200", HostStart: "100", OwnerNet: "net:[20]", OwnerMount: "mnt:[20]", HostNet: "net:[10]", HostMount: "mnt:[10]", ClientNet: "net:[40]", SinkNet: "net:[30]", Root: "/var/lib/restore-wire-fixture"}
 	valid := rwProofFacts{ParentPID: 20, OuterPID: 10, ParentStart: "200", OuterStart: "100", ParentNet: p.OwnerNet, ParentMount: p.OwnerMount, OuterNet: p.HostNet, OuterMount: p.HostMount, SelfNet: "net:[30]", SelfMount: p.OwnerMount, TargetNet: "net:[30]", Root: p.Root, Sealed: true, PrivateTmpfs: true, PrivateRoot: true}
@@ -397,6 +406,7 @@ func rwProofProcess(pid int) (int, string, error) {
 	parent, err := strconv.Atoi(fields[1])
 	return parent, fields[19], err
 }
+
 func rwPrivateVarLib() bool {
 	var stat unix.Statfs_t
 	if unix.Statfs("/var/lib", &stat) != nil || stat.Type != unix.TMPFS_MAGIC {
@@ -430,6 +440,7 @@ func rwPrivateVarLib() bool {
 	}
 	return false
 }
+
 func rwReadProof(role string) (rwProof, error) {
 	var p rwProof
 	seals, err := unix.FcntlInt(4, unix.F_GET_SEALS, 0)
@@ -438,7 +449,7 @@ func rwReadProof(role string) (rwProof, error) {
 	}
 	required := unix.F_SEAL_WRITE | unix.F_SEAL_GROW | unix.F_SEAL_SHRINK | unix.F_SEAL_SEAL
 	var stat unix.Stat_t
-	if seals != required || unix.Fstat(4, &stat) != nil || stat.Uid != uint32(os.Geteuid()) || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Mode&0777 != 0600 || stat.Size <= 0 || stat.Size > 4096 {
+	if seals != required || unix.Fstat(4, &stat) != nil || stat.Uid != uint32(os.Geteuid()) || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Mode&0o777 != 0o600 || stat.Size <= 0 || stat.Size > 4096 {
 		return p, fmt.Errorf("invalid sealed proof descriptor")
 	}
 	data := make([]byte, int(stat.Size))
@@ -486,19 +497,21 @@ func rwReadProof(role string) (rwProof, error) {
 		return p, err
 	}
 	var rootStat unix.Stat_t
-	f.PrivateRoot = unix.Lstat(p.Root, &rootStat) == nil && rootStat.Mode&unix.S_IFMT == unix.S_IFDIR && rootStat.Mode&0777 == 0700 && rootStat.Uid == uint32(os.Geteuid())
+	f.PrivateRoot = unix.Lstat(p.Root, &rootStat) == nil && rootStat.Mode&unix.S_IFMT == unix.S_IFDIR && rootStat.Mode&0o777 == 0o700 && rootStat.Uid == uint32(os.Geteuid())
 	if err = rwValidateProof(p, f, role); err != nil {
 		return p, err
 	}
 	return p, nil
 }
 
-type rwKeys struct{ Server, Client wgtypes.Key }
-type rwStatus struct {
-	Handshake             [2]bool
-	Decrypted             [2]int
-	PlainSelected, Direct int
-}
+type (
+	rwKeys   struct{ Server, Client wgtypes.Key }
+	rwStatus struct {
+		Handshake             [2]bool
+		Decrypted             [2]int
+		PlainSelected, Direct int
+	}
+)
 
 func rwSink(t *testing.T) {
 	if _, e := os.Stat("/sys/module/wireguard"); e != nil {
@@ -564,6 +577,7 @@ func rwSink(t *testing.T) {
 	fmt.Println("RESTORE-WIRE-SINK-READY")
 	wireMust(t, server.Serve(listener))
 }
+
 func rwProbe(t *testing.T) {
 	if name := os.Getenv("RAZDACHA_RW_DNS"); name != "" {
 		q := new(dns.Msg)
@@ -673,6 +687,7 @@ func rwNewCapture(t *testing.T) *rwCapture {
 	})
 	return c
 }
+
 func (c *rwCapture) snapshot(t *testing.T) [2]int {
 	t.Helper()
 	socket, e := net.DialTimeout("udp4", "192.0.2.2:51822", time.Second)
@@ -738,6 +753,7 @@ func (r *rwRuntime) stop() error {
 	}
 	return nil
 }
+
 func (r *rwRuntime) Reload(ctx context.Context) error {
 	if r.before != nil {
 		if e := r.before(); e != nil {
@@ -802,6 +818,7 @@ func (h *rwHarness) probe(t *testing.T, source, url string, want bool) {
 	}
 	rwRun(t, rwInNS(t, h.client, "probe", map[string]string{"RAZDACHA_RW_SOURCE": source, "RAZDACHA_RW_URL": url, "RAZDACHA_RW_WANT": v}))
 }
+
 func (h *rwHarness) status(t *testing.T) rwStatus {
 	t.Helper()
 	res, e := h.http.Get("http://192.0.2.2:12080/status")
@@ -814,6 +831,7 @@ func (h *rwHarness) status(t *testing.T) rwStatus {
 	wireMust(t, json.NewDecoder(res.Body).Decode(&s))
 	return s
 }
+
 func (h *rwHarness) absent(t *testing.T, phase string) {
 	t.Helper()
 	time.Sleep(1200 * time.Millisecond)
@@ -823,6 +841,7 @@ func (h *rwHarness) absent(t *testing.T, phase string) {
 	}
 	t.Logf("RESTORE-WIRE-ABSENT phase=%s udp_attempts=0 handshakes=0 decrypted=0", phase)
 }
+
 func (h *rwHarness) apply(t *testing.T) {
 	t.Helper()
 	snap, e := h.st.Snapshot(h.ctx)
@@ -830,6 +849,7 @@ func (h *rwHarness) apply(t *testing.T) {
 	_, e = h.gate.Apply(h.ctx, snap)
 	wireMust(t, e)
 }
+
 func (h *rwHarness) rejection(t *testing.T, phase string) {
 	t.Helper()
 	for _, addr := range []string{"203.0.113.10", "203.0.113.30"} {
@@ -842,6 +862,7 @@ func (h *rwHarness) rejection(t *testing.T, phase string) {
 	h.probe(t, "10.8.0.2", "http://203.0.113.99:12080/direct", true)
 	h.probe(t, "10.8.0.3", "http://203.0.113.10:12080/direct", true)
 }
+
 func rwExercise(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Second)
 	defer cancel()
@@ -879,7 +900,7 @@ func rwExercise(t *testing.T) {
 	wireMust(t, e)
 	rwOwnedProof = os.NewFile(uintptr(proofFD), "restore-wire-provenance")
 	t.Cleanup(func() { _ = rwOwnedProof.Close(); rwOwnedProof = nil })
-	wireMust(t, unix.Fchmod(proofFD, 0600))
+	wireMust(t, unix.Fchmod(proofFD, 0o600))
 	_, e = rwOwnedProof.Write(proofData)
 	wireMust(t, e)
 	_, e = unix.FcntlInt(uintptr(proofFD), unix.F_ADD_SEALS, unix.F_SEAL_WRITE|unix.F_SEAL_GROW|unix.F_SEAL_SHRINK|unix.F_SEAL_SEAL)
@@ -1033,8 +1054,8 @@ func rwExercise(t *testing.T) {
 	route["rules"] = append([]any{map[string]any{"inbound": []string{"restore-marker-probe"}, "action": "route", "outbound": singbox.TunnelTag("synthetic-wg-0")}}, route["rules"].([]any)...)
 	config, e = json.Marshal(prior)
 	wireMust(t, e)
-	wireMust(t, os.MkdirAll(filepath.Dir(h.service.path), 0700))
-	wireMust(t, os.WriteFile(h.service.path, config, 0600))
+	wireMust(t, os.MkdirAll(filepath.Dir(h.service.path), 0o700))
+	wireMust(t, os.WriteFile(h.service.path, config, 0o600))
 	wireMust(t, h.applier.Checker.Check(ctx, h.service.path))
 	wireMust(t, h.st.Close())
 	archive, readErr := os.ReadFile(path)
@@ -1044,7 +1065,10 @@ func rwExercise(t *testing.T) {
 	cli := exec.Command(os.Getenv("RAZDACHA_RW_CLI"), "-test.run=^TestRestoreWireCLI$", "-test.timeout=20s", "-test.v")
 	cli.ExtraFiles = []*os.File{rwOwnedProof, rwOwnedProof}
 	cli.Env = append(os.Environ(), "RAZDACHA_RESTORE_WIRE_CLI=1", "RAZDACHA_RW_ROOT="+root)
-	rwRun(t, cli)
+	stdout := rwRun(t, cli)
+	receipt, receiptErr := rwCLIReceipt(rwReceiptMode, stdout)
+	wireMust(t, receiptErr)
+	fmt.Println(receipt)
 	h.st, e = store.Open(ctx, filepath.Join(root, "state.db"))
 	wireMust(t, e)
 	rwRestored(t, h)
@@ -1053,6 +1077,8 @@ func rwExercise(t *testing.T) {
 // BEGIN FIXED RESTORE ADAPTER
 // Baseline overlays replace ONLY this section and the restorestate import.
 // The CLI overlay separately calls the genuine pinned old restore() transaction.
+const rwReceiptMode = "fixed"
+
 func rwRestored(t *testing.T, h *rwHarness) {
 	ctl := &restorestate.Controller{Dir: h.root, StopRuntime: h.service.stop}
 	state, e := ctl.Status()
@@ -1135,6 +1161,7 @@ func rwRestored(t *testing.T, h *rwHarness) {
 // The actual CLI restore runs first; no pause is simulated or omitted here.
 // BEGIN BASELINE RESTORE ADAPTER
 /*
+const rwReceiptMode = "baseline"
 func rwRestored(t *testing.T, h *rwHarness) {
  snap, err := h.st.Snapshot(h.ctx)
  wireMust(t,err)
@@ -1160,3 +1187,57 @@ func rwRestored(t *testing.T, h *rwHarness) {
 }
 */
 // END BASELINE RESTORE ADAPTER
+
+// BEGIN PORTABLE CLI RECEIPT
+// Preserve the actual successful CLI capture; observers verify its Go test
+// transcript independently. The frame contains only bounded synthetic output.
+func rwCLIReceipt(mode, stdout string) (string, error) {
+	if (mode != "fixed" && mode != "baseline") || len(stdout) == 0 || len(stdout) > 65536 {
+		return "", fmt.Errorf("invalid CLI receipt mode or output length")
+	}
+	receipt := struct {
+		Event        string `json:"event"`
+		Mode         string `json:"mode"`
+		StdoutSHA256 string `json:"stdout_sha256"`
+		StdoutB64    string `json:"stdout_b64"`
+		ExitCode     int    `json:"exit_code"`
+	}{"cli-receipt", mode, fmt.Sprintf("%x", sha256.Sum256([]byte(stdout))), base64.StdEncoding.EncodeToString([]byte(stdout)), 0}
+	encoded, err := json.Marshal(receipt)
+	if err != nil {
+		return "", err
+	}
+	return "RESTORE-WIRE-CLI-RECEIPT " + string(encoded), nil
+}
+
+func TestRestoreWireCLIReceipt(t *testing.T) {
+	stdout := "=== RUN   TestRestoreWireCLI\n    fixture: unchanged synthetic output\n--- PASS: TestRestoreWireCLI (0.01s)\nPASS\n"
+	for _, mode := range []string{"fixed", "baseline"} {
+		frame, err := rwCLIReceipt(mode, stdout)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var receipt struct {
+			Event, Mode  string
+			StdoutSHA256 string `json:"stdout_sha256"`
+			StdoutB64    string `json:"stdout_b64"`
+			ExitCode     int    `json:"exit_code"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(frame, "RESTORE-WIRE-CLI-RECEIPT ")), &receipt); err != nil {
+			t.Fatal(err)
+		}
+		actual, err := base64.StdEncoding.DecodeString(receipt.StdoutB64)
+		if err != nil || string(actual) != stdout || receipt.StdoutSHA256 != fmt.Sprintf("%x", sha256.Sum256(actual)) || receipt.Event != "cli-receipt" || receipt.Mode != mode || receipt.ExitCode != 0 {
+			t.Fatal("CLI capture changed")
+		}
+	}
+	for _, stdout := range []string{"", strings.Repeat("x", 65537)} {
+		if _, err := rwCLIReceipt("fixed", stdout); err == nil {
+			t.Fatal("unbounded or empty receipt accepted")
+		}
+	}
+	if _, err := rwCLIReceipt("unknown", stdout); err == nil {
+		t.Fatal("unknown mode accepted")
+	}
+}
+
+// END PORTABLE CLI RECEIPT
