@@ -135,3 +135,33 @@ func TestAbortRequiresPositiveStopBeforeRetryableRecord(t *testing.T) {
 		t.Fatalf("retryable Abort state invalid: %v", e)
 	}
 }
+
+func TestOrphanPublishingEvidenceCannotBecomeOrdinaryInstallation(t *testing.T) {
+	dir, config, _, _, facts := permitFixture(t)
+	if e := os.Remove(filepath.Join(dir, File)); e != nil {
+		t.Fatal(e)
+	}
+	facts.NowNS += 2 * permitLifetimeNS
+	if e := runtimeStartAllowed(dir, config, facts, func(int, string) bool { return false }); e == nil {
+		t.Fatal("missing authority bypassed expired/dead publishing permit")
+	}
+	if e := os.Remove(filepath.Join(dir, PermitFile)); e != nil {
+		t.Fatal(e)
+	}
+	recovery := filepath.Join(dir, ".restore-fixture")
+	if e := os.Mkdir(recovery, 0o700); e != nil {
+		t.Fatal(e)
+	}
+	if e := WritePrivate(filepath.Join(recovery, "recovery.json"), []byte(`{"incomplete":"fixture"}`)); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := Read(dir); e == nil {
+		t.Fatal("missing authority ignored retained recovery evidence")
+	}
+	if e := os.Remove(filepath.Join(recovery, "recovery.json")); e != nil {
+		t.Fatal(e)
+	}
+	if e := runtimeStartAllowed(dir, config, facts, func(int, string) bool { return false }); e != nil {
+		t.Fatalf("positive ordinary installation control failed: %v", e)
+	}
+}

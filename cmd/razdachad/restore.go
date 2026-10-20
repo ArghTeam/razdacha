@@ -6,6 +6,8 @@ import (
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/singbox"
@@ -13,7 +15,7 @@ import (
 )
 
 func (g *applyGate) restoreApplyAllowed(snap store.Snapshot) error {
-	if e := g.restore.Allowed(); e != nil {
+	if e := g.restore.ApplyAllowed(); e != nil {
 		return e
 	}
 	s, e := g.restore.Status()
@@ -117,4 +119,70 @@ func (g *applyGate) recoverStartup(ctx context.Context, seed string) error {
 		return nil
 	}
 	return g.recover(ctx, seed)
+}
+
+// Global network reset always belongs to the canonical installation, regardless of
+// caller-supplied -db. Serialize before checking state so restore cannot race reset.
+func resetCanonicalNetwork(dbPath, canonicalDB string, reset func() error) error {
+	db, e := filepath.Abs(dbPath)
+	if e != nil {
+		return e
+	}
+	canonical, e := filepath.Abs(canonicalDB)
+	if e != nil {
+		return e
+	}
+	if db != canonical {
+		return errors.New("global network reset refuses alternate database paths")
+	}
+	lock, e := restorestate.Acquire(filepath.Dir(canonical), -1)
+	if e != nil {
+		return e
+	}
+	defer func() { _ = lock.Close() }()
+	state, e := restorestate.Read(filepath.Dir(canonical))
+	if e != nil {
+		return e
+	}
+	if state.Blocked() {
+		return errors.New("network reset refused while restore protection is active")
+	}
+	return reset()
+}
+
+// Password changes may never alias a protected canonical installation through -db.
+func passwordLifecycle(dbPath, canonicalDB string) (*restorestate.Lock, error) {
+	canonical, e := filepath.Abs(canonicalDB)
+	if e != nil {
+		return nil, e
+	}
+	db, e := filepath.Abs(dbPath)
+	if e != nil {
+		return nil, e
+	}
+	lock, e := restorestate.Acquire(filepath.Dir(canonical), -1)
+	if e != nil {
+		return nil, e
+	}
+	fail := func(e error) (*restorestate.Lock, error) { _ = lock.Close(); return nil, e }
+	state, e := restorestate.Read(filepath.Dir(canonical))
+	if e != nil {
+		return fail(e)
+	}
+	if state != nil {
+		if db != canonical {
+			return fail(errors.New("password changes refuse alternate database paths while trusted restore state exists"))
+		}
+		if state.Phase != "complete" {
+			return fail(errors.New("password changes refuse incomplete restore state"))
+		}
+		info, e := os.Lstat(canonical)
+		if e != nil {
+			return fail(e)
+		}
+		if !info.Mode().IsRegular() {
+			return fail(errors.New("password changes refuse symlink or nonregular restored databases"))
+		}
+	}
+	return lock, nil
 }

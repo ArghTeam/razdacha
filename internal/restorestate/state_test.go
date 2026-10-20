@@ -1,9 +1,12 @@
 package restorestate
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -176,5 +179,76 @@ func TestInheritedShellDescriptorCannotLeakToExec(t *testing.T) {
 		if e != nil || flags&unix.FD_CLOEXEC == 0 {
 			t.Fatal("validated inherited descriptor leaks to unrelated exec")
 		}
+	}
+}
+
+func TestConcurrentResumeApplyAndDuplicateResumeCompleteWithoutLockInversion(t *testing.T) {
+	dir := t.TempDir()
+	if e := os.Chmod(dir, 0o700); e != nil {
+		t.Fatal(e)
+	}
+	s := State{Version: Protocol, Operation: "fixture", Recovery: dir, Phase: "complete", Held: true, RuntimeInhibited: true}
+	if e := WritePrivate(filepath.Join(dir, Runtime), []byte("1\n")); e != nil {
+		t.Fatal(e)
+	}
+	if e := Save(dir, s); e != nil {
+		t.Fatal(e)
+	}
+	ctl := &Controller{Dir: dir}
+	var gate sync.Mutex
+	entered := make(chan struct{})
+	finish := make(chan struct{})
+	calls := 0
+	if e := ctl.StartWhenAllowed(func() error {
+		calls++
+		close(entered)
+		<-finish
+		gate.Lock()
+		gate.Unlock()
+		return nil
+	}); e != nil {
+		t.Fatal(e)
+	}
+	first := make(chan error, 1)
+	go func() { first <- ctl.Resume() }()
+	<-entered
+	apply := make(chan error, 1)
+	go func() {
+		gate.Lock()
+		defer gate.Unlock()
+		if e := ctl.ApplyAllowed(); e == nil {
+			apply <- errors.New("Apply admitted before resume startup finished")
+			return
+		}
+		ctl.mu.Lock()
+		ctl.mu.Unlock()
+		apply <- nil
+	}()
+	select {
+	case e := <-apply:
+		if e != nil {
+			t.Fatal(e)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Apply and resume inverted controller/publication locks")
+	}
+	duplicate := make(chan error, 1)
+	go func() { duplicate <- ctl.Resume() }()
+	close(finish)
+	for _, done := range []chan error{first, duplicate} {
+		select {
+		case e := <-done:
+			if e != nil {
+				t.Fatal(e)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("concurrent resume did not complete")
+		}
+	}
+	if calls != 1 {
+		t.Fatal("duplicate resume started acquisition more than once")
+	}
+	if e := ctl.ApplyAllowed(); e != nil {
+		t.Fatal("positive post-start Apply control rejected")
 	}
 }

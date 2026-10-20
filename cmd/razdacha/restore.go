@@ -179,6 +179,11 @@ func restore(ctx context.Context, opts restoreOptions) error {
 	if err != nil {
 		return err
 	}
+	helper := filepath.Join(opts.services.Root, defaultBinDir, "razdacha")
+	helperAttested, err := opts.attest(ctx, helper)
+	if err != nil {
+		return fmt.Errorf("installed runtime start helper is incompatible: %w", err)
+	}
 	record := restorestate.State{Version: restorestate.Protocol, Operation: filepath.Base(op), Recovery: op, Phase: "preparing", Held: true, RuntimeInhibited: true}
 	recovery := restorestate.Recovery{}
 	recovery.Services, err = json.Marshal(services)
@@ -283,19 +288,26 @@ func restore(ctx context.Context, opts restoreOptions) error {
 	if err = ctx.Err(); err != nil {
 		return err
 	}
-	record.Phase = "complete"
-	if err = restorestate.Remove(filepath.Join(dir, restorestate.Incomplete)); err != nil {
-		return err
-	}
-	if err = restorestate.Save(dir, record); err != nil {
-		return err
-	}
 	again, err := opts.attest(ctx, binary)
 	if err != nil {
 		return err
 	}
 	if !bytes.Equal(attested, again) {
 		return errors.New("installed daemon changed before startup; explicit recovery required")
+	}
+	helperAgain, err := opts.attest(ctx, helper)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(helperAttested, helperAgain) {
+		return errors.New("installed runtime start helper changed before startup; explicit recovery required")
+	}
+	record.Phase = "complete"
+	if err = restorestate.Remove(filepath.Join(dir, restorestate.Incomplete)); err != nil {
+		return err
+	}
+	if err = restorestate.Save(dir, record); err != nil {
+		return err
 	}
 	if services[packaging.DaemonUnit].Active == "active" {
 		if err = opts.services.Run(ctx, "start", packaging.DaemonUnit); err != nil {

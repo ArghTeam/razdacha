@@ -73,10 +73,17 @@ func (s *State) Blocked() bool {
 func Read(dir string) (*State, error) {
 	data, err := ReadPrivate(filepath.Join(dir, File), 64<<10)
 	if errors.Is(err, os.ErrNotExist) {
-		for _, name := range []string{Incomplete, Runtime} {
+		for _, name := range []string{Incomplete, Runtime, PermitFile} {
 			if _, e := os.Lstat(filepath.Join(dir, name)); !errors.Is(e, os.ErrNotExist) {
 				return nil, errors.New("orphan restore inhibitor or inaccessible installation")
 			}
+		}
+		records, e := filepath.Glob(filepath.Join(dir, ".restore-*", "recovery.json"))
+		if e != nil {
+			return nil, e
+		}
+		if len(records) > 0 {
+			return nil, errors.New("retained restore recovery evidence has no authoritative state")
 		}
 		return nil, nil
 	}

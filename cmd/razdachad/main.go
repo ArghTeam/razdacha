@@ -51,18 +51,18 @@ func main() {
 		slog.Error("resolve restore state", "error", err)
 		os.Exit(2)
 	}
-	trusted, err := restorestate.Read(filepath.Dir(absoluteDB))
+	trusted, err := restorestate.Read(filepath.Dir(defaultDBPath))
 	if err != nil {
 		slog.Error("invalid trusted restore state", "error", err)
+		os.Exit(2)
+	}
+	if trusted != nil && absoluteDB != defaultDBPath && !*showVersion && !*capabilities {
+		slog.Error("alternate database path refused while trusted restore state exists")
 		os.Exit(2)
 	}
 	if *capabilities {
 		fmt.Printf("{\"restore_protocol\":%d}\n", restorestate.Protocol)
 		return
-	}
-	if *resetNetwork && trusted.Blocked() {
-		slog.Error("network reset refused while restore protection is active")
-		os.Exit(2)
 	}
 	if *showVersion {
 		fmt.Println(version)
@@ -70,7 +70,7 @@ func main() {
 	}
 
 	if *resetNetwork {
-		if err := resetNetfilter(); err != nil {
+		if err := resetCanonicalNetwork(absoluteDB, defaultDBPath, resetNetfilter); err != nil {
 			slog.Error("сброс сети", "ошибка", err)
 			os.Exit(2)
 		}
@@ -94,11 +94,18 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		return fmt.Errorf("resolve database path: %w", err)
 	}
 	if setPassword {
-		lock, e := restorestate.Acquire(filepath.Dir(dbPath), -1)
+		lock, e := passwordLifecycle(dbPath, defaultDBPath)
 		if e != nil {
 			return e
 		}
 		defer func() { _ = lock.Close() }()
+	}
+	canonical, e := restorestate.Read(filepath.Dir(defaultDBPath))
+	if e != nil {
+		return e
+	}
+	if canonical != nil && dbPath != defaultDBPath {
+		return errors.New("alternate database refused while trusted restore state exists")
 	}
 	trusted, err := restorestate.Read(filepath.Dir(dbPath))
 	if err != nil {

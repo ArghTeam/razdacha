@@ -99,7 +99,16 @@ func startApply(ctx context.Context, st *store.Store, pools *lists.PoolManager,
 	if len(restore) > 0 {
 		g.restore = restore[0]
 	}
-	g.inner.BeforeReload = func(context.Context) error { return g.restore.BeginPublishing(g.inner.ConfigPath) }
+	g.inner.BeforeReload = func(ctx context.Context) error {
+		if g.restore != nil {
+			for _, path := range []string{"/usr/local/bin/razdachad", "/usr/local/bin/razdacha"} {
+				if _, err := packaging.AttestRestoreBinary(ctx, path); err != nil {
+					return err
+				}
+			}
+		}
+		return g.restore.BeginPublishing(g.inner.ConfigPath)
+	}
 	if g.restore != nil {
 		g.inner.AfterReload = func(ctx context.Context) error {
 			return (packaging.RestoreServices{Query: packaging.SystemdQuery}).RuntimeReady(ctx)

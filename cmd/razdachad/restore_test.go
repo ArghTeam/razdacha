@@ -116,3 +116,76 @@ func TestRestoreAbortAfterAuthorityBeforeFinishCannotRecoverOnStartup(t *testing
 		t.Fatal("authority presence removed restore inhibition")
 	}
 }
+
+func TestGlobalResetCannotShadowCanonicalRestoreState(t *testing.T) {
+	dir := t.TempDir()
+	ctl := restoreControllerFixture(t, dir, true)
+	canonical := filepath.Join(dir, "state.db")
+	alternate := filepath.Join(t.TempDir(), "shadow.db")
+	calls := 0
+	reset := func() error { calls++; return nil }
+	if e := resetCanonicalNetwork(alternate, canonical, reset); e == nil {
+		t.Fatal("alternate -db bypassed global restore protection")
+	}
+	if e := resetCanonicalNetwork(canonical, canonical, reset); e == nil {
+		t.Fatal("held canonical reset admitted")
+	}
+	if calls != 0 {
+		t.Fatal("global reset observer called while protected")
+	}
+	if e := restorestate.WritePrivate(filepath.Join(dir, restorestate.File), []byte("corrupt")); e != nil {
+		t.Fatal(e)
+	}
+	if e := resetCanonicalNetwork(canonical, canonical, reset); e == nil || calls != 0 {
+		t.Fatal("corrupt canonical state permitted global reset")
+	}
+	if e := os.Remove(filepath.Join(dir, restorestate.File)); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.Remove(filepath.Join(dir, restorestate.Runtime)); e != nil {
+		t.Fatal(e)
+	}
+	lock, e := restorestate.Acquire(ctl.Dir, -1)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = resetCanonicalNetwork(canonical, canonical, reset); e == nil {
+		t.Fatal("global reset bypassed lifecycle serialization")
+	}
+	_ = lock.Close()
+	if e = resetCanonicalNetwork(canonical, canonical, reset); e != nil || calls != 1 {
+		t.Fatal("positive unprotected canonical reset control failed")
+	}
+}
+
+func TestPasswordChangeCannotAliasIncompleteCanonicalRestore(t *testing.T) {
+	dir := t.TempDir()
+	restoreControllerFixture(t, dir, true)
+	canonical := filepath.Join(dir, "state.db")
+	alias := filepath.Join(t.TempDir(), "alias.db")
+	if e := os.Symlink(canonical, alias); e != nil {
+		t.Fatal(e)
+	}
+	if lock, e := passwordLifecycle(alias, canonical); e == nil {
+		_ = lock.Close()
+		t.Fatal("alternate password path admitted against protected state")
+	}
+	state, e := restorestate.Read(dir)
+	if e != nil {
+		t.Fatal(e)
+	}
+	state.Phase = "preparing"
+	if e = restorestate.WritePrivate(filepath.Join(dir, restorestate.Incomplete), []byte("1\n")); e != nil {
+		t.Fatal(e)
+	}
+	if e = restorestate.Save(dir, *state); e != nil {
+		t.Fatal(e)
+	}
+	if lock, e := passwordLifecycle(canonical, canonical); e == nil {
+		_ = lock.Close()
+		t.Fatal("password path admitted incomplete canonical DB")
+	}
+	if _, e = os.Lstat(canonical); !os.IsNotExist(e) {
+		t.Fatal("password guard created or opened missing restored DB")
+	}
+}

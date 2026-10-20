@@ -97,12 +97,78 @@ func fixtureRestore(t *testing.T, ctx context.Context, opts restoreOptions) erro
 		return []byte(b.String()), nil
 	}
 	opts.services = services
-	opts.attest = func(context.Context, string) ([]byte, error) {
-		return []byte("synthetic-capability-and-file-identity"), nil
+	if opts.attest == nil {
+		opts.attest = func(context.Context, string) ([]byte, error) {
+			return []byte("synthetic-capability-and-file-identity"), nil
+		}
 	}
 	opts.checklist = true
 	if opts.closeIngress == nil {
 		opts.closeIngress = func() error { return nil }
 	}
 	return restore(ctx, opts)
+}
+
+func TestRestoreRefusesMissingOrOldInstalledHelperBeforeMutation(t *testing.T) {
+	for _, name := range []string{"missing", "old"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			dbPath := filepath.Join(dir, "state.db")
+			if e := os.WriteFile(dbPath, stateWithPeer(t, "Fixture destination"), 0o600); e != nil {
+				t.Fatal(e)
+			}
+			file := writeFile(t, "incoming.db", stateWithPeer(t, "Fixture incoming"))
+			mutations := 0
+			opts := restoreOptions{dbPath: dbPath, file: file, force: true, systemctl: func(context.Context, ...string) error { mutations++; return nil }, closeIngress: func() error { mutations++; return nil }}
+			opts.attest = func(_ context.Context, path string) ([]byte, error) {
+				if filepath.Base(path) == "razdacha" {
+					if name == "missing" {
+						return nil, os.ErrNotExist
+					}
+					return nil, fmt.Errorf("old helper has no restore protocol")
+				}
+				return []byte("synthetic-daemon"), nil
+			}
+			if e := fixtureRestore(t, context.Background(), opts); e == nil {
+				t.Fatal("unsupported installed helper admitted")
+			}
+			if mutations != 0 {
+				t.Fatal("helper rejection followed service/guard mutation")
+			}
+			if got := peerNames(t, dbPath); len(got) != 1 || got[0] != "Fixture destination" {
+				t.Fatal("helper rejection changed destination DB")
+			}
+		})
+	}
+}
+
+func TestRestoreHelperIdentityChangeKeepsDaemonBootInhibited(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "state.db")
+	file := writeFile(t, "incoming.db", stateWithPeer(t, "Fixture incoming"))
+	helperCalls, starts := 0, 0
+	opts := restoreOptions{dbPath: dbPath, file: file, unitActive: func(context.Context) bool { return true }, systemctl: func(_ context.Context, args ...string) error {
+		if len(args) > 0 && args[0] == "start" {
+			starts++
+		}
+		return nil
+	}}
+	opts.attest = func(_ context.Context, path string) ([]byte, error) {
+		if filepath.Base(path) == "razdacha" {
+			helperCalls++
+			if helperCalls > 1 {
+				return []byte("changed-helper"), nil
+			}
+		}
+		return []byte("synthetic-initial-identity"), nil
+	}
+	if e := fixtureRestore(t, context.Background(), opts); e == nil {
+		t.Fatal("changed helper accepted before daemon startup")
+	}
+	if starts != 0 {
+		t.Fatal("daemon started after helper identity changed")
+	}
+	if _, e := os.Stat(filepath.Join(dir, "restore-incomplete")); e != nil {
+		t.Fatal("helper mismatch removed durable daemon boot inhibition")
+	}
 }
