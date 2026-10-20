@@ -36,7 +36,7 @@ one change before advancing to the next. These are sequential delivery dependenc
 | 3 | [#220: native rule-set coherence](../tasks/done/220-native-ruleset-coherence.md) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Validated on `d5cb9c1` and merged in PR #224: four fixed passes and four expected baseline failures; no product deployment |
 | 4 | [#215: safe peer deletion](../tasks/done/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Validated on `14e28b3`: two fixed passes and two positively proven baseline broadening failures; merged in PR #225 at `0da7e20` after five green CI checks |
 | 5 | [#216: clear UI secrets](../tasks/done/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Fixed 31/31; five positive baseline defects; creation baseline inconclusive; controller STOP |
-| 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
+| 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Local implementation under review; isolated execution pending |
 | 7 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
 
 The first three unsuccessful #214 attempts remain failed: initial UDP echo, initial DNS with unknown response status, and initial DNS REFUSED (5). Core refresh/failure observations were not reached. #222 does not replace its four
@@ -447,3 +447,84 @@ remains a P2 availability limitation, without confidentiality loss or authentica
 bypass. Heap zeroing is not promised. No installed app deployment follows from these
 fixture observations. Final documentation review and CI on the final PR head remain
 merge gates. Private raw artifacts/READY tokens are not repository evidence.
+
+## Task 217 contained fixture boundary (namespace execution pending)
+
+The [approved-design ADR 0027](decisions/0027-safe-cross-host-restore.md) and expanded
+[task matrix](../tasks/217-safe-cross-host-restore.md) require baseline forbidden
+activation/callback proof and fixed absence observations, not generic errors. All
+imported endpoints, source URLs and delivery sinks must be synthetic and contained.
+Use fresh private Linux network and mount namespaces with private `/var/lib` before
+fixture mutation; never use host systemd sockets or installed service lifecycle calls.
+The installed app is outside this fixture, including when it is v0.10.0: a new restore
+CLI must reject an old daemon's missing metadata-only hold capability before mutation.
+Real synthetic WG keypairs, contained endpoint observers and positive controls are
+required for handshake claims. Crash/journal/fsync, runtime-quarantine, callback-resume
+and coherent current-destination recovery cases are required. Independent threat-model
+review and root's explicit runner GO precede staging; a different independent reviewer
+assesses final code and actual evidence. No staging or approval is claimed here.
+
+The proposed matrix additionally requires deterministic installer/restore contention
+across attestation and ExecStart, inherited-lock handoff/cancellation checks, partial
+binary-publication failures and incompatible update/downgrade rejection for every
+trusted restore-state phase. All use fixture executable/unit roots and service adapters.
+Adversarial SQLite schema fixtures must reject triggers/views/virtual or unknown objects
+before migration; legitimate fixtures must preserve all rows except supported migrations
+and intended WG pause. Test reset-network refusal and zero implicit runtime publication
+from resumed workers before first Apply. These requirements now have the local evidence summarized below; isolated namespace
+and staging execution of the additional matrix has not run yet.
+
+
+### Task 217 local evidence boundary
+
+The implementation has local schema/classification, service/filesystem error, explicit
+rollback, real child-process SIGKILL, lock handoff/signal and localhost browser tests.
+Service adapters never call host systemd; installer tests overlay only private paths
+and owner spellings, replace downloads with synthetic archives, and use real flock.
+Filesystem error injection and SIGKILL do not prove physical power-loss, kernel reboot
+or storage-controller flush behavior. Intercepted browser requests prove frontend
+intent and localhost session behavior, not delivery or whole-daemon callback containment.
+
+The #228 contained true-WireGuard baseline/fix fixture source is integrated through
+PR #229. Its namespace execution remains pending. It is designed to prove
+zero attempted UDP initiation/transport toward synthetic WG endpoints while restored,
+then observed authenticated handshake/decrypted marker only after chosen enable plus
+explicit Apply, with independent direct/reachability positive controls. Actual production
+restore adapters and shared daemon startup/hold wiring must be exercised. No host-systemd
+socket, real provider key, production DB, installed app or excluded source host is involved.
+
+Do not execute namespace fixtures until fresh artifact/source hashes, runner containment,
+independent review and root GO are recorded. Staging is a disposable fixture host only;
+the real installed v0.10.0 service remains untouched. Record finite observer windows and
+all inconclusive results. The [task record](../tasks/217-safe-cross-host-restore.md) tracks
+remaining final acceptance and CI separately from local implementation checks.
+
+
+### Integrated task 217/228 wire-proof limits before execution
+
+The two CLI/daemon Linux fixture files and their portable guard stubs are now integrated.
+Ordinary local tests exercise provenance rejection and receipt framing; they do not run
+network namespaces or establish encrypted-WireGuard observations. Both modeled services
+are initially inactive. The baseline adapter invokes the genuine pinned old CLI restore,
+checks that enabled WG rows and the prior endpoint configuration remain, then explicitly
+starts that retained configuration through a contained independent runtime ExecStart
+adapter. This tests the next-start mechanism; it is not spontaneous boot or real systemd
+proof. The fixed adapter invokes the actual fixed restore and checks independent start
+refusal, paused policy and subsequent explicit enable/Apply using shared production gates.
+
+Both revisions construct the same topology and prior-config observer template with fresh
+independently generated synthetic key bytes per invocation. Their configs and archives
+are therefore not byte-identical. The prior config alone adds a loopback-only inlet for a
+fixed authenticated marker while client ingress remains guarded. Subsequent fixed Apply
+uses unmodified production Generate and asserts that this inlet disappears. A future
+positive wire result must include observed UDP attempts, authenticated handshake and
+decrypted marker, with direct reachability and unchosen-credential negative controls.
+
+The parent preserves actual successful CLI stdout in a bounded base64 receipt, its SHA256,
+mode and exit code. The reviewed observer must decode it and independently require the
+child Go test PASS envelope; a synthetic status label is insufficient. Receipt framing
+unit tests prove encoding and bounds, not an actual CLI namespace execution. Rebuild the
+fixed artifacts from the final combined freeze; retain immutable baseline provenance and
+exact source/artifact hashes. Every future run must state finite observation windows,
+tested source and whether any later documentation-only delta leaves all production and
+fixture source byte-identical. No namespace/staging observations have run at this freeze.

@@ -58,10 +58,12 @@ const unknownVersion = "unknown"
 
 // setupOptions — параметры `razdacha setup`.
 type setupOptions struct {
-	root     string
-	dbPath   string
-	daemon   string
-	peerName string
+	lockFD        int
+	lockInherited bool
+	root          string
+	dbPath        string
+	daemon        string
+	peerName      string
 
 	// public и publicSet — режим панели и то, задавали ли его этим запуском.
 	// Различать обязательно: режим хранится в БД, и обновление без флага
@@ -105,6 +107,7 @@ func runSetup(ctx context.Context, args []string) error {
 func parseSetupFlags(args []string) (setupOptions, error) {
 	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 	opts := setupOptions{}
+	flags.IntVar(&opts.lockFD, "lifecycle-lock-fd", -1, "inherited managed installer lock descriptor")
 	flags.StringVar(&opts.root, "root", "", "корень файловой системы; пустой означает /")
 	flags.StringVar(&opts.dbPath, "db", defaultDBPath, "путь к файлу состояния")
 	flags.StringVar(&opts.daemon, "daemon", defaultDaemon, "путь к бинарнику демона для юнита systemd")
@@ -120,6 +123,9 @@ func parseSetupFlags(args []string) (setupOptions, error) {
 	// умолчанию и явное `-public=false` неразличимы, а решают они разное —
 	// «оставь как было» против «выключи».
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "lifecycle-lock-fd" {
+			opts.lockInherited = true
+		}
 		if f.Name == "public" {
 			opts.publicSet = true
 		}
@@ -128,6 +134,11 @@ func parseSetupFlags(args []string) (setupOptions, error) {
 }
 
 func setup(ctx context.Context, opts setupOptions) (summary, error) {
+	lock, e := setupLifecycle(opts)
+	if e != nil {
+		return summary{}, e
+	}
+	defer func() { _ = lock.Close() }()
 	log := slog.Default()
 
 	// Признак первой установки — наличие БД (docs/08-install-upgrade.md,

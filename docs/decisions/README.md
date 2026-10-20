@@ -35,3 +35,5 @@
 | [0025](0025-daemon-owned-native-rule-sets.md) | Daemon-owned immutable native rule sets | 2026-10-20 | accepted; extends 0023 and 0024 |
 
 | [0026](0026-peer-deletion-preserves-scope.md) | Peer deletion preserves selected scope | 2026-10-20 | accepted; clarifies 0013 |
+
+| [0027](0027-safe-cross-host-restore.md) | Restore with paused credentials and explicit destination activation | 2026-10-20 | design accepted; implementation under review; partially supersedes 0016 |

@@ -57,3 +57,24 @@ delivery or installed deployment. Cleanup removes application references without
 promising heap erasure or immunity to delayed cookie expiry. A dataset marker alone
 does not prove visible rendering. Keep case-specific coverage and inconclusive
 observations explicit in the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md).
+
+## Safe restore contract (ADR 0027)
+
+[ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
+[task 217](../../tasks/217-safe-cross-host-restore.md) define the implemented restore behavior below. Local validation and independent
+review are recorded in the task; isolated network/staging acceptance is separate.
+
+Local authenticated administration remains available during a trusted restore hold. External manual actions and callbacks are blocked; a dedicated authenticated resume permits acquisition and schedules before Apply without enabling WG or releasing ingress.
+
+Purely local diagnostics and the compiled-in community catalog stay available; WARP deletion is gated before local deletion. Resumed checks cannot implicitly start runtime or publish policy.
+
+Canonical trusted state is validated before managed early-exit flags or DB open. The
+held panel is reachable through configured daemon loopback HTTP with an SSH forward to
+`localhost`; it does not depend on imported incoming WG peers being installed. Apply
+waits for the once-only Resume worker transition, which never runs under its state mutex.
+
+Destination DB, WAL, SHM and rollback-journal admission precedes SQLite access and
+initial restore safety/service mutation. The shared check requires a private canonical
+parent and owner-controlled mode-0600 single-link regular files, rejects aliases and
+orphan sidecars, and repeats in snapshot/checkpoint/replacement/recovery and protected
+password writes. A rejected alias never changes its sibling target.

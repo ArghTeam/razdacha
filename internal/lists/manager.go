@@ -64,6 +64,8 @@ func Sources(snap store.Snapshot) []Source {
 
 // ManagerOptions — параметры расписания.
 type ManagerOptions struct {
+	// Allow gates external work for trusted restored installations; nil preserves normal behavior.
+	Allow    func() error
 	Fetcher  *Fetcher
 	Logger   *slog.Logger
 	Interval time.Duration // ноль означает дефолт настроек (1 сутки)
@@ -72,6 +74,7 @@ type ManagerOptions struct {
 
 // Manager держит разобранные списки и обновляет их по расписанию.
 type Manager struct {
+	allow   func() error
 	fetcher *Fetcher
 	log     *slog.Logger
 	retry   time.Duration
@@ -90,6 +93,7 @@ type Manager struct {
 // NewManager создаёт расписание. Само по себе оно ничего не качает — нужен Start.
 func NewManager(o ManagerOptions) *Manager {
 	m := &Manager{
+		allow:    o.Allow,
 		fetcher:  o.Fetcher,
 		log:      o.Logger,
 		retry:    o.Retry,
@@ -190,6 +194,11 @@ func (m *Manager) currentInterval() time.Duration {
 // Refresh проходит по всем источникам один раз. Ошибка одного источника не
 // отменяет остальные и не выбрасывает его прошлую версию из памяти.
 func (m *Manager) Refresh(ctx context.Context) error {
+	if m.allow != nil {
+		if err := m.allow(); err != nil {
+			return err
+		}
+	}
 	m.mu.RLock()
 	sources := append([]Source(nil), m.sources...)
 	m.mu.RUnlock()

@@ -104,3 +104,26 @@ BEFORE-to-AFTER database semantics, policy identity and host/services were stabl
 **Limits:** finite isolated nft/route/sing-box observations, a veth address adapter,
 no encrypted WG handshake, no application or production deployment. Final docs/current
 CI remain merge gates. See the [implementation record](../../tasks/done/220-native-ruleset-coherence.md).
+
+
+## 2026-10-20
+
+### #217 — Safe restore and explicit destination activation
+
+Restore retains ingress guarding through held startup and explicit publication. Canonical serialized reset cannot bypass protection with an alternate DB, and aborted committed candidates cannot restart while inhibited.
+**Decision:** [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md).
+**Validation boundary:** local regression/process/browser checks and bounded independent
+corrective reviews are recorded in the [task](../../tasks/217-safe-cross-host-restore.md).
+Final integrated review, contained true-WireGuard fixture and isolated staging acceptance
+remain pending; no installed application, source host, deployment or release is changed.
+
+
+### Task 217/228 integrated fixture source; namespace proof pending
+
+The merged contained fixture invokes actual old/fixed restore transactions with both
+modeled services initially inactive. Baseline retained-runtime activation uses an explicit
+contained independent start adapter; it is not spontaneous reboot or host-systemd proof.
+The common prior config has a loopback observer inlet with fresh synthetic keys per run;
+later fixed Apply uses production Generate and removes that inlet. Actual CLI stdout is
+preserved in bounded hashed receipts. Portable guards/local checks do not establish wire
+observations; reviewed artifact/runner gates and isolated execution remain pending.

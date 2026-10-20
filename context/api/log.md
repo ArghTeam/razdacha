@@ -234,3 +234,22 @@ handshake; finite queued capture observations, no universal lossless claim; nati
 SRS/JSON remains #220. No application or production deployment occurred.
 **Review:** pre-canary and owner gates passed. Distinct final review and current CI
 are required before merge. See the [completed implementation record](../../tasks/done/214-coherent-network-state.md).
+
+
+## 2026-10-20
+
+### #217 — Safe restore and explicit destination activation
+
+Authenticated restore status and dual-acknowledgment Resume distinguish local administration from external manual/scheduled actions. Current saved backup encryption/recipients and pool/list URLs are exercised with contained observers.
+**Decision:** [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md).
+**Validation boundary:** local regression/process/browser checks and bounded independent
+corrective reviews are recorded in the [task](../../tasks/217-safe-cross-host-restore.md).
+Final integrated review, contained true-WireGuard fixture and isolated staging acceptance
+remain pending; no installed application, source host, deployment or release is changed.
+
+**Final-local correction:** independent review reproduced a canonical DB symlink
+passing destination summary/checkpoint. Shared owner/type/no-alias DB/journal admission
+now precedes SQLite and initial safety/service mutation, including recovery/replacement
+and protected password writes. Actual transaction negatives retain sibling bytes and
+zero service/guard mutations; normal committed-WAL snapshot remains a positive control.
+Corrective independent retest and exact-head CI remain separate acceptance gates.

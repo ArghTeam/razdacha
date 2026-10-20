@@ -11,6 +11,8 @@ import (
 
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/networkstate"
+	"github.com/ArghTeam/razdacha/internal/packaging"
+	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -22,6 +24,7 @@ type applyGate struct {
 	log     *slog.Logger
 	mu      sync.Mutex
 	base    store.Snapshot
+	restore *restorestate.Controller
 	network *networkPublication
 }
 
@@ -33,8 +36,16 @@ func newApplyGate(inner *singbox.Applier, network *networkPublication, log *slog
 }
 
 func (g *applyGate) Apply(ctx context.Context, snap store.Snapshot) (singbox.ApplyResult, error) {
+	lock, e := g.restore.PublicationLock()
+	if e != nil {
+		return singbox.ApplyResult{}, e
+	}
+	defer func() { _ = lock.Close() }()
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if err := g.restoreApplyAllowed(snap); err != nil {
+		return singbox.ApplyResult{}, err
+	}
 	return g.publish(ctx, snap, false, true)
 }
 
@@ -78,13 +89,31 @@ func withPoolServers(base, fresh store.Snapshot) store.Snapshot {
 
 // startApply recovers known policy before subscribing background updates.
 func startApply(ctx context.Context, st *store.Store, pools *lists.PoolManager,
-	mgr *lists.Manager, nf netfilter, dbPath string, log *slog.Logger,
+	mgr *lists.Manager, nf netfilter, dbPath string, log *slog.Logger, restore ...*restorestate.Controller,
 ) (*applyGate, error) {
 	g := newApplyGate(singbox.NewApplier(), &networkPublication{
 		manager: mgr, guard: nf.guard, route: nf.ensureRoute, nft: nf.publish,
 		path:      filepath.Join(filepath.Dir(dbPath), networkstate.CommittedFile),
 		uncertain: true,
 	}, log)
+	if len(restore) > 0 {
+		g.restore = restore[0]
+	}
+	g.inner.BeforeReload = func(ctx context.Context) error {
+		if g.restore != nil {
+			for _, path := range []string{"/usr/local/bin/razdachad", "/usr/local/bin/razdacha"} {
+				if _, err := packaging.AttestRestoreBinary(ctx, path); err != nil {
+					return err
+				}
+			}
+		}
+		return g.restore.BeginPublishing(g.inner.ConfigPath)
+	}
+	if g.restore != nil {
+		g.inner.AfterReload = func(ctx context.Context) error {
+			return (packaging.RestoreServices{Query: packaging.SystemdQuery}).RuntimeReady(ctx)
+		}
+	}
 	g.network.validateWG = func(ctx context.Context, settings store.Settings) error {
 		peers, err := st.Peers(ctx)
 		if err != nil {
@@ -97,14 +126,23 @@ func startApply(ctx context.Context, st *store.Store, pools *lists.PoolManager,
 		if err != nil {
 			return err
 		}
-		return wg.Close()
+		defer func() { _ = wg.Close() }()
+		peers, err := st.Peers(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = wg.SyncPeers(ctx, peers)
+		return err
 	}
-	if err := g.recover(ctx, filepath.Join(filepath.Dir(dbPath), networkstate.BootstrapFile)); err != nil {
+	if err := g.recoverStartup(ctx, filepath.Join(filepath.Dir(dbPath), networkstate.BootstrapFile)); err != nil {
 		return nil, err
 	}
+
 	if mgr != nil {
 		go watchAppliedLists(ctx, mgr, g, log)
-		go syncListSources(ctx, st, mgr, nil, g.appliedSources, log)
+		if len(restore) == 0 {
+			go syncListSources(ctx, st, mgr, nil, g.appliedSources, log)
+		}
 	}
 	if pools != nil {
 		go watchPools(ctx, st, pools, g, log)

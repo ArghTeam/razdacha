@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/lists"
+	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -66,8 +67,13 @@ func ensureBuiltinPool(ctx context.Context, st *store.Store, log *slog.Logger) {
 // останавливает: не обошёлся каталог — расписание повторит само, а пул останется
 // с прежним составом серверов. Пустой пул просто выпадает из конфига вместе со
 // своими правилами (ADR 0010), исправные туннели это не задевает.
-func startPools(ctx context.Context, st *store.Store, log *slog.Logger) *lists.PoolManager {
+func startPools(ctx context.Context, st *store.Store, log *slog.Logger, restore ...*restorestate.Controller) *lists.PoolManager {
+	var ctl *restorestate.Controller
+	if len(restore) > 0 {
+		ctl = restore[0]
+	}
 	m := lists.NewPoolManager(lists.PoolManagerOptions{
+		Allow:   ctl.Allowed,
 		Catalog: &lists.PoolCatalog{Log: log, CheckKey: poolKeyCheck},
 		Writer:  st,
 		Logger:  log,
@@ -85,8 +91,10 @@ func startPools(ctx context.Context, st *store.Store, log *slog.Logger) *lists.P
 
 	// Start возвращается сразу: первый обход уходит в горутину, и старт демона не
 	// ждёт чужого сайта.
-	m.Start(ctx)
-	go syncPoolTunnels(ctx, st, m, tunnels, poolTunnelsInterval, log)
+	if len(restore) == 0 {
+		m.Start(ctx)
+		go syncPoolTunnels(ctx, st, m, tunnels, poolTunnelsInterval, log)
+	}
 	return m
 }
 

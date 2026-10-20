@@ -87,7 +87,7 @@ func TestRestoreOntoCleanInstall(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "state.db")
 	file := writeFile(t, "copy.db", stateWithPeer(t, "ноутбук"))
 
-	if err := restore(context.Background(), restoreOptions{dbPath: dbPath, file: file}); err != nil {
+	if err := fixtureRestore(t, context.Background(), restoreOptions{dbPath: dbPath, file: file}); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestRestoreRefusesNonEmptyWithoutForce(t *testing.T) {
 	}
 	file := writeFile(t, "copy.db", stateWithPeer(t, "из копии"))
 
-	err := restore(context.Background(), restoreOptions{dbPath: dbPath, file: file})
+	err := fixtureRestore(t, context.Background(), restoreOptions{dbPath: dbPath, file: file})
 	if err == nil {
 		t.Fatal("восстановление затёрло непустую БД без -force")
 	}
@@ -134,7 +134,7 @@ func TestRestoreForceKeepsPreviousState(t *testing.T) {
 	}
 	file := writeFile(t, "copy.db", stateWithPeer(t, "из копии"))
 
-	err := restore(context.Background(), restoreOptions{dbPath: dbPath, file: file, force: true})
+	err := fixtureRestore(t, context.Background(), restoreOptions{dbPath: dbPath, file: file, force: true})
 	if err != nil {
 		t.Fatalf("restore -force: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestRestoreForceKeepsPreviousState(t *testing.T) {
 		t.Fatalf("пиры после восстановления: %v", got)
 	}
 
-	saved, err := filepath.Glob(filepath.Join(dir, backupDir, "state-before-restore-*.db"))
+	saved, err := filepath.Glob(filepath.Join(dir, ".restore-*", "destination-*.db"))
 	if err != nil {
 		t.Fatalf("Glob: %v", err)
 	}
@@ -168,11 +168,11 @@ func TestRestoreRefusesFutureSchema(t *testing.T) {
 	file = writeFile(t, "future-copy.db", future)
 
 	dbPath := filepath.Join(t.TempDir(), "state.db")
-	err = restore(context.Background(), restoreOptions{dbPath: dbPath, file: file})
+	err = fixtureRestore(t, context.Background(), restoreOptions{dbPath: dbPath, file: file})
 	if err == nil {
 		t.Fatal("копия из будущего принята")
 	}
-	if !strings.Contains(err.Error(), "новее") {
+	if !strings.Contains(err.Error(), "unsupported restore schema") {
 		t.Errorf("отказ не объясняет причину: %v", err)
 	}
 	if _, statErr := os.Stat(dbPath); !errors.Is(statErr, os.ErrNotExist) {
@@ -186,7 +186,7 @@ func TestRestoreMigratesOldSchema(t *testing.T) {
 	file := writeFile(t, "old.db", oldSchemaState(t))
 
 	dbPath := filepath.Join(t.TempDir(), "state.db")
-	if err := restore(context.Background(), restoreOptions{dbPath: dbPath, file: file}); err != nil {
+	if err := fixtureRestore(t, context.Background(), restoreOptions{dbPath: dbPath, file: file}); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 
@@ -214,7 +214,7 @@ func TestRestoreEncrypted(t *testing.T) {
 	t.Setenv(passphraseEnv, restorePhrase)
 
 	dbPath := filepath.Join(t.TempDir(), "state.db")
-	if err := restore(context.Background(), restoreOptions{dbPath: dbPath, file: file}); err != nil {
+	if err := fixtureRestore(t, context.Background(), restoreOptions{dbPath: dbPath, file: file}); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 	if got := peerNames(t, dbPath); len(got) != 1 || got[0] != "из чата" {
@@ -231,7 +231,7 @@ func TestRestoreWrongPassphrase(t *testing.T) {
 	t.Setenv(passphraseEnv, "другая фраза совсем")
 
 	dbPath := filepath.Join(t.TempDir(), "state.db")
-	err = restore(context.Background(), restoreOptions{dbPath: dbPath, file: file})
+	err = fixtureRestore(t, context.Background(), restoreOptions{dbPath: dbPath, file: file})
 	if !errors.Is(err, store.ErrBadPassphrase) {
 		t.Fatalf("restore с чужой фразой = %v, ожидалась ErrBadPassphrase", err)
 	}
@@ -246,7 +246,7 @@ func TestRestoreRejectsForeignFile(t *testing.T) {
 	file := writeFile(t, "чужое.txt", []byte("это не копия состояния"))
 
 	dbPath := filepath.Join(t.TempDir(), "state.db")
-	err := restore(context.Background(), restoreOptions{dbPath: dbPath, file: file})
+	err := fixtureRestore(t, context.Background(), restoreOptions{dbPath: dbPath, file: file})
 	if !errors.Is(err, store.ErrNotBackup) {
 		t.Fatalf("чужой файл = %v, ожидалась ErrNotBackup", err)
 	}
@@ -270,7 +270,7 @@ func TestRestoreRejectsEmptyState(t *testing.T) {
 	file := writeFile(t, "copy.db", data)
 
 	dbPath := filepath.Join(t.TempDir(), "state.db")
-	if err := restore(context.Background(), restoreOptions{dbPath: dbPath, file: file}); err == nil {
+	if err := fixtureRestore(t, context.Background(), restoreOptions{dbPath: dbPath, file: file}); err == nil {
 		t.Fatal("пустая база принята за состояние")
 	}
 }
@@ -372,7 +372,7 @@ func TestRestoreInvalidatesRoutingAuthorityBeforeRestartingRestoredDatabase(t *t
 		}
 		return nil
 	}
-	if err := restore(context.Background(), opts); err != nil {
+	if err := fixtureRestore(t, context.Background(), opts); err != nil {
 		t.Fatal(err)
 	}
 	if !started || !guarded {

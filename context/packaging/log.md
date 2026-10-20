@@ -122,3 +122,33 @@ handshake; finite queued capture observations, no universal lossless claim; nati
 SRS/JSON remains #220. No application or production deployment occurred.
 **Review:** pre-canary and owner gates passed. Distinct final review and current CI
 are required before merge. See the [completed implementation record](../../tasks/done/214-coherent-network-state.md).
+
+
+## 2026-10-20
+
+### #217 — Safe restore and explicit destination activation
+
+Serialized managed restore/recovery attests both canonical executables and permanent units, requires unified cgroup v2, stops both services and finalizes current-destination recovery before quarantine/invalidation. Explicit passive rollback and separate destination activation preserve original hold/service intent; originally active runtime still waits for Apply.
+**Decision:** [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md).
+**Validation boundary:** local regression/process/browser checks and bounded independent
+corrective reviews are recorded in the [task](../../tasks/217-safe-cross-host-restore.md).
+Final integrated review, contained true-WireGuard fixture and isolated staging acceptance
+remain pending; no installed application, source host, deployment or release is changed.
+
+**Final-local correction:** independent review reproduced a canonical DB symlink
+passing destination summary/checkpoint. Shared owner/type/no-alias DB/journal admission
+now precedes SQLite and initial safety/service mutation, including recovery/replacement
+and protected password writes. Actual transaction negatives retain sibling bytes and
+zero service/guard mutations; normal committed-WAL snapshot remains a positive control.
+Corrective independent retest and exact-head CI remain separate acceptance gates.
+
+
+### Task 217/228 integrated fixture source; namespace proof pending
+
+The merged contained fixture invokes actual old/fixed restore transactions with both
+modeled services initially inactive. Baseline retained-runtime activation uses an explicit
+contained independent start adapter; it is not spontaneous reboot or host-systemd proof.
+The common prior config has a loopback observer inlet with fresh synthetic keys per run;
+later fixed Apply uses production Generate and removes that inlet. Actual CLI stdout is
+preserved in bounded hashed receipts. Portable guards/local checks do not establish wire
+observations; reviewed artifact/runner gates and isolated execution remain pending.

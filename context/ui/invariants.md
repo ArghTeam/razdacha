@@ -52,3 +52,16 @@ delivery or installed deployment. Cleanup removes application references without
 promising heap erasure or immunity to delayed cookie expiry. A dataset marker alone
 does not prove visible rendering. Keep case-specific coverage and inconclusive
 observations explicit in the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md).
+
+## Safe restore contract (ADR 0027)
+
+[ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
+[task 217](../../tasks/217-safe-cross-host-restore.md) define the implemented restore behavior below. Local validation and independent
+review are recorded in the task; isolated network/staging acceptance is separate.
+
+Held restore displays sanitized status, destination checklist and a separate Resume external activity action that explains imported external callbacks and recipients. Settings saves, page loads and Apply cannot clear the hold.
+
+The restore banner requires separate destination and all-callback acknowledgments.
+Apply and browser release checks remain disabled while held or status is unavailable;
+Resume never automatically enables credentials or calls Apply. Consent survives local
+screen rerenders but resets when trusted restore status changes.

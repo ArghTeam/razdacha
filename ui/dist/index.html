@@ -66,6 +66,18 @@
     </div>
   </header>
 
+  <section id="restore-banner" class="restore-banner" aria-labelledby="restore-title" hidden>
+    <h2 id="restore-title">Restore requires review</h2>
+    <p id="restore-message"></p>
+    <ul id="restore-checklist"></ul>
+    <div id="restore-consent" hidden>
+      <label><input type="checkbox" id="restore-destination-reviewed"> I reviewed the destination endpoint, WAN/NAT, TLS and panel exposure.</label>
+      <label><input type="checkbox" id="restore-external-acknowledged"> I audited the saved URLs, credentials, notification recipients and backup delivery. Resume may contact all saved external destinations.</label>
+      <button type="button" id="restore-resume" class="btn btn-primary" data-act="resume-restore">Resume external activity</button>
+      <p>Outgoing WireGuard stays paused. Apply paused policy first; enable chosen credentials separately and Apply again.</p>
+    </div>
+  </section>
+
   <main id="screen" class="screen"></main>
 
   <div class="apply-bar" id="apply-bar" hidden>

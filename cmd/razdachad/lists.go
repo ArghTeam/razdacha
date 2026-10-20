@@ -10,6 +10,7 @@ import (
 	"github.com/ArghTeam/razdacha/internal/api"
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
+	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -31,14 +32,18 @@ func listsCacheDir(dbPath string) string {
 
 // startLists starts asynchronous fetches. Failure retains committed list content
 // during recovery; a new candidate requiring any missing source is rejected.
-func startLists(ctx context.Context, st *store.Store, dbPath string, log *slog.Logger) *lists.Manager {
+func startLists(ctx context.Context, st *store.Store, dbPath string, log *slog.Logger, restore ...*restorestate.Controller) *lists.Manager {
 	fetcher, err := lists.NewFetcher(lists.Options{Dir: listsCacheDir(dbPath), Logger: log})
 	if err != nil {
 		log.Error("кэш списков не открыт, списки не обновляются", "ошибка", err)
 		return nil
 	}
 
-	m := lists.NewManager(lists.ManagerOptions{Fetcher: fetcher, Logger: log})
+	var ctl *restorestate.Controller
+	if len(restore) > 0 {
+		ctl = restore[0]
+	}
+	m := lists.NewManager(lists.ManagerOptions{Fetcher: fetcher, Logger: log, Allow: ctl.Allowed})
 	if settings, err := st.Settings(ctx); err != nil {
 		log.Error("чтение настроек для планировщика списков", "ошибка", err)
 	} else {
@@ -49,7 +54,9 @@ func startLists(ctx context.Context, st *store.Store, dbPath string, log *slog.L
 
 	// Start возвращается сразу: первый прогон уходит в горутину, и старт демона
 	// не ждёт ни сети, ни чужих серверов.
-	m.Start(ctx)
+	if len(restore) == 0 {
+		m.Start(ctx)
+	}
 	// Source reconciliation starts after the apply gate can retain committed sources.
 	return m
 }

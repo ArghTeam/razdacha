@@ -171,3 +171,15 @@ and [fixture protocol](../../docs/11-staging-validation.md#configuration-ui-life
 **Changed:** `ui/prototype/` — статический макет на ванильном JS, без сборки и внешних зависимостей; свой QR-кодер вместо CDN.
 **Beware:** контракт неполон — публичного ключа сервера нет ни в одной сущности API, а без него клиентский `.conf` не собрать. График трафика показать не из чего: временные ряды не хранятся. Статус туннеля дублируется между экраном туннелей и `/api/diag`.
 
+
+
+## 2026-10-20
+
+### #217 — Safe restore and explicit destination activation
+
+The restore banner exposes destination review and separate external-activity consent without enabling WG or Apply. Local headless browser checks cover Secure localhost cookie login, unknown-status denial, both consent controls and mobile layout; browser external attempts are intercepted.
+**Decision:** [ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md).
+**Validation boundary:** local regression/process/browser checks and bounded independent
+corrective reviews are recorded in the [task](../../tasks/217-safe-cross-host-restore.md).
+Final integrated review, contained true-WireGuard fixture and isolated staging acceptance
+remain pending; no installed application, source host, deployment or release is changed.

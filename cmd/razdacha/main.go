@@ -17,6 +17,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/ArghTeam/razdacha/internal/restorestate"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 )
 
 // version подставляется линкером при сборке, см. Makefile и workflow релиза.
@@ -27,6 +30,7 @@ const usage = `razdacha — управление установкой селек
 Команды:
   setup       установить или обновить: sing-box, файлы, юниты, первый пир
   restore     поднять состояние из резервной копии
+  restore-recover  recover the current destination snapshot without automatic activation
   uninstall   снять razdacha и вернуть систему в исходное состояние
   version     показать версию
 
@@ -50,8 +54,18 @@ func run() int {
 
 	var err error
 	switch cmd := os.Args[1]; cmd {
+	case "-restore-capabilities":
+		if _, err = restorestate.Read(defaultStateDir); err == nil {
+			fmt.Printf("{\"restore_protocol\":%d}\n", restorestate.Protocol)
+		}
+	case "runtime-start-allowed":
+		err = restorestate.RuntimeStartAllowed(defaultStateDir, singbox.DefaultConfigPath)
+	case "install-preflight":
+		err = installPreflight(ctx, os.Args[2:])
 	case "setup":
 		err = runSetup(ctx, os.Args[2:])
+	case "restore-recover":
+		err = runRestoreRecovery(ctx, os.Args[2:])
 	case "restore":
 		err = runRestore(ctx, os.Args[2:])
 	case "uninstall":

@@ -34,11 +34,83 @@ const ACTIONS = Object.assign(
   rulesScreen.actions,
   diagScreen.actions,
   settingsScreen.actions,
-  { 'close-modal': closeModal },
+  { 'close-modal': closeModal, 'resume-restore': resumeRestore },
 );
 
 let pollTimer = null;
 let logoutPending = false;
+let restoreStatus = null;
+let restoreStatusKey = '';
+
+function restoreAllowsApply() {
+  return restoreStatus !== null && restoreStatus.held === false;
+}
+
+function renderRestore(status, failed = false) {
+  const key = JSON.stringify({ status, failed });
+  $('#btn-apply').disabled = !restoreAllowsApply();
+  if (key === restoreStatusKey) return;
+  restoreStatusKey = key;
+  const banner = $('#restore-banner');
+  banner.hidden = !failed && !status?.restored;
+  $('#restore-consent').hidden = failed || !status?.held;
+  $('#restore-destination-reviewed').checked = false;
+  $('#restore-external-acknowledged').checked = false;
+  $('#restore-checklist').replaceChildren();
+  if (failed) {
+    $('#restore-title').textContent = 'Restore status unavailable';
+    $('#restore-message').textContent = 'Apply and browser release checks are paused. Local administration remains available; inspect the daemon and use local recovery for invalid trusted state.';
+    return;
+  }
+  if (!status?.restored) return;
+  $('#restore-title').textContent = status.held ? 'External activity is held after restore' : 'Restore review recorded';
+  $('#restore-message').textContent = status.held
+    ? 'Audit or replace the saved settings below before resuming. Local administration remains available; saved destinations will not be contacted automatically while held.'
+    : status.runtime_inhibited
+      ? status.recovery_activated
+        ? 'Original destination recovery was acknowledged. Runtime remains inhibited until explicit Apply of the recovered destination policy.'
+        : 'External acquisition is permitted. Runtime remains inhibited: Apply paused policy before enabling chosen WireGuard credentials and applying again.'
+      : 'The reviewed policy was applied. Destination changes may still require client endpoint or certificate updates.';
+  for (const item of status.checklist || []) {
+    const li = document.createElement('li');
+    li.textContent = item;
+    $('#restore-checklist').append(li);
+  }
+}
+
+async function refreshRestoreStatus() {
+  try {
+    const status = await api.restore.status();
+    if (typeof status?.restored !== 'boolean' || typeof status?.held !== 'boolean') throw new Error('Invalid restore status');
+    restoreStatus = status;
+    renderRestore(status);
+  } catch (err) {
+    restoreStatus = null;
+    renderRestore(null, true);
+    if (err.status === 401) throw err;
+  }
+}
+
+async function resumeRestore() {
+  if (!$('#restore-destination-reviewed').checked || !$('#restore-external-acknowledged').checked) {
+    toast('Review and acknowledge both restore checkboxes first.');
+    return;
+  }
+  const button = $('#restore-resume');
+  button.disabled = true;
+  try {
+    await api.restore.resume();
+    await refreshRestoreStatus();
+    await loadAll();
+    await navigate();
+    toast('External activity resumed. WireGuard requires separate enable and Apply.');
+  } catch (err) {
+    toastError(err, 'External activity was not resumed');
+    await refreshRestoreStatus();
+  } finally {
+    button.disabled = false;
+  }
+}
 
 /* ==========================================================================
    Вход
@@ -272,6 +344,7 @@ function renderFreshness() {
  * на заход, такт опроса сюда не заглядывает — релизы выходят не так часто, а
  * лимит GitHub общий на всех за одним адресом. */
 async function checkFreshness() {
+  if (!restoreAllowsApply()) return;
   const tag = await api.release.latest();
   if (!tag) return;
   state.latestRelease = tag;
@@ -345,7 +418,7 @@ function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
     if (document.visibilityState === 'hidden' || modalOpen() || typing()) return;
-    navigate();
+    refreshRestoreStatus().then(navigate).catch(() => {});
   }, 15000);
 }
 
@@ -361,6 +434,7 @@ function stopPolling() {
 async function start() {
   $('#screen').innerHTML = loading('Загружаю');
   try {
+    await refreshRestoreStatus();
     await loadAll();
   } catch (err) {
     if (err.status === 401) return;
@@ -416,7 +490,8 @@ async function boot() {
       // 422 — sing-box check не прошёл; прежний конфиг остался активным.
       toastError(err, 'Конфигурация не применена');
     } finally {
-      b.disabled = false;
+      await refreshRestoreStatus();
+      b.disabled = !restoreAllowsApply();
       b.textContent = 'Применить';
     }
   });

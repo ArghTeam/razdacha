@@ -52,7 +52,13 @@ func writeGeneration(path string, gen networkGeneration) error {
 
 // publish validates before mutation, then closes client ingress across every
 // publication boundary. The separate kernel guard survives daemon failure.
-func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, repair bool) (singbox.ApplyResult, error) {
+func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, repair bool) (result singbox.ApplyResult, retErr error) {
+	completed := false
+	defer func() {
+		if !completed {
+			retErr = errors.Join(retErr, g.restore.FinishPublication(false))
+		}
+	}()
 	n := g.network
 	artifactDir, err := filepath.Abs(filepath.Join(filepath.Dir(n.path), "lists", "native"))
 	if err != nil {
@@ -176,6 +182,9 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	if err := networkstate.DiscardBootstrap(seedPath); err != nil {
 		return res, fmt.Errorf("clients remain guarded: %w", err)
 	}
+	if err := g.restore.FinishPublication(true); err != nil {
+		return res, fmt.Errorf("clients remain guarded: finish restored publication: %w", err)
+	}
 	g.base = snap
 	n.contents = selected
 	n.initialized = true
@@ -185,6 +194,7 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	if err := n.guard(false); err != nil {
 		return res, fmt.Errorf("clients remain guarded: release ingress guard: %w", err)
 	}
+	completed = true
 	n.uncertain = false
 	res.NftSubnets = &count
 	return res, nil
@@ -246,10 +256,18 @@ var _ api.CoherentApplier = (*applyGate)(nil)
 // ApplyCurrent acquires the editable snapshot inside the publication lock so a
 // concurrent peer allocation cannot precede publication of stale peer identity.
 func (g *applyGate) ApplyCurrent(ctx context.Context, st *store.Store) (singbox.ApplyResult, error) {
+	lock, e := g.restore.PublicationLock()
+	if e != nil {
+		return singbox.ApplyResult{}, e
+	}
+	defer func() { _ = lock.Close() }()
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	snap, err := st.Snapshot(ctx)
 	if err != nil {
+		return singbox.ApplyResult{}, err
+	}
+	if err := g.restoreApplyAllowed(snap); err != nil {
 		return singbox.ApplyResult{}, err
 	}
 	return g.publish(ctx, snap, false, true)

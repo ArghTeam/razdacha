@@ -720,11 +720,11 @@ routing](03-networking.md#policy-routing)). Признака два, и сним
 без него оказались бы состоянием произвольной давности. Content-Type —
 `application/octet-stream`, имя в `Content-Disposition` (`razdacha-state-<дата>.db`).
 
-**В файле приватные ключи всех пиров.** Это цена решения
-([ADR 0016](decisions/0016-backup-full-and-encrypted.md)): после восстановления старые
-клиентские конфиги продолжают работать, ходить по устройствам не нужно. Ответ не
-шифруется — запрос авторизован и сделан человеком, который и так вошёл в панель, — но
-интерфейс обязан сказать, что именно лежит в скачанном файле.
+**The file includes every peer private key.** Complete identity remains the backup
+contract ([ADR 0016](decisions/0016-backup-full-and-encrypted.md)); cross-host restore
+uses the paused/held contract in [ADR 0027](decisions/0027-safe-cross-host-restore.md).
+Endpoint, WAN/NAT or certificate changes can require client updates. This authenticated
+manual download is plaintext; the panel must identify it as a secret-bearing archive.
 
 **Парольная фраза из API не возвращается ни в каком виде** — как токен бота. В ответе
 только `passphrase_set`. Присланная в `PUT` пустая строка означает «стереть», отсутствие
@@ -845,3 +845,26 @@ Enabling an empty selection or writing a deleted selected ID returns `400`. Assi
 new clients does not enable the rule. Apply is still required to publish edited policy.
 Before Apply, background list/pool refresh and recovery retain committed source policy;
 deleted live WireGuard identities are never restored and their addresses remain reserved.
+
+
+## Restore administration
+
+`GET /api/restore` is authenticated and returns sanitized `restored`, `held`,
+`runtime_inhibited`, `recovery_activated` booleans and the destination checklist, never
+private operation paths or credentials. Invalid trusted state returns 503 and requires
+local serialized recovery. While a trusted complete restore is held, enumerated local
+administrative reads/edits remain available; external probes, refresh, WARP registration
+or deletion, backup/notification sends and Apply return 409. Unknown routes receive no
+hold exemption. Incomplete/corrupt state permits only sanitized status.
+
+`POST /api/restore/resume` requires both explicit JSON booleans:
+
+```json
+{"destination_reviewed":true,"external_activity_acknowledged":true}
+```
+
+This permits all saved callback/acquisition destinations, synchronized from the current
+saved state before workers start. It does not enable WG or Apply; first Apply of imported
+policy must keep WG paused. Ordinary settings updates and restart cannot substitute for
+Resume. Concurrent/duplicate Resume executes startup once and Apply waits until it finishes.
+The original destination recovery activation is a separate local CLI operation.

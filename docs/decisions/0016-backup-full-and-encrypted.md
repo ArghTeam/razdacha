@@ -2,6 +2,12 @@
 
 Дата: 2026-08-15 · Статус: принято
 
+
+Partial supersession: [ADR 0027](0027-safe-cross-host-restore.md) replaces
+automatic cross-host activation and unconditional client continuity.
+Complete backups and encrypted external delivery remain unchanged. ADR 0027 design is
+accepted; implementation acceptance and isolated validation are tracked separately.
+
 ## Контекст
 
 `backupDB` кладёт копию БД в `backups/` рядом с самой БД — на том же диске и только перед

@@ -91,6 +91,9 @@ func (s *Server) loadChecks(ctx context.Context) {
 // именно её (инвариант слоя api). Обычный outbound никто не проверяет, поэтому
 // его — и только его — пробиваем сами.
 func (s *Server) refreshChecks(ctx context.Context) error {
+	if e := s.restore.Allowed(); e != nil {
+		return e
+	}
 	tunnels, err := s.store.Tunnels(ctx)
 	if err != nil {
 		return err

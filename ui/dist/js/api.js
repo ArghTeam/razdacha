@@ -396,3 +396,12 @@ export function logLines(payload) {
   if (payload && Array.isArray(payload.lines)) return payload.lines.map(String);
   return [];
 }
+
+
+export const restore = {
+  status: () => get('/api/restore'),
+  resume: () => post('/api/restore/resume', {
+    destination_reviewed: true,
+    external_activity_acknowledged: true,
+  }),
+};

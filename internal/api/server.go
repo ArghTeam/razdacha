@@ -14,6 +14,7 @@ import (
 
 	"github.com/ArghTeam/razdacha/internal/clash"
 	"github.com/ArghTeam/razdacha/internal/netstack"
+	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 	"github.com/ArghTeam/razdacha/ui"
@@ -48,6 +49,8 @@ const (
 
 // Config — параметры сервера панели.
 type Config struct {
+	// Restore is trusted installation state, never imported Settings.
+	Restore *restorestate.Controller
 	// Addr — адрес прослушивания, только loopback. Пустой — [DefaultAddr].
 	Addr string
 	// Store — состояние демона; обязателен.
@@ -123,6 +126,7 @@ type Config struct {
 
 // Server — HTTP-сервер панели.
 type Server struct {
+	restore  *restorestate.Controller
 	addr     string
 	store    *store.Store
 	log      *slog.Logger
@@ -200,6 +204,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
+		restore:     cfg.Restore,
 		addr:        addr,
 		store:       cfg.Store,
 		log:         cfg.Logger,

@@ -44,3 +44,17 @@ description: генерация option.Options из состояния БД, п�
 - Native local paths are content-addressed and owner-only; runtime file watchers make replacement/removal unsafe. Generation v2 pins original format/hash, DNS hash and projection version, verifies all blobs and rederives nft/DNS before prepare and before durable publication. Explicit no-op Apply also verifies active artifacts. Legacy v1 native policy cannot recover autonomously; administrative access remains guarded until supported sources are acquired and explicit Apply succeeds.
 
 - Relative daemon `-db` arguments resolve once before opening storage; native verification also canonicalizes its generation-relative artifact root with propagated path errors. Apply, no-op active audits and fresh committed recovery therefore verify the same absolute native store.
+
+## Safe restore contract (ADR 0027)
+
+[ADR 0027](../../docs/decisions/0027-safe-cross-host-restore.md) and
+[task 217](../../tasks/217-safe-cross-host-restore.md) define the implemented restore behavior below. Local validation and independent
+review are recorded in the task; isolated network/staging acceptance is separate.
+
+Independent runtime remains boot-inhibited after restore; no quarantined config replay. Only checked explicit guarded Apply may release that inhibitor. Paused first/second hops retain scoped rejection.
+
+Publication ordering: runtime marker removal occurs only inside a durable
+restore-only publishing phase after checked config sync and ingress guarding. Finish
+requires coherent runtime/nft/authority/bootstrap publication; Abort recreates inhibition
+before restoring retryable state. Startup/reset/installer/recovery fail closed on an
+interrupted publishing phase. See ADR 0027 for independent start-permit and positive Abort-stop requirements.
