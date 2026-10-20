@@ -13,12 +13,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ArghTeam/razdacha/internal/restorestate"
-	"github.com/ArghTeam/razdacha/internal/singbox"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/ArghTeam/razdacha/internal/restorestate"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 )
 
 // version подставляется линкером при сборке, см. Makefile и workflow релиза.

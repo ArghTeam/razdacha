@@ -47,6 +47,7 @@ func CaptureFile(dir, target string) (SavedFile, error) {
 	result.Hash = hex.EncodeToString(sum[:])
 	return result, WritePrivate(filepath.Join(dir, result.Name), b)
 }
+
 func SaveRecovery(dir string, r Recovery) error {
 	r.Version = Protocol
 	b, e := json.Marshal(r)
@@ -55,6 +56,7 @@ func SaveRecovery(dir string, r Recovery) error {
 	}
 	return WritePrivate(filepath.Join(dir, "recovery.json"), b)
 }
+
 func ReadRecovery(dir string) (Recovery, error) {
 	r, e := ReadRecoveryMetadata(dir)
 	if e != nil {

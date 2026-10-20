@@ -197,6 +197,7 @@ func SyncDir(dir string) error {
 	}
 	return ce
 }
+
 func SyncFile(path string) error {
 	f, e := os.OpenFile(path, os.O_RDWR, 0)
 	if e != nil {

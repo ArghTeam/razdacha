@@ -58,6 +58,7 @@ func uniqueJSON(raw []byte) error {
 	}
 	return nil
 }
+
 func jsonValue(d *json.Decoder) error {
 	token, e := d.Token()
 	if e != nil {

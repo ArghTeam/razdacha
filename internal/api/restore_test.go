@@ -31,6 +31,7 @@ func heldAPI(t *testing.T, ts *testServer) *restorestate.Controller {
 	ts.restore = ctl
 	return ctl
 }
+
 func TestRestoreHoldGatesActualProbeAndBackupCallbacksUntilExplicitResume(t *testing.T) {
 	ctx := context.Background()
 	ts := newTestServer(t)

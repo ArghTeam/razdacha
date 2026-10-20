@@ -197,6 +197,7 @@ func TestConcurrentResumeApplyAndDuplicateResumeCompleteWithoutLockInversion(t *
 	}
 	ctl := &Controller{Dir: dir}
 	var gate sync.Mutex
+	callbackFinished := false
 	entered := make(chan struct{})
 	finish := make(chan struct{})
 	calls := 0
@@ -205,6 +206,7 @@ func TestConcurrentResumeApplyAndDuplicateResumeCompleteWithoutLockInversion(t *
 		close(entered)
 		<-finish
 		gate.Lock()
+		callbackFinished = true
 		gate.Unlock()
 		return nil
 	}); e != nil {
@@ -222,7 +224,12 @@ func TestConcurrentResumeApplyAndDuplicateResumeCompleteWithoutLockInversion(t *
 			return
 		}
 		ctl.mu.Lock()
+		pending := ctl.starting != nil
 		ctl.mu.Unlock()
+		if !pending {
+			apply <- errors.New("resume transition lost pending startup")
+			return
+		}
 		apply <- nil
 	}()
 	select {
@@ -245,6 +252,9 @@ func TestConcurrentResumeApplyAndDuplicateResumeCompleteWithoutLockInversion(t *
 		case <-time.After(2 * time.Second):
 			t.Fatal("concurrent resume did not complete")
 		}
+	}
+	if !callbackFinished {
+		t.Fatal("resume callback did not finish publication-gate work")
 	}
 	if calls != 1 {
 		t.Fatal("duplicate resume started acquisition more than once")

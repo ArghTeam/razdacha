@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ArghTeam/razdacha/internal/restorestate"
 )
 
 func TestAttestInstalledHelperPositiveAndUnsupportedControls(t *testing.T) {

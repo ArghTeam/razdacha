@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 )
 
-const PermitFile = "restore-runtime-permit.json"
-const permitLifetimeNS = int64(60 * 1e9)
+const (
+	PermitFile       = "restore-runtime-permit.json"
+	permitLifetimeNS = int64(60 * 1e9)
+)
 
 type KernelFacts struct {
 	BootID       string
@@ -96,6 +98,7 @@ func RuntimeStartAllowed(dir, config string) error {
 	}
 	return runtimeStartAllowed(dir, config, facts, ProcessIdentityAlive)
 }
+
 func runtimeStartAllowed(dir, config string, facts KernelFacts, alive func(int, string) bool) error {
 	s, e := Read(dir)
 	if e != nil {

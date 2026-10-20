@@ -29,6 +29,7 @@ func processStart(pid int) (string, error) {
 	}
 	return fields[19], nil
 }
+
 func CurrentKernelFacts() (KernelFacts, error) {
 	var f KernelFacts
 	b, e := os.ReadFile("/proc/sys/kernel/random/boot_id")
@@ -48,6 +49,7 @@ func CurrentKernelFacts() (KernelFacts, error) {
 	f.NowNS = clock.Nano()
 	return f, nil
 }
+
 func ProcessIdentityAlive(pid int, start string) bool {
 	actual, e := processStart(pid)
 	return e == nil && actual == start

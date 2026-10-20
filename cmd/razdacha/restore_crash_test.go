@@ -56,7 +56,7 @@ func TestRestoreProcessKillAtDurableCutsRequiresExplicitRecovery(t *testing.T) {
 						return
 					}
 				}
-				ready <- fmt.Errorf("durable cut missing: %v", scanner.Err())
+				ready <- fmt.Errorf("durable cut missing: %w", scanner.Err())
 			}()
 			select {
 			case e = <-ready:

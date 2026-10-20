@@ -20,6 +20,7 @@ func restoreFixture(t *testing.T) *Store {
 	t.Cleanup(func() { _ = st.Close() })
 	return st
 }
+
 func TestRestoreSchemaRejectsExecutableAndUnknownObjects(t *testing.T) {
 	for _, ddl := range []string{
 		`CREATE TRIGGER enable_after_settings AFTER INSERT ON settings BEGIN UPDATE tunnels SET enabled=1; END`,
@@ -49,6 +50,7 @@ func TestRestoreSchemaRejectsExecutableAndUnknownObjects(t *testing.T) {
 		})
 	}
 }
+
 func dbPathForTest(t *testing.T, st *Store) string {
 	t.Helper()
 	var seq int

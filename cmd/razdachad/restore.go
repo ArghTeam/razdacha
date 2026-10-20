@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/ArghTeam/razdacha/internal/lists"
-	"github.com/ArghTeam/razdacha/internal/restorestate"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/ArghTeam/razdacha/internal/lists"
+	"github.com/ArghTeam/razdacha/internal/restorestate"
 
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"

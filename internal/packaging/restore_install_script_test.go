@@ -77,9 +77,11 @@ func restoreInstallerFixture(t *testing.T, compatible bool) (string, string, str
 	env := append(os.Environ(), "PATH="+tools+":"+os.Getenv("PATH"), "RAZDACHA_SOURCE_ONLY=1", "RAZDACHA_PREFIX="+prefix, "FIXTURE_ARCHIVE="+archive, "FIXTURE_RELEASE="+release)
 	return scriptPath, state, prefix, env
 }
+
 func restoreInstallCommand(script string) string {
 	return ". '" + script + "'\nARCH=amd64\ndownload() { case \"$1\" in *checksums.txt) return 1;; esac; cp \"$FIXTURE_ARCHIVE\" \"$2\"; }\ninstall_binaries\n"
 }
+
 func TestInstallerRejectsIncompatibleCandidatesForEveryRestoreEvidence(t *testing.T) {
 	for _, record := range []string{restorestate.File, restorestate.Incomplete, restorestate.Runtime, restorestate.PermitFile, ".restore-fixture/recovery.json"} {
 		t.Run(record, func(t *testing.T) {
@@ -109,6 +111,7 @@ func TestInstallerRejectsIncompatibleCandidatesForEveryRestoreEvidence(t *testin
 		})
 	}
 }
+
 func TestInstallerOwnsLifecycleThroughPublicationSetupAndSignal(t *testing.T) {
 	script, state, prefix, env := restoreInstallerFixture(t, true)
 	cmd := exec.Command("sh", "-c", restoreInstallCommand(script)+"run_setup\n")
@@ -145,7 +148,7 @@ func TestInstallerOwnsLifecycleThroughPublicationSetupAndSignal(t *testing.T) {
 				return
 			}
 		}
-		ready <- fmt.Errorf("installer exited before setup: %v", scanner.Err())
+		ready <- fmt.Errorf("installer exited before setup: %w", scanner.Err())
 	}()
 	select {
 	case e = <-ready:

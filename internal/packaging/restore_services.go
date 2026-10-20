@@ -29,8 +29,10 @@ type RestoreServices struct {
 	Query func(context.Context, ...string) ([]byte, error)
 	Run   func(context.Context, ...string) error
 }
-type RestoreUnitState struct{ Active, Enabled string }
-type RestoreServiceState map[string]RestoreUnitState
+type (
+	RestoreUnitState    struct{ Active, Enabled string }
+	RestoreServiceState map[string]RestoreUnitState
+)
 
 func SystemdQuery(ctx context.Context, args ...string) ([]byte, error) {
 	b, e := exec.CommandContext(ctx, "systemctl", args...).Output()
@@ -39,6 +41,7 @@ func SystemdQuery(ctx context.Context, args ...string) ([]byte, error) {
 	}
 	return b, nil
 }
+
 func RestoreCondition(name string) string {
 	marker := restorestate.Incomplete
 	if name == SingboxUnit {
@@ -50,6 +53,7 @@ func RestoreCondition(name string) string {
 	}
 	return result
 }
+
 func (s RestoreServices) Show(ctx context.Context, unit string) (map[string]string, error) {
 	if s.Query == nil {
 		return nil, errors.New("missing managed service query adapter")
@@ -177,6 +181,7 @@ func (s RestoreServices) Preflight(ctx context.Context) (RestoreServiceState, er
 	}
 	return result, nil
 }
+
 func readManaged(path string) ([]byte, error) {
 	i, e := os.Lstat(path)
 	if e != nil {
@@ -227,9 +232,11 @@ func (s RestoreServices) Inhibit(ctx context.Context, dir string) error {
 	}
 	return nil
 }
+
 func (s RestoreServices) Stop(ctx context.Context) error {
 	return s.stopUnits(ctx, []string{DaemonUnit, SingboxUnit})
 }
+
 func (s RestoreServices) stopUnits(ctx context.Context, units []string) error {
 	for _, unit := range units {
 		if e := s.Run(ctx, "stop", unit); e != nil {

@@ -54,7 +54,7 @@ func TestLifecycleInheritedExecDoesNotLeakAndSignalReleases(t *testing.T) {
 						return
 					}
 				}
-				ready <- fmt.Errorf("child readiness missing: %v", scanner.Err())
+				ready <- fmt.Errorf("child readiness missing: %w", scanner.Err())
 			}()
 			select {
 			case e = <-ready:

@@ -247,7 +247,7 @@ func restore(ctx context.Context, opts restoreOptions) error {
 	if err = opts.observeDurable("ingress-guarded"); err != nil {
 		return err
 	}
-	recovery, err = collectDestinationRecovery(ctx, op, dbPath, opts.services.Root, recovery)
+	_, err = collectDestinationRecovery(ctx, op, dbPath, opts.services.Root, recovery)
 	if err != nil {
 		return err
 	}
@@ -408,11 +408,6 @@ func trimPassphrase(v string) (string, error) {
 		return "", errors.New("парольная фраза пуста")
 	}
 	return v, nil
-}
-
-// describeState — что лежит в базе, словами для вывода команды.
-func describeState(v store.StateSummary) string {
-	return fmt.Sprintf("пиров %d, туннелей %d, правил %d", v.Peers, v.Tunnels, v.Rules)
 }
 
 // daemonActive отвечает, работает ли демон сейчас.

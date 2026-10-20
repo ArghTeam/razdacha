@@ -295,6 +295,7 @@ func validateRecoveryTargets(r restorestate.Recovery, dir, db string, services *
 	}
 	return nil
 }
+
 func isRecoverySafetyTarget(path, dir, root string) bool {
 	for _, name := range []string{restorestate.File, restorestate.Incomplete, restorestate.Runtime, restorestate.PermitFile} {
 		if path == filepath.Join(dir, name) {
@@ -344,6 +345,7 @@ func ensureRecoveryParent(path, anchor string) error {
 	}
 	return nil
 }
+
 func verifyRecoveredDatabase(db string, r restorestate.Recovery) error {
 	for _, file := range r.Files {
 		if file.Target == db && !file.Missing {
