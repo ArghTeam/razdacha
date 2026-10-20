@@ -4,6 +4,7 @@ import * as api from '../api.js';
 import * as qr from '../qr.js';
 import {
   state, peerById, toast, toastError, openModal, modalShell,
+  currentModalRevision, isCurrentModal, onModalCleanup,
   openMenu, notImplemented, notice, refresh, markDirty,
 } from '../shell.js';
 import { $, esc, bytes, since, isOnline, download } from '../util.js';
@@ -99,18 +100,23 @@ function modalAddPeer() {
 }
 
 async function createPeer() {
+  const currentSession = api.session.guard();
+  const revision = currentModalRevision();
   const name = $('#peer-name').value.trim();
   if (!name) { toast('Введите имя устройства', 'err'); return; }
   const btn = $('#modal [data-act="create-peer"]');
   btn.disabled = true;
   try {
     const peer = await api.peers.create(name);
+    if (!currentSession()) return;
     state.peers.push(peer);
-    // Сразу QR, без промежуточного шага: ради него кнопку и нажимали.
-    await modalPeerConfig(peer.id);
     markDirty();
     refresh();
+    if (!isCurrentModal(revision)) return;
+    // Сразу QR, без промежуточного шага: ради него кнопку и нажимали.
+    await modalPeerConfig(peer.id);
   } catch (err) {
+    if (!currentSession() || !isCurrentModal(revision)) return;
     btn.disabled = false;
     toastError(err, 'Клиент не создан');
   }
@@ -120,7 +126,7 @@ async function createPeer() {
 
 async function modalPeerConfig(id) {
   const peer = peerById(id) || { id, name: 'Клиент' };
-  openModal(modalShell(peer.name,
+  const revision = openModal(modalShell(peer.name,
     '<div class="loading">Готовлю конфиг…</div>',
     '<button class="btn" data-act="close-modal">Закрыть</button>'));
 
@@ -132,6 +138,7 @@ async function modalPeerConfig(id) {
     // демон.
     ({ text: conf, filename } = await api.peers.config(id));
   } catch (err) {
+    if (!isCurrentModal(revision)) return;
     const text = err.missing
       ? 'Демон ещё не отдаёт клиентский конфиг — эндпоинт GET /api/peers/{id}/config не реализован.'
       : err.message;
@@ -140,6 +147,8 @@ async function modalPeerConfig(id) {
       '<button class="btn" data-act="close-modal">Закрыть</button>'));
     return;
   }
+
+  if (!isCurrentModal(revision)) return;
 
   const sub = state.settings
     ? `Адрес ${esc(peer.address || '')} · MTU ${esc(state.settings.client_mtu)} · DNS ${esc(state.settings.wg_server_address)}`
@@ -180,7 +189,8 @@ export const actions = {
     // Имя строит демон и присылает в Content-Disposition: из имени файла
     // WireGuard берёт имя туннеля, и второе имя на клиенте расходилось бы с
     // тем, что отдаёт эндпоинт.
-    download(m.dataset.confName || 'peer.conf', m.dataset.conf || '');
+    if (!m.dataset.conf) return;
+    onModalCleanup(download(m.dataset.confName || 'peer.conf', m.dataset.conf));
     toast('Файл конфига скачан');
   },
 

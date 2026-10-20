@@ -16,7 +16,7 @@ preventing cloned outgoing WireGuard credentials from activating on first boot.
 - [Netstack](../context/netstack/index.md): destination networking constraints.
 
 ## Decisions
-Implement after [#216](216-clear-ui-config-secrets.md). Before code, write an ADR defining
+Implement after [#216](done/216-clear-ui-config-secrets.md). Before code, write an ADR defining
 cross-host restore and paused outgoing WireGuard first boot; preserve or explicitly
 supersede [ADR 0016](../docs/decisions/0016-backup-full-and-encrypted.md).
 Never contact, disable or rewrite the source. Activation requires an explicit destination
