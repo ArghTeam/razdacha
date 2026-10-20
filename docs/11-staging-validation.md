@@ -5,7 +5,8 @@ Status: #222, #214 and #220 completed their controlled validation and were merge
 `8b149e0`. Safe peer deletion #215 has two fixed passes and two expected original-base
 broadening failures in [PR #225](https://github.com/ArghTeam/razdacha/pull/225).
 Final #215 documentation/evidence review and current CI remain merge gates.
-Tasks #216, #217 and #218 remain pending. Only linked evidence is complete.
+Task #216 completed bounded per-case validation with the qualifications below;
+#217 and #218 remain pending. Only linked evidence is complete.
 No installed application or production deployment is claimed.
 
 ## Environment boundary and privacy
@@ -33,7 +34,7 @@ one change before advancing to the next. These are sequential delivery dependenc
 | 2 | [#214: coherent network state](../tasks/done/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Validated and merged in PR #221: attempt 5 fixed PASS and four expected original-watcher failures; no product deployment |
 | 3 | [#220: native rule-set coherence](../tasks/done/220-native-ruleset-coherence.md) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Validated on `d5cb9c1` and merged in PR #224: four fixed passes and four expected baseline failures; no product deployment |
 | 4 | [#215: safe peer deletion](../tasks/done/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Validated on `14e28b3`: two fixed passes and two positively proven baseline broadening failures; final docs/evidence/current CI before merge |
-| 5 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
+| 5 | [#216: clear UI secrets](../tasks/done/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Fixed 31/31; five positive baseline defects; creation baseline inconclusive; controller STOP |
 | 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
 | 7 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
 
@@ -404,4 +405,43 @@ This lifetime removes persistent application references and revokes object URLs.
 It cannot erase immutable strings from the JavaScript heap, browser-managed response
 buffers, developer tools or files the operator chose to download. No deployment or
 installed-server behavior claim follows from local fixture results. Independent
-review and controlled staging evidence remain acceptance gates for #216.
+review and controlled staging evidence must retain the per-case qualifications below.
+
+### #216 completed observations
+
+Executable source `1f2d1dcc3770fa381a7447f0f4ea663a67b3b6ba` was frozen before
+artifact builds. Independent local verification passed 31 fixed cases and positively
+reproduced six baseline defects. The baseline was the pristine prerequisite
+`0da7e20744dc042c13ebc992137f6524b3e66c26` archive (438 original files) plus only
+the identical three test adapter files; no UI override was used.
+
+Controlled staging B3 passed all 31 fixed cases. Five baseline defects were positively
+observed: retained closed-modal data/download URL, old A overwriting B, current-session
+401 cleanup, stale-session 401 notification, and stale parse publication before debounce.
+Baseline peer creation is **inconclusive**: the POST-body barrier did not await its
+nested config GET; a B dataset can remain during loading without proving visible B.
+The controller correctly STOPPED with exit 2 rather than accepting that predicate.
+Local wrapper SSH exit 255 and remote supervisor exit 0 are separately recorded.
+The recovered remote audit and both exact nested/outer Go PASS pairs prove
+infrastructure completion; they do not replace browser proof. No fully green paired
+controller result or six staging reproductions are claimed.
+
+Both fixture stops have actual HTTP 204 receipts. All owned browser, Node, forwarding,
+wrapper, supervisor and fixture processes were absent after cleanup; four pinned
+uploaded payloads were removed. Strict A3/before/after typed database comparisons
+checked all tables, primary keys, schema and counts. Only monotonic `checked_at`
+(seven cells) and `ok_at` (three cells) in `tunnel_checks` changed. Full semantic
+equality is false; policy, pool and authentication cells were never ignored.
+All fourteen inventoried installed files, service state, host structure and policy
+identity stayed stable. A previously reviewed application pool refresh was accepted
+through one fresh snapshot, never as an ignored-column exception; its precise trigger
+is unknown and the structural comparison did not prove full TLS/transport regeneration.
+
+Independent security and primary-owner evidence review accepted this bounded result.
+Superseded prelaunch/B2 evidence remains private and uncertified. The dedicated
+peer-create × logout/session-change browser case was not run. The stale-401 case
+uses no Set-Cookie and proves frontend lifetime only; delayed backend cookie expiry
+remains a P2 availability limitation, without confidentiality loss or authentication
+bypass. Heap zeroing is not promised. No installed app deployment follows from these
+fixture observations. Final documentation review and CI on the final PR head remain
+merge gates. Private raw artifacts/READY tokens are not repository evidence.

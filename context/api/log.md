@@ -13,9 +13,15 @@ nonce-protected graceful stop are independent of product routing. Linux mode pro
 fresh namespaces before mount mutation and requires cleanup before successful exit.
 **Beware:** Browser session revision guards affect frontend response lifetime only;
 backend authentication is unchanged. The fixture is not a daemon startup/deploy mode.
-**Validation:** Relevant API/UI tests and local graceful-stop verification passed;
-independent browser and controlled staging review remain pending. See
-[the specification](../../tasks/216-clear-ui-config-secrets.md).
+**Validation:** Relevant API/UI tests, lint/static builds and independent local browser
+checks passed on executable source `1f2d1dc`. Controlled staging fixed 31/31 passed;
+five baseline defects were positive and peer creation inconclusive (controller STOP,
+exit 2). Both actual HTTP 204 receipts and exact child/parent Go PASS envelopes were
+retained. Strict audit found only the two allowed monotonic health timestamp columns
+changed; policy/pool/auth, schema, installed files, services and host stayed stable.
+All owned groups were absent and four uploaded payloads removed. This verifies the
+isolated fixture, not an installed application deployment. See
+[the specification](../../tasks/done/216-clear-ui-config-secrets.md).
 
 ### #215 — preserve selected scope after peer deletion
 

@@ -49,3 +49,13 @@ description: REST, встроенная SPA, диагностика и клие�
   Backend invalid-session 401 cookie expiry is unchanged; a delayed expiry cookie
   may still require another login. The frontend guard does not control cookie timing.
   This browser lifetime guard does not replace backend session authentication.
+
+## Configuration lifetime verification boundary
+
+The synthetic actual-API fixture verifies frontend lifetime separately from backend
+cookie delivery and installed deployment. Staging fixed 31/31 and five positive
+baseline defects were accepted per case; baseline peer creation remained inconclusive
+and the controller stopped. A dataset marker alone does not prove visible rendering.
+Peer creation across logout/session change was reviewed but not browser-exercised.
+See the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md)
+for the health-only database drift, cleanup evidence and residual P2 cookie limit.

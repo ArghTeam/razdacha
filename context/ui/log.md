@@ -17,8 +17,11 @@ share the modal lifetime, with immediate invalidation on newer input.
 **Beware:** Successful peer creation still marks pending changes after ordinary modal
 closure. Cleanup removes application references; it does not promise heap erasure or
 remove a downloaded file. No frontend build step was added.
-**Validation:** Actual-API synthetic browser and independent security reviews are in
-progress; staging remains pending. See [the specification](../../tasks/216-clear-ui-config-secrets.md)
+**Validation:** Frozen executable source `1f2d1dc`: independent local fixed 31/31
+and six positive baseline defects; isolated staging fixed 31/31 and five positive
+baseline defects. Baseline peer creation is inconclusive; the controller correctly
+stopped with exit 2. Both stop receipts were 204; remote infrastructure/audit passed.
+No installed deployment. Final documentation review/current CI remain merge gates. See [the specification](../../tasks/done/216-clear-ui-config-secrets.md)
 and [fixture protocol](../../docs/11-staging-validation.md#configuration-ui-lifetime-fixture-216).
 
 ### #215 — preserve selected scope after peer deletion

@@ -44,3 +44,13 @@ description: Static HTML/CSS/ES modules embedded from ui/dist; defaults instead 
 - Logout clears secrets immediately and prevents a new login until its response
   settles, including failure. This prevents a late logout cookie from deleting a
   newly issued session cookie; form submission by Enter obeys the same pending gate.
+
+## Configuration lifetime verification boundary
+
+The synthetic actual-API fixture verifies frontend lifetime separately from backend
+cookie delivery and installed deployment. Staging fixed 31/31 and five positive
+baseline defects were accepted per case; baseline peer creation remained inconclusive
+and the controller stopped. A dataset marker alone does not prove visible rendering.
+Peer creation across logout/session change was reviewed but not browser-exercised.
+See the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md)
+for the health-only database drift, cleanup evidence and residual P2 cookie limit.
