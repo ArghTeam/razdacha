@@ -62,3 +62,19 @@ staging checks and independent review. No deployment or old-server access is inc
 - Synthetic browser suite: 7/7 passed on desktop/mobile, covering save, reload, Apply,
   explicit null, disabled targets, failed save and modal layout.
 - Live isolated Linux fixture: pending primary-agent coordination; no live WG claim.
+
+## Isolated wire attempt 1: failed fixture negotiation
+
+The primary-run attempt on `14e55a49ee7cecfadb35af98895541bf828cbc89` failed
+before cached-FakeIP traffic completed. Three capture barriers reported zero drops;
+this is failed evidence, not routing acceptance. The synthetic SOCKS relay assumed
+all control requests used IPv4 addresses. The pinned SOCKS client sends an
+IPv6-unspecified UDP ASSOCIATE bind hint for a loopback DNS destination, so the
+fixture closed that valid request and reset DNS lookup. This bind hint is not an
+IPv6 client packet or an expanded permitted destination.
+
+The fixture now parses bounded IPv4/IPv6 control-address lengths. Actual UDP
+payload destinations remain the original fixed IPv4 fixture allowlist. A portable
+`net.Pipe` regression exercises the actual pinned SOCKS handshake for both public
+and loopback destinations, plus malformed/truncated request refusal. Production
+routing code is unchanged. A fresh independently reviewed live attempt is required.

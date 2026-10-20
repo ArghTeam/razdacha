@@ -334,11 +334,11 @@ func (r *egressWireRelay) serve(c net.Conn) {
 	if _, err := c.Write([]byte{5, 0}); err != nil {
 		return
 	}
-	request := make([]byte, 10)
-	if _, err := io.ReadFull(c, request); err != nil || request[0] != 5 || request[3] != 1 {
+	command, target, err := readEgressSOCKSRequest(c)
+	if err != nil {
 		return
 	}
-	if request[1] == 3 {
+	if command == 3 {
 		udp, err := net.ListenPacket("udp4", "127.0.0.1:0")
 		if err != nil {
 			return
@@ -378,10 +378,9 @@ func (r *egressWireRelay) serve(c net.Conn) {
 		<-done
 		return
 	}
-	if request[1] != 1 {
+	if command != 1 {
 		return
 	}
-	target := net.JoinHostPort(net.IP(request[4:8]).String(), strconv.Itoa(int(binary.BigEndian.Uint16(request[8:]))))
 	if _, err := c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0}); err != nil {
 		return
 	}
