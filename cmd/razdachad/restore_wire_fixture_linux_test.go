@@ -6,6 +6,7 @@ package main
 // outgoing WG is a real sing-box userspace endpoint and independent kernel peer.
 // Full CLI durability/failure proofs remain separate from this bounded wire test.
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -658,13 +659,17 @@ func rwExercise(t *testing.T) {
 	t.Cleanup(func() { wireMust(t, sink.stop()) })
 	ready := make(chan error, 1)
 	go func() {
-		b := make([]byte, len("RESTORE-WIRE-SINK-READY\n"))
-		_, e := io.ReadFull(pipe, b)
-		if e == nil && string(b) != "RESTORE-WIRE-SINK-READY\n" {
-			e = errors.New("invalid readiness")
+		scanner := bufio.NewScanner(pipe)
+		found := false
+		for scanner.Scan() {
+			if !found && scanner.Text() == "RESTORE-WIRE-SINK-READY" {
+				found = true
+				ready <- nil
+			}
 		}
-		ready <- e
-		_, _ = io.Copy(io.Discard, pipe)
+		if !found {
+			ready <- errors.Join(io.EOF, scanner.Err())
+		}
 	}()
 	select {
 	case e := <-ready:
