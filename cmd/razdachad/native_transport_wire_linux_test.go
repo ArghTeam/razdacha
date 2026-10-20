@@ -98,7 +98,7 @@ func nativeTransportWireExercise(t *testing.T) {
 	// Raw probes target .10 inside the envelope and must remain unmarked.
 	nativeTransportRaw(t, p, "1")
 	nativeTransportRaw(t, p, "253")
-	p.probe(t, p.a.Address, "dns", "transport.example.", "deny", "transport-domain-dns")
+	p.probe(t, p.a.Address, "dns", "transport.example.", "refused", "transport-domain-dns")
 	p.probe(t, p.a.Address, "dns", "unrelated.example.", "real", "transport-unrelated-dns")
 	target, err := p.st.Tunnel(p.h.ctx, targetID)
 	wireMust(t, err)
