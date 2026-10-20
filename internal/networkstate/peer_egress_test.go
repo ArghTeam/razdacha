@@ -20,7 +20,7 @@ func TestPeerRoutingRequiresVersionThreeForBothAuthorities(t *testing.T) {
 					t.Fatal(err)
 				}
 				_, err := Read(path, kind)
-				if (err == nil) != (version == 3) {
+				if (err == nil) != (version == 3 || version == 4) {
 					t.Fatalf("routing envelope admission v%d: %v", version, err)
 				}
 				gen.Policy.Peers[0].EgressTunnelID = nil
@@ -28,7 +28,7 @@ func TestPeerRoutingRequiresVersionThreeForBothAuthorities(t *testing.T) {
 					t.Fatal(err)
 				}
 				_, err = Read(path, kind)
-				if (err == nil) != (version <= 3) {
+				if (err == nil) != (version <= 4) {
 					t.Fatalf("legacy envelope admission v%d: %v", version, err)
 				}
 			})

@@ -101,8 +101,12 @@ func privateRead(path string, max int64) ([]byte, error) {
 	return body, nil
 }
 
-func (a NativeArtifact) Verify(dir string, subnets []string) error {
-	if a.Version != ProjectionVersion || (a.Format != FormatSRS && a.Format != FormatJSON) || !hashOK(a.Hash) {
+func (a NativeArtifact) Verify(dir string, subnets []string, transport ...[]string) error {
+	var transportSubnets []string
+	if len(transport) > 0 {
+		transportSubnets = transport[0]
+	}
+	if (a.Version != 1 && a.Version != ProjectionVersion) || (a.Format != FormatSRS && a.Format != FormatJSON) || !hashOK(a.Hash) {
 		return errors.New("invalid native artifact authority")
 	}
 	expected := filepath.Join(dir, a.Hash+"."+string(a.Format))
@@ -119,11 +123,11 @@ func (a NativeArtifact) Verify(dir string, subnets []string) error {
 	if digest(original) != a.Hash {
 		return errors.New("native original hash mismatch")
 	}
-	projection, err := ProjectNative(original, a.Format)
+	projection, err := projectNativeVersion(original, a.Format, a.Version)
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(projection.Subnets, subnets) {
+	if !reflect.DeepEqual(projection.Subnets, subnets) || !reflect.DeepEqual(projection.TransportSubnets, transportSubnets) {
 		return errors.New("native subnet projection mismatch")
 	}
 	if len(projection.DNS) == 0 {
@@ -158,10 +162,10 @@ func (f *Fetcher) accepted(rawURL string) (nativeAccepted, error) {
 	if err = json.Unmarshal(body, &out); err != nil {
 		return out, err
 	}
-	if out.Version != 1 || out.Meta.URL != rawURL || out.List.Native == nil || out.List.Native.Format != FormatOf(rawURL) {
+	if (out.Version != 1 && out.Version != 2) || (out.Version == 1 && out.List.Native != nil && out.List.Native.Version != 1) || out.Meta.URL != rawURL || out.List.Native == nil || out.List.Native.Format != FormatOf(rawURL) {
 		return out, errors.New("invalid accepted native manifest")
 	}
-	if err = out.List.Native.Verify(nativeDir(f.cache.dir), out.List.Subnets); err != nil {
+	if err = out.List.Native.Verify(nativeDir(f.cache.dir), out.List.Subnets, out.List.TransportSubnets); err != nil {
 		return out, err
 	}
 	return out, nil
@@ -259,7 +263,7 @@ func (f *Fetcher) acceptNative(rawURL string, body []byte, m meta) (nativeAccept
 		a.DNSPath = filepath.Join(dir, a.DNSHash+".dns.json")
 		blobs[a.DNSPath] = projection.DNS
 	}
-	accepted := nativeAccepted{Version: 1, Meta: m, List: List{Subnets: projection.Subnets, Native: &a}}
+	accepted := nativeAccepted{Version: 2, Meta: m, List: List{Subnets: projection.Subnets, TransportSubnets: projection.TransportSubnets, Native: &a}}
 	manifest, err := json.Marshal(accepted)
 	if err != nil {
 		return accepted, err

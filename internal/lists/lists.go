@@ -90,6 +90,8 @@ type List struct {
 	// Subnets — префиксы IPv4, пригодные для элементов nft-сета. Только v4:
 	// сет объявлен ipv4_addr, а IPv6 у клиентов выключен (ADR 0005).
 	Subnets []string
+	// TransportSubnets contains native address envelopes intercepted only for TCP/UDP.
+	TransportSubnets []string `json:"transport_subnets,omitempty"`
 	// Skipped — сколько строк отброшено как неразбираемые.
 	Skipped int
 }

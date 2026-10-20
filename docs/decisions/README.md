@@ -37,3 +37,5 @@
 | [0026](0026-peer-deletion-preserves-scope.md) | Peer deletion preserves selected scope | 2026-10-20 | accepted; clarifies 0013 |
 
 | [0028](0028-peer-egress.md) | Source-scoped whole-Internet tunnel routing | 2026-10-20 | accepted; extends 0003, 0013 and 0023 |
+
+| [0029](0029-bounded-native-transport.md) | Bounded native transport address rules | 2026-10-20 | accepted; extends 0025 |

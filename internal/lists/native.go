@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/sagernet/sing-box/common/srs"
 	C "github.com/sagernet/sing-box/constant"
@@ -21,7 +23,7 @@ import (
 
 // ProjectionVersion pins the native semantic compiler contract.
 const (
-	ProjectionVersion       = 1
+	ProjectionVersion       = 2
 	maxNativeNodes          = 10000
 	maxNativeDepth          = 32
 	maxNativeValues         = 200000
@@ -32,15 +34,18 @@ var ErrUnsupportedNative = errors.New("unsupported native predicate")
 
 // NativeProjection is derived from the entire AST, never from flattened entries.
 type NativeProjection struct {
-	DNS     []byte
-	Subnets []string
+	DNS              []byte
+	Subnets          []string
+	TransportSubnets []string
 }
 
 type nativeExpr struct {
-	domain      *option.HeadlessRule
-	address     *netipx.IPSet
-	emptyDomain bool
-	ranges      []netipx.IPRange
+	domain          *option.HeadlessRule
+	address         *netipx.IPSet
+	emptyDomain     bool
+	ranges          []netipx.IPRange
+	transport       *netipx.IPSet
+	transportRanges []netipx.IPRange
 }
 
 // Projection work counts range visits and a conservative normalization log factor
@@ -48,6 +53,7 @@ type nativeExpr struct {
 type nativeWork struct {
 	remaining int
 	regex     nativeRegexBudget
+	legacy    bool
 }
 
 func (w *nativeWork) charge(n int, normalize bool) error {
@@ -61,10 +67,15 @@ func (w *nativeWork) charge(n int, normalize bool) error {
 	return nil
 }
 
-// ProjectNative accepts only an exact separable D(domain) OR A(address) expression.
+// ProjectNative accepts separable domains and bounded address/transport branches.
+// Transport envelopes affect interception only; original bytes retain exact matching.
 // Domain matchers in the pinned runtime always return false without a domain,
 // even when their regex matches the empty string. Inversion changes that fact.
 func ProjectNative(body []byte, format Format) (out NativeProjection, err error) {
+	return projectNativeVersion(body, format, ProjectionVersion)
+}
+
+func projectNativeVersion(body []byte, format Format, version int) (out NativeProjection, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			out = NativeProjection{}
@@ -103,7 +114,7 @@ func ProjectNative(body []byte, format Format) (out NativeProjection, err error)
 		return out, fmt.Errorf("%w: empty native set", ErrUnsupportedNative)
 	}
 	nodes, values := 0, 0
-	work := &nativeWork{remaining: maxNativeProjectionWork}
+	work := &nativeWork{remaining: maxNativeProjectionWork, legacy: version == 1}
 	exprs := make([]nativeExpr, 0, len(set.Rules))
 	for _, r := range set.Rules {
 		e, eerr := compileNative(r, 0, &nodes, &values, work)
@@ -115,6 +126,16 @@ func ProjectNative(body []byte, format Format) (out NativeProjection, err error)
 	e, err := combineNative(exprs, C.LogicalTypeOr, false, work)
 	if err != nil {
 		return out, err
+	}
+	if e.transport != nil && e.address != nil {
+		envelope, err := combineNative([]nativeExpr{{address: e.address, ranges: e.ranges}, {address: e.transport, ranges: e.transportRanges}}, C.LogicalTypeOr, false, work)
+		if err != nil {
+			return out, err
+		}
+		prefixes := envelope.address.Prefixes()
+		if len(prefixes) == 1 && prefixes[0].Bits() == 0 {
+			return out, fmt.Errorf("%w: unbounded combined IPv4 coverage", ErrUnsupportedNative)
+		}
 	}
 	if e.emptyDomain {
 		return out, fmt.Errorf("%w: unbounded literal-IP domain coverage", ErrUnsupportedNative)
@@ -129,6 +150,18 @@ func ProjectNative(body []byte, format Format) (out NativeProjection, err error)
 		}
 		for _, p := range prefixes {
 			out.Subnets = append(out.Subnets, p.String())
+		}
+	}
+	if e.transport != nil {
+		prefixes := e.transport.Prefixes()
+		if len(prefixes) == 1 && prefixes[0].Bits() == 0 {
+			return out, fmt.Errorf("%w: unbounded transport IPv4 coverage", ErrUnsupportedNative)
+		}
+		if len(prefixes) > maxNativeValues {
+			return out, fmt.Errorf("%w: projection budget", ErrUnsupportedNative)
+		}
+		for _, p := range prefixes {
+			out.TransportSubnets = append(out.TransportSubnets, p.String())
 		}
 	}
 	if e.domain != nil {
@@ -166,16 +199,43 @@ func compileNative(r option.HeadlessRule, depth int, nodes, values *int, work *n
 	d := r.DefaultOptions
 	// Reject every field outside the explicit whitelist, including compiled SRS state.
 	allowed := option.DefaultHeadlessRule{Domain: d.Domain, DomainSuffix: d.DomainSuffix, DomainKeyword: d.DomainKeyword, DomainRegex: d.DomainRegex, IPCIDR: d.IPCIDR, Invert: d.Invert, DomainMatcher: d.DomainMatcher, IPSet: d.IPSet}
+	contextual := len(d.Network)+len(d.Port)+len(d.PortRange) > 0
+	if contextual && !work.legacy {
+		allowed.Network, allowed.Port, allowed.PortRange = d.Network, d.Port, d.PortRange
+	}
 	if !reflect.DeepEqual(d, allowed) {
 		return bad("context-dependent or unknown field")
 	}
-	for _, vv := range [][]string{d.Domain, d.DomainSuffix, d.DomainKeyword, d.DomainRegex, d.IPCIDR} {
+	for _, vv := range [][]string{d.Domain, d.DomainSuffix, d.DomainKeyword, d.DomainRegex, d.IPCIDR, d.Network, d.PortRange} {
 		*values += len(vv)
 		for _, v := range vv {
 			if v == "" || len(v) > 4096 {
 				return bad("empty or oversized value")
 			}
 		}
+	}
+	*values += len(d.Port)
+	for _, network := range d.Network {
+		if network != "tcp" && network != "udp" {
+			return bad("unsupported network")
+		}
+	}
+	for _, ports := range d.PortRange {
+		ends := strings.Split(ports, ":")
+		if len(ends) != 2 {
+			return bad("invalid destination port range")
+		}
+		lo, err := strconv.ParseUint(ends[0], 10, 16)
+		if err != nil {
+			return bad("invalid destination port range")
+		}
+		hi, err := strconv.ParseUint(ends[1], 10, 16)
+		if err != nil || lo > hi {
+			return bad("invalid destination port range")
+		}
+	}
+	if contextual && (d.Invert || len(d.Domain)+len(d.DomainSuffix)+len(d.DomainKeyword)+len(d.DomainRegex) > 0) {
+		return bad("domain/context mixing or contextual inversion")
 	}
 	if *values > maxNativeValues {
 		return bad("predicate value budget")
@@ -223,7 +283,16 @@ func compileNative(r option.HeadlessRule, depth int, nodes, values *int, work *n
 		}
 		e.ranges = e.address.Ranges()
 	}
-	if e.domain == nil && e.address == nil {
+	if contextual {
+		if e.address == nil {
+			var b netipx.IPSetBuilder
+			b.AddPrefix(netip.MustParsePrefix("0.0.0.0/0"))
+			e.address, _ = b.IPSet()
+			e.ranges = e.address.Ranges()
+		}
+		e.transport, e.transportRanges, e.address, e.ranges = e.address, e.ranges, nil, nil
+	}
+	if e.domain == nil && e.address == nil && e.transport == nil {
 		return bad("empty default node")
 	}
 	return invertNative(e, d.Invert, work)
@@ -231,6 +300,68 @@ func compileNative(r option.HeadlessRule, depth int, nodes, values *int, work *n
 
 func combineNative(ee []nativeExpr, mode string, invert bool, work *nativeWork) (nativeExpr, error) {
 	out := nativeExpr{}
+	hasTransport := false
+	for _, e := range ee {
+		hasTransport = hasTransport || e.transport != nil
+	}
+	if hasTransport {
+		if invert {
+			return out, fmt.Errorf("%w: contextual inversion", ErrUnsupportedNative)
+		}
+		if mode == C.LogicalTypeAnd {
+			// Keep unconditional address coverage: (A OR transport(B)) AND C
+			// still selects A AND C for every IP protocol. Only the additional
+			// envelope is restricted to TCP/UDP interception.
+			ordinary := make([]nativeExpr, len(ee))
+			envelopes := make([]nativeExpr, len(ee))
+			allOrdinary := true
+			for i, e := range ee {
+				if e.domain != nil {
+					return out, fmt.Errorf("%w: domain/context logical AND", ErrUnsupportedNative)
+				}
+				ordinary[i] = nativeExpr{address: e.address, ranges: e.ranges}
+				allOrdinary = allOrdinary && e.address != nil
+				merged, err := combineNative([]nativeExpr{{address: e.address, ranges: e.ranges}, {address: e.transport, ranges: e.transportRanges}}, C.LogicalTypeOr, false, work)
+				if err != nil {
+					return out, err
+				}
+				envelopes[i] = merged
+			}
+			envelope, err := combineNative(envelopes, mode, false, work)
+			if err != nil {
+				return out, err
+			}
+			out.transport, out.transportRanges = envelope.address, envelope.ranges
+			if allOrdinary {
+				unconditional, err := combineNative(ordinary, mode, false, work)
+				if err != nil {
+					return out, err
+				}
+				out.address, out.ranges = unconditional.address, unconditional.ranges
+			}
+			return out, nil
+		}
+		ordinary := make([]nativeExpr, len(ee))
+		transports := make([]nativeExpr, 0, len(ee))
+		for i, e := range ee {
+			ordinary[i] = e
+			ordinary[i].transport = nil
+			ordinary[i].transportRanges = nil
+			if e.transport != nil {
+				transports = append(transports, nativeExpr{address: e.transport, ranges: e.transportRanges})
+			}
+		}
+		ordinaryExpr, err := combineNative(ordinary, mode, false, work)
+		if err != nil {
+			return out, err
+		}
+		transportExpr, err := combineNative(transports, mode, false, work)
+		if err != nil {
+			return out, err
+		}
+		ordinaryExpr.transport, ordinaryExpr.transportRanges = transportExpr.address, transportExpr.ranges
+		return ordinaryExpr, nil
+	}
 	if mode == C.LogicalTypeAnd {
 		allD, allA := true, true
 		for _, e := range ee {
@@ -461,8 +592,38 @@ func checkNativeJSON(body []byte) error {
 				continue
 			}
 			switch key {
-			case "domain", "domain_suffix", "domain_keyword", "domain_regex", "ip_cidr":
+			case "domain", "domain_suffix", "domain_keyword", "domain_regex", "ip_cidr", "network", "port_range":
 				if e = stringsValue(); e != nil {
+					return e
+				}
+			case "port":
+				t, e = dec.Token()
+				if e != nil {
+					return e
+				}
+				port := func(v json.Token) error {
+					values++
+					n, ok := v.(float64)
+					if !ok || n < 0 || n > 65535 || n != float64(uint16(n)) || values > maxNativeValues {
+						return bad("port value/type budget")
+					}
+					return nil
+				}
+				if t == json.Delim('[') {
+					for dec.More() {
+						t, e = dec.Token()
+						if e != nil {
+							return e
+						}
+						if e = port(t); e != nil {
+							return e
+						}
+					}
+					_, e = dec.Token()
+					if e != nil {
+						return e
+					}
+				} else if e = port(t); e != nil {
 					return e
 				}
 			case "invert":

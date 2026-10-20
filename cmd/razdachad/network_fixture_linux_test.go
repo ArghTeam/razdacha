@@ -740,6 +740,8 @@ func TestNetworkGenerationWire(t *testing.T) {
 	wireMust(t, unix.Mount("tmpfs", "/var/lib", "tmpfs", 0, "size=16m"))
 	wireMust(t, os.MkdirAll("/var/lib/sing-box", 0o700))
 	switch {
+	case os.Getenv("RAZDACHA_WIRE_TRANSPORT") != "":
+		nativeTransportWireExercise(t)
 	case os.Getenv("RAZDACHA_WIRE_EGRESS") == "1":
 		peerEgressWireExercise(t)
 	case os.Getenv("RAZDACHA_WIRE_PEER_CASE") != "":

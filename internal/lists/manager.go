@@ -331,6 +331,7 @@ func (m *Manager) Snapshot() map[string]List {
 	for url, l := range m.lists {
 		l.Domains = append([]string(nil), l.Domains...)
 		l.Subnets = append([]string(nil), l.Subnets...)
+		l.TransportSubnets = append([]string(nil), l.TransportSubnets...)
 		if l.Native != nil {
 			a := *l.Native
 			l.Native = &a

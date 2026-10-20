@@ -119,8 +119,11 @@ under GPL-2.0-or-later ([ADR 0007](docs/decisions/0007-license-gplv2.md)).
   ([ADR 0013](docs/decisions/0013-unavailable-tunnel-rejects.md)). Manual/plain DNS
   rejection uses domain-only projections; CIDR-only sources have no DNS matcher,
   never an empty-tag match-all action ([ADR 0024](docs/decisions/0024-domain-only-dns-projections.md)).
-  Supported native sources use immutable local original/DNS artifacts (ADR 0025);
-  unsupported mixed/context predicates fail before acceptance.
+  Supported native sources use immutable local original/DNS artifacts (ADR 0025).
+  Bounded positive TCP/UDP and destination-port address branches use separate
+  transport interception (ADR 0029); unsupported mixed/context predicates fail
+  before acceptance. Projection v2 and generation v4 pin transport authority;
+  supported older projection authority retains legacy verification.
 - Publish plain-list policy through the serialized guarded generation protocol ([ADR 0023](docs/decisions/0023-coherent-network-generation.md)): prepare/check first, guard client ingress, reconcile WG/route/runtime/nft, persist authority, discard bootstrap authority, release last. Post-guard failure remains closed; recovery never restores live peers/authentication. Peer allocation shares the gate and reserves committed addresses. Native JSON/SRS share this protocol through daemon-owned immutable artifacts (ADR 0025). Active artifact corruption closes ingress; legacy v1 native authority requires guarded administrator recovery.
 
 - Peer deletion never broadens selected rules. Empty selected orphans remain disabled; generators skip sources with no existing client, while existing disabled clients retain scoped rejection (ADR 0026). Background refresh/recovery preserve committed policy until explicit Apply.

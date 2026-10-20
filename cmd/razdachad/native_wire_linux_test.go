@@ -112,7 +112,7 @@ func (n *nativeWireFixture) nft(ctx context.Context, snap store.Snapshot, conten
 		return 0, err
 	}
 	sub := generationSubnets(snap, content)
-	result, err := nf.Apply(netstack.NftConfig{WANInterface: "wan0", ResolverAddr: snap.Settings.WGServerAddress, Subnets: sub})
+	result, err := nf.Apply(netstack.NftConfig{WANInterface: "wan0", ResolverAddr: snap.Settings.WGServerAddress, Subnets: sub, TransportSubnets: generationTransportSubnets(snap, content)})
 	if err == nil && result.SkippedSubnets != 0 {
 		err = fmt.Errorf("invalid synthetic native subnets")
 	}

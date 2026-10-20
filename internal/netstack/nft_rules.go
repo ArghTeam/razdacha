@@ -40,6 +40,8 @@ const (
 	SetLocalV4 = "local_v4"
 	// SetSubnets — подсети из списков (слой lists), для них FakeIP не работает.
 	SetSubnets = "razdacha_subnets"
+	// SetTransportSubnets is marked only for TCP/UDP.
+	SetTransportSubnets = "transport_subnets"
 	// SetPeerEgress holds exact sources whose Internet traffic must enter the proxy.
 	SetPeerEgress = "peer_egress"
 )
@@ -87,7 +89,8 @@ type NftConfig struct {
 	ResolverAddr string
 	// Subnets — подсети из слоя lists (Manager.Subnets), строками CIDR или
 	// отдельными адресами. Битые и IPv6-записи пропускаются, а не роняют сборку.
-	Subnets []string
+	Subnets          []string
+	TransportSubnets []string
 }
 
 // NftAction — что правило делает с пакетом.
@@ -213,6 +216,8 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 	egress, _ := MergeSubnets(cfg.PeerEgress)
 	local, _ := MergeSubnets(localV4)
 	subnets, skipped := MergeSubnets(cfg.Subnets)
+	transport, transportSkipped := MergeSubnets(cfg.TransportSubnets)
+	skipped += transportSkipped
 
 	rs := NftRuleset{
 		Table: NftTable,
@@ -223,6 +228,9 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 		SkippedSubnets: skipped,
 	}
 
+	if len(transport) > 0 {
+		rs.Sets = append(rs.Sets, NftSet{Name: SetTransportSubnets, Elements: transport})
+	}
 	if len(egress) > 0 {
 		rs.Sets = append(rs.Sets, NftSet{Name: SetPeerEgress, Elements: egress})
 	}
@@ -258,6 +266,9 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 		NftRule{NFProto: "ipv4", DstPrefix: FakeIPRange, Action: ActionMark},
 		NftRule{NFProto: "ipv4", DstSet: SetSubnets, Action: ActionMark},
 	)
+	if len(transport) > 0 {
+		mangleRules = append(mangleRules, portRules(NftRule{NFProto: "ipv4", DstSet: SetTransportSubnets, Action: ActionMark})...)
+	}
 	mangle := NftChain{
 		Name: ChainMangle, Type: "filter", Hook: "prerouting", Priority: priorityMangle,
 		Rules: mangleRules,
