@@ -164,6 +164,14 @@ func (g *applyGate) recover(ctx context.Context, seedPath string) error {
 		return err
 	}
 	if err == nil {
+		if committed.Version == 1 {
+			for _, src := range lists.Sources(committed.Policy) {
+				if src.Format != lists.FormatPlain {
+					g.log.Error("Legacy native routing authority is unsupported; clients remain guarded until sources are validated and explicit Apply succeeds")
+					return nil
+				}
+			}
+		}
 		g.base = committed.Policy
 		g.network.contents = committed.Lists
 		g.network.initialized = true

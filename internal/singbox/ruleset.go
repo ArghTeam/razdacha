@@ -10,24 +10,19 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common/json/badoption"
 
+	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
-// PlainList — разобранное содержимое внешнего списка, который sing-box сам
-// прочитать не может: домены и подсети «по строке на запись».
+// PlainList supplies one frozen source: inline plain content or native artifact authority.
 type PlainList struct {
 	Domains []string
 	Subnets []string
+	Native  *lists.NativeArtifact
 }
 
-// PlainLists отдаёт содержимое такого списка по его адресу. Второе значение
-// false означает, что списка ещё нет: не скачался, скачается позже или
-// планировщик не поднят. Нулевое замыкание допустимо и равнозначно «нет ни
-// одного списка».
-//
-// Замыкание, а не тип слоя lists: генератор про загрузку и кэш не знает,
-// проводку даёт демон (cmd/razdachad/lists.go) — тем же приёмом, каким слою api
-// достаётся заливка nft.
+// PlainLists is the compatibility callback for one frozen source read per generation.
+// Native source acquisition and validation belong to the daemon, not this generator.
 type PlainLists func(url string) (PlainList, bool)
 
 // ruleSets separates full destination matching from immediate DNS matching.
@@ -37,10 +32,11 @@ type ruleSets struct {
 	RouteTags []string
 	DNSTags   []string
 	Missing   []string
+	Err       error
 }
 
-// buildRuleSets reads each plain source once for both projections (ADR 0024).
-// Native formats retain their predicates and shared tags; see issue #220.
+// buildRuleSets reads each source once for full routing and exact DNS projections.
+// Native originals and projections are immutable local artifacts (ADR 0025).
 func buildRuleSets(r store.Rule, s store.Settings, plain PlainLists) ruleSets {
 	var result ruleSets
 	addInline := func(tag string, content PlainList) bool {
@@ -56,15 +52,38 @@ func buildRuleSets(r store.Rule, s store.Settings, plain PlainLists) ruleSets {
 		}
 		return true
 	}
-	for _, key := range r.CommunityLists {
-		tag := communityTag(key)
-		result.Sets = append(result.Sets, remoteRuleSet(tag, fmt.Sprintf(communityListURL, key), s))
+	addNative := func(tag, raw string) {
+		if result.Err != nil {
+			return
+		}
+		var content PlainList
+		var found bool
+		if plain != nil {
+			content, found = plain(raw)
+		}
+		if !found || content.Native == nil {
+			result.Err = fmt.Errorf("required native list is not loaded")
+			return
+		}
+		artifact := content.Native
+		format := C.RuleSetFormatSource
+		if artifact.Format == lists.FormatSRS {
+			format = C.RuleSetFormatBinary
+		}
+		result.Sets = append(result.Sets, option.RuleSet{Type: C.RuleSetTypeLocal, Tag: tag, Format: format, LocalOptions: option.LocalRuleSet{Path: artifact.Path}})
 		result.RouteTags = append(result.RouteTags, tag)
-		result.DNSTags = append(result.DNSTags, tag)
+		if artifact.DNSPath != "" {
+			dnsTag := tag + "-dns"
+			result.Sets = append(result.Sets, option.RuleSet{Type: C.RuleSetTypeLocal, Tag: dnsTag, Format: C.RuleSetFormatSource, LocalOptions: option.LocalRuleSet{Path: artifact.DNSPath}})
+			result.DNSTags = append(result.DNSTags, dnsTag)
+		}
+	}
+	for _, key := range r.CommunityLists {
+		addNative(communityTag(key), fmt.Sprintf(communityListURL, key))
 	}
 	addInline(ruleSetTag(r.ID), PlainList{Domains: r.Domains, Subnets: r.Subnets})
 	for i, raw := range r.RemoteLists {
-		format, native := ruleSetFormat(raw)
+		_, native := ruleSetFormat(raw)
 		if !native {
 			var content PlainList
 			var found bool
@@ -76,12 +95,7 @@ func buildRuleSets(r store.Rule, s store.Settings, plain PlainLists) ruleSets {
 			}
 			continue
 		}
-		tag := remoteListTag(r.ID, i)
-		set := remoteRuleSet(tag, raw, s)
-		set.Format = format
-		result.Sets = append(result.Sets, set)
-		result.RouteTags = append(result.RouteTags, tag)
-		result.DNSTags = append(result.DNSTags, tag)
+		addNative(remoteListTag(r.ID, i), raw)
 	}
 	return result
 }
@@ -103,14 +117,15 @@ func RuleInConfig(r store.Rule, plain PlainLists) bool {
 	}
 	// Настройки влияют только на период обновления remote-наборов, на состав
 	// тегов — нет: считать их ради счёта незачем.
-	return len(buildRuleSets(r, store.Settings{}, plain).RouteTags) > 0
+	built := buildRuleSets(r, store.Settings{}, plain)
+	return built.Err == nil && len(built.RouteTags) > 0
 }
 
 // inlineRuleSet собирает набор из доменов и подсетей: своих у правила либо
 // разобранных слоем lists из plain-списка.
 //
-// Домены и подсети — две отдельные записи набора: внутри одной записи условия
-// складываются по «и», а нам нужно «или».
+// Domains and CIDRs are separate entries; both represent the destination OR
+// semantics of the pinned runtime. DNS uses a separate domain-only set.
 //
 // Набор inline, а не local: конфиг остаётся единственным артефактом на диске.
 // Файлы наборов пришлось бы писать рядом и держать в согласии с конфигом.
@@ -134,19 +149,6 @@ func inlineRuleSet(tag string, l PlainList) (option.RuleSet, bool) {
 		Tag:           tag,
 		InlineOptions: option.PlainRuleSet{Rules: rules},
 	}, true
-}
-
-// remoteRuleSet — удалённый набор, который sing-box обновляет сам по
-// update_interval из настроек.
-func remoteRuleSet(tag, source string, s store.Settings) option.RuleSet {
-	return option.RuleSet{
-		Type: C.RuleSetTypeRemote,
-		Tag:  tag,
-		RemoteOptions: option.RemoteRuleSet{
-			URL:            source,
-			UpdateInterval: badoption.Duration(s.ListUpdateInterval),
-		},
-	}
 }
 
 // headless оборачивает условия в запись набора.

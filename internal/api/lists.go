@@ -34,9 +34,6 @@ const (
 	listFailed = "failed"
 	// listNever — источник в наборе, но обновления не было ни разу.
 	listNever = "never"
-	// listCore — демон этот список не качает: домены ведёт сам sing-box
-	// набором типа remote, и состояния обновления у демона нет.
-	listCore = "core"
 	// listUnknown — источника состояния нет: планировщик не поднялся. Пустоту
 	// не заполняем нулём — так и говорим.
 	listUnknown = "unknown"
@@ -52,7 +49,7 @@ type listStatus struct {
 	URL string `json:"url,omitempty"`
 	// Source — адрес, который качает демон. Пусто означает, что не качает.
 	Source string `json:"source,omitempty"`
-	// State — одно из listUpdated, listFailed, listNever, listCore, listUnknown.
+	// State reports updated, failed, never or unknown acquisition status.
 	State string `json:"state"`
 	// SubnetsOnly — демон качает только подсети сервиса, домены ведёт sing-box.
 	SubnetsOnly bool `json:"subnets_only,omitempty"`
@@ -73,17 +70,25 @@ func (s *Server) ruleLists(r store.Rule) []listStatus {
 
 	out := make([]listStatus, 0, len(r.CommunityLists)+len(r.RemoteLists))
 	for _, key := range r.CommunityLists {
-		st := listStatus{Key: key}
-		url, fetched := lists.CommunitySubnetURL(key)
-		switch {
-		case !fetched:
-			// Подсетей у сервиса нет, .srs с доменами качает сам sing-box —
-			// состояния обновления у демона по нему нет и не будет.
-			st.State = listCore
-		default:
-			st.Source = url
-			st.SubnetsOnly = true
-			fill(&st, states, known)
+		st := listStatus{Key: key, Source: lists.CommunitySRSURL(key)}
+		fill(&st, states, known)
+		if url, ok := lists.CommunitySubnetURL(key); ok {
+			companion := listStatus{Source: url}
+			fill(&companion, states, known)
+			if companion.State == listFailed {
+				if st.Error != "" {
+					st.Error += "; "
+				}
+				st.Error += "Companion subnet list: " + companion.Error
+				st.State = listFailed
+			} else if st.State != listFailed && companion.State != listUpdated {
+				st.State = companion.State
+			}
+			if companion.UpdatedAt == nil {
+				st.UpdatedAt = nil
+			} else if st.UpdatedAt != nil && companion.UpdatedAt.Before(*st.UpdatedAt) {
+				st.UpdatedAt = companion.UpdatedAt
+			}
 		}
 		out = append(out, st)
 	}

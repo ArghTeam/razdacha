@@ -27,3 +27,5 @@ description: wg0, nft-правила и маршрутизация через ne
 - `cmd/razdachad/netfilter_linux.go` — проводка в демон и `--reset-network`.
 
 - `internal/networkstate/state.go` — private committed/bootstrap authority and durable restore invalidation.
+
+- Supported native original routing, exact domain-only DNS and finite IPv4 nft projection share one accepted AST generation (ADR 0025). Active watched-blob corruption installs the guard and marks runtime uncertain, including when a pending candidate removes that source; rejected new input alone retains healthy last-good service. Existing DNS-port/local-address nft exemptions remain boundaries. No implicit catch-all interception or autonomous native refresh is allowed.

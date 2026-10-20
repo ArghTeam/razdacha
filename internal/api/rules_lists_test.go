@@ -63,8 +63,10 @@ func TestRuleListsStatus(t *testing.T) {
 	}
 	ts.listStates = func() map[string]ListState {
 		return map[string]ListState{
-			tgURL:                          {UpdatedAt: updated, Cached: true},
-			"https://example.com/dead.lst": {FailedAt: updated, Err: "сервер ответил 404 Not Found"},
+			tgURL:                             {UpdatedAt: updated, Cached: true},
+			lists.CommunitySRSURL("telegram"): {UpdatedAt: updated, Cached: true},
+			lists.CommunitySRSURL("youtube"):  {FailedAt: updated, Err: "Unsupported native predicate"},
+			"https://example.com/dead.lst":    {FailedAt: updated, Err: "сервер ответил 404 Not Found"},
 		}
 	}
 
@@ -81,12 +83,12 @@ func TestRuleListsStatus(t *testing.T) {
 	if got[0].State != listUpdated || got[0].UpdatedAt == nil || !got[0].UpdatedAt.Equal(updated) {
 		t.Errorf("telegram = %+v, ожидалось updated с временем", got[0])
 	}
-	if !got[0].SubnetsOnly {
-		t.Error("у telegram не отмечено, что демон качает только подсети")
+	if got[0].SubnetsOnly {
+		t.Error("daemon owns both native and companion sources")
 	}
 	// youtube: подсетей нет, .srs ведёт сам sing-box — состояния у демона нет.
-	if got[1].State != listCore || got[1].UpdatedAt != nil {
-		t.Errorf("youtube = %+v, ожидалось core без времени", got[1])
+	if got[1].State != listFailed || got[1].Error == "" {
+		t.Errorf("native source failure hidden: %+v", got[1])
 	}
 	// Свой список, до которого планировщик не дошёл, — не то же самое, что ошибка.
 	if got[2].State != listNever || got[2].Error != "" {
@@ -134,5 +136,21 @@ func TestRuleListsStatusEmpty(t *testing.T) {
 
 	if got := listRules(t, ts, cookie)[0].Lists; len(got) != 0 {
 		t.Errorf("состояний %d, ожидалось ни одного: %+v", len(got), got)
+	}
+}
+
+func TestCommunityNativeAndCompanionFailures(t *testing.T) {
+	now := time.Now()
+	subnet, _ := lists.CommunitySubnetURL("telegram")
+	for _, bad := range []string{lists.CommunitySRSURL("telegram"), subnet} {
+		s := &Server{listStates: func() map[string]ListState {
+			states := map[string]ListState{lists.CommunitySRSURL("telegram"): {UpdatedAt: now}, subnet: {UpdatedAt: now}}
+			states[bad] = ListState{UpdatedAt: now, Err: "Synthetic source failure"}
+			return states
+		}}
+		got := s.ruleLists(store.Rule{CommunityLists: []string{"telegram"}})
+		if len(got) != 1 || got[0].State != listFailed || got[0].Error == "" || got[0].SubnetsOnly {
+			t.Fatalf("source failure hidden: %+v", got)
+		}
 	}
 }

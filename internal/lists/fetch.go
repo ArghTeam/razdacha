@@ -98,6 +98,9 @@ func NewFetcher(o Options) (*Fetcher, error) {
 // Ничто, кроме полностью прочитанного непустого тела, кэш не заменяет: 304,
 // ошибка сети, ответ 5xx и оборванное тело оставляют прошлую версию на месте.
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (Result, error) {
+	if FormatOf(rawURL) != FormatPlain {
+		return f.fetchNative(ctx, rawURL)
+	}
 	ctx, cancel := context.WithTimeout(ctx, f.timeout)
 	defer cancel()
 
@@ -194,6 +197,13 @@ const userAgent = "razdacha/1 (+https://github.com/ArghTeam/razdacha)"
 
 // Cached отдаёт закэшированное тело списка.
 func (f *Fetcher) Cached(rawURL string) ([]byte, error) {
+	if FormatOf(rawURL) != FormatPlain {
+		a, e := f.accepted(rawURL)
+		if e != nil {
+			return nil, e
+		}
+		return privateRead(a.List.Native.Path, defaultMaxBytes)
+	}
 	return f.cache.read(rawURL)
 }
 
@@ -218,6 +228,9 @@ type Refreshed struct {
 // свежая версия. Ошибка возвращается только когда отдать нечего вовсе: источник
 // не ответил и кэша нет.
 func (f *Fetcher) Update(ctx context.Context, rawURL string) (Refreshed, error) {
+	if FormatOf(rawURL) != FormatPlain {
+		return f.updateNative(ctx, rawURL)
+	}
 	format := FormatOf(rawURL)
 	var out Refreshed
 

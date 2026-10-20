@@ -30,7 +30,7 @@ func listsCacheDir(dbPath string) string {
 }
 
 // startLists starts asynchronous fetches. Failure retains committed list content
-// during recovery; a new candidate requiring missing plain content is rejected.
+// during recovery; a new candidate requiring any missing source is rejected.
 func startLists(ctx context.Context, st *store.Store, dbPath string, log *slog.Logger) *lists.Manager {
 	fetcher, err := lists.NewFetcher(lists.Options{Dir: listsCacheDir(dbPath), Logger: log})
 	if err != nil {
@@ -109,16 +109,7 @@ func listSources(ctx context.Context, st *store.Store, log *slog.Logger) []lists
 	return lists.Sources(snap)
 }
 
-// plainLists — проводка разобранных plain-списков в генератор конфига.
-//
-// Списки, которые sing-box не читает сам (не .srs и не .json), качает и
-// разбирает планировщик, а генератор кладёт их домены и подсети в inline-набор
-// правила. Без этой проводки домены пропадали бы молча, а правило, у которого
-// такой список единственный, выпадало бы из конфига — и его трафик уходил бы
-// напрямую по route.final (issue #125).
-//
-// Планировщик может быть не поднят: тогда замыкание пустое, и генератор
-// собирает конфиг без таких наборов.
+// plainLists freezes all source contents, including immutable native artifact authority.
 func plainLists(m *lists.Manager) singbox.PlainLists {
 	if m == nil {
 		return nil
@@ -129,7 +120,7 @@ func plainLists(m *lists.Manager) singbox.PlainLists {
 func frozenPlainLists(contents map[string]lists.List) singbox.PlainLists {
 	return func(url string) (singbox.PlainList, bool) {
 		l, ok := contents[url]
-		return singbox.PlainList{Domains: append([]string(nil), l.Domains...), Subnets: append([]string(nil), l.Subnets...)}, ok
+		return singbox.PlainList{Domains: append([]string(nil), l.Domains...), Subnets: append([]string(nil), l.Subnets...), Native: l.Native}, ok
 	}
 }
 

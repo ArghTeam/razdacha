@@ -187,6 +187,9 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 		}
 
 		built := buildRuleSets(r, snap.Settings, plain)
+		if built.Err != nil {
+			return option.Options{}, nil, fmt.Errorf("native source for rule %q: %w", r.Name, built.Err)
+		}
 		sets, tags, missing := built.Sets, built.RouteTags, built.Missing
 		for _, url := range missing {
 			// Списка ещё нет в кэше — его домены и подсети в конфиг не попали.

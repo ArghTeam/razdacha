@@ -33,3 +33,5 @@ description: REST, встроенная SPA, диагностика и клие�
 - `internal/api/server.go` — сборка сервера и middleware.
 - `internal/api/clientip.go` — определение адреса клиента за прокси.
 - `internal/api/throttle.go` — блокировка после серии неудачных входов.
+
+- Community list status combines daemon-owned native SRS and any companion subnet source; either failure is visible and the timestamp is the oldest successful component. Native predicates remain uncertain route-probe candidates even when loaded or real DNS answers are returned. Generation errors remain diagnostic errors rather than omitted-policy success (ADR 0025).

@@ -1,7 +1,11 @@
 # Staging security validation
 
-Status: #222 completed its isolated wire regression. #214 completed the controlled
-attempt-5 matrix. Distinct final review and current CI are required before merge.
+Status: #222 and #214 completed their controlled validation and were merged.
+#214 merged through [PR #221](https://github.com/ArghTeam/razdacha/pull/221) at
+`d5b8ad3` after distinct final review and passing CI. Native #220 is implemented
+in PR #224 with four fixed passes and four expected baseline failures. Distinct source
+and actual-evidence review passed; final documentation review and current CI remain
+merge gates.
 Later delivery tasks remain pending.
 Only linked evidence is complete. No product or production deployment is claimed.
 
@@ -27,20 +31,20 @@ one change before advancing to the next. These are sequential delivery dependenc
 | Order | Specification | Primary staging observation | Current status |
 |---|---|---|---|
 | 1 | [#222: domain-only DNS matching](../tasks/done/222-dns-rule-scope.md) | Unrelated DNS succeeds while matching domains/CIDRs remain protected | Validated: 8 expected baseline failures, 8 fixed passes; no product deployment |
-| 2 | [#214: coherent network state](../tasks/done/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Attempt 5: fixed matrix PASS and four expected original-watcher failures; distinct final review and current CI required before merge; no product deployment |
-| 3 | [#220: native rule-set coherence](https://github.com/ArghTeam/razdacha/issues/220) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Planned, not executed |
+| 2 | [#214: coherent network state](../tasks/done/214-coherent-network-state.md) | List refresh and Apply publish coherent policy; failures cannot expose direct traffic | Validated and merged in PR #221: attempt 5 fixed PASS and four expected original-watcher failures; no product deployment |
+| 3 | [#220: native rule-set coherence](../tasks/done/220-native-ruleset-coherence.md) | Native SRS/JSON DNS and destination predicates preserve semantics and refresh coherently | Validated on `d5cb9c1`: four fixed passes, four expected baseline failures; final docs/current CI before merge |
 | 4 | [#215: safe peer deletion](../tasks/215-safe-peer-deletion.md) | Removing the selected client never broadens its rule | Planned, not executed |
 | 5 | [#216: clear UI secrets](../tasks/216-clear-ui-config-secrets.md) | Synthetic key/configuration disappears on modal close, replacement and logout | Planned, not executed |
 | 6 | [#217: safe restore](../tasks/217-safe-cross-host-restore.md) | Synthetic restore preserves identity and starts outgoing WireGuard paused | Planned, not executed |
 | 7 | [#218: isolated health](../tasks/218-isolated-tunnel-health.md) | DNS, transport and HTTP/TLS signals stay distinct; client rejects remain effective | Planned, not executed |
 
 The first three unsuccessful #214 attempts remain failed: initial UDP echo, initial DNS with unknown response status, and initial DNS REFUSED (5). Core refresh/failure observations were not reached. #222 does not replace its four
-original-watcher baseline cases. After merging the prerequisite, merge the updated
-base into #214 without rebasing and rebuild that baseline with its original watcher.
+original-watcher baseline cases. The prerequisite was merged before #214 was rebuilt
+with its original watcher for canonical attempt 5.
 The fourth #214 fixed attempt ended with top-level Go PASS but hid all child evidence
 markers because verbose mode was not forwarded. It remains uncertified; all four
-baseline cases were not run. Forwarding verbose mode changes visibility only and
-requires a new reviewed execution with the same marker contract.
+baseline cases were not run. A new reviewed execution with verbose forwarding
+completed canonical attempt 5; the fourth attempt remains uncertified.
 For #222, attempt 1 remains incomplete (one baseline failure, seven baseline cases
 and all fixed cases not run); only attempt 2 completed the 8/8 matrix.
 
@@ -147,7 +151,7 @@ report the blocker with redacted evidence; keep the recovery snapshot available 
 
 Each implementation PR updates relevant maintained context and behavior documentation.
 Write a new ADR before changing an accepted decision; historical ADRs are not rewritten.
-This planning change does not alter runtime invariants or introduce an architecture decision.
+An accepted architecture decision does not itself prove validation, merge or deployment.
 
 
 ## #214 isolated fixture scope
@@ -216,10 +220,71 @@ emitted one ordered positive-control/watcher/zero-drop-ACK/desired-leak sequence
 Go FAIL. No observer errors, panics or runtime errors were reported. Downloaded result hashes
 matched; all uploaded payloads and owned processes were removed, and pre-run service,
 file and host inventories were unchanged. The [completed specification](../tasks/done/214-coherent-network-state.md)
-retains all earlier failed or uncertified attempts. Distinct final review and current CI are required before merge.
+retains all earlier failed or uncertified attempts. Distinct final review and CI
+passed before [PR #221](https://github.com/ArghTeam/razdacha/pull/221) merged at
+`d5b8ad3`; the designated primary checkout was synchronized afterward.
 
 This matrix exercises actual nft, route and sing-box behavior with a veth adapter for
 WG address reconciliation. It does not exercise an encrypted WG handshake. Zero-drop
 collector barriers cover a finite queued observation, not universal lossless capture.
-Native SRS/JSON semantics and refresh remain unresolved in #220. No active application
+Native SRS/JSON semantics and refresh are addressed separately by #220. No active application
 or production deployment is part of this evidence.
+
+## Native rule-set fixture and recovery contract (#220)
+
+The native fixture is opt-in `TestNetworkGenerationWire`, with
+`RAZDACHA_NETNS_TEST=1`, an absolute `RAZDACHA_TEST_SINGBOX`,
+`RAZDACHA_WIRE_NATIVE_FORMAT=json|srs`, and
+`RAZDACHA_WIRE_NATIVE_CASE=daemon-new-runtime-old|runtime-new-daemon-old`.
+Run four fixed combinations (JSON first, then SRS; daemon-new first in each), then
+four original-base combinations in the same order. Each test has an 80-second Go
+limit, a 60-second internal context and a separately supervised 90-second limit.
+Use the existing private exact-process supervisor; clear inherited wire-role values.
+The gateway receives verbose mode. No fixture may use host systemctl or provider keys.
+
+Baseline binaries archive the pristine prerequisite base and overlay only shared
+fixture helpers, payload detector and the `security220_baseline` adapter. They use
+the original remote generator and flattened daemon snapshot. A synthetic daemon-only
+HTTP header separates the two consumers; explicit counters plus actual nft state
+prove the selected skew before probes. Both forbidden TCP and UDP echo must succeed,
+then the same raw collector must ACK a fresh nonce with zero kernel drops before
+`220-BASELINE-NATIVE-LEAK-OBSERVED` is emitted. Generic failures, missing prerequisites,
+partial leak proof or collector errors are never desired baseline failures.
+
+Fixed runs assert zero autonomous runtime source requests, exact accepted-generation
+protection, unrelated DNS success and selected-domain REFUSED, then forced committed
+recovery. An unseen upstream body has no authority until the daemon accepts it.
+`220-FIXED-NATIVE-WIRE-PASS` follows the final zero-drop capture barrier and absence
+checks. The disposable veth exercises WG address control flow; it is not an encrypted
+WireGuard handshake. Canonical B4 completed all eight cases on source `d5cb9c1`
+with 16 zero-drop collector barriers and distinct independent evidence acceptance.
+One earlier attempt stopped when its supervisor rejected nested/outer Go
+summaries after the first fixed case returned Go PASS; the remaining seven cases
+were not run. That attempt remains uncertified. Prelaunch state-check stops do not
+count as executed fixture cases.
+
+On upgrade, a legacy v1 native authority cannot reopen an autonomous remote config.
+The daemon retains committed WG settings for administrative access, keeps clients
+guarded and exposes explicit Apply as the recovery path. Fetch supported sources,
+inspect source errors, then explicitly Apply the intended policy through out-of-band
+administrative access. A v2 missing/corrupt artifact keeps ingress guarded; never repair
+or overwrite a referenced hash path. A newly accepted immutable generation or explicit
+policy replacement can recover through the gate after the active failure is detected.
+Retain artifact history for rollback; there is no garbage collection. At the native
+256-MiB/4,096-file quota, new acceptance fails visibly and existing references remain.
+Do not delete history until its active/prepared/recovery reachability is established.
+
+Database backups exclude native blobs. Restore invalidates routing authority and
+requires reacquisition and explicit Apply; it cannot replay absent references.
+Safe cross-host restore remains #217. No staging, release or deployment claim follows
+from local tests or a draft PR.
+
+
+The [accepted native implementation record](../tasks/done/220-native-ruleset-coherence.md)
+contains the exact source/baseline pins and case-log hashes. All 11 downloaded results
+matched the remote inventory. Snapshot-to-BEFORE changed only seven `checked_at`
+and three `ok_at` health-timestamp cells; BEFORE-to-AFTER full and policy database
+semantics were exactly equal, with no timestamp changes. Host/files, installed source,
+services and policy identity were stable; four pinned payloads were removed and no
+owned process/group or private case-directory process remained. These assertions do
+not claim an application deployment or production change.

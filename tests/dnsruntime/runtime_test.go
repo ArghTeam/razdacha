@@ -1,10 +1,17 @@
 package dnsruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/ArghTeam/razdacha/internal/lists"
+	"github.com/sagernet/sing-box/common/srs"
+	SJSON "github.com/sagernet/sing/common/json"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"testing"
 
@@ -81,10 +88,13 @@ func TestGeneratedDNSRuntime(t *testing.T) {
 	})}
 	go func() { _ = server.ActivateAndServe() }()
 	t.Cleanup(func() { _ = server.Shutdown() })
-	for _, source := range []string{"manual", "plain"} {
+	for _, source := range []string{"manual", "plain", "native-json", "native-srs"} {
 		for _, shape := range []string{"cidr", "domain", "mixed", "empty", "missing"} {
 			for _, mode := range []string{"block", "block-real", "unavailable", "unavailable-real", "fakeip", "real", "direct"} {
 				t.Run(source+"/"+shape+"/"+mode, func(t *testing.T) {
+					if (source == "native-json" || source == "native-srs") && (shape == "empty" || shape == "missing") {
+						t.Skip("native empty/missing content is rejected before publication")
+					}
 					policy := store.Rule{ID: "synthetic", Name: "Synthetic policy", Enabled: true, Action: store.ActionBlock, PeerScope: store.ScopeSelected, PeerIDs: []string{"selected"}}
 					content := singbox.PlainList{}
 					if shape == "domain" || shape == "mixed" {
@@ -94,7 +104,45 @@ func TestGeneratedDNSRuntime(t *testing.T) {
 						content.Subnets = []string{"192.0.2.0/24"}
 					}
 					var plain singbox.PlainLists
-					if source == "manual" {
+					if source == "native-json" || source == "native-srs" {
+						fields := map[string]any{}
+						if len(content.Domains) > 0 {
+							fields["domain_suffix"] = content.Domains
+						}
+						if len(content.Subnets) > 0 {
+							fields["ip_cidr"] = content.Subnets
+						}
+						ruleJSON, _ := json.Marshal(fields)
+						body := []byte(fmt.Sprintf(`{"version":3,"rules":[%s]}`, ruleJSON))
+						extension := ".json"
+						if source == "native-srs" {
+							var compat option.PlainRuleSetCompat
+							if err := SJSON.Unmarshal(body, &compat); err != nil {
+								t.Fatal(err)
+							}
+							var binary bytes.Buffer
+							if err := srs.Write(&binary, compat.Options, 3); err != nil {
+								t.Fatal(err)
+							}
+							body = binary.Bytes()
+							extension = ".srs"
+						}
+						server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(body) }))
+						defer server.Close()
+						url := server.URL + "/native" + extension
+						fetcher, err := lists.NewFetcher(lists.Options{Dir: t.TempDir(), Client: server.Client()})
+						if err != nil {
+							t.Fatal(err)
+						}
+						loaded, err := fetcher.Parse(context.Background(), url)
+						if err != nil {
+							t.Fatal(err)
+						}
+						policy.RemoteLists = []string{url}
+						plain = func(string) (singbox.PlainList, bool) {
+							return singbox.PlainList{Native: loaded.Native, Subnets: loaded.Subnets}, true
+						}
+					} else if source == "manual" {
 						policy.Domains = content.Domains
 						policy.Subnets = content.Subnets
 					} else {

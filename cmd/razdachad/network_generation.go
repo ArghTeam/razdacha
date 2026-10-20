@@ -54,6 +54,24 @@ func writeGeneration(path string, gen networkGeneration) error {
 // publication boundary. The separate kernel guard survives daemon failure.
 func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, repair bool) (singbox.ApplyResult, error) {
 	n := g.network
+	artifactDir, err := filepath.Abs(filepath.Join(filepath.Dir(n.path), "lists", "native"))
+	if err != nil {
+		return singbox.ApplyResult{}, fmt.Errorf("resolve native artifact root: %w", err)
+	}
+	// A detected failure of an active watched artifact is runtime uncertainty,
+	// even when the pending candidate removes that source. Close immediately;
+	// a later validated publication can repair it using a new immutable artifact.
+	if n.initialized && !n.uncertain {
+		for _, l := range n.contents {
+			if l.Native != nil {
+				if err := l.Native.Verify(artifactDir, l.Subnets); err != nil {
+					guardErr := n.guard(true)
+					n.uncertain = true
+					return singbox.ApplyResult{}, fmt.Errorf("clients remain guarded: active native artifact verification: %w", errors.Join(err, guardErr))
+				}
+			}
+		}
+	}
 	// Clone policy, including nested slices/maps, before retaining it as applied.
 	data, err := json.Marshal(snap)
 	if err != nil {
@@ -81,8 +99,16 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	for _, src := range lists.Sources(snap) {
 		if l, ok := contents[src.URL]; ok {
 			selected[src.URL] = l
-		} else if src.Format == lists.FormatPlain {
-			return singbox.ApplyResult{}, fmt.Errorf("%w: required plain list is not loaded", singbox.ErrGenerateFailed)
+			if src.Format != lists.FormatPlain {
+				if l.Native == nil {
+					return singbox.ApplyResult{}, fmt.Errorf("%w: native artifact authority missing", singbox.ErrGenerateFailed)
+				}
+				if err := l.Native.Verify(artifactDir, l.Subnets); err != nil {
+					return singbox.ApplyResult{}, fmt.Errorf("%w: native artifact verification: %w", singbox.ErrGenerateFailed, err)
+				}
+			}
+		} else {
+			return singbox.ApplyResult{}, fmt.Errorf("%w: required list is not loaded", singbox.ErrGenerateFailed)
 		}
 	}
 	a := *g.inner
@@ -133,7 +159,14 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	if err := ctx.Err(); err != nil {
 		return res, fmt.Errorf("clients remain guarded: %w", err)
 	}
-	if err := writeGeneration(n.path, networkGeneration{Version: 1, Policy: snap, Lists: selected}); err != nil {
+	for _, l := range selected {
+		if l.Native != nil {
+			if err := l.Native.Verify(artifactDir, l.Subnets); err != nil {
+				return res, fmt.Errorf("clients remain guarded: native artifact changed during publication: %w", err)
+			}
+		}
+	}
+	if err := writeGeneration(n.path, networkGeneration{Version: 2, Policy: snap, Lists: selected}); err != nil {
 		return res, fmt.Errorf("clients remain guarded: %w", err)
 	}
 	seedPath := n.bootstrapPath

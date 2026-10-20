@@ -337,7 +337,7 @@ func TestFetchSRS(t *testing.T) {
 	if want := []string{"1.1.1.0/24"}; !reflect.DeepEqual(list.Subnets, want) {
 		t.Errorf("подсети: получено %v, ожидалось %v", list.Subnets, want)
 	}
-	if want := []string{"example.com"}; !reflect.DeepEqual(list.Domains, want) {
-		t.Errorf("домены: получено %v, ожидалось %v", list.Domains, want)
+	if list.Native == nil || list.Native.DNSPath == "" || len(list.Domains) != 0 {
+		t.Fatal("native DNS must use exact artifact instead of flattened domains")
 	}
 }

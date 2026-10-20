@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ArghTeam/razdacha/internal/clash"
+	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -392,7 +393,11 @@ func sameSet(a, b []string) bool {
 func (s *Server) countInConfig(rules []store.Rule) int {
 	n := 0
 	for _, r := range rules {
-		if singbox.RuleInConfig(r, s.plainLists) {
+		native := len(r.CommunityLists) > 0
+		for _, url := range r.RemoteLists {
+			native = native || lists.FormatOf(url) != lists.FormatPlain
+		}
+		if (r.Enabled && native) || singbox.RuleInConfig(r, s.plainLists) {
 			n++
 		}
 	}
@@ -414,8 +419,8 @@ func (s *Server) ruleCatches(r store.Rule, domain string) (hit bool, certain boo
 	}
 	for _, url := range r.RemoteLists {
 		list, ok := plainList(s.plainLists, url)
-		if !ok {
-			// Список ведёт сам sing-box (.srs, .json) либо ещё не скачан.
+		if !ok || list.Native != nil {
+			// Native predicates require the runtime matcher; suffix inspection cannot exclude them.
 			certain = false
 			continue
 		}

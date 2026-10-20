@@ -14,6 +14,7 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 
+	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -27,6 +28,9 @@ const plainListURL = "https://example.org/plain.lst"
 // проверяется у себя в слое, здесь важно одно: содержимое доезжает до конфига
 // (issue #125).
 func testPlain(url string) (PlainList, bool) {
+	if lists.FormatOf(url) != lists.FormatPlain {
+		return PlainList{Native: &lists.NativeArtifact{Version: lists.ProjectionVersion, Format: lists.FormatSRS, Path: "internal/singbox/testdata/native/route.srs", DNSPath: "internal/singbox/testdata/native/dns.json"}}, true
+	}
 	if url != plainListURL {
 		return PlainList{}, false
 	}

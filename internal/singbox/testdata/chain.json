@@ -31,8 +31,8 @@
       },
       {
         "rule_set": [
-          "list-youtube",
-          "list-google",
+          "list-youtube-dns",
+          "list-google-dns",
           "rule-r1-dns"
         ],
         "server": "fakeip",
@@ -41,8 +41,8 @@
       {
         "source_ip_cidr": "10.8.0.2/32",
         "rule_set": [
-          "list-youtube",
-          "rule-r2-remote-0",
+          "list-youtube-dns",
+          "rule-r2-remote-0-dns",
           "rule-r2-plain-1-dns"
         ],
         "server": "fakeip",
@@ -185,16 +185,24 @@
     ],
     "rule_set": [
       {
-        "type": "remote",
+        "type": "local",
         "tag": "list-youtube",
-        "url": "https://github.com/itdoginfo/allow-domains/releases/latest/download/youtube.srs",
-        "update_interval": "24h0m0s"
+        "path": "internal/singbox/testdata/native/route.srs"
       },
       {
-        "type": "remote",
+        "type": "local",
+        "tag": "list-youtube-dns",
+        "path": "internal/singbox/testdata/native/dns.json"
+      },
+      {
+        "type": "local",
         "tag": "list-google",
-        "url": "https://github.com/itdoginfo/allow-domains/releases/latest/download/google.srs",
-        "update_interval": "24h0m0s"
+        "path": "internal/singbox/testdata/native/route.srs"
+      },
+      {
+        "type": "local",
+        "tag": "list-google-dns",
+        "path": "internal/singbox/testdata/native/dns.json"
       },
       {
         "tag": "rule-r1",
@@ -221,10 +229,14 @@
         ]
       },
       {
-        "type": "remote",
+        "type": "local",
         "tag": "rule-r2-remote-0",
-        "url": "https://example.org/my.srs",
-        "update_interval": "24h0m0s"
+        "path": "internal/singbox/testdata/native/route.srs"
+      },
+      {
+        "type": "local",
+        "tag": "rule-r2-remote-0-dns",
+        "path": "internal/singbox/testdata/native/dns.json"
       },
       {
         "tag": "rule-r2-plain-1",

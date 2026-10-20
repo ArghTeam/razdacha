@@ -581,5 +581,14 @@ a known runtime; healthy background no-ops do not interrupt clients.
 
 Normal direct routing resumes after publication; the guard is a temporary fail-closed
 transition/recovery barrier, not a permanent global reject policy. A packet admitted
-before guard acknowledgment may already be in flight. Autonomous `.srs`/`.json` refresh
-is separately tracked in [#220](https://github.com/ArghTeam/razdacha/issues/220).
+before guard acknowledgment may already be in flight. Supported native `.srs`/`.json`
+sources are acquired and validated by the daemon, then published as immutable local
+original/DNS artifacts with the same nft generation ([ADR 0025](decisions/0025-daemon-owned-native-rule-sets.md)).
+The runtime does not refresh those sources autonomously.
+
+Legacy v1 native authority retains trusted WG administrative settings but keeps clients
+guarded until supported sources have been acquired and validated and explicit Apply
+succeeds. Missing or corrupt v2 authority/artifacts remain fail-closed; the daemon does
+not fall back to remote fetching, pending database policy or omitted native rules.
+Keep out-of-band administrative access and follow the
+[native recovery contract](11-staging-validation.md#native-rule-set-fixture-and-recovery-contract-220).
