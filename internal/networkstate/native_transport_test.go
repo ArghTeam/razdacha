@@ -1,9 +1,10 @@
 package networkstate
 
 import (
-	"github.com/ArghTeam/razdacha/internal/lists"
 	"path/filepath"
 	"testing"
+
+	"github.com/ArghTeam/razdacha/internal/lists"
 )
 
 func TestTransportRequiresVersionFour(t *testing.T) {

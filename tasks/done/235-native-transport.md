@@ -35,7 +35,7 @@ committed recovery. Twenty-four receiver barriers acknowledged zero reported dro
 
 Private execution receipt SHA-256:
 `5c451c290daa2a83ad1565a63efa50123894bb6e6aa24e59102207fe3494f6f7`.
-Installed services, runtime configuration, database schema, peer-identity HMAC and
+Installed services, runtime configuration, database schema, salted peer-identity digest and
 binary hashes remained unchanged. The owned execution directory was removed.
 
 This certifies finite observations in isolated network/mount namespaces using a
