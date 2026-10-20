@@ -127,10 +127,10 @@ func TestRuleValidation(t *testing.T) {
 
 	d := []string{"x.example"}
 	cases := map[string]Rule{
-		"tunnel без туннеля":   {Name: "X", Action: ActionTunnel, Domains: d, PeerScope: ScopeAll},
-		"block с туннелем":     {Name: "X", Action: ActionBlock, TunnelID: "t", Domains: d, PeerScope: ScopeAll},
-		"неизвестное действие": {Name: "X", Action: "dorect", Domains: d, PeerScope: ScopeAll},
-		"selected без пиров":   {Name: "X", Action: ActionDirect, Domains: d, PeerScope: ScopeSelected},
+		"tunnel без туннеля":             {Name: "X", Action: ActionTunnel, Domains: d, PeerScope: ScopeAll},
+		"block с туннелем":               {Name: "X", Action: ActionBlock, TunnelID: "t", Domains: d, PeerScope: ScopeAll},
+		"неизвестное действие":           {Name: "X", Action: "dorect", Domains: d, PeerScope: ScopeAll},
+		"enabled selected without peers": {Name: "X", Action: ActionDirect, Enabled: true, Domains: d, PeerScope: ScopeSelected},
 		"all со списком пиров": {
 			Name: "X", Action: ActionDirect, Domains: d, PeerScope: ScopeAll, PeerIDs: []string{"p"},
 		},

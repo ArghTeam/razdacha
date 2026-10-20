@@ -830,3 +830,18 @@ WebSocket был обещан в первом наброске этой доку
 Проброс `Upgrade`/`Connection` и `proxy_http_version 1.1` в конфиге nginx оставлены на
 месте и закреплены тестом: они ничего не стоят при отсутствующем канале и понадобятся,
 если он появится.
+
+## Peer deletion effects (ADR 0026)
+
+`DELETE /api/peers/{id}` preserves `200` and `ok: true`, adding transaction-derived
+`affected_rule_ids` and `inactivated_rule_ids` arrays. Selected rules with no surviving
+client retain selected scope and become disabled; partially surviving selections keep
+activation. IDs refer to rules, not credentials. The arrays include any legacy dangling
+selections normalized in the same transaction.
+
+`GET /api/rules` adds `inactive_reason: "no_selected_peers"` for selected rules without
+an existing client; other rules omit the field. Empty disabled selections remain editable.
+Enabling an empty selection or writing a deleted selected ID returns `400`. Assigning
+new clients does not enable the rule. Apply is still required to publish edited policy.
+Before Apply, background list/pool refresh and recovery retain committed source policy;
+deleted live WireGuard identities are never restored and their addresses remain reserved.

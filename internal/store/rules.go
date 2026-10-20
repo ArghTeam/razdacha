@@ -22,6 +22,9 @@ func (s *Store) CreateRule(ctx context.Context, r Rule) (Rule, error) {
 	}
 
 	err := s.tx(ctx, func(tx *sql.Tx) error {
+		if err := validateRulePeers(ctx, tx, &r); err != nil {
+			return err
+		}
 		var maxPriority sql.NullInt64
 		if err := tx.QueryRowContext(ctx, `SELECT MAX(priority) FROM rules`).Scan(&maxPriority); err != nil {
 			return fmt.Errorf("добавление правила %q: %w", r.Name, err)
@@ -97,24 +100,29 @@ func (s *Store) UpdateRule(ctx context.Context, r Rule) error {
 		return fmt.Errorf("%w: у обновляемого правила пустой идентификатор", ErrInvalid)
 	}
 
-	args, err := ruleArgs(r)
-	if err != nil {
-		return err
-	}
-	// Приоритет из аргументов выкидываем — колонка не обновляется.
-	set := `name = ?, action = ?, tunnel_id = ?, via_tunnel_id = ?, enabled = ?,
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		if err := validateRulePeers(ctx, tx, &r); err != nil {
+			return err
+		}
+		args, err := ruleArgs(r)
+		if err != nil {
+			return err
+		}
+		// Приоритет из аргументов выкидываем — колонка не обновляется.
+		set := `name = ?, action = ?, tunnel_id = ?, via_tunnel_id = ?, enabled = ?,
 		community_lists = ?, domains = ?, subnets = ?, remote_lists = ?, peer_scope = ?,
 		peer_ids = ?, resolve_real_ip = ?`
-	values := make([]any, 0, len(args))
-	values = append(values, args[:4]...) // name, action, tunnel_id, via_tunnel_id
-	values = append(values, args[5:]...) // всё после priority
-	values = append(values, r.ID)
+		values := make([]any, 0, len(args))
+		values = append(values, args[:4]...) // name, action, tunnel_id, via_tunnel_id
+		values = append(values, args[5:]...) // всё после priority
+		values = append(values, r.ID)
 
-	res, err := s.db.ExecContext(ctx, `UPDATE rules SET `+set+` WHERE id = ?`, values...)
-	if err != nil {
-		return wrapRuleWriteErr(err, r, "обновление")
-	}
-	return checkAffected(res, fmt.Sprintf("правило %s", r.ID))
+		res, err := tx.ExecContext(ctx, `UPDATE rules SET `+set+` WHERE id = ?`, values...)
+		if err != nil {
+			return wrapRuleWriteErr(err, r, "обновление")
+		}
+		return checkAffected(res, fmt.Sprintf("правило %s", r.ID))
+	})
 }
 
 // DeleteRule удаляет правило и сжимает приоритеты оставшихся, чтобы в списке не
@@ -284,4 +292,29 @@ func wrapRuleWriteErr(err error, r Rule, what string) error {
 		return fmt.Errorf("правило %q ссылается на туннель %s: %w", r.Name, ids, ErrNotFound)
 	}
 	return fmt.Errorf("%s правила %q: %w", what, r.Name, err)
+}
+
+// validateRulePeers runs on the writer transaction, including stale PATCH writes.
+func validateRulePeers(ctx context.Context, tx *sql.Tx, r *Rule) error {
+	if r.PeerScope != ScopeSelected {
+		return nil
+	}
+	selected := make([]string, 0, len(r.PeerIDs))
+	seen := make(map[string]bool)
+	for _, id := range r.PeerIDs {
+		if seen[id] {
+			continue
+		}
+		var present int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM peers WHERE id = ?`, id).Scan(&present); err != nil {
+			return fmt.Errorf("validate selected peer: %w", err)
+		}
+		if present != 1 {
+			return fmt.Errorf("%w: selected peer %s no longer exists; reassign the rule", ErrInvalid, id)
+		}
+		seen[id] = true
+		selected = append(selected, id)
+	}
+	r.PeerIDs = selected
+	return nil
 }

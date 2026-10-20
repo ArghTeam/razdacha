@@ -98,54 +98,75 @@ func (s *Store) UpdatePeer(ctx context.Context, p Peer) error {
 	return checkAffected(res, fmt.Sprintf("пир %s", p.ID))
 }
 
-// DeletePeer удаляет пира. Ссылки из правил (Rule.PeerIDs) хранятся списком в JSON,
-// внешнего ключа на них нет — правила чистятся здесь же.
-func (s *Store) DeletePeer(ctx context.Context, id string) error {
-	return s.tx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `DELETE FROM peers WHERE id = ?`, id)
-		if err != nil {
-			return fmt.Errorf("удаление пира %s: %w", id, err)
-		}
-		if err := checkAffected(res, fmt.Sprintf("пир %s", id)); err != nil {
-			return err
-		}
-		return dropPeerFromRules(ctx, tx, id)
-	})
+// PeerDeletion describes rule changes committed together with a peer deletion.
+type PeerDeletion struct {
+	AffectedRuleIDs    []string `json:"affected_rule_ids"`
+	InactivatedRuleIDs []string `json:"inactivated_rule_ids"`
 }
 
-// dropPeerFromRules убирает пира из списков peer_ids. Правило, оставшееся без пиров,
-// переводится на всех: иначе оно молча перестало бы работать.
-func dropPeerFromRules(ctx context.Context, tx *sql.Tx, peerID string) error {
-	all, err := rules(ctx, tx)
-	if err != nil {
-		return err
-	}
-	for _, r := range all {
-		kept := make([]string, 0, len(r.PeerIDs))
-		for _, id := range r.PeerIDs {
-			if id != peerID {
-				kept = append(kept, id)
-			}
-		}
-		if len(kept) == len(r.PeerIDs) {
-			continue
-		}
+// DeletePeer preserves the compatibility error-only interface.
+func (s *Store) DeletePeer(ctx context.Context, id string) error {
+	_, err := s.DeletePeerWithEffects(ctx, id)
+	return err
+}
 
-		scope, ids := ScopeSelected, kept
-		if len(kept) == 0 {
-			scope, ids = ScopeAll, nil
+// DeletePeerWithEffects never broadens selected policy to other clients.
+func (s *Store) DeletePeerWithEffects(ctx context.Context, id string) (PeerDeletion, error) {
+	effects := PeerDeletion{AffectedRuleIDs: []string{}, InactivatedRuleIDs: []string{}}
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM peers WHERE id = ?`, id)
+		if err != nil {
+			return fmt.Errorf("delete peer %s: %w", id, err)
 		}
-		encoded, err := jsonList(ids)
+		if err := checkAffected(res, fmt.Sprintf("peer %s", id)); err != nil {
+			return err
+		}
+		all, err := rules(ctx, tx)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE rules SET peer_scope = ?, peer_ids = ? WHERE id = ?`,
-			string(scope), encoded, r.ID); err != nil {
-			return fmt.Errorf("удаление пира %s из правила %q: %w", peerID, r.Name, err)
+		existing, err := peers(ctx, tx)
+		if err != nil {
+			return err
 		}
+		present := make(map[string]bool, len(existing))
+		for _, p := range existing {
+			present[p.ID] = true
+		}
+		for _, r := range all {
+			if r.PeerScope != ScopeSelected {
+				continue
+			}
+			kept := make([]string, 0, len(r.PeerIDs))
+			seen := make(map[string]bool)
+			for _, selected := range r.PeerIDs {
+				if present[selected] && !seen[selected] {
+					kept = append(kept, selected)
+					seen[selected] = true
+				}
+			}
+			enabled := r.Enabled && len(kept) > 0
+			if len(kept) == len(r.PeerIDs) && enabled == r.Enabled {
+				continue
+			}
+			encoded, err := jsonList(kept)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE rules SET peer_ids = ?, enabled = ? WHERE id = ?`, encoded, enabled, r.ID); err != nil {
+				return fmt.Errorf("remove peer from rule %q: %w", r.Name, err)
+			}
+			effects.AffectedRuleIDs = append(effects.AffectedRuleIDs, r.ID)
+			if len(kept) == 0 {
+				effects.InactivatedRuleIDs = append(effects.InactivatedRuleIDs, r.ID)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return PeerDeletion{}, err
 	}
-	return nil
+	return effects, nil
 }
 
 func scanPeer(sc scanner) (Peer, error) {

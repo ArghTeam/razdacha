@@ -13,7 +13,7 @@ and filenames from persistent DOM and UI caches while preserving download when o
 - [UI](../context/ui/index.md): peer modal, shared shell and logout cleanup.
 
 ## Decisions
-Implement after [#215](215-safe-peer-deletion.md). Keep secrets only for the active
+Implement after [#215](done/215-safe-peer-deletion.md). Keep secrets only for the active
 configuration interaction. Invalidate or ignore in-flight configuration responses when
 the modal/session lifecycle changes, so stale asynchronous work cannot restore secrets.
 This localized cleanup needs no ADR unless it introduces a

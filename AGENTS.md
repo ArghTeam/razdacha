@@ -123,6 +123,7 @@ under GPL-2.0-or-later ([ADR 0007](docs/decisions/0007-license-gplv2.md)).
   unsupported mixed/context predicates fail before acceptance.
 - Publish plain-list policy through the serialized guarded generation protocol ([ADR 0023](docs/decisions/0023-coherent-network-generation.md)): prepare/check first, guard client ingress, reconcile WG/route/runtime/nft, persist authority, discard bootstrap authority, release last. Post-guard failure remains closed; recovery never restores live peers/authentication. Peer allocation shares the gate and reserves committed addresses. Native JSON/SRS share this protocol through daemon-owned immutable artifacts (ADR 0025). Active artifact corruption closes ingress; legacy v1 native authority requires guarded administrator recovery.
 
+- Peer deletion never broadens selected rules. Empty selected orphans remain disabled; generators skip sources with no existing client, while existing disabled clients retain scoped rejection (ADR 0026). Background refresh/recovery preserve committed policy until explicit Apply.
 - Use netlink libraries instead of `nft`, `ip`, `wg`, or `wg-quick` subprocesses.
 - Build static binaries with `CGO_ENABLED=0` and `modernc.org/sqlite`.
 - Client configs always include `DNS = 10.8.0.1`, `MTU`,

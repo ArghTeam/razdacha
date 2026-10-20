@@ -148,6 +148,9 @@ func wireRole(t *testing.T) bool {
 		wireMust(t, unix.Setns(3, unix.CLONE_NEWNET))
 		wireMust(t, unix.Exec(os.Args[0], os.Args, wireEnv("RAZDACHA_WIRE_ROLE", os.Getenv("RAZDACHA_WIRE_NEXT"))))
 		return true
+	case "peer-probe":
+		peerProbe(t)
+		return true
 	case "native-dns-reject":
 		query := new(dns.Msg)
 		query.SetQuestion(os.Getenv("RAZDACHA_WIRE_ARGS"), dns.TypeA)
@@ -657,7 +660,7 @@ func (h *wireHarness) captureBarrier(t *testing.T) {
 	if h.collectorErr != nil {
 		t.Fatal(h.collectorErr)
 	}
-	if os.Getenv("RAZDACHA_WIRE_NATIVE_CASE") != "" {
+	if os.Getenv("RAZDACHA_WIRE_NATIVE_CASE") != "" || os.Getenv("RAZDACHA_WIRE_PEER_CASE") != "" {
 		t.Log("220-CAPTURE-BARRIER-PASS drops=0")
 	} else {
 		t.Log("214-CAPTURE-BARRIER-PASS drops=0")
@@ -724,9 +727,12 @@ func TestNetworkGenerationWire(t *testing.T) {
 	wireMust(t, unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""))
 	wireMust(t, unix.Mount("tmpfs", "/var/lib", "tmpfs", 0, "size=16m"))
 	wireMust(t, os.MkdirAll("/var/lib/sing-box", 0o700))
-	if os.Getenv("RAZDACHA_WIRE_NATIVE_CASE") != "" {
+	switch {
+	case os.Getenv("RAZDACHA_WIRE_PEER_CASE") != "":
+		peerWireExercise(t)
+	case os.Getenv("RAZDACHA_WIRE_NATIVE_CASE") != "":
 		nativeWireExercise(t)
-	} else {
+	default:
 		wireExercise(t)
 	}
 }

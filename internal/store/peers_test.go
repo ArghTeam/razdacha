@@ -158,13 +158,12 @@ func TestDeletePeerCleansRules(t *testing.T) {
 		t.Errorf("область действия правила изменилась зря: %q", gotBoth.PeerScope)
 	}
 
-	// Правило, оставшееся без пиров, переводится на всех — иначе оно молча
-	// перестало бы работать.
+	// An orphan retains its selected scope and requires explicit reassignment.
 	gotOnly, err := s.Rule(ctx, only.ID)
 	if err != nil {
 		t.Fatalf("Rule: %v", err)
 	}
-	if gotOnly.PeerScope != ScopeAll || len(gotOnly.PeerIDs) != 0 {
+	if gotOnly.PeerScope != ScopeSelected || len(gotOnly.PeerIDs) != 0 || gotOnly.Enabled {
 		t.Errorf("правило без пиров: scope = %q, пиры = %v",
 			gotOnly.PeerScope, gotOnly.PeerIDs)
 	}

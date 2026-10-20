@@ -313,8 +313,8 @@ func (r *Rule) validate() error {
 				ErrInvalid, r.Name)
 		}
 	case ScopeSelected:
-		if len(r.PeerIDs) == 0 {
-			return fmt.Errorf("%w: у правила %q выбраны отдельные пиры, но список пуст",
+		if len(r.PeerIDs) == 0 && r.Enabled {
+			return fmt.Errorf("%w: enabled rule %q requires at least one selected peer",
 				ErrInvalid, r.Name)
 		}
 	default:

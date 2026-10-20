@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-10-20
+
+### #215 — preserve selected scope after peer deletion
+
+**Changed:** Skip selected rules without existing source addresses before any route, reject, chain or set construction. Disabled surviving clients retain scoped rejection.
+**Decision:** [ADR 0026](../../docs/decisions/0026-peer-deletion-preserves-scope.md).
+**Validation:** Local tests/static checks and controlled four-case wire observations completed on `14e28b3`: two fixed passes and two positively proven original-base broadening failures, with 114 zero-drop capture barriers. See the [completed specification](../../tasks/done/215-safe-peer-deletion.md) for evidence and limits. Final documentation/evidence review and current CI remain merge gates.
+
 ## 2026-10-19
 
 ### #222 — Separate immediate DNS matching from destination CIDRs

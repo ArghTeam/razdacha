@@ -337,9 +337,13 @@ Cloudflare заводил не демон, и снимать ему нечего
 индекс `rules_priority` ловил бы пользовательский ввод, а перестановка «в лоб»
 сталкивалась бы на промежуточном значении: SQLite проверяет уникальность построчно.
 
-**Ссылки на пиров (`Rule.peer_ids`) — JSON-список, внешнего ключа на них нет.** Поэтому
-удаление пира чистит списки правил само; правило, оставшееся без пиров, переводится на
-`peer_scope = all`, а не остаётся молча неработающим.
+**Selected peer references have no foreign key.** Rule writes validate existing IDs
+inside the writer transaction. Deletion removes deleted/dangling IDs atomically; an
+empty rule remains `peer_scope = selected`, with `peer_ids = []` and `enabled = false`.
+It retains its identity, priority, destinations and tunnel/chain/list references.
+Reassignment and activation are explicit separate choices. Existing all-client rules
+remain unchanged because historical accidental scope broadening cannot be distinguished
+from intentional scope (ADR 0026).
 
 **`settings` — key/value.** Добавление настройки не требует миграции, отсутствующий ключ
 читается как дефолт из таблицы выше, неизвестный ключ игнорируется (откат на прежнюю

@@ -2,6 +2,8 @@
 
 Дата: 2026-07-28 · Статус: принято
 
+Missing-client scope semantics are clarified by [ADR 0026](0026-peer-deletion-preserves-scope.md); existing disabled clients retain scoped rejection.
+
 ## Контекст
 
 `route.final` в нашем конфиге — `direct-out`, прямой выход. Это значит, что соединение,

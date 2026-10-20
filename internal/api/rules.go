@@ -17,19 +17,32 @@ import (
 // умножился бы на их число (issue #149).
 type ruleResponse struct {
 	store.Rule
-	Lists []listStatus `json:"lists_status"`
+	Lists          []listStatus `json:"lists_status"`
+	InactiveReason string       `json:"inactive_reason,omitempty"`
 }
 
 // handleListRules — `GET /api/rules`, по возрастанию priority.
 func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
-	list, err := s.store.Rules(r.Context())
+	snap, err := s.store.Snapshot(r.Context())
 	if err != nil {
 		s.storeError(w, err, "Правило не найдено")
 		return
 	}
-	out := make([]ruleResponse, 0, len(list))
-	for _, rule := range list {
-		out = append(out, ruleResponse{Rule: rule, Lists: s.ruleLists(rule)})
+	out := make([]ruleResponse, 0, len(snap.Rules))
+	for _, rule := range snap.Rules {
+		resp := ruleResponse{Rule: rule, Lists: s.ruleLists(rule)}
+		if rule.PeerScope == store.ScopeSelected {
+			present := false
+			for _, p := range snap.Peers {
+				for _, id := range rule.PeerIDs {
+					present = present || p.ID == id
+				}
+			}
+			if !present {
+				resp.InactiveReason = "no_selected_peers"
+			}
+		}
+		out = append(out, resp)
 	}
 	writeJSON(w, s.log, http.StatusOK, out)
 }
