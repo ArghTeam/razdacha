@@ -26,7 +26,7 @@ staging checks and independent review. No deployment or old-server access is inc
 
 ## Checkout provenance
 
-- Authorized repository/primary: `/Users/romanzhigalkin/Web/razdacha`.
+- Authorized repository: `ArghTeam/razdacha`; absolute checkout provenance is retained privately.
 - Feature checkout: `.codex/worktrees/feat/231-peer-egress`.
 - Branch `feat/231-peer-egress`; remote `origin`; target `main`.
 - Fresh remote base `598a7777c30865457edd9b47498df4cec7a55e41`.
@@ -49,7 +49,7 @@ staging checks and independent review. No deployment or old-server access is inc
   Coverage: TCP/UDP, normal DNS, persisted FakeIP, FakeIP resolving private, disabled
   and unreachable exit, unaffected client, unsupported ICMP/raw protocol rejection,
   pending clear and switching back. It is not an incoming encrypted WG handshake.
-  Live execution remains pending until coordinated independently by the primary agent.
+  The primary agent completed the isolated attempt recorded below.
 
 ## Verification results before independent live checks
 
@@ -61,7 +61,8 @@ staging checks and independent review. No deployment or old-server access is inc
 - Static Linux amd64 daemon, CLI and opt-in test ELF: built.
 - Synthetic browser suite: 7/7 passed on desktop/mobile, covering save, reload, Apply,
   explicit null, disabled targets, failed save and modal layout.
-- Live isolated Linux fixture: pending primary-agent coordination; no live WG claim.
+- At this initial checkpoint, live isolated Linux verification was pending; subsequent
+  attempts and their exact boundaries are recorded below.
 
 ## Isolated wire attempt 1: failed fixture negotiation
 
@@ -77,4 +78,41 @@ The fixture now parses bounded IPv4/IPv6 control-address lengths. Actual UDP
 payload destinations remain the original fixed IPv4 fixture allowlist. A portable
 `net.Pipe` regression exercises the actual pinned SOCKS handshake for both public
 and loopback destinations, plus malformed/truncated request refusal. Production
-routing code is unchanged. A fresh independently reviewed live attempt is required.
+routing code is unchanged. The corrected fixture required a fresh independently
+reviewed attempt, recorded below.
+
+## Isolated wire attempt 2: passed
+
+- Tested source: `3f971684f3b65c9e338589d38e56535dc27df2e0`.
+- Static Linux amd64 test ELF SHA256:
+  `5c6c5e535127a306537de5248582b22ce415620075992d3b6a1fea2335c530ac`.
+- Result: outer exit 0, no skipped test, 4.91 seconds. The
+  `231-PEER-EGRESS-WIRE-PASS` marker and 31 zero-drop capture barriers were observed.
+- Covered real nft/TProxy runtime TCP/UDP, normal DNS, persisted FakeIP resolution,
+  rejection of a FakeIP resolving to a private target, disabled/unreachable exits,
+  unaffected second-source controls, ICMP and raw protocol 253 rejection with positive
+  second-source captures, pending clear, and explicit return to shared routing.
+- Configured bounds were 256 MiB memory, 192 MiB memory-high, 40% CPU, 128 tasks
+  and 180 seconds maximum; no observed memory-peak claim is made.
+  No installed application deployment or service restart was part of this fixture.
+
+The actual test uses two veth source identities and a synthetic SOCKS exit inside
+private network/mount namespaces. It does not establish an incoming encrypted
+WireGuard handshake, an outgoing WireGuard/DO client flow, a universal no-leak
+property or lossless observations beyond the acknowledged finite capture windows.
+The new client mode has not been deployed to the installed staging application.
+
+## Final browser scope
+
+Independent synthetic-browser verification passed 11/11 cases on the tested source,
+including desktop/mobile routing save/reload/Apply, explicit shared-mode null,
+disabled targets, failed save and the targeted tunnel/rule/probe explanations.
+It used controlled API fixtures and repository UI assets, not installed staging state.
+Broader dashboard observations are separate follow-up work and do not expand this PR.
+
+## Delivery state
+
+PR [232](https://github.com/ArghTeam/razdacha/pull/232) contains the implementation,
+ADR 0028 and maintained context. This completed implementation/validation record is
+not a merge, release or deployment claim. Independent final evidence review and the
+final documentation-only CI run are coordinated by the primary agent.

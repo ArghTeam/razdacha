@@ -40,3 +40,18 @@ Changes require Apply and remain visible as pending after panel reload. Configur
 must be supported by the target; failure has no direct fallback. Tests cover isolation,
 unavailable exits, DNS/stale FakeIP, references and recovery. No runtime upgrade or
 kernel outgoing WireGuard interface is introduced.
+
+## Validation boundary
+
+Source `3f971684f3b65c9e338589d38e56535dc27df2e0` passed the bounded isolated
+Linux nft/TProxy matrix with two source identities, DNS and cached FakeIP,
+unavailable exits, unsupported protocol rejection and independent sink capture.
+The first attempt failed because the synthetic SOCKS relay rejected the pinned
+client's UDP control bind address; its correction and successful fresh attempt
+are retained in the [completed task](../../tasks/done/231-peer-egress.md).
+Independent synthetic-browser verification passed 11/11 checks.
+
+The live fixture uses veth identities and a synthetic SOCKS exit, not incoming
+encrypted WireGuard or an actual DO exit/client flow. Observed zero-drop capture
+barriers apply to finite fixture windows, not universal traffic or lossless
+capture. Acceptance of this decision does not grant merge, release or deployment.

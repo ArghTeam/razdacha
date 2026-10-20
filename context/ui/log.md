@@ -176,4 +176,4 @@ and [fixture protocol](../../docs/11-staging-validation.md#configuration-ui-life
 
 Client routing controls expose shared rules or one tunnel, preserve disabled/missing selected targets visibly, and require Apply. Cards summarize routing; save marks pending, and authenticated Apply status restores that state after reload. Help states IPv4 TCP/UDP support, blocked IPv6/ping/other protocols/private forwarding, and retained gateway access. Async routing callbacks obey modal/session lifetime (ADR 0028).
 
-Implementation and verification record: [task 231](../../tasks/231-peer-egress.md). Live staging verification is tracked separately; local checks are not encrypted WireGuard evidence.
+Implementation and verification record: [task 231](../../tasks/done/231-peer-egress.md). The bounded isolated Linux fixture and independent synthetic-browser checks passed; the completed record retains the failed first attempt and exact evidence boundaries. The fixture uses veth identities and a synthetic SOCKS exit, not encrypted incoming WireGuard or a DO client flow.
