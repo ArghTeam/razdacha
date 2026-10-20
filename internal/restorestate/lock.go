@@ -48,6 +48,9 @@ func Acquire(dir string, inherited int) (*Lock, error) {
 			_ = f.Close()
 			return nil, errors.New("invalid inherited lifecycle lock")
 		}
+		// The original shell descriptor is distinct from our duplicate: CLOEXEC is
+		// per descriptor, not per open-file description. Protect both in this process.
+		unix.CloseOnExec(inherited)
 		_ = f.Close()
 		f = handoff
 	}

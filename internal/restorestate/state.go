@@ -80,13 +80,8 @@ func Read(dir string) (*State, error) {
 		return nil, fmt.Errorf("read trusted restore state: %w", err)
 	}
 	var s State
-	d := json.NewDecoder(bytes.NewReader(data))
-	d.DisallowUnknownFields()
-	if err := d.Decode(&s); err != nil {
+	if err := decodeState(data, &s); err != nil {
 		return nil, fmt.Errorf("decode restore state: %w", err)
-	}
-	if err := d.Decode(new(any)); err != io.EOF {
-		return nil, errors.New("trailing restore state data")
 	}
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -223,4 +218,49 @@ func Remove(path string) error {
 		return e
 	}
 	return SyncDir(filepath.Dir(path))
+}
+
+// Every safety field must occur exactly once. Standard struct decoding alone accepts
+// omitted false booleans and duplicate last-key-wins values, which could imply resume.
+func decodeState(data []byte, s *State) error {
+	d := json.NewDecoder(bytes.NewReader(data))
+	token, e := d.Token()
+	if e != nil || token != json.Delim('{') {
+		return errors.New("restore state must be an object")
+	}
+	required := map[string]bool{"version": false, "operation": false, "recovery": false, "phase": false, "held": false, "runtime_inhibited": false}
+	for d.More() {
+		token, e = d.Token()
+		if e != nil {
+			return e
+		}
+		key, ok := token.(string)
+		if !ok {
+			return errors.New("invalid restore field")
+		}
+		seen, known := required[key]
+		if !known || seen {
+			return errors.New("duplicate or unknown restore field")
+		}
+		required[key] = true
+		var raw json.RawMessage
+		if e = d.Decode(&raw); e != nil {
+			return e
+		}
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return errors.New("null restore safety field")
+		}
+	}
+	if _, e = d.Token(); e != nil {
+		return e
+	}
+	if e = d.Decode(new(any)); e != io.EOF {
+		return errors.New("trailing restore state data")
+	}
+	for _, seen := range required {
+		if !seen {
+			return errors.New("missing restore safety field")
+		}
+	}
+	return json.Unmarshal(data, s)
 }

@@ -120,3 +120,61 @@ func TestTrustedStateRejectsIncompleteUnholdAndUnknownFields(t *testing.T) {
 		t.Fatal("unknown trusted state fields accepted")
 	}
 }
+
+func TestTrustedStateRequiresEverySafetyFieldExactlyOnce(t *testing.T) {
+	for _, raw := range []string{
+		`{"version":1,"operation":"fixture","recovery":"/fixture","phase":"complete","runtime_inhibited":true}`,
+		`{"version":1,"operation":"fixture","recovery":"/fixture","phase":"complete","held":true,"held":false,"runtime_inhibited":true}`,
+		`{"version":1,"operation":"fixture","recovery":"/fixture","phase":"complete","held":null,"runtime_inhibited":true}`,
+		`{"version":1,"operation":"fixture","recovery":"/fixture","phase":"complete","held":true,"runtime_inhibited":true} {}`,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			dir := t.TempDir()
+			if e := os.Chmod(dir, 0o700); e != nil {
+				t.Fatal(e)
+			}
+			if e := WritePrivate(filepath.Join(dir, Runtime), []byte("1\n")); e != nil {
+				t.Fatal(e)
+			}
+			if e := WritePrivate(filepath.Join(dir, File), []byte(raw)); e != nil {
+				t.Fatal(e)
+			}
+			if _, e := Read(dir); e == nil {
+				t.Fatal("malformed safety state implied resume")
+			}
+		})
+	}
+}
+
+func TestInheritedShellDescriptorCannotLeakToExec(t *testing.T) {
+	dir := t.TempDir()
+	if e := os.Chmod(dir, 0o700); e != nil {
+		t.Fatal(e)
+	}
+	owner, e := Acquire(dir, -1)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = owner.Close() }()
+	shellFD, e := unix.Dup(int(owner.file.Fd()))
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = unix.Close(shellFD) }()
+	// Dup deliberately clears CLOEXEC, like a shell's inherited descriptor.
+	flags, e := unix.FcntlInt(uintptr(shellFD), unix.F_GETFD, 0)
+	if e != nil || flags&unix.FD_CLOEXEC != 0 {
+		t.Fatal("fixture did not create a non-CLOEXEC shell descriptor")
+	}
+	inherited, e := Acquire(dir, shellFD)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer func() { _ = inherited.Close() }()
+	for _, fd := range []int{shellFD, int(inherited.file.Fd())} {
+		flags, e = unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0)
+		if e != nil || flags&unix.FD_CLOEXEC == 0 {
+			t.Fatal("validated inherited descriptor leaks to unrelated exec")
+		}
+	}
+}
