@@ -244,7 +244,7 @@ func BuildNftRuleset(cfg NftConfig) (NftRuleset, error) {
 			portRules(NftRule{NFProto: "ipv4", DstPort: port, Action: ActionReturn})...)
 	}
 	if len(egress) > 0 {
-		mangleRules = append(mangleRules, NftRule{NFProto: "ipv4", DstPrefix: netip.PrefixFrom(resolver, 32), Action: ActionReturn})
+		mangleRules = append(mangleRules, NftRule{NFProto: "ipv4", SrcSet: SetPeerEgress, DstPrefix: netip.PrefixFrom(resolver, 32), Action: ActionReturn})
 	}
 	mangleRules = append(mangleRules, NftRule{NFProto: "ipv4", DstSet: SetLocalV4, Action: ActionReturn})
 	if len(egress) > 0 {

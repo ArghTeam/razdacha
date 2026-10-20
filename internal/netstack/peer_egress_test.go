@@ -8,7 +8,7 @@ import (
 // This evaluator tests compiled rule behavior over independent packet examples;
 // Linux integration separately checks that expression translation reaches the kernel.
 func TestPeerEgressCaptureAndResidualForwarding(t *testing.T) {
-	cfg := testConfig("203.0.113.0/24")
+	cfg := testConfig("203.0.113.0/24", "100.64.0.1/32")
 	cfg.PeerEgress = []string{"100.64.0.2"}
 	cfg.ResolverAddr = "100.64.0.1"
 	rs := buildOK(t, cfg)
@@ -57,6 +57,7 @@ func TestPeerEgressCaptureAndResidualForwarding(t *testing.T) {
 		{"selected arbitrary IP", "100.64.0.2", "192.0.2.10", "gre", 0, false, true},
 		{"selected private", "100.64.0.2", "10.20.0.1", "tcp", 443, false, true},
 		{"gateway administration", "100.64.0.2", "100.64.0.1", "tcp", 443, false, false},
+		{"shared gateway list unchanged", "100.64.0.3", "100.64.0.1", "tcp", 443, true, false},
 		{"gateway DNS", "100.64.0.2", "100.64.0.1", "udp", 53, false, false},
 		{"shared ICMP", "100.64.0.3", "192.0.2.10", "icmp", 0, false, false},
 	} {
