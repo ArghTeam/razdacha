@@ -204,4 +204,10 @@ Shared summaries preserve direct/block rule semantics. Save errors stay inline;
 Save and Apply remain explicitly separate. Global dirty state is never presented as a
 per-client activation fact. No remote assets or frontend build step were added.
 
-Verification: see [task 236](../../tasks/236-client-routing-ui.md).
+Verification: Go UI/API tests, module syntax and diff checks passed; synthetic browser
+behavior passed 13/13, followed by 4/4 focused refinement checks. Independent final
+visual/code/context evaluation passed with mode switching and desktop/tablet/phone
+checks. This establishes frontend presentation and sequencing, not live VPN publication,
+release or deployment. The evaluator used the available OpenAI model; no review by a
+different provider is claimed. See the [completed task 236](../../tasks/done/236-client-routing-ui.md)
+for provenance, evidence and validation limits.

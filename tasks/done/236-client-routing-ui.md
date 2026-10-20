@@ -10,8 +10,9 @@ activates it. Global dirty state cannot identify an individual client's active p
   Routing and Configuration controls; administrative actions remain in the overflow menu.
 - Named route editor with Shared rules and Whole Internet radio choices, conditional
   exit selector, unavailable warnings and honest empty/loading/error states.
-- Explain IPv4 TCP/UDP scope, blocked IPv6/ping/private forwarding, gateway access and
-  no direct fallback. Enabled state and health probes do not prove connectivity.
+- In Whole Internet mode, explain IPv4 TCP/UDP scope, blocked IPv6/ping/private
+  forwarding, gateway access and no direct fallback. Shared guidance preserves
+  tunnel/direct/block rule semantics. Enabled state and health probes do not prove connectivity.
 - Preserve QR/download cleanup, modal focus and late-response session protection.
 - Existing system fonts, tokens and static modules; no remote assets or build step.
 
@@ -50,3 +51,20 @@ Refinement verification: focused browser checks passed 4/4, embedded UI Go tests
 module syntax and diff checks passed. Evidence is under the same private directory's
 `revision2/` subdirectory, including desktop and 320/375 screenshots. This supplements
 rather than replaces the previous 13-case behavior results.
+
+
+## Completion and independent review
+Implementation is complete in PR #237. Independent design/code/context evaluation passed
+at `548fcfc5de9b5a6641b110e64ca52545df65b2ba`, with no remaining material findings in its
+bounded scope. Fresh synthetic browser checks at 1440×900, 768×900 and 375×667 confirmed
+mode-correct guidance, target warnings, Escape closure and contained layouts without
+page errors. The longer phone dialog scrolls while retaining accessible controls.
+Independent evidence: `eval_main_2.md`, `review2-results.json` and `review2-*.png` in the
+private evidence directory recorded above. The evaluator used the available OpenAI model;
+no different-provider review is claimed. Supplied Go and broader lifetime results were
+inspected rather than independently repeated by that evaluator.
+
+This completed implementation record does not claim merge, release publication or staging
+deployment. Those remain separate orchestrator operations. Synthetic UI verification does
+not establish live network publication, encrypted WireGuard/DO connectivity or backend
+cookie-delivery timing. Existing QR/config download paths were preserved without changes.
