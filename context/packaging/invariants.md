@@ -60,3 +60,9 @@ current runtime invariants above remain the implementation record until validate
 All-restores default, offline staging/classification, exact managed-unit capability preflight, durable dual-service inhibitors, runtime quarantine, coherent current-destination recovery and journal-safe replacement.
 
 The same lifecycle lock covers managed installer binary publication through setup/start, with a verified inherited FD handoff. Inspect staged daemon/CLI capabilities before incompatible update/downgrade when any trusted restore state requires the protocol; no publication gap or version-label bypass.
+
+Proposed runtime start enforcement also uses a permanent managed ExecCondition calling
+a metadata-only CLI check. Publishing permits only the exact candidate under a short
+boot/operation/live-daemon-identity bound permit; stale reboot permits deny independently
+of daemon startup order. Abort must stop/verify the candidate after durable inhibition,
+not merely create a marker. This is pending ADR 0027 review/implementation proof.

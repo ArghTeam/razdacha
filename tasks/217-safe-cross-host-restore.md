@@ -175,3 +175,26 @@ runtime restart, committed authority save, bootstrap invalidation, Finish and in
 release. Assert that missing markers never imply completion and reset cannot open
 clients during an unfinished publication. This is a contract clarification pending
 independent review, not completed implementation proof.
+
+## Independent runtime start and Abort clarification (proposed)
+
+The publishing-phase proposal additionally requires a permanent managed runtime
+ExecCondition calling the metadata-only CLI runtime-start check. With marker absent,
+publishing still denies uncontrolled starts: only a private permit bound to exact config
+SHA-256, operation/publication nonce, current boot ID, live daemon PID/start identity
+and at most 60 seconds of monotonic boot uptime allows the controlled restart. Begin
+persists that candidate identity before permit creation/marker removal. No SQLite or
+network access occurs in this independent service condition.
+
+After positive candidate readiness and coherent nft/authority/bootstrap publication,
+Finish durably revokes the permit and records safe completion before last ingress
+release. Failed Finish remains protected. After durable Finish, guard-release failure
+stays a guarded error without fabricating a stopped/held runtime. Abort before Finish
+durably inhibits starts and revokes permit, positively stops/verifies the live candidate,
+keeps the guard and only then records retryable inhibited state. Any uncertainty requires
+explicit recovery. Test ordinary daemon-first and runtime-first reboot order, stale boot
+ID, dead/reused PID, expired permit, wrong candidate hash/nonce, helper failure, candidate
+readiness failure, Abort stop failure and every record/permit/marker fsync boundary.
+
+This is a docs-first clarification for independent threat review; production phase
+integration remains uncommitted and unvalidated at this checkpoint.

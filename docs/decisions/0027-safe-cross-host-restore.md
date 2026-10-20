@@ -218,18 +218,44 @@ and preserves unavailable-tunnel domain/CIDR rejection and selected-orphan handl
 Only a fully prepared guarded publication that has installed and synced its checked
 paused-safe config at the sole supported runtime path may durably remove the runtime
 inhibitor and start sing-box. This release is a small durable `publishing` phase, not
-completed activation: install/verify the client guard and install/sync the checked
-candidate first, then persist BeginPublishing before removing the runtime marker for
-controlled restart. Startup, reset, installer/setup and recovery treat `publishing`
-and uncertain marker/record combinations as protected/incomplete. Imported callbacks
-cannot interpret them as explicit resume or successful policy publication. Finish
-publishing only after the checked runtime, nft policy, committed authority and bootstrap
-invalidation are coherent and durable; release client ingress last. If publication
-fails before that commit, Abort must durably recreate the runtime inhibitor before
-returning the record to complete-but-runtime-inhibited state. Failed Abort remains an
-uncertain protected phase requiring explicit recovery; never infer completion from an
-absent runtime marker. A crash at any intermediate marker/record boundary fails closed.
-This phase changes no WG enabled flags. Startup still cannot recover quarantined config. Failed publication
+completed activation. Install/verify the client guard and install/sync the checked
+candidate first. BeginPublishing persists the exact candidate SHA-256 and a fresh
+publication nonce in the operation's trusted record before ordinary runtime-inhibitor
+removal. Startup, reset, installer/setup and recovery treat `publishing` and uncertain
+record/marker combinations as protected/incomplete, never as successful resume.
+
+The permanent managed runtime drop-in also contains an `ExecCondition` invoking the
+new CLI's metadata-only `runtime-start-allowed` command. It reads trusted restore state
+without opening SQLite, probing services or producing network traffic. When held,
+incomplete or uncertain it denies. A completed/resumed installation permits only its
+coherent runtime contract. During `publishing`, it permits a controlled start only with
+a private explicit permit matching the record's operation, publication nonce and exact
+checked config hash. The permit additionally binds the current Linux boot ID, the
+authorizing daemon PID plus process-start identity and a bounded monotonic lifetime
+(maximum 60 seconds of boot uptime). Verify that process identity is still alive and
+the sole effective runtime config still hashes to the attested candidate. A stale permit
+cannot authorize reboot startup, a reused PID, another candidate or an unrelated later
+start. The daemon never rewrites systemd drop-ins; it writes only its private state and
+permit. Record/permit/marker uncertainty denies the runtime independently of daemon
+startup order. Existing installs without restore state keep ordinary runtime behavior.
+
+After durable BeginPublishing and permit creation, remove the ordinary runtime marker
+and perform the controlled restart. Require positive local readiness of that candidate
+before publishing nft and durable committed authority/bootstrap discard. Finish only
+after these are coherent: revoke the controlled-start permit durably and persist safe
+completion, then release ingress last. A crash between permit revocation and Finish
+remains protected even if availability requires explicit recovery. Finish persistence
+failure keeps the guard and protected publishing/uncertain state. A final ingress-release
+failure after durable Finish reports guarded failure without falsely recording a stopped
+or held runtime; restart may recover only the coherent committed candidate.
+
+Abort before durable Finish first durably restores runtime start inhibition and revokes
+the permit, positively stops/verifies any already-running candidate and retains the
+ingress guard. Only then may it return the record to retryable complete-but-runtime-
+inhibited state. Marker creation alone does not stop a live runtime. If inhibition,
+revocation, stop/verification or persistence fails, retain publishing/uncertain protection
+and require explicit local recovery; never report retryable stopped state without proof.
+This phase changes no WG enabled flags and never recovers quarantined config. Failed publication
 stays guarded under ADR 0023 and never restores old runtime. A separate explicit tunnel
 enable plus subsequent Apply is required to activate chosen outgoing WG credentials;
 background work/reboot cannot publish that pending edit. Resume alone never releases
