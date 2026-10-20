@@ -277,7 +277,7 @@ export function view() {
     const troubleLine = troubleNote(trouble);
 
     const scope = r.peer_scope === 'selected'
-      ? (r.peer_ids || []).map((id) => (peerById(id) || {}).name || '?').join(', ')
+      ? ((r.peer_ids || []).map((id) => (peerById(id) || {}).name || '?').join(', ') || 'No selected clients')
       : 'все клиенты';
 
     const note = shadow.length ? `
@@ -300,7 +300,7 @@ export function view() {
           <div class="row-title">${esc(r.name)} ${dest}</div>
           <div class="row-meta">${esc(scope)}${r.resolve_real_ip ? ' · реальный IP' : ''}</div>
           <div class="chips">${chips || '<span class="chip">условий нет — правило не попадёт в конфиг</span>'}</div>
-          ${troubleLine}${listNote}${note}
+          ${r.inactive_reason === 'no_selected_peers' ? '<div class="hint">Inactive: assign clients, then explicitly enable and Apply.</div>' : ''}${troubleLine}${listNote}${note}
         </div>
         <div class="row-actions">
           <button class="toggle" role="switch" aria-checked="${Boolean(r.enabled)}" data-act="toggle-rule" data-id="${esc(r.id)}" aria-label="Включено"></button>
@@ -803,8 +803,8 @@ async function saveRule(id) {
   if (action === 'tunnel' && !m.querySelector('#r-tunnel').value) {
     toast('Сначала добавьте туннель', 'err'); return;
   }
-  if (scope === 'selected' && !peerIds.length) {
-    toast('Выберите хотя бы одного клиента', 'err'); return;
+  if (scope === 'selected' && !peerIds.length && (!id || (state.rules.find((r) => r.id === id) || {}).enabled)) {
+    toast('Select at least one client before enabling this rule', 'err'); return;
   }
   /* Списков по ссылке в форме нет — их задают через API, — но условием совпадения
      они считаются наравне с остальным (store.Rule.validate, #142). Без этой

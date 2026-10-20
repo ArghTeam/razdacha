@@ -20,3 +20,5 @@ description: Static HTML/CSS/ES modules embedded from ui/dist; defaults instead 
 - `ui/dist/js/api.js` — единственный слой доступа к API: экраны не зовут `fetch` сами.
 - `ui/dist/js/shell.js` — тосты, модальные окна, меню, общее состояние.
 - `ui/ui_test.go` — сторож: баланс скобок в css и ссылки из `index.html`.
+
+- Deleting a client names affected/orphaned rules before confirmation, reloads rules after success and explains explicit reassignment, activation and Apply. Selected empty disabled rules remain editable and show the inactive reason. Assignment alone does not enable a rule (ADR 0026).

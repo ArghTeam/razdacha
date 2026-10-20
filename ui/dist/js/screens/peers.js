@@ -218,13 +218,24 @@ export const actions = {
 
   'delete-peer': async (id) => {
     const p = peerById(id);
-    if (!confirm(`Удалить «${p.name}»? Устройство потеряет доступ.`)) return;
+    let rules;
+    try { rules = await api.rules.list(); }
+    catch (err) { toastError(err, 'Cannot inspect affected rules'); return; }
+    const affected = rules.filter((r) => r.peer_scope === 'selected' && (r.peer_ids || []).includes(id));
+    const orphaned = affected.filter((r) => !(r.peer_ids || []).some((peer) => peer !== id && state.peers.some((p) => p.id === peer)));
+    const detail = affected.length ? `\nAffected rules: ${affected.map((r) => r.name).join(', ')}.` : '';
+    const inactive = orphaned.length ? `\nInactive after deletion: ${orphaned.map((r) => r.name).join(', ')}. Reassign clients and enable these rules explicitly.` : '';
+    if (!confirm(`Delete "${p.name}"? The device will lose access.${detail}${inactive}\nRule changes require Apply.`)) return;
     try {
-      await api.peers.remove(id);
+      const effects = await api.peers.remove(id);
       state.peers = state.peers.filter((x) => x.id !== id);
       markDirty();
       refresh();
-      toast('Клиент удалён');
+      try { state.rules = await api.rules.list(); }
+      catch (err) { state.rules = []; toastError(err, 'Device deleted; reload rules before editing'); }
+      toast((effects.inactivated_rule_ids || []).length
+        ? 'Device deleted. Orphaned rules require reassignment and explicit activation.'
+        : 'Device deleted');
     } catch (err) { toastError(err, 'Не удалён'); }
   },
 };

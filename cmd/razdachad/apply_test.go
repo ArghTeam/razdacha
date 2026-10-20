@@ -559,9 +559,23 @@ func TestCommittedPeerAddressesCannotBeReusedUntilExplicitApply(t *testing.T) {
 			t.Fatal("routing recovery resurrected deleted WireGuard identity")
 		}
 	}
-	// Remove the old policy before explicitly releasing its address reservation.
-	if err := st.DeleteRule(ctx, r.ID); err != nil {
+	// Retain the disabled orphan while releasing its old address reservation.
+	orphan, err := st.Rule(ctx, r.ID)
+	if err != nil || orphan.Enabled || orphan.PeerScope != store.ScopeSelected || len(orphan.PeerIDs) != 0 {
+		t.Fatal("deleted client policy broadened")
+	}
+	fresh, err := st.Snapshot(ctx)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := recovered.g.refreshLists(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recovered.g.applyPools(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered.g.base.Rules) != 1 || recovered.g.base.Rules[0].PeerScope != store.ScopeSelected || len(recovered.g.base.Rules[0].PeerIDs) != 1 || recovered.g.base.Rules[0].PeerIDs[0] != a.ID {
+		t.Fatal("background refresh consumed pending orphan")
 	}
 	if _, err := recovered.g.ApplyCurrent(ctx, st); err != nil {
 		t.Fatal(err)

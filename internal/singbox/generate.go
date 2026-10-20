@@ -39,9 +39,8 @@ type RuleDiag struct {
 	// причиной уходит в конфиг отказом (ADR 0013): ресурс недоступен, но и
 	// напрямую не идёт.
 	Reason string
-	// Skipped — правила в конфиге нет вовсе. После ADR 0013 остался ровно один
-	// такой случай: у правила не осталось ни одного условия совпадения. Его
-	// трафик разбирают правила ниже, а в конце — прямой выход.
+	// Skipped means no rule was emitted: either destinations are absent or
+	// a selected scope has no existing sources (ADR 0026).
 	Skipped bool
 	// SkipReason — почему условий не осталось, когда причина известнее общей.
 	// Пусто означает «правило и заполнено ничем»; непустое — например, что
@@ -64,12 +63,9 @@ func Generate(snap store.Snapshot, plain PlainLists) (option.Options, error) {
 // ссылающееся на туннель, и DNS-правило того же набора обязаны меняться вместе, а
 // точечная правка JSON этого не гарантирует.
 //
-// Выключенные туннели в конфиг не попадают, а правило, чей туннель недоступен,
-// остаётся в конфиге с действием reject — и в route.rules, и в dns.rules
-// (ADR 0013). Убрать его нельзя: route.final — прямой выход, и исчезнувшее
-// правило отдало бы свой трафик наружу с адреса сервера. Единственное исключение
-// — правило без единого условия совпадения: его не выразить ни маршрутом, ни
-// отказом, потому что совпадать оно будет со всем.
+// Unavailable tunnels retain rejection in destination routes and DNS (ADR 0013).
+// Rules without destinations or without existing selected sources are skipped
+// before they could create a global matcher (ADR 0026).
 // Ссылка на несуществующий туннель — ошибка: состояние повреждено, и молчаливое
 // продолжение скрыло бы это.
 //
@@ -139,6 +135,11 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 	// конфига. Порядок — тот же, в каком правила идут в route.rules.
 	diags := make([]RuleDiag, 0, len(snap.Rules))
 	for _, r := range sortedRules(snap.Rules) {
+		sources, sourcesLive := sourceCIDRs(r, peers, live)
+		if r.PeerScope == store.ScopeSelected && len(sources) == 0 {
+			diags = append(diags, RuleDiag{ID: r.ID, Name: r.Name, Skipped: true, SkipReason: "No existing selected clients; reassign and enable the rule"})
+			continue
+		}
 		tunnelTag := ""
 		// Непустая причина означает: маршрута у правила нет, и оно уходит в
 		// конфиг отказом. Причина идёт только в лог, пользователь видит
@@ -198,8 +199,7 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 			log.Warn("список ещё не скачан, его домены в конфиг не попали",
 				"правило", r.Name, "список", url)
 		}
-		// Единственный пропуск: правило без условий совпадения нельзя выразить ни
-		// маршрутом, ни отказом — совпадать оно будет со всем.
+		// Empty destination matchers would broaden this rule to every destination.
 		if len(tags) == 0 {
 			skip := RuleDiag{ID: r.ID, Name: r.Name, Skipped: true}
 			if len(missing) > 0 {
@@ -210,8 +210,7 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 			continue
 		}
 
-		sources, ok := sourceCIDRs(r, peers, live)
-		if !ok {
+		if !sourcesLive {
 			unavailable = "выключены все выбранные пиры"
 			tunnelTag = ""
 		}

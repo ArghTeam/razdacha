@@ -313,3 +313,13 @@ there is no `config.yaml` file.
   через `raw` туннеля.
 - Мастер первичной настройки. Установщик доводит систему до рабочего состояния сам,
   визарду нечего спрашивать.
+
+## Deleted-client rules (ADR 0026)
+
+Client deletion confirmation lists affected rules and those losing their final existing
+client. The latter remain visible as disabled selected rules. The rules screen shows
+"No selected clients" and instructs the operator to assign clients, explicitly enable
+and Apply. Editing an inactive rule does not force activation or a change to all clients.
+The panel reloads rules after deletion; it does not predict the committed effects from
+its pre-confirmation cache alone. Operators should audit historical all-client rules,
+which cannot be automatically distinguished from the previous deletion bug.

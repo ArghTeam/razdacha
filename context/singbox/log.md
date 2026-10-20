@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-10-20
+
+### #215 — preserve selected scope after peer deletion
+
+**Changed:** Skip selected rules without existing source addresses before any route, reject, chain or set construction. Disabled surviving clients retain scoped rejection.
+**Decision:** [ADR 0026](../../docs/decisions/0026-peer-deletion-preserves-scope.md).
+**Validation:** See the task specification; isolated wire acceptance remains pending.
+
 ## 2026-10-19
 
 ### #222 — Separate immediate DNS matching from destination CIDRs

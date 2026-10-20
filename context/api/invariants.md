@@ -35,3 +35,5 @@ description: REST, встроенная SPA, диагностика и клие�
 - `internal/api/throttle.go` — блокировка после серии неудачных входов.
 
 - Community list status combines daemon-owned native SRS and any companion subnet source; either failure is visible and the timestamp is the oldest successful component. Native predicates remain uncertain route-probe candidates even when loaded or real DNS answers are returned. Generation errors remain diagnostic errors rather than omitted-policy success (ADR 0025).
+
+- Peer deletion returns `ok`, `affected_rule_ids` and `inactivated_rule_ids` from one committed transaction. Rule listing computes `inactive_reason: no_selected_peers` against a consistent snapshot. A stale selected-ID PATCH cannot resurrect deleted selection; empty enabled selections are rejected (ADR 0026).

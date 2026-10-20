@@ -216,11 +216,15 @@ func (s *Server) handleDeletePeer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.store.DeletePeer(r.Context(), id); err != nil {
+	effects, err := s.store.DeletePeerWithEffects(r.Context(), id)
+	if err != nil {
 		s.storeError(w, err, "Пир не найден")
 		return
 	}
-	writeJSON(w, s.log, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, s.log, http.StatusOK, struct {
+		OK bool `json:"ok"`
+		store.PeerDeletion
+	}{OK: true, PeerDeletion: effects})
 }
 
 // handlePeerConfig — `GET /api/peers/{id}/config`, клиентский `.conf` текстом.

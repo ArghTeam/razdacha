@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-10-20
+
+### #215 — preserve selected scope after peer deletion
+
+**Changed:** Atomic selected-ID validation and deletion effects; disabled selected orphans preserve identity and references. Existing all-client policy remains unchanged.
+**Decision:** [ADR 0026](../../docs/decisions/0026-peer-deletion-preserves-scope.md).
+**Validation:** See the task specification; isolated wire acceptance remains pending.
+
 ## 2026-08-21
 
 ### #202 — отбраковка нод пула по стране и без шифрования

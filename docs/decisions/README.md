@@ -33,3 +33,5 @@
 | [0023](0023-coherent-network-generation.md) | Publish network policy as a guarded generation | 2026-10-19 | accepted |
 | [0024](0024-domain-only-dns-projections.md) | Domain-only DNS projections for manual and plain rules | 2026-10-19 | accepted; clarifies 0013 |
 | [0025](0025-daemon-owned-native-rule-sets.md) | Daemon-owned immutable native rule sets | 2026-10-20 | accepted; extends 0023 and 0024 |
+
+| [0026](0026-peer-deletion-preserves-scope.md) | Peer deletion preserves selected scope | 2026-10-20 | proposed; clarifies 0013 |
