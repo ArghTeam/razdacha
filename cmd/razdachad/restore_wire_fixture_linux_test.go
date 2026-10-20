@@ -178,9 +178,15 @@ func rwInNS(t *testing.T, ns netns.NsHandle, next string, values map[string]stri
 	values["RAZDACHA_RW_NEXT"] = next
 	cmd := rwCommand("enter")
 	cmd.Env = rwEnv(values)
-	cmd.ExtraFiles = []*os.File{f}
+	if rwOwnedProof == nil {
+		t.Fatal("owned namespace proof missing")
+	}
+	cmd.ExtraFiles = []*os.File{f, rwOwnedProof}
 	return cmd
 }
+
+var rwOwnedProof *os.File
+
 func TestRestoreWireGuardContained(t *testing.T) {
 	if os.Getenv("RAZDACHA_RESTORE_WIRE_TEST") != "1" {
 		t.Skip("requires explicit opt-in and separately reviewed Linux namespace runner")
@@ -190,9 +196,10 @@ func TestRestoreWireGuardContained(t *testing.T) {
 	}
 	switch os.Getenv("RAZDACHA_RW_ROLE") {
 	case "enter":
+		_, proofErr := rwReadProof("enter")
+		wireMust(t, proofErr)
 		runtime.LockOSThread()
 		wireMust(t, unix.Setns(3, unix.CLONE_NEWNET))
-		wireMust(t, unix.Close(3))
 		env := os.Environ()
 		for i, v := range env {
 			if strings.HasPrefix(v, "RAZDACHA_RW_ROLE=") {
@@ -230,6 +237,9 @@ func TestRestoreWireGuardContained(t *testing.T) {
 		wireMust(t, unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""))
 		wireMust(t, unix.Mount("tmpfs", "/var/lib", "tmpfs", unix.MS_NODEV|unix.MS_NOSUID, "size=64m,mode=0700"))
 		wireMust(t, os.MkdirAll("/var/lib/sing-box", 0700))
+		if !rwPrivateVarLib() {
+			t.Fatal("private /var/lib tmpfs verification failed")
+		}
 		rwExercise(t)
 		return
 	case "":
@@ -265,14 +275,222 @@ func TestRestoreWireGuardContained(t *testing.T) {
 
 func rwVerifyContained(t *testing.T) {
 	t.Helper()
-	for _, kind := range []string{"net", "mnt"} {
-		actual, e := os.Readlink("/proc/self/ns/" + kind)
-		wireMust(t, e)
-		original := os.Getenv("RAZDACHA_RW_HOST_" + strings.ToUpper(kind))
-		if original == "" || original == actual {
-			t.Fatal("child refuses unverified isolation")
+	_, err := rwReadProof(os.Getenv("RAZDACHA_RW_ROLE"))
+	wireMust(t, err)
+	wireMust(t, unix.Close(3))
+	wireMust(t, unix.Close(4))
+}
+
+// BEGIN PORTABLE PROVENANCE VALIDATOR
+// These facts come from live read-only kernel/filesystem observers, never from
+// caller-supplied namespace environment strings.
+type rwProof struct {
+	OwnerPID, HostPID                                                                         int
+	OwnerStart, HostStart, OwnerNet, OwnerMount, HostNet, HostMount, ClientNet, SinkNet, Root string
+}
+type rwProofFacts struct {
+	ParentPID, OuterPID                                                                                        int
+	ParentStart, OuterStart, ParentNet, ParentMount, OuterNet, OuterMount, SelfNet, SelfMount, TargetNet, Root string
+	Sealed, PrivateTmpfs, PrivateRoot                                                                          bool
+}
+
+func rwValidateProof(p rwProof, f rwProofFacts, role string) error {
+	if !f.Sealed || p.OwnerPID <= 0 || p.HostPID <= 0 || p.OwnerStart == "" || p.HostStart == "" || p.OwnerNet == "" || p.OwnerMount == "" || p.HostNet == "" || p.HostMount == "" || p.ClientNet == "" || p.SinkNet == "" {
+		return fmt.Errorf("missing owned sealed namespace provenance")
+	}
+	if f.ParentPID != p.OwnerPID || f.ParentStart != p.OwnerStart || f.OuterPID != p.HostPID || f.OuterStart != p.HostStart {
+		return fmt.Errorf("owned parent lifetime mismatch")
+	}
+	if f.ParentNet != p.OwnerNet || f.ParentMount != p.OwnerMount || f.OuterNet != p.HostNet || f.OuterMount != p.HostMount {
+		return fmt.Errorf("live parent namespace provenance mismatch")
+	}
+	if p.ClientNet == p.SinkNet || p.ClientNet == p.HostNet || p.SinkNet == p.HostNet || p.ClientNet == p.OwnerNet || p.SinkNet == p.OwnerNet || p.OwnerNet == p.HostNet || p.OwnerMount == p.HostMount || f.SelfMount != p.OwnerMount || f.SelfNet == p.HostNet {
+		return fmt.Errorf("descendant is outside fresh owned namespaces")
+	}
+	if !f.PrivateTmpfs || !f.PrivateRoot || f.Root != p.Root || filepath.Dir(p.Root) != "/var/lib" || !strings.HasPrefix(filepath.Base(p.Root), "restore-wire-") {
+		return fmt.Errorf("private fixture filesystem provenance missing")
+	}
+	switch role {
+	case "enter":
+		if f.SelfNet != p.OwnerNet || f.TargetNet == "" || f.TargetNet == p.HostNet || f.TargetNet == p.OwnerNet || (f.TargetNet != p.ClientNet && f.TargetNet != p.SinkNet) {
+			return fmt.Errorf("unsafe namespace entry target")
+		}
+	case "sink", "probe":
+		if (role == "sink" && f.TargetNet != p.SinkNet) || (role == "probe" && f.TargetNet != p.ClientNet) {
+			return fmt.Errorf("wrong owned namespace role")
+		}
+		if f.TargetNet == "" || f.SelfNet != f.TargetNet || f.TargetNet == p.OwnerNet || (f.TargetNet != p.ClientNet && f.TargetNet != p.SinkNet) {
+			return fmt.Errorf("wrong owned child namespace")
+		}
+	case "cli":
+		if f.SelfNet != p.OwnerNet {
+			return fmt.Errorf("CLI escaped owner network namespace")
+		}
+	default:
+		return fmt.Errorf("unknown proof role")
+	}
+	return nil
+}
+func TestRestoreWireGuardProvenanceValidation(t *testing.T) {
+	p := rwProof{OwnerPID: 20, HostPID: 10, OwnerStart: "200", HostStart: "100", OwnerNet: "net:[20]", OwnerMount: "mnt:[20]", HostNet: "net:[10]", HostMount: "mnt:[10]", ClientNet: "net:[40]", SinkNet: "net:[30]", Root: "/var/lib/restore-wire-fixture"}
+	valid := rwProofFacts{ParentPID: 20, OuterPID: 10, ParentStart: "200", OuterStart: "100", ParentNet: p.OwnerNet, ParentMount: p.OwnerMount, OuterNet: p.HostNet, OuterMount: p.HostMount, SelfNet: "net:[30]", SelfMount: p.OwnerMount, TargetNet: "net:[30]", Root: p.Root, Sealed: true, PrivateTmpfs: true, PrivateRoot: true}
+	if err := rwValidateProof(p, valid, "sink"); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]func(*rwProofFacts){
+		"arbitrary environment has no sealed proof": func(f *rwProofFacts) { f.Sealed = false },
+		"unowned parent":                      func(f *rwProofFacts) { f.ParentPID++ },
+		"reused parent PID":                   func(f *rwProofFacts) { f.ParentStart = "reused" },
+		"outer parent changed":                func(f *rwProofFacts) { f.OuterStart = "reused" },
+		"source namespace strings fabricated": func(f *rwProofFacts) { f.OuterNet = "net:[fabricated]" },
+		"host network":                        func(f *rwProofFacts) { f.SelfNet = p.HostNet; f.TargetNet = p.HostNet },
+		"host mount":                          func(f *rwProofFacts) { f.SelfMount = p.HostMount },
+		"shared mount propagation":            func(f *rwProofFacts) { f.PrivateTmpfs = false },
+		"unowned root":                        func(f *rwProofFacts) { f.PrivateRoot = false },
+		"root substitution":                   func(f *rwProofFacts) { f.Root = "/var/lib/other" },
+		"wrong child network":                 func(f *rwProofFacts) { f.TargetNet = "net:[other]" },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			facts := valid
+			mutate(&facts)
+			if rwValidateProof(p, facts, "sink") == nil {
+				t.Fatal("unsafe entry accepted before mutation")
+			}
+		})
+	}
+	entry := valid
+	entry.SelfNet = p.OwnerNet
+	if err := rwValidateProof(p, entry, "enter"); err != nil {
+		t.Fatal(err)
+	}
+	entry.TargetNet = p.HostNet
+	if rwValidateProof(p, entry, "enter") == nil {
+		t.Fatal("host target accepted")
+	}
+	cli := valid
+	cli.SelfNet = p.OwnerNet
+	if err := rwValidateProof(p, cli, "cli"); err != nil {
+		t.Fatal(err)
+	}
+	cli.SelfNet = valid.SelfNet
+	if rwValidateProof(p, cli, "cli") == nil {
+		t.Fatal("CLI child namespace accepted")
+	}
+}
+
+// END PORTABLE PROVENANCE VALIDATOR
+
+func rwProofProcess(pid int) (int, string, error) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0, "", err
+	}
+	end := strings.LastIndexByte(string(data), ')')
+	if end < 0 {
+		return 0, "", fmt.Errorf("invalid process stat")
+	}
+	fields := strings.Fields(string(data[end+1:]))
+	if len(fields) <= 19 {
+		return 0, "", fmt.Errorf("short process stat")
+	}
+	parent, err := strconv.Atoi(fields[1])
+	return parent, fields[19], err
+}
+func rwPrivateVarLib() bool {
+	var stat unix.Statfs_t
+	if unix.Statfs("/var/lib", &stat) != nil || stat.Type != unix.TMPFS_MAGIC {
+		return false
+	}
+	data, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 10 || fields[4] != "/var/lib" {
+			continue
+		}
+		sep := -1
+		for i, v := range fields {
+			if v == "-" {
+				sep = i
+				break
+			}
+		}
+		if sep < 6 || sep+1 >= len(fields) || fields[sep+1] != "tmpfs" {
+			return false
+		}
+		for _, v := range fields[6:sep] {
+			if strings.HasPrefix(v, "shared:") || strings.HasPrefix(v, "master:") || strings.HasPrefix(v, "propagate_from:") {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+func rwReadProof(role string) (rwProof, error) {
+	var p rwProof
+	seals, err := unix.FcntlInt(4, unix.F_GET_SEALS, 0)
+	if err != nil {
+		return p, fmt.Errorf("missing inherited sealed proof: %w", err)
+	}
+	required := unix.F_SEAL_WRITE | unix.F_SEAL_GROW | unix.F_SEAL_SHRINK | unix.F_SEAL_SEAL
+	var stat unix.Stat_t
+	if seals != required || unix.Fstat(4, &stat) != nil || stat.Uid != uint32(os.Geteuid()) || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Mode&0777 != 0600 || stat.Size <= 0 || stat.Size > 4096 {
+		return p, fmt.Errorf("invalid sealed proof descriptor")
+	}
+	data := make([]byte, int(stat.Size))
+	n, err := unix.Pread(4, data, 0)
+	if err != nil || n != len(data) {
+		return p, fmt.Errorf("cannot read complete sealed proof")
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(&p); err != nil {
+		return p, err
+	}
+	var extra any
+	if decoder.Decode(&extra) != io.EOF {
+		return p, fmt.Errorf("trailing proof data")
+	}
+	f := rwProofFacts{ParentPID: os.Getppid(), Sealed: true}
+	f.OuterPID, f.ParentStart, err = rwProofProcess(f.ParentPID)
+	if err != nil {
+		return p, err
+	}
+	_, f.OuterStart, err = rwProofProcess(f.OuterPID)
+	if err != nil {
+		return p, err
+	}
+	for _, item := range []struct {
+		pid    int
+		kind   string
+		target *string
+	}{{f.ParentPID, "net", &f.ParentNet}, {f.ParentPID, "mnt", &f.ParentMount}, {f.OuterPID, "net", &f.OuterNet}, {f.OuterPID, "mnt", &f.OuterMount}, {os.Getpid(), "net", &f.SelfNet}, {os.Getpid(), "mnt", &f.SelfMount}} {
+		*item.target, err = os.Readlink(fmt.Sprintf("/proc/%d/ns/%s", item.pid, item.kind))
+		if err != nil {
+			return p, err
 		}
 	}
+	if role != "cli" {
+		f.TargetNet, err = os.Readlink("/proc/self/fd/3")
+		if err != nil {
+			return p, err
+		}
+	}
+	f.PrivateTmpfs = rwPrivateVarLib()
+	f.Root, err = filepath.EvalSymlinks(p.Root)
+	if err != nil {
+		return p, err
+	}
+	var rootStat unix.Stat_t
+	f.PrivateRoot = unix.Lstat(p.Root, &rootStat) == nil && rootStat.Mode&unix.S_IFMT == unix.S_IFDIR && rootStat.Mode&0777 == 0700 && rootStat.Uid == uint32(os.Geteuid())
+	if err = rwValidateProof(p, f, role); err != nil {
+		return p, err
+	}
+	return p, nil
 }
 
 type rwKeys struct{ Server, Client wgtypes.Key }
@@ -638,6 +856,34 @@ func rwExercise(t *testing.T) {
 	ch.Close()
 	root, e := os.MkdirTemp("/var/lib", "restore-wire-")
 	wireMust(t, e)
+	proof := rwProof{OwnerPID: os.Getpid(), HostPID: os.Getppid(), Root: root}
+	proof.OwnerStart, e = rwIdentity(proof.OwnerPID)
+	wireMust(t, e)
+	proof.HostStart, e = rwIdentity(proof.HostPID)
+	wireMust(t, e)
+	for _, item := range []struct {
+		pid    int
+		kind   string
+		target *string
+	}{{proof.OwnerPID, "net", &proof.OwnerNet}, {proof.OwnerPID, "mnt", &proof.OwnerMount}, {proof.HostPID, "net", &proof.HostNet}, {proof.HostPID, "mnt", &proof.HostMount}} {
+		*item.target, e = os.Readlink(fmt.Sprintf("/proc/%d/ns/%s", item.pid, item.kind))
+		wireMust(t, e)
+	}
+	proof.ClientNet, e = os.Readlink(fmt.Sprintf("/proc/self/fd/%d", int(clientNS)))
+	wireMust(t, e)
+	proof.SinkNet, e = os.Readlink(fmt.Sprintf("/proc/self/fd/%d", int(sinkNS)))
+	wireMust(t, e)
+	proofData, e := json.Marshal(proof)
+	wireMust(t, e)
+	proofFD, e := unix.MemfdCreate("restore-wire-provenance", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
+	wireMust(t, e)
+	rwOwnedProof = os.NewFile(uintptr(proofFD), "restore-wire-provenance")
+	t.Cleanup(func() { _ = rwOwnedProof.Close(); rwOwnedProof = nil })
+	wireMust(t, unix.Fchmod(proofFD, 0600))
+	_, e = rwOwnedProof.Write(proofData)
+	wireMust(t, e)
+	_, e = unix.FcntlInt(uintptr(proofFD), unix.F_ADD_SEALS, unix.F_SEAL_WRITE|unix.F_SEAL_GROW|unix.F_SEAL_SHRINK|unix.F_SEAL_SEAL)
+	wireMust(t, e)
 	// The tmpfs lifetime owns all files; no recursive host cleanup is necessary.
 	h := &rwHarness{ctx: ctx, client: clientNS, root: root, http: &http.Client{Timeout: time.Second, Transport: &http.Transport{Proxy: nil}}}
 	defer h.http.CloseIdleConnections()
@@ -796,6 +1042,7 @@ func rwExercise(t *testing.T) {
 	t.Logf("RESTORE-WIRE-INPUT prior_config_sha256=%x archive_sha256=%x", sha256.Sum256(config), sha256.Sum256(archive))
 	h.absent(t, "before-actual-restore")
 	cli := exec.Command(os.Getenv("RAZDACHA_RW_CLI"), "-test.run=^TestRestoreWireCLI$", "-test.timeout=20s", "-test.v")
+	cli.ExtraFiles = []*os.File{rwOwnedProof, rwOwnedProof}
 	cli.Env = append(os.Environ(), "RAZDACHA_RESTORE_WIRE_CLI=1", "RAZDACHA_RW_ROOT="+root)
 	rwRun(t, cli)
 	h.st, e = store.Open(ctx, filepath.Join(root, "state.db"))
