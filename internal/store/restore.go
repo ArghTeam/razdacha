@@ -61,6 +61,11 @@ func restoreOwnedRegular(info os.FileInfo) error {
 type schemaObject struct{ Type, Name, Table, SQL string }
 
 func restoreDB(ctx context.Context, path string) (*sql.DB, error) {
+	if present, e := AdmitRestoreDestination(path); e != nil {
+		return nil, e
+	} else if !present {
+		return nil, errors.New("restore database is missing")
+	}
 	u := url.URL{Scheme: "file", Path: path}
 	u.RawQuery = "mode=ro&_pragma=trusted_schema(OFF)&_pragma=foreign_keys(1)"
 	db, e := sql.Open("sqlite", u.String())

@@ -138,3 +138,8 @@ now precedes SQLite and initial safety/service mutation, including recovery/repl
 and protected password writes. Actual transaction negatives retain sibling bytes and
 zero service/guard mutations; normal committed-WAL snapshot remains a positive control.
 Corrective independent retest and exact-head CI remain separate acceptance gates.
+
+The shared read-only restore DB opener also performs canonical file admission before
+SQLite construction. This includes schema validation at the daemon's initial trusted
+startup boundary; admission is not deferred until the later current-store open.
+Validator and actual daemon-startup alias negatives cover all SQLite journal suffixes.

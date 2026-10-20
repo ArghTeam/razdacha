@@ -275,3 +275,50 @@ func (r restorePoolTransport) RoundTrip(request *http.Request) (*http.Response, 
 	}
 	return r.base.RoundTrip(request)
 }
+
+func TestTrustedStartupRejectsDatabaseAliasesDuringInitialSchemaAdmission(t *testing.T) {
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		t.Run("canonical"+suffix, func(t *testing.T) {
+			dir := t.TempDir()
+			_ = restoreControllerFixture(t, dir, true)
+			path := filepath.Join(dir, "state.db")
+			st, e := store.Open(context.Background(), path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if e = st.Close(); e != nil {
+				t.Fatal(e)
+			}
+			before, e := os.ReadFile(path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			sibling := filepath.Join(t.TempDir(), "sibling.db")
+			if e = os.WriteFile(sibling, before, 0o600); e != nil {
+				t.Fatal(e)
+			}
+			if suffix == "" {
+				if e = os.Remove(path); e != nil {
+					t.Fatal(e)
+				}
+			}
+			if e = os.Symlink(sibling, path+suffix); e != nil {
+				t.Fatal(e)
+			}
+			// The schema error proves rejection before Store.Open, controller/worker setup,
+			// netstack construction or service callbacks in the actual startup sequence.
+			e = run(context.Background(), "127.0.0.1:0", path, false)
+			if e == nil || !strings.Contains(e.Error(), "open restore schema:") {
+				t.Fatalf("startup did not reject at initial schema boundary: %v", e)
+			}
+			after, e := os.ReadFile(sibling)
+			if e != nil || string(after) != string(before) {
+				t.Fatal("startup changed private sibling")
+			}
+			state, e := restorestate.Read(dir)
+			if e != nil || state == nil || !state.Held || !state.RuntimeInhibited || state.Phase != "complete" {
+				t.Fatal("startup changed trusted safety state")
+			}
+		})
+	}
+}

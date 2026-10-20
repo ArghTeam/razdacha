@@ -70,7 +70,11 @@ func TestRestoreSchemaSupportsEveryReleasedVersion(t *testing.T) {
 	ctx := context.Background()
 	for version := 1; version <= schemaVersion(); version++ {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "old.db")
+			dir := t.TempDir()
+			if e := os.Chmod(dir, 0o700); e != nil {
+				t.Fatal(e)
+			}
+			path := filepath.Join(dir, "old.db")
 			if e := prepareFile(path); e != nil {
 				t.Fatal(e)
 			}
@@ -81,6 +85,9 @@ func TestRestoreSchemaSupportsEveryReleasedVersion(t *testing.T) {
 			_ = db.Close()
 			// Build historical schema directly from released statements, not a handwritten approximation.
 			if e = os.Remove(path); e != nil {
+				t.Fatal(e)
+			}
+			if e = prepareFile(path); e != nil {
 				t.Fatal(e)
 			}
 			raw, e := sqlOpenFixture(path)
@@ -231,5 +238,44 @@ func TestRestoreDestinationOwnershipAdmission(t *testing.T) {
 	// Only the owner metadata is substituted; no privileged chown/host file is used.
 	if e = restoreOwnedRegular(restoreOwnerInfo{FileInfo: info, stat: stat}); e == nil {
 		t.Fatal("different owner admitted")
+	}
+}
+
+func TestRestoreSchemaRejectsAliasesBeforeSQLite(t *testing.T) {
+	ctx := context.Background()
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		t.Run("canonical"+suffix, func(t *testing.T) {
+			st := restoreFixture(t)
+			path := dbPathForTest(t, st)
+			if e := st.Close(); e != nil {
+				t.Fatal(e)
+			}
+			sentinel := filepath.Join(t.TempDir(), "sibling.db")
+			before, e := os.ReadFile(path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if e = os.WriteFile(sentinel, before, 0o600); e != nil {
+				t.Fatal(e)
+			}
+			if suffix == "" {
+				if e = os.Remove(path); e != nil {
+					t.Fatal(e)
+				}
+			}
+			if e = os.Symlink(sentinel, path+suffix); e != nil {
+				t.Fatal(e)
+			}
+			if e = ValidateRestoreSchema(ctx, path); e == nil {
+				t.Fatal("schema inspection admitted an alias")
+			}
+			after, e := os.ReadFile(sentinel)
+			if e != nil || string(after) != string(before) {
+				t.Fatal("schema inspection changed sibling bytes")
+			}
+			if info, e := os.Lstat(path + suffix); e != nil || info.Mode()&os.ModeSymlink == 0 {
+				t.Fatal("schema inspection replaced alias")
+			}
+		})
 	}
 }
