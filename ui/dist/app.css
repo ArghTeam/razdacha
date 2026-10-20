@@ -867,7 +867,7 @@ button:focus-visible, summary:focus-visible, a:focus-visible {
 
 @media (max-width: 620px), (pointer: coarse) {
   .btn, .icon-btn, .ord-btn, .tab, .menu button, .radio-pill,
-  .rule-chip, .list-grid label, .rule-item, .pool-fold > summary {
+  .rule-chip, .list-grid label, .rule-item, summary {
     min-width: 44px; min-height: 44px;
   }
   input:not([type="checkbox"]):not([type="radio"]), select, textarea { min-height: 44px; }
