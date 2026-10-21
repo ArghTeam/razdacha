@@ -7,7 +7,7 @@
 
 import * as api from './api.js';
 import {
-  state, toast, toastError, closeModal, closeMenu, modalOpen, loading, applyDocTitle,
+  state, toast, toastError, clearToasts, closeModal, closeMenu, modalOpen, loading, applyDocTitle,
 } from './shell.js';
 import { $, $$, compareVersions, versionLabel } from './util.js';
 
@@ -39,12 +39,17 @@ const ACTIONS = Object.assign(
 
 let pollTimer = null;
 let logoutPending = false;
+let navigationRevision = 0;
 
 /* ==========================================================================
    Вход
    ========================================================================== */
 
 function showGate(message) {
+  navigationRevision++;
+  clearToasts();
+  $('#btn-apply').disabled = false;
+  $('#btn-apply').textContent = 'Apply';
   stopPolling();
   closeMenu(false);
   closeModal({ restoreFocus: false });
@@ -148,13 +153,16 @@ async function handleLogin(ev) {
    ========================================================================== */
 
 /** Тянет кусок состояния, помечая ненаписанный эндпоинт вместо выдумывания нулей. */
-async function pull(key, loader, fallback) {
+async function pull(key, loader, fallback, currentRead = () => true) {
+  const currentSession = api.session.guard();
   try {
     const value = await loader();
+    if (!currentSession() || !currentRead()) return fallback;
     state.missing.delete(key);
     setOffline(false);
     return value;
   } catch (err) {
+    if (!currentSession() || !currentRead()) return fallback;
     if (err.status === 401) throw err;
     if (err.missing) {
       state.missing.add(key);
@@ -170,28 +178,34 @@ async function pull(key, loader, fallback) {
 }
 
 async function loadAll() {
+  const currentSession = api.session.guard();
+  const tunnelRead = tunnelsScreen.beginInventoryRead();
   const [settings, peers, tunnels, rules, community, version] = await Promise.all([
     pull('settings', api.settings.get, null),
     pull('peers', api.peers.list, []),
-    pull('tunnels', api.tunnels.list, []),
+    pull('tunnels', api.tunnels.list, [], tunnelRead.current),
     pull('rules', api.rules.list, []),
     pull('community', api.lists.community, []),
     pull('version', api.version.get, null),
   ]);
+  if (!currentSession()) return;
   state.version = version;
   state.settings = settings;
   applyDocTitle();
   state.peers = peers || [];
-  state.tunnels = tunnels || [];
+  tunnelRead.accept(tunnels || []);
   state.rules = rules || [];
   state.communityLists = community || [];
-  state.diag = await pull('diag', api.diag.get, null);
+  const diag = await pull('diag', api.diag.get, null);
+  if (!currentSession()) return;
+  state.diag = diag;
   await refreshApplyStatus();
 }
 
 async function refreshApplyStatus() {
+  const currentSession = api.session.guard();
   const status = await pull('apply', api.apply.status, null);
-  if (state.missing.has('apply')) return; // плашка остаётся на локальной отметке
+  if (!currentSession() || !status || state.missing.has('apply')) return; // Retain the local pending indicator when status is unavailable.
   state.dirty = api.isDirty(status);
   $('#apply-bar').hidden = !state.dirty;
 }
@@ -229,11 +243,11 @@ function renderVersion() {
   el.hidden = false;
   const mismatch = Boolean(v.version_mismatch);
   el.classList.toggle('warn', mismatch);
-  el.textContent = mismatch ? `${v.version} ≠ ${v.installed_version}` : v.version;
+  el.textContent = mismatch ? `${v.version} ≠ ${v.installed_version || 'Unknown'}` : v.version;
   el.title = mismatch
-    ? `Работает ${v.version}, установщик записал ${v.installed_version}.`
-      + ' Похоже, после обновления демон не перезапустился. Подробности — на экране «Диагностика».'
-    : `Версия демона${v.commit ? `, коммит ${v.commit}` : ''}`;
+    ? `Running ${v.version}; installed ${v.installed_version || 'Unknown'}. See Diagnostics for details.`
+    : `Daemon version ${v.version}${v.commit ? `, commit ${v.commit}` : ''}`;
+  el.setAttribute('aria-label', el.title);
 }
 
 /** Бейдж свежести рядом с версией.
@@ -262,11 +276,10 @@ function renderFreshness() {
   el.classList.toggle('behind', behind);
   // `latest` стоит и тогда, когда развёрнуто новее релиза (сборка из ветки):
   // «отстали на -1» — неправда, а свежее на GitHub и правда ничего нет.
-  el.textContent = behind ? `есть ${versionLabel(latest)}` : 'latest';
+  el.textContent = behind ? `Available ${versionLabel(latest)}` : 'Latest release';
   el.title = behind
-    ? `Работает ${versionLabel(running)}, на GitHub ${versionLabel(latest)}.`
-      + ' Обновление — тем же установщиком, что и первая установка.'
-    : 'Свежее на GitHub нет: развёрнута последняя версия.';
+    ? `Running ${versionLabel(running)}; latest release ${versionLabel(latest)}. Update using the installer.`
+    : 'No newer stable release is available.';
 }
 
 /** Свежесть версии — фоном и вне общей загрузки: GitHub может отвечать
@@ -274,8 +287,9 @@ function renderFreshness() {
  * на заход, такт опроса сюда не заглядывает — релизы выходят не так часто, а
  * лимит GitHub общий на всех за одним адресом. */
 async function checkFreshness() {
+  const currentSession = api.session.guard();
   const tag = await api.release.latest();
-  if (!tag) return;
+  if (!currentSession() || !tag) return;
   state.latestRelease = tag;
   if (!$('#app').hidden) renderFreshness();
 }
@@ -286,6 +300,9 @@ function fromHash() {
 }
 
 async function navigate() {
+  if ($('#app').hidden) return;
+  const currentSession = api.session.guard();
+  const revision = ++navigationRevision;
   fromHash();
   render();
   // Данные экрана перечитываются при заходе на него, а дальше — по такту
@@ -293,19 +310,23 @@ async function navigate() {
   const screen = SCREENS[state.screen];
   const key = state.screen;
   try {
-    await pullInto(key, screen.load);
+    await pullInto(key, screen.load, () => revision === navigationRevision);
   } catch (err) {
     if (err.status === 401) return;
   }
+  if (!currentSession() || revision !== navigationRevision || $('#app').hidden) return;
   render();
 }
 
-async function pullInto(key, loader) {
+async function pullInto(key, loader, currentNavigation) {
+  const currentSession = api.session.guard();
   try {
     await loader();
+    if (!currentSession() || !currentNavigation()) return;
     state.missing.delete(key);
     setOffline(false);
   } catch (err) {
+    if (!currentSession() || !currentNavigation()) return;
     if (err.status === 401) throw err;
     if (err.missing) state.missing.add(key);
     else if (err.offline) setOffline(true);
@@ -321,7 +342,7 @@ function setOffline(on) {
     const bar = document.createElement('div');
     bar.id = 'offline-bar';
     bar.className = 'offline-bar';
-    bar.textContent = 'Сервер не отвечает. Данные на экране могли устареть.';
+    bar.textContent = 'Gateway unreachable. Displayed data may be stale.';
     $('#app').prepend(bar);
   } else if (!on && existing) {
     existing.remove();
@@ -361,20 +382,47 @@ function stopPolling() {
    ========================================================================== */
 
 async function start() {
-  $('#screen').innerHTML = loading('Загружаю');
+  const currentSession = api.session.guard();
+  $('#screen').innerHTML = loading('Loading');
   try {
     await loadAll();
   } catch (err) {
+    if (!currentSession()) return;
     if (err.status === 401) return;
     toastError(err);
   }
+  if (!currentSession()) return;
   await navigate();
+  if (!currentSession()) return;
   checkFreshness();
   startPolling();
 }
 
 async function boot() {
-  api.onUnauthorized(() => showGate('Сессия истекла — войдите заново.'));
+  // Measure wrapped chrome so native focus scrolling can reserve the actual space.
+  const applyBar = $('#apply-bar');
+  const topbar = $('.topbar');
+  const measureChrome = () => {
+    document.documentElement.style.setProperty('--apply-height', `${Math.ceil(applyBar.getBoundingClientRect().height)}px`);
+    document.documentElement.style.setProperty('--shell-header-height', `${Math.ceil(topbar.getBoundingClientRect().height)}px`);
+  };
+  const chromeObserver = new ResizeObserver(measureChrome);
+  chromeObserver.observe(applyBar);
+  chromeObserver.observe(topbar);
+  measureChrome();
+  document.addEventListener('focusin', (event) => {
+    if (!event.target.matches('.diag-check-detail pre')) return;
+    const detail = event.target;
+    requestAnimationFrame(() => {
+      if (document.activeElement !== detail || !detail.isConnected) return;
+      const top = topbar.getBoundingClientRect().bottom + 12;
+      const bottom = (applyBar.hidden ? innerHeight : applyBar.getBoundingClientRect().top) - 12;
+      const box = detail.getBoundingClientRect();
+      if (box.bottom > bottom) window.scrollBy(0, box.bottom - bottom);
+      else if (box.top < top) window.scrollBy(0, box.top - top);
+    });
+  });
+  api.onUnauthorized(() => showGate('Session expired. Log in again.'));
 
   $('#login-form').addEventListener('submit', handleLogin);
 
@@ -405,21 +453,24 @@ async function boot() {
   });
 
   $('#btn-apply').addEventListener('click', async () => {
-    const b = $('#btn-apply');
-    b.disabled = true;
-    b.textContent = 'Применяю…';
+    const button = $('#btn-apply');
+    if (button.disabled) return;
+    const currentSession = api.session.guard();
+    button.disabled = true;
+    button.textContent = 'Applying…';
     try {
       await api.apply.run();
+      if (!currentSession()) return;
       state.dirty = false;
       $('#apply-bar').hidden = true;
-      toast('Конфигурация применена');
+      await refreshApplyStatus();
+      if (!currentSession()) return;
+      toast('Configuration applied');
       await navigate();
     } catch (err) {
-      // 422 — sing-box check не прошёл; прежний конфиг остался активным.
-      toastError(err, 'Конфигурация не применена');
+      if (currentSession()) toastError(err, 'Configuration was not applied');
     } finally {
-      b.disabled = false;
-      b.textContent = 'Применить';
+      if (currentSession()) { button.disabled = false; button.textContent = 'Apply'; }
     }
   });
 
@@ -436,8 +487,9 @@ async function boot() {
     const fn = act ? ACTIONS[act] : null;
     if (!fn) return;
     ev.preventDefault();
+    const currentSession = api.session.guard();
     const res = fn('', ev.target);
-    if (res && typeof res.catch === 'function') res.catch((err) => toastError(err));
+    if (res && typeof res.catch === 'function') res.catch((err) => { if (currentSession()) toastError(err); });
   });
 
   // Одно делегирование на документ: разметка экранов перерисовывается целиком,
@@ -449,8 +501,9 @@ async function boot() {
     if (!act.startsWith('menu-')) closeMenu();
     const fn = ACTIONS[act];
     if (!fn) return;
+    const currentSession = api.session.guard();
     const res = fn(btn.dataset.id || '', btn);
-    if (res && typeof res.catch === 'function') res.catch((err) => toastError(err));
+    if (res && typeof res.catch === 'function') res.catch((err) => { if (currentSession()) toastError(err); });
   });
 
   fromHash();

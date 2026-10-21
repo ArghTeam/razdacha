@@ -934,3 +934,58 @@ button:focus-visible, summary:focus-visible, a:focus-visible {
   .settings-actions { flex-direction: column; }
   .settings-actions .btn { width: 100%; }
 }
+
+/* Modal actions retain readable labels when text is enlarged. */
+.modal .btn { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+/* Compact shared shell; labels wrap rather than clipping at enlarged text sizes. */
+body { padding-bottom: calc(var(--apply-height, 0px) + 16px); }
+.topbar-inner { flex-wrap: wrap; gap: 8px 12px; }
+.topbar .brand { flex: 1 1 160px; min-width: 0; flex-wrap: wrap; row-gap: 4px; }
+.topbar .brand-mark, .topbar .brand-name { flex: 0 0 auto; }
+.topbar .brand-version, .topbar .brand-fresh { max-width: 100%; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.topbar .brand-version { color: var(--fg-dim); }
+.topbar .tabs { flex-wrap: wrap; overflow: visible; gap: 4px; }
+.topbar .tab { flex: 1 1 auto; min-width: min-content; max-width: 100%; white-space: normal; overflow-wrap: anywhere; min-height: 44px; }
+.topbar .icon-btn { width: 44px; height: 44px; flex: 0 0 44px; margin: 0; align-items: center; justify-content: center; }
+.apply-inner { flex-wrap: wrap; padding-block: 10px; }
+.apply-text { min-width: 0; flex: 1 1 140px; overflow-wrap: anywhere; }
+.apply-inner .btn { min-height: 44px; white-space: normal; }
+@media (max-width: 760px) {
+  .topbar-inner { display: grid; grid-template-columns: minmax(0, 1fr) 44px 44px; gap: 6px 8px; padding-block: 8px; }
+  .topbar .brand { grid-column: 1; grid-row: 1; }
+  .topbar .tabs { grid-column: 1 / -1; grid-row: 2; order: initial; width: 100%; margin: 0; }
+  .topbar .tab { padding: 8px 4px; }
+  .topbar #btn-settings { grid-column: 2; grid-row: 1; }
+  .topbar #btn-logout { grid-column: 3; grid-row: 1; }
+}
+
+/* At most three notifications are retained; large messages scroll within bounded space. */
+.toasts { bottom: calc(var(--apply-height, 0px) + 12px); align-items: stretch; max-height: min(40dvh, 360px); overflow-y: auto; overscroll-behavior: contain; padding: 3px; }
+.toast { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; flex: 0 0 auto; pointer-events: auto; }
+.toast-message { display: block; min-width: 0; max-height: min(25dvh, 180px); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.toast-dismiss { display: grid; place-items: center; line-height: 1; appearance: none; border: 0; color: inherit; background: transparent; width: 44px; height: 44px; min-width: 44px; align-self: start; border-radius: 6px; padding: 0; font: inherit; font-size: 22px; cursor: pointer; }
+.toast-dismiss:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+.toast-dismiss:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+
+/* Supported diagnostic results remain local; unavailable viewers are plain capability readouts. */
+.diag-checks .check > div { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.diag-checks .check-detail { white-space: pre-wrap; }
+.diag-check-detail { white-space: normal; }
+.diag-check-detail summary { cursor: pointer; min-height: 44px; padding: 10px 0; color: var(--accent); }
+.diag-check-detail pre { font-family: var(--mono); font-size: 12px; line-height: 1.5; padding: 12px; margin: 0 0 8px; max-height: min(18rem, max(80px, calc(100dvh - var(--shell-header-height, 0px) - var(--apply-height, 0px) - 32px))); scroll-margin-top: calc(var(--shell-header-height, 0px) + 12px); scroll-margin-bottom: calc(var(--apply-height, 0px) + 12px); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-sunken); }
+.diag-check-detail pre:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.diag-versions { margin-top: 14px; }
+.diag-versions .versions { grid-template-columns: minmax(110px, .8fr) minmax(0, 1.5fr); gap: 7px 16px; padding: 16px 18px; }
+.diag-versions :is(dt, dd), .diag-versions .version-warn { min-width: 0; overflow-wrap: anywhere; }
+.diag-versions .version-warn { margin: 14px 16px 0; }
+.diag-unavailable { margin: 16px 0 0; padding: 0 2px; color: var(--fg-dim); font-size: 12px; }
+.diag-unavailable p { display: flex; flex-wrap: wrap; gap: 3px 12px; margin: 8px 0; }
+.diag-unavailable strong { flex: 0 1 170px; font-weight: 600; }
+.diag-unavailable span { flex: 1 1 230px; }
+.diag-report-note { margin-top: 12px; font-size: 12px; }
+.diag-feedback { margin-bottom: 12px; padding: 12px 14px; color: var(--err); background: var(--bg-elev); border: 1px solid var(--line-strong); border-left: 3px solid var(--err); border-radius: 6px; overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .diag-versions .versions { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .diag-versions dt:not(:first-child) { margin-top: 9px; }
+}
