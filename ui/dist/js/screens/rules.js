@@ -6,6 +6,7 @@ import * as api from '../api.js';
 import {
   state, tunnelById, peerById, listTitle, toast, toastError,
   openModal, closeModal, modalShell, openMenu, notImplemented, refresh, markDirty,
+  currentModalRevision, isCurrentModal,
 } from '../shell.js';
 import {
   $, $$, esc, lines, badLines, validCidr, plural, since, stamp,
@@ -13,8 +14,15 @@ import {
 
 export const title = 'Правила';
 
+let rulesRevision = 0;
 export async function load() {
-  state.rules = await api.rules.list();
+  const current = api.session.guard(), revision = ++rulesRevision;
+  try {
+    const rules = await api.rules.list();
+    if (current() && revision === rulesRevision) state.rules = rules;
+  } catch (err) {
+    if (current() && revision === rulesRevision) throw err;
+  }
 }
 
 const head = () => `
@@ -43,7 +51,7 @@ function tunnelTrouble(t) {
   if (!t) return 'туннель удалён';
   if (!t.enabled) return 'туннель выключен';
   const pool = t.pool;
-  if (pool && pool.servers_alive === 0) return 'в пуле нет живых серверов';
+  if (pool && (pool.servers_total === 0 || pool.servers_alive === 0)) return 'Pool has no usable servers';
   return '';
 }
 
@@ -168,6 +176,8 @@ const conditions = (r) => ({
   lists: r.community_lists || [],
   domains: r.domains || [],
   subnets: r.subnets || [],
+  peer_scope: r.peer_scope,
+  peer_ids: r.peer_ids || [],
 });
 
 /** Домен правила выше забирает мой, если он тот же или мой — его поддомен:
@@ -199,6 +209,9 @@ function overlap(mine, upper) {
   const hits = [];
   for (const up of upper) {
     if (!up.enabled) continue;
+    // Whole-Internet exits precede shared rules; only intersecting clients overlap.
+    const applies = (rule, p) => rule.peer_scope !== 'selected' || (rule.peer_ids || []).includes(p.id);
+    if (!state.peers.some((p) => p.enabled && !p.egress_tunnel_id && applies(mine, p) && applies(up, p))) continue;
     const u = conditions(up);
     const shared = [
       ...mine.lists.filter((k) => u.lists.includes(k)),
@@ -283,9 +296,10 @@ export function view() {
     const note = shadow.length ? `
       <div class="overlap-note">
         <span>⚠</span>
-        <span>перекрыто правилом ${shadow.map((h) => `«${esc(h.rule.name)}»`).join(', ')}
-        по ${shadow.flatMap((h) => h.shared).map((k) => esc(listTitle(k))).join(', ')} —
-        для этих ресурсов сработает то правило, а не это</span>
+        <span>Earlier rules ${shadow.map((h) => `“${esc(h.rule.name)}”`).join(', ')}
+        take precedence for intersecting shared-rule clients and resources:
+        ${shadow.flatMap((h) => h.shared).map((k) => esc(listTitle(k))).join(', ')}.
+        Whole-Internet exits precede shared rules.</span>
       </div>` : '';
 
     return `
@@ -532,13 +546,14 @@ function rulesAbove(id) {
     руками, и отличить его потом будет нечем (ADR 0014). */
 function modalRule(id, seed = null) {
   const r = id ? state.rules.find((x) => x.id === id) : {
-    id: null, name: '', action: 'tunnel', tunnel_id: (state.tunnels[0] || {}).id || null,
+    id: null, name: '', action: 'tunnel', tunnel_id: '',
     via_tunnel_id: '', enabled: true,
     community_lists: [], domains: [], subnets: [], remote_lists: [],
     peer_scope: 'all', peer_ids: [], resolve_real_ip: false,
     ...(seed || {}),
   };
 
+  if (!r) return;
   const above = rulesAbove(id);
   const pos = above.length + 1;
   const total = id ? state.rules.length : state.rules.length + 1;
@@ -548,11 +563,15 @@ function modalRule(id, seed = null) {
       + `${pos - 1} ${plural(pos - 1, 'правило', 'правила', 'правил')} выше ${plural(pos - 1, 'забирает', 'забирают', 'забирают')} `
       + `свои ресурсы раньше${id ? '' : '; новое встаёт последним, порядок меняется стрелками в списке'}.`;
 
-  const listsHtml = state.communityLists.length
-    ? state.communityLists.map((l) => `
+  const keys = new Set(state.communityLists.map((l) => l.key));
+  const catalog = state.communityLists.concat((r.community_lists || []).filter((key) => !keys.has(key))
+    .map((key) => ({ key, title: key, unavailable: true })));
+  const listsHtml = catalog.length
+    ? catalog.map((l) => `
       <label class="rule-item" data-title="${esc(String(l.title).toLowerCase())} ${esc(l.key)}">
         <input type="checkbox" name="list" value="${esc(l.key)}" ${(r.community_lists || []).includes(l.key) ? 'checked' : ''}>
-        <span class="rule-item-name">${esc(l.title)}</span>
+        <span class="rule-item-name" title="${esc(l.title)}">${esc(l.title)}</span>
+        ${l.unavailable ? '<span class="rule-mini">Catalog unavailable; preserved</span>' : ''}
         ${l.has_subnets ? '<span class="rule-mini">подсети</span>' : ''}
       </label>`).join('')
     : '<span class="rule-none">Каталог списков недоступен — задайте домены и подсети вручную.</span>';
@@ -562,19 +581,22 @@ function modalRule(id, seed = null) {
          placeholder="Поиск: youtube, telegram…" aria-label="Поиск по спискам">`
     : '';
 
-  const tunnelOpts = state.tunnels.map((t) =>
-    `<option value="${esc(t.id)}" ${r.tunnel_id === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+  const tunnelLabel = (t) => `${t.name}${!t.enabled ? ' (disabled; blocked)' : ''}${t.pool && (t.pool.servers_total === 0 || t.pool.servers_alive === 0) ? ' (no usable servers)' : ''}`;
+  const tunnelOpts = `<option value="" ${!r.tunnel_id ? 'selected' : ''}>Select a tunnel</option>`
+    + (r.tunnel_id && !tunnelById(r.tunnel_id) ? `<option value="${esc(r.tunnel_id)}" selected>Unavailable tunnel (preserved)</option>` : '')
+    + state.tunnels.map((t) => `<option value="${esc(t.id)}" ${r.tunnel_id === t.id ? 'selected' : ''}>${esc(tunnelLabel(t))}</option>`).join('');
 
   /* Второе звено цепи — только WARP (ADR 0012), поэтому в выпадашке лежат
      туннели с source = warp, а не весь инвентарь: выбирать нечего из того,
      что всё равно будет отклонено. Нет WARP — нет и поля. */
   const warps = state.tunnels.filter((t) => t.source === 'warp');
   const viaOpts = ['<option value="">не нужно</option>'].concat(warps.map((t) =>
-    `<option value="${esc(t.id)}" ${r.via_tunnel_id === t.id ? 'selected' : ''}>${esc(t.name)}</option>`)).join('');
-  const viaHtml = warps.length ? `
+    `<option value="${esc(t.id)}" ${r.via_tunnel_id === t.id ? 'selected' : ''}>${esc(tunnelLabel(t))}</option>`)).join('');
+  const missingVia = r.via_tunnel_id && !warps.some((t) => t.id === r.via_tunnel_id);
+  const viaHtml = warps.length || missingVia ? `
           <div class="field rule-via" id="r-via-field">
             <label for="r-via">И дальше через</label>
-            <select id="r-via" class="rule-tunnel">${viaOpts}</select>
+            <select id="r-via" class="rule-tunnel">${viaOpts}${missingVia ? `<option value="${esc(r.via_tunnel_id)}" selected>Unavailable chain tunnel (preserved)</option>` : ''}</select>
             <div class="hint">Второе звено: трафик уходит в выбранный туннель, а наружу выходит
               через WARP — ресурс видит адрес Cloudflare, а не адрес туннеля. Дальше цепь не
               продолжается: WARP всегда последний.</div>
@@ -590,6 +612,7 @@ function modalRule(id, seed = null) {
      четыре. Две колонки остаются только там, где поля правда парные (issue #95). */
   openModal(modalShell(id ? r.name : 'Новое правило', `
     <div class="rule-form">
+      <div class="line-errors" id="r-error" role="alert" hidden></div>
       <div class="rule-order-note">${esc(orderNote)}</div>
 
       <div class="rule-scroll">
@@ -631,6 +654,9 @@ ${viaHtml}
           </div>
         </section>
 
+        ${(r.remote_lists || []).length ? `<section class="field"><h3>API-managed URL sources</h3>
+          <div class="hint">Read-only here. Saving preserves these sources; use the API to change them.</div>
+          ${(r.remote_lists || []).map((url) => `<div class="rule-item-name">${esc(url)}</div>`).join('')}</section>` : ''}
         <div class="rule-pair">
           <div class="field">
             <label for="r-domains">Свои домены</label>
@@ -670,7 +696,11 @@ ${viaHtml}
     const syncAction = () => {
       const act = m.querySelector('input[name="action"]:checked').value;
       m.querySelector('#r-tunnel').disabled = act !== 'tunnel';
-      m.querySelector('#r-action-hint').textContent = ACTION_HINT[act] || '';
+      const trouble = ruleTrouble({ action: act, tunnel_id: m.querySelector('#r-tunnel').value, via_tunnel_id: viaSel?.value || '' });
+      m.querySelector('#r-action-hint').textContent = trouble
+        ? (trouble.level === 'dead' ? 'Target unavailable or disabled: matching traffic is blocked after Apply. There is no direct fallback.'
+          : 'The last health check failed. Traffic still uses the tunnel; there is no direct fallback.')
+        : act === 'tunnel' ? 'Uses the selected tunnel after Apply. Health does not prove client connectivity; there is no direct fallback.' : ACTION_HINT[act] || '';
       /* «Напрямую» и «блокировать» наружу не выходят — второму звену цепи
          взяться неоткуда, и сервер такое правило отклонит. */
       if (viaSel) {
@@ -679,11 +709,14 @@ ${viaHtml}
       }
     };
     $$('input[name="action"]', m).forEach((el) => el.addEventListener('change', syncAction));
+    m.querySelector('#r-tunnel').addEventListener('change', syncAction);
+    viaSel?.addEventListener('change', syncAction);
     syncAction();
 
     $$('input[name="scope"]', m).forEach((el) => el.addEventListener('change', () => {
       m.querySelector('#r-peers').hidden =
         m.querySelector('input[name="scope"]:checked').value !== 'selected';
+      renderOverlap();
     }));
 
     const catalogCount = m.querySelector('#r-catalog-count');
@@ -699,9 +732,9 @@ ${viaHtml}
       picked.hidden = !keys.length;
       pickedChips.innerHTML = keys.map((k) =>
         `<button type="button" class="rule-chip" data-key="${esc(k)}" title="Убрать">${esc(listTitle(k))} ✕</button>`).join('');
+      const unavailable = keys.filter((key) => !state.communityLists.some((list) => list.key === key)).length;
       catalogCount.textContent = keys.length
-        ? `выбрано ${keys.length} из ${state.communityLists.length}`
-        : '';
+        ? `${keys.length} selected${unavailable ? ` · ${unavailable} unavailable` : ''}` : '';
     };
     picked.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-key]');
@@ -734,15 +767,16 @@ ${viaHtml}
         lists: $$('input[name="list"]:checked', m).map((e) => e.value),
         domains: lines(m.querySelector('#r-domains').value),
         subnets: lines(m.querySelector('#r-subnets').value),
+        peer_scope: m.querySelector('input[name="scope"]:checked').value,
+        peer_ids: $$('input[name="peer"]:checked', m).map((e) => e.value),
       };
       const hits = overlap(mine, above);
       box.hidden = !hits.length;
       if (!hits.length) return;
-      box.innerHTML = '<strong>Это уже забирают правила выше</strong>'
+      box.innerHTML = '<strong>Earlier rules overlap for shared-rule clients</strong>'
         + hits.map((h) => `<div class="rule-overlap-line">«${esc(h.rule.name)}» — ${
           h.shared.map((k) => esc(listTitle(k))).join(', ')}</div>`).join('')
-        + '<div class="rule-overlap-tail">Для этих ресурсов сработает правило выше, а не это. '
-        + 'Либо уберите пересечение, либо поднимите правило стрелками в списке.</div>';
+        + '<div class="rule-overlap-tail">Earlier rules take precedence for intersecting clients and these resources. Whole-Internet exits precede shared rules.</div>';
     }
 
     $$('input[name="list"]', m).forEach((el) => el.addEventListener('change', () => {
@@ -770,6 +804,7 @@ ${viaHtml}
     live('#r-domains', '#r-domains-err', 'domain');
     live('#r-subnets', '#r-subnets-err', 'cidr');
 
+    $$('input[name="peer"]', m).forEach((el) => el.addEventListener('change', renderOverlap));
     renderPicked();
     renderOverlap();
     m.querySelector('#r-name').focus();
@@ -778,6 +813,14 @@ ${viaHtml}
 
 async function saveRule(id) {
   const m = $('#modal');
+  if (!m.querySelector('#r-name')) return;
+  const revision = currentModalRevision(), currentSession = api.session.guard();
+  const report = (message) => {
+    const error = m.querySelector('#r-error');
+    error.hidden = false;
+    error.textContent = message;
+    error.scrollIntoView({ block: 'nearest' });
+  };
   const name = m.querySelector('#r-name').value.trim();
   const action = m.querySelector('input[name="action"]:checked').value;
   const scope = m.querySelector('input[name="scope"]:checked').value;
@@ -786,7 +829,7 @@ async function saveRule(id) {
   const listsSel = $$('input[name="list"]:checked', m).map((e) => e.value);
   const peerIds = $$('input[name="peer"]:checked', m).map((e) => e.value);
 
-  if (!name) { toast('Введите название правила', 'err'); m.querySelector('#r-name').focus(); return; }
+  if (!name) { report('Enter a rule name.'); m.querySelector('#r-name').focus(); return; }
 
   /* Молча выбросить непонятую строку нельзя: пользователь решит, что правило её
      учитывает. Поэтому сохранение упирается в поле, где ошибка. */
@@ -795,16 +838,15 @@ async function saveRule(id) {
   if (badDomains.length || badSubnets.length) {
     const field = badDomains.length ? '#r-domains' : '#r-subnets';
     const nums = badDomains.length ? badDomains : badSubnets;
-    const what = badDomains.length ? 'в доменах' : 'в подсетях';
-    toast(`Не разобрана ${plural(nums.length, 'строка', 'строки', 'строк')} ${nums.join(', ')} ${what} — исправьте или удалите`, 'err');
+    report(`Invalid ${badDomains.length ? 'domain' : 'subnet'} lines: ${nums.join(', ')}. Correct or remove them before saving.`);
     m.querySelector(field).focus();
     return;
   }
   if (action === 'tunnel' && !m.querySelector('#r-tunnel').value) {
-    toast('Сначала добавьте туннель', 'err'); return;
+    report('Select a tunnel before saving. Add a tunnel first if the inventory is empty.'); return;
   }
   if (scope === 'selected' && !peerIds.length && (!id || (state.rules.find((r) => r.id === id) || {}).enabled)) {
-    toast('Select at least one client before enabling this rule', 'err'); return;
+    report('Select at least one client before enabling this rule.'); return;
   }
   /* Списков по ссылке в форме нет — их задают через API, — но условием совпадения
      они считаются наравне с остальным (store.Rule.validate, #142). Без этой
@@ -812,7 +854,7 @@ async function saveRule(id) {
      панели: сохранение упиралось бы в проверку строже серверной. */
   const remote = (id ? (state.rules.find((x) => x.id === id) || {}).remote_lists : null) || [];
   if (!listsSel.length && !domains.length && !subnets.length && !remote.length) {
-    toast('Правило без условий поймало бы весь трафик — добавьте списки, домены или подсети', 'err');
+    report('Add a community source, domain or subnet before saving.');
     return;
   }
 
@@ -831,18 +873,26 @@ async function saveRule(id) {
   };
 
   const btn = m.querySelector('[data-act="save-rule"]');
+  if (btn.disabled) return;
   btn.disabled = true;
+  btn.textContent = 'Saving…';
+  m.querySelector('#r-error').hidden = true;
   try {
     if (id) await api.rules.update(id, body);
     else await api.rules.create({ enabled: true, remote_lists: [], resolve_real_ip: false, ...body });
-    closeModal();
+    if (!currentSession()) return;
     markDirty();
-    state.rules = await api.rules.list();
+    if (isCurrentModal(revision)) closeModal();
+    const listRevision = ++rulesRevision;
+    const rules = await api.rules.list();
+    if (!currentSession() || listRevision !== rulesRevision) return;
+    state.rules = rules;
     refresh();
-    toast(`Правило «${name}» сохранено`);
   } catch (err) {
+    if (!currentSession() || !isCurrentModal(revision)) return;
     btn.disabled = false;
-    toastError(err, 'Правило не сохранено');
+    btn.textContent = 'Save';
+    report(`Rule could not be saved: ${err.message}. Your draft is preserved; correct the problem and retry.`);
   }
 }
 
