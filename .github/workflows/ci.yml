@@ -37,6 +37,30 @@ jobs:
         working-directory: tests/dnsruntime
         run: go test -mod=readonly ./... -count=1
 
+  ui-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ui/tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ui/tests/package-lock.json
+
+      - name: Install pinned browser test dependencies
+        run: npm ci
+
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run synthetic browser regressions sequentially
+        run: npm test
+
   build:
     runs-on: ubuntu-latest
     strategy:
