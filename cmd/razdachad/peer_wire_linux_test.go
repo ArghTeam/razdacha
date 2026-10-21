@@ -380,9 +380,17 @@ func (r *peerWireRelay) serve(c net.Conn) {
 	if _, err := c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0}); err != nil {
 		return
 	}
-	body, err := bufio.NewReader(c).ReadString('\n')
-	if err != nil || len(body) > 2048 || !r.delivered("tcp4", []byte(body)) {
-		return
+	reader := bufio.NewReader(c)
+	for {
+		body, err := reader.ReadString('\n')
+		if err != nil || len(body) > 2048 || !r.delivered("tcp4", []byte(body)) {
+			return
+		}
+		if _, err := c.Write(append([]byte("private:"), []byte(body)...)); err != nil {
+			return
+		}
+		if !wireQualityEnabled() {
+			return
+		}
 	}
-	_, _ = c.Write(append([]byte("private:"), []byte(body)...))
 }
