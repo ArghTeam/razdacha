@@ -39,3 +39,9 @@ The shared `beginInventoryRead()` token is implemented here and used by tunnel/C
 - Frozen production SHA-256: tunnels.js `c5ad1f022ae16d0e1ad7c62da2461bd921d743b64f408936222205e4e22b133c`; peers.js `884e6540d37a5bff6c83145eed0dba133603999427a78eb101f9123da380aa52`.
 
 Independent source review prompted the connected-button and original-modal navigation regressions; both are fixed and covered. Exact committed-head review and hosted CI remain coordinator gates. The maintained API invariant records the implemented lifetime/token rules and the explicit #248 boot-reader dependency. No composition/CSS, shared shell/auth, backend, staging, installed networking, deployment or merge changes were made. All test requests are intercepted at one synthetic origin; no external WARP registration occurs.
+
+## Integration closure
+
+This implementation was merged and the designated primary checkout synchronized before
+final #249 integrated verification. This record was moved to `tasks/done` during that
+verification; original implementation evidence and its limitations above are retained.

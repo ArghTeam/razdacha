@@ -180,11 +180,12 @@ async function pull(key, loader, fallback, currentRead = () => true) {
 async function loadAll() {
   const currentSession = api.session.guard();
   const tunnelRead = tunnelsScreen.beginInventoryRead();
+  const ruleRead = rulesScreen.beginInventoryRead();
   const [settings, peers, tunnels, rules, community, version] = await Promise.all([
     pull('settings', api.settings.get, null),
     pull('peers', api.peers.list, []),
     pull('tunnels', api.tunnels.list, [], tunnelRead.current),
-    pull('rules', api.rules.list, []),
+    pull('rules', api.rules.list, [], ruleRead.current),
     pull('community', api.lists.community, []),
     pull('version', api.version.get, null),
   ]);
@@ -194,7 +195,7 @@ async function loadAll() {
   applyDocTitle();
   state.peers = peers || [];
   tunnelRead.accept(tunnels || []);
-  state.rules = rules || [];
+  ruleRead.accept(rules || []);
   state.communityLists = community || [];
   const diag = await pull('diag', api.diag.get, null);
   if (!currentSession()) return;

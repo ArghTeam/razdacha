@@ -172,3 +172,20 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
   image. They use actual UI modules with synthetic local/intercepted API responses.
   Node and Playwright are never daemon build or release dependencies; these checks do
   not verify deployed networking or backend cookie delivery timing.
+
+## Settings persistence boundaries
+
+- Network, Schedules, Telegram and Backup have separate save boundaries and retained
+  drafts with persistent local status/errors. Save never silently saves another
+  section. Network changes require global Apply; timers use saved schedules directly,
+  while Apply updates the active configuration record. Telegram/Backup persistence
+  does not require routing Apply.
+- Configuration endpoints perform full-record read/modify/write. Panel saves serialize
+  across sections and replacement dialogs; only changed ordinary fields and explicit
+  new secrets are sent. Blank secret fields remain omitted. Queued previous-session
+  intent is canceled before dispatch; confirmed responses update their own current
+  section only. Closing drops drafts and clears application-held secret fields.
+- Notification tests and backup sends use saved settings without an implicit save;
+  unsaved section edits disable delivery. Backup sends refresh delivery history only,
+  without replacing drafts. Direct full-backup download does not save the form and
+  discloses its unencrypted client-key contents (ADR 0016).

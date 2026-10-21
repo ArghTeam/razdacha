@@ -33,3 +33,12 @@ Before production edits, actual Chromium captured overlapping full-order writes:
 - Frozen production SHA-256: rules.js `164ae562dda04a17c139b370a926b869bf501aeb962d6a5fd9d131f3c4e9e3c9`; peers.js `076b84ead7abeb04d9c4be82768cbf805db673e1fe7647d9b52bd4380faea3a6`.
 
 The API lifetime section was updated in the same change. Editor layout, source/policy payloads, orphan/chain/DNS semantics, presets and backend contracts remain unchanged. Tests exercise intercepted synthetic responses and do not cancel accepted server requests or establish backend cookie timing, real routing/probe behavior or installed deployment. No staging, external probes, old host, CSS/shared-shell/app edits, deployment or merge were performed. Exact committed-head review and hosted CI remain coordinator gates.
+
+## Final startup integration (#249)
+
+PR260 merged at `54817315fa2ac60af405cfcb6cc4c41281d66865` before the final #249
+phase. That phase captures the exported rule reader before the startup batch, gates
+pull metadata/error feedback with its currency and publishes only through `accept`.
+Actual-index regressions hold the final diagnostic read so a later navigation refresh
+cannot hide a stale bootstrap publication. Success and obsolete 404/503/network paths
+are covered. This record is retained in `tasks/done`; backend contracts remain unchanged.

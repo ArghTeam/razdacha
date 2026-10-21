@@ -48,9 +48,12 @@ as well as empty, unavailable-source, URL-only, orphan, chain and save-error sta
 `RULE_SCREENSHOT_DIR=<temporary directory> node rule-layout.cjs` optionally captures
 screenshots; `rule.fixture.cjs` exports a loopback-only synthetic preview server.
 
-Current suites cover rule editor integrity, client action lifetime, unified Client
-Details drafts/delivery, responsive client layout/focus, Settings persistence/lifetime,
-and shared shell/Diagnostics functionality, report privacy and layout.
+Maintained suites cover rule editor/inventory/probe integrity and lifetime, client
+action lifetime, unified Client Details drafts/delivery, responsive client layout/focus,
+Settings persistence/lifetime, tunnel controls/operation lifetime and shared
+shell/Diagnostics functionality, report privacy and layout. The actual-router final
+sweep also exercises startup rule reader authority before final navigation can hide
+a transient old snapshot, including obsolete success/404/503/network outcomes.
 The dedicated `ui-browser` CI job runs separately from Go tests,
 static builds and releases: Node, npm and browser downloads are never daemon build
 requirements. Installed packages are ignored by Git and are outside embedded assets.
@@ -66,3 +69,26 @@ request journals/unexpected-request failures, per-method/path hold/fail/release 
 login/empty readiness. `shell-preview.fixture.cjs` reuses its synthetic model for a
 loopback-only preview; unmodeled operations fail explicitly. `SHELL_SCREENSHOT_DIR`
 optionally captures the shared layout suite. These fixtures never contact a daemon.
+
+## Final integrated sweep
+
+`rule-operations.cjs` adds inventory menus, duplicate payload preservation, order
+rollback, presets and both synthetic probes. `tunnel-ui.cjs` adds form/preview response
+rendering, WARP name-only behavior and pool state/scroll controls, complementing the
+separate tunnel-operation lifetime suite. `integrated-ui.cjs` uses the real index/router
+for cross-screen Save/Apply, authentication, missing/offline states and ordinary dialogs.
+The shared app model represents frontend API contracts, not backend transaction or
+protocol implementations. Synthetic parse responses verify UI handling of input shapes;
+they do not establish parser correctness or working protocol connectivity.
+
+```sh
+UI_FINAL_SCREENSHOTS=/absolute/private/temporary/path npm test
+```
+
+The final suites write readable ordinary captures to `normal/`, deliberately long/error
+fixtures to `stress/` and a source-hash/viewport/verified-heading manifest to `evidence.jsonl`. Screenshots
+are optional private artifacts, never committed. Normal names and documentation-only
+addresses are synthetic. The full-app direct-download case uses a disposable loopback
+server serving only the synthetic backup file because browser-managed downloads bypass
+Playwright page/context routes; all other paths are journaled and refused. The downloaded
+file verifies delivery plumbing only and is intentionally not a restorable database.

@@ -32,3 +32,9 @@ Run the actual embedded modules in Chromium with loopback-only synthetic API sta
 - Independent WIP code/context review reported no material findings and reran both browser suites successfully. Final committed-head confirmation is requested separately before merge.
 
 The initial synthetic preview stopped during evaluation; the evaluator continued with the same worktree's exported loopback fixture server and actual modules, with unchanged product hashes. Browser evidence verifies frontend presentation and request/callback behavior with disposable synthetic state. It does not establish backend cookie timing, deployed routing, tunnel connectivity or installed policy. No host/staging/old-host requests, deployment or merge were performed.
+
+## Integration closure
+
+This implementation was merged and the designated primary checkout synchronized before
+final #249 integrated verification. This record was moved to `tasks/done` during that
+verification; original implementation evidence and its limitations above are retained.

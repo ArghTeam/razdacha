@@ -19,3 +19,9 @@ Acceptance: actual Chromium with local synthetic API covers missing/partial cata
 ## Boundaries
 
 The suite runs committed screen/shell/API modules in a local HTML harness with intercepted synthetic API responses; it does not authenticate against the daemon, test cookie delivery, deploy or exercise networking. Missing IDs and unavailable-chain payload preservation do not imply the backend accepts invalid references. The API remains authoritative. Store validation requires a nonempty tunnel even for disabled rules (`internal/store/model.go`); an empty-target orphan therefore requires an explicit target or action change before Save. No backend contract is changed.
+
+## Integration closure
+
+This implementation was merged and the designated primary checkout synchronized before
+final #249 integrated verification. This record was moved to `tasks/done` during that
+verification; original implementation evidence and its limitations above are retained.
