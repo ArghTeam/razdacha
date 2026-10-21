@@ -1,4 +1,4 @@
-// Optional developer regression suite: NODE_PATH=<playwright modules> node ui/tests/rule-integrity.cjs
+// Run with the pinned development-only dependencies: node ui/tests/rule-integrity.cjs
 // Runs the committed modules in Chromium against disposable synthetic API responses.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
@@ -6,7 +6,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../dist');
-const fixture = `<!doctype html><link rel="stylesheet" href="/app.css"><div id="app"><main id="screen"></main><div id="apply-bar" hidden></div></div><div id="gate" hidden></div><div id="modal-backdrop" class="modal-backdrop" hidden><div id="modal" class="modal" role="dialog"></div></div><div id="toasts"></div><script type="module">
+const fixture = `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/app.css"><div id="app"><main id="screen"></main><div id="apply-bar" hidden></div></div><div id="gate" hidden></div><div id="modal-backdrop" class="modal-backdrop" hidden><div id="modal" class="modal" role="dialog"></div></div><div id="toasts"></div><script type="module">
 import * as shell from '/js/shell.js'; import * as rules from '/js/screens/rules.js'; import * as api from '/js/api.js';
 window.h = {shell, rules, api};
 document.addEventListener('click', e => { const b=e.target.closest('[data-act]'); if(!b)return; if(b.dataset.act==='close-modal')shell.closeModal(); else window.actionPending=rules.actions[b.dataset.act]?.(b.dataset.id); });

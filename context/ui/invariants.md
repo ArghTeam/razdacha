@@ -101,6 +101,18 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 
 ## Rule editor integrity
 
+- The rule dialog reads Name, Clients, Resources, Action in one primary body scroller,
+  with a persistent Save/Cancel footer and Apply reminder. Ordering and DNS explanations
+  are optional help. Client search/count and separate disabled/whole-Internet status
+  retain fully wrapping identities. Catalog and selected-source review are compact
+  disclosures; counts and unavailable-source retention warnings remain discoverable
+  when closed. Existing URL sources remain outside the catalog disclosures.
+- Tunnel selection has a physically associated label. Advanced WARP controls are
+  optional and open for existing chain references, including unavailable references;
+  changing to Direct/Block still clears the saved chain through the existing payload.
+  Keyboard focus scrolls fully into the rule dialog/list viewport, including at 200%
+  text size; disclosure and chip controls preserve keyboard focus after removal.
+
 - Community source selections absent from a partial or unavailable catalog remain
   checked and visibly identified as unavailable. An unrelated edit preserves their
   IDs; removal requires the existing explicit checkbox/chip action. API-managed URL
