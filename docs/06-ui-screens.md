@@ -245,38 +245,41 @@ Clash API недоступен), не красится: «не знаем» — 
 Cloudflare 1020); вердикт красится по классу и приходит с сервера как есть — про починку
 туннелем панель не додумывает (это Фаза 1). Соединение оборвалось — «напрямую не отвечает».
 
-Редактирование правила:
+### Rule editor
 
-```
-┌─ YouTube и Google ─────────────────────────────────────────────────────┐
-│  Правила проверяются сверху вниз, побеждает первое совпавшее. Это 2-е…  │
-├─ ЧТО ЗА ПРАВИЛО ─────────────────┬─ НА ЧТО РАСПРОСТРАНЯЕТСЯ ───────────┤
-│  Название: [ YouTube и Google  ] │  ▾ Готовые списки · выбрано 2       │
-│  Куда: ( ) напрямую              │  [ поиск: youtube, telegram…      ] │
-│        (•) в туннель [Нидерл. ▾] │  (YouTube ✕) (Google ✕)             │
-│        ( ) блокировать           │  ┌─────────────────────────────┐    │
-│  Свои домены:                    │  │ [✓] YouTube   [✓] Google    │ ▲  │
-│  ┌────────────────────────────┐  │  │ [ ] Meta      [ ] Twitter   │ ▼  │
-│  │ example.com                │  │  │ [ ] Telegram  [ ] Discord   │    │
-│  └────────────────────────────┘  │  └─────────────────────────────┘    │
-│  Свои подсети:                   │  Для кого: (•) все ( ) выбранные    │
-│  ┌────────────────────────────┐  │                                     │
-│  │ 203.0.113.0/24             │  │                                     │
-│  └────────────────────────────┘  │                                     │
-├──────────────────────────────────┴─────────────────────────────────────┤
-│  ⚠ Это уже забирают правила выше: «Банки и госуслуги» — Cloudflare      │
-│                                                    [Отмена] [Сохранить] │
-└────────────────────────────────────────────────────────────────────────┘
-```
+The dialog follows one reading order: **Name → Clients → Resources → Action**.
+Its body scrolls while Cancel, Save changes and the Apply reminder remain available.
+The compact priority line identifies the actual position; optional Ordering help
+explains first-match precedence and moving rules in the inventory.
 
-Две зоны, а не список полей: слева — чем правило является, справа — на что оно
-распространяется. Высота окна задана, а не набрана содержимым: прокручивается каталог
-внутри своей зоны, поэтому ни число выбранных списков, ни длина списка доменов габаритов
-окна не меняют. На узком экране колонки схлопываются в одну, каталог сворачивается в
-строку со счётчиком выбранного.
+- **Clients:** All clients or Selected clients. Selection has search and a persistent
+  selected count. Full names wrap; disabled and whole-Internet status appear separately.
+  Whole-Internet exits precede shared rules. Disabled clients do not gain access from
+  selection. An empty selected disabled orphan stays editable and disabled; assignment
+  does not enable it (ADR 0026).
+- **Resources:** Community source counts remain visible while selected-source review
+  and catalog browsing use separate disclosures. Search filters the catalog without
+  changing selection. IDs absent from a partial/unavailable catalog stay selected,
+  with an explicit retained-source warning and deliberate removal controls.
+  Existing API-managed URLs are escaped inert text outside catalog disclosures and
+  are omitted from PATCH. URL-only rules remain editable. Domain and IPv4 fields
+  retain bounded textareas, examples and live line validation; optional help explains
+  matching and DNS without adding a DNS setting.
+- **Action:** Tunnel, Direct or Block. A separate associated Tunnel label stays beside
+  its selector. New rules require a deliberate target; empty, missing, disabled and
+  empty-pool targets never select a replacement. Blocked and failed-health guidance
+  distinguishes rejection from an unhealthy route, with no direct fallback. Optional
+  Advanced WARP chain controls open automatically for an existing second link,
+  including an unavailable reference. WARP remains the final, distinct link (ADR 0012).
 
-Валидация доменов и подсетей — по мере ввода, построчно, с подсветкой некорректных строк.
-Валидаторы портируются из `fe-app-podkop/src/validators/` вместе с тестами.
+Overlap warnings consider intersecting enabled shared-rule clients and resources,
+not total shadowing for every client. Save validation and server errors remain in the
+dialog with the draft preserved. Save records pending routing changes; Apply activates
+them. Same-session successful mutations still mark pending changes after ordinary
+closure, while modal/session/request revisions prevent delayed success or failure from
+closing or repopulating a replacement editor. The editor does not change API, DNS,
+chain or routing semantics; the backend remains authoritative, including nonempty
+TunnelID validation for disabled rules.
 
 ## 4. Диагностика
 

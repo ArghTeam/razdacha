@@ -42,6 +42,12 @@ No `NODE_PATH`, personal dependency path or separate application server is requi
 
 ## Scope and limits
 
+The rule layout suite adds both themes at 1440/1024/375/320 pixels, doubled text,
+keyboard focus/clipping geometry, scroll ends, long identities and large selections,
+as well as empty, unavailable-source, URL-only, orphan, chain and save-error states.
+`RULE_SCREENSHOT_DIR=<temporary directory> node rule-layout.cjs` optionally captures
+screenshots; `rule.fixture.cjs` exports a loopback-only synthetic preview server.
+
 Current suites cover rule editor integrity, client action lifetime, unified Client
 Details drafts/delivery, responsive client layout/focus and Settings persistence/lifetime.
 The dedicated `ui-browser` CI job runs separately from Go tests,

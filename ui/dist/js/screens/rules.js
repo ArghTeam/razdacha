@@ -520,21 +520,6 @@ async function runReach() {
 
 /* --- форма правила -------------------------------------------------------- */
 
-/** Порог, после которого каталог сервисов без поиска не читается. */
-const SEARCH_FROM = 8;
-
-/** Действия объясняются в форме: «напрямую» и «блокировать» путают постоянно. */
-const ACTION_HINT = {
-  direct: 'Мимо туннелей — трафик уходит напрямую, с IP этого сервера. Так выводят банки и госуслуги из-под более общего правила ниже.',
-  tunnel: 'Через выбранный туннель — ресурс видит его адрес, а не адрес сервера.',
-  block: 'Соединение отбрасывается: ресурс не открывается вовсе. Это не «напрямую», а «никуда».',
-};
-
-const PROBLEM = {
-  domain: { word: 'домен', tail: 'Ожидается example.com или *.example.com — без http:// и путей.' },
-  cidr: { word: 'подсеть', tail: 'Ожидается 203.0.113.0/24 или один адрес 203.0.113.7.' },
-};
-
 /** Правила, которые проверяются раньше этого. Новое встаёт последним. */
 function rulesAbove(id) {
   const i = state.rules.findIndex((x) => x.id === id);
@@ -546,267 +531,252 @@ function rulesAbove(id) {
     руками, и отличить его потом будет нечем (ADR 0014). */
 function modalRule(id, seed = null) {
   const r = id ? state.rules.find((x) => x.id === id) : {
-    id: null, name: '', action: 'tunnel', tunnel_id: '',
-    via_tunnel_id: '', enabled: true,
+    id: null, name: '', action: 'tunnel', tunnel_id: '', via_tunnel_id: '', enabled: true,
     community_lists: [], domains: [], subnets: [], remote_lists: [],
-    peer_scope: 'all', peer_ids: [], resolve_real_ip: false,
-    ...(seed || {}),
+    peer_scope: 'all', peer_ids: [], resolve_real_ip: false, ...(seed || {}),
   };
-
   if (!r) return;
   const above = rulesAbove(id);
-  const pos = above.length + 1;
-  const total = id ? state.rules.length : state.rules.length + 1;
-  const orderNote = pos === 1
-    ? 'Правила проверяются сверху вниз, побеждает первое совпавшее. Это правило первое: до остальных дойдёт только то, что оно не забрало.'
-    : `Правила проверяются сверху вниз, побеждает первое совпавшее. Это правило ${pos}-е из ${total}: `
-      + `${pos - 1} ${plural(pos - 1, 'правило', 'правила', 'правил')} выше ${plural(pos - 1, 'забирает', 'забирают', 'забирают')} `
-      + `свои ресурсы раньше${id ? '' : '; новое встаёт последним, порядок меняется стрелками в списке'}.`;
-
-  const keys = new Set(state.communityLists.map((l) => l.key));
-  const catalog = state.communityLists.concat((r.community_lists || []).filter((key) => !keys.has(key))
-    .map((key) => ({ key, title: key, unavailable: true })));
-  const listsHtml = catalog.length
-    ? catalog.map((l) => `
-      <label class="rule-item" data-title="${esc(String(l.title).toLowerCase())} ${esc(l.key)}">
-        <input type="checkbox" name="list" value="${esc(l.key)}" ${(r.community_lists || []).includes(l.key) ? 'checked' : ''}>
-        <span class="rule-item-name" title="${esc(l.title)}">${esc(l.title)}</span>
-        ${l.unavailable ? '<span class="rule-mini">Catalog unavailable; preserved</span>' : ''}
-        ${l.has_subnets ? '<span class="rule-mini">подсети</span>' : ''}
-      </label>`).join('')
-    : '<span class="rule-none">Каталог списков недоступен — задайте домены и подсети вручную.</span>';
-
-  const searchHtml = state.communityLists.length > SEARCH_FROM
-    ? `<input type="search" class="rule-search" id="r-list-q" autocomplete="off" spellcheck="false"
-         placeholder="Поиск: youtube, telegram…" aria-label="Поиск по спискам">`
-    : '';
-
+  const position = above.length + 1;
+  const total = state.rules.length + (id ? 0 : 1);
+  const catalogKeys = new Set(state.communityLists.map((list) => list.key));
+  const unavailableKeys = (r.community_lists || []).filter((key) => !catalogKeys.has(key));
+  const catalog = state.communityLists.concat(unavailableKeys.map((key) => ({ key, title: key, unavailable: true })));
+  const listsHtml = catalog.map((list) => `
+    <label class="rule-item" data-title="${esc(`${list.title} ${list.key}`.toLowerCase())}">
+      <input type="checkbox" name="list" value="${esc(list.key)}" ${(r.community_lists || []).includes(list.key) ? 'checked' : ''}>
+      <span class="rule-item-content"><span class="rule-item-name">${esc(list.title)}</span>
+        ${list.unavailable ? '<span class="rule-item-status">Catalog unavailable · retained</span>' : ''}
+        ${list.has_subnets ? '<span class="rule-item-status">Includes subnets</span>' : ''}</span>
+    </label>`).join('');
   const tunnelLabel = (t) => `${t.name}${!t.enabled ? ' (disabled; blocked)' : ''}${t.pool && (t.pool.servers_total === 0 || t.pool.servers_alive === 0) ? ' (no usable servers)' : ''}`;
   const tunnelOpts = `<option value="" ${!r.tunnel_id ? 'selected' : ''}>Select a tunnel</option>`
     + (r.tunnel_id && !tunnelById(r.tunnel_id) ? `<option value="${esc(r.tunnel_id)}" selected>Unavailable tunnel (preserved)</option>` : '')
     + state.tunnels.map((t) => `<option value="${esc(t.id)}" ${r.tunnel_id === t.id ? 'selected' : ''}>${esc(tunnelLabel(t))}</option>`).join('');
-
-  /* Второе звено цепи — только WARP (ADR 0012), поэтому в выпадашке лежат
-     туннели с source = warp, а не весь инвентарь: выбирать нечего из того,
-     что всё равно будет отклонено. Нет WARP — нет и поля. */
+  // Only WARP can be the final link. Preserve unavailable existing references.
   const warps = state.tunnels.filter((t) => t.source === 'warp');
-  const viaOpts = ['<option value="">не нужно</option>'].concat(warps.map((t) =>
-    `<option value="${esc(t.id)}" ${r.via_tunnel_id === t.id ? 'selected' : ''}>${esc(tunnelLabel(t))}</option>`)).join('');
   const missingVia = r.via_tunnel_id && !warps.some((t) => t.id === r.via_tunnel_id);
-  const viaHtml = warps.length || missingVia ? `
-          <div class="field rule-via" id="r-via-field">
-            <label for="r-via">И дальше через</label>
-            <select id="r-via" class="rule-tunnel">${viaOpts}${missingVia ? `<option value="${esc(r.via_tunnel_id)}" selected>Unavailable chain tunnel (preserved)</option>` : ''}</select>
-            <div class="hint">Второе звено: трафик уходит в выбранный туннель, а наружу выходит
-              через WARP — ресурс видит адрес Cloudflare, а не адрес туннеля. Дальше цепь не
-              продолжается: WARP всегда последний.</div>
-          </div>` : '';
+  const viaOpts = '<option value="">No second link</option>' + warps.map((t) =>
+    `<option value="${esc(t.id)}" ${r.via_tunnel_id === t.id ? 'selected' : ''}>${esc(tunnelLabel(t))}</option>`).join('')
+    + (missingVia ? `<option value="${esc(r.via_tunnel_id)}" selected>Unavailable chain tunnel (preserved)</option>` : '');
+  const peersHtml = state.peers.map((peer) => `
+    <label class="rule-item" data-title="${esc(peer.name.toLowerCase())}">
+      <input type="checkbox" name="peer" value="${esc(peer.id)}" ${(r.peer_ids || []).includes(peer.id) ? 'checked' : ''}>
+      <span class="rule-item-content"><span class="rule-item-name">${esc(peer.name)}</span>
+        ${!peer.enabled ? '<span class="rule-item-status">Disabled client</span>' : ''}
+        ${peer.egress_tunnel_id ? '<span class="rule-item-status">Whole-Internet exit overrides shared rules</span>' : ''}</span>
+    </label>`).join('');
+  const orphan = r.peer_scope === 'selected' && !r.enabled
+    && !(r.peer_ids || []).some((peerId) => state.peers.some((peer) => peer.id === peerId));
 
-  const peersHtml = state.peers.map((p) => `
-    <label class="rule-item"><input type="checkbox" name="peer" value="${esc(p.id)}" ${(r.peer_ids || []).includes(p.id) ? 'checked' : ''}>
-      <span class="rule-item-name">${esc(p.name)}${p.egress_tunnel_id ? ' · whole-Internet exit overrides this rule' : ''}</span></label>`).join('');
-
-  /* Поток сверху вниз, а не две зоны: каталог из двух десятков сервисов —
-     самый широкий блок формы, и в половине окна ему доставались две колонки по
-     200 px, в которые не влезает даже среднее название. Во всю ширину их
-     четыре. Две колонки остаются только там, где поля правда парные (issue #95). */
-  openModal(modalShell(id ? r.name : 'Новое правило', `
+  openModal(modalShell(id ? r.name : 'New rule', `
     <div class="rule-form">
-      <div class="line-errors" id="r-error" role="alert" hidden></div>
-      <div class="rule-order-note">${esc(orderNote)}</div>
-
-      <div class="rule-scroll">
-        <div class="rule-pair">
-          <div class="field">
-            <label for="r-name">Название</label>
-            <input type="text" id="r-name" value="${esc(r.name)}" placeholder="YouTube и Google" autocomplete="off">
-          </div>
-
-          <div class="field">
-            <label>Куда</label>
-            <div class="radios">
-              <label class="radio-pill"><input type="radio" name="action" value="direct" ${r.action === 'direct' ? 'checked' : ''}> напрямую</label>
-              <label class="radio-pill"><input type="radio" name="action" value="tunnel" ${r.action === 'tunnel' ? 'checked' : ''}> в туннель</label>
-              <label class="radio-pill"><input type="radio" name="action" value="block" ${r.action === 'block' ? 'checked' : ''}> блокировать</label>
-              <label class="control-label" for="r-tunnel">Tunnel</label>
-              <select id="r-tunnel" class="rule-tunnel" ${r.action === 'tunnel' ? '' : 'disabled'}>${tunnelOpts}</select>
-            </div>
-            <div class="hint" id="r-action-hint"></div>
-${viaHtml}
-          </div>
+      <div class="line-errors rule-error" id="r-error" role="alert" hidden></div>
+      <section class="rule-section rule-identity" aria-labelledby="r-identity-heading">
+        <h3 id="r-identity-heading">Name</h3>
+        <label for="r-name">Rule name</label>
+        <input type="text" id="r-name" value="${esc(r.name)}" placeholder="Example services" autocomplete="off">
+        <div class="rule-priority"><span>Priority ${position} of ${total} · first match wins</span>
+          <details class="rule-help"><summary>Ordering help</summary>
+            <p>Rules are checked from top to bottom for shared-rule clients. Earlier matches take precedence.
+              ${id ? 'Use the arrows in the rule inventory to change priority.' : 'New rules are added last; use the inventory arrows to move them after saving.'}
+              Whole-Internet client exits take precedence over shared rules.</p>
+          </details>
         </div>
+      </section>
 
-        <section class="rule-catalog" id="r-catalog">
-          <div class="rule-catalog-head">
-            <h3 class="rule-zone-head">Готовые списки</h3>
-            <span class="rule-catalog-count" id="r-catalog-count"></span>
-          </div>
-          <div class="rule-picked" id="r-picked" hidden>
-            <span class="rule-picked-label">Выбрано:</span>
-            <div class="rule-picked-chips" id="r-picked-chips"></div>
-          </div>
-          <div class="rule-catalog-bar">
-            ${searchHtml}
-            <span class="hint">Обновляются сами. Пометка «подсети» — есть готовые диапазоны адресов, они ловятся даже без DNS.</span>
-          </div>
-          <div class="list-grid rule-grid" id="r-lists">${listsHtml}
-            <span class="rule-none" id="r-lists-empty" hidden>Ничего не нашлось</span>
-          </div>
-        </section>
+      <section class="rule-section" aria-labelledby="r-clients-heading">
+        <h3 id="r-clients-heading">Clients</h3>
+        <fieldset class="rule-choices"><legend>Apply this shared rule to</legend>
+          <label class="radio-pill"><input type="radio" name="scope" value="all" ${r.peer_scope === 'selected' ? '' : 'checked'}> All clients</label>
+          <label class="radio-pill"><input type="radio" name="scope" value="selected" ${r.peer_scope === 'selected' ? 'checked' : ''}> Selected clients</label>
+        </fieldset>
+        <p class="hint">Whole-Internet exits override shared rules. Disabled clients do not gain access from this selection.</p>
+        ${orphan ? '<p class="rule-status">Inactive: no selected clients. Assignment keeps this rule disabled. Enable it explicitly in the rule inventory, then Apply.</p>' : ''}
+        <div id="r-peer-selection" ${r.peer_scope === 'selected' ? '' : 'hidden'}>
+          <div class="rule-list-tools"><label for="r-peer-q">Search clients</label><span id="r-peer-count" class="rule-count" aria-live="polite"></span></div>
+          <input type="search" class="rule-search" id="r-peer-q" placeholder="Client name" autocomplete="off">
+          <div class="list-grid rule-grid rule-peers" id="r-peers">${peersHtml}</div>
+          <p class="rule-none" id="r-peers-empty" ${state.peers.length ? 'hidden' : ''}>${state.peers.length ? 'No clients match this search.' : 'No clients available. Add a client before assigning this rule.'}</p>
+        </div>
+      </section>
 
-        ${(r.remote_lists || []).length ? `<section class="field"><h3>API-managed URL sources</h3>
-          <div class="hint">Read-only here. Saving preserves these sources; use the API to change them.</div>
-          ${(r.remote_lists || []).map((url) => `<div class="rule-item-name">${esc(url)}</div>`).join('')}</section>` : ''}
-        <div class="rule-pair">
-          <div class="field">
-            <label for="r-domains">Свои домены</label>
-            <textarea id="r-domains" spellcheck="false" placeholder="example.com">${esc((r.domains || []).join('\n'))}</textarea>
+      <section class="rule-section rule-resources" aria-labelledby="r-resources-heading">
+        <h3 id="r-resources-heading">Resources</h3>
+        <div class="rule-source-heading"><h4>Community sources</h4><span class="rule-count" id="r-catalog-count" aria-live="polite"></span></div>
+        <p class="rule-status" id="r-unavailable-note" hidden></p>
+        <details class="rule-disclosure" id="r-picked" hidden>
+          <summary>Review selected sources</summary>
+          <div class="rule-picked-chips" id="r-picked-chips"></div>
+        </details>
+        <details class="rule-disclosure" id="r-catalog">
+          <summary>Browse community catalog</summary>
+          ${catalog.length ? `<label for="r-list-q" class="rule-search-label">Search sources</label>
+            <input type="search" class="rule-search" id="r-list-q" autocomplete="off" spellcheck="false" placeholder="Source name or ID">`
+            : '<p class="rule-none">Community catalog unavailable. Manual resources remain available below.</p>'}
+          <div class="list-grid rule-grid" id="r-lists">${listsHtml}</div>
+          <p class="rule-none" id="r-lists-empty" hidden>No sources match this search.</p>
+        </details>
+        ${(r.remote_lists || []).length ? `<div class="rule-remote"><h4>API-managed URL sources · ${r.remote_lists.length}</h4>
+          <p class="hint">Read-only here. Save preserves these sources; use the API to change them.</p>
+          <ul>${r.remote_lists.map((url) => `<li><code>${esc(url)}</code></li>`).join('')}</ul></div>` : ''}
+        <div class="rule-pair rule-manual">
+          <div class="field"><label for="r-domains">Domains</label>
+            <textarea id="r-domains" rows="4" spellcheck="false" aria-describedby="r-domains-hint r-domains-err" placeholder="example.com">${esc((r.domains || []).join('\n'))}</textarea>
             <div class="line-errors" id="r-domains-err"></div>
-            <div class="hint">По одному в строке, совпадение по суффиксу: <code>example.com</code> ловит и <code>cdn.example.com</code>.
-              Работает через FakeIP — клиент спрашивает домен у DNS сервера и получает подставной адрес, привязанный к этому правилу.</div>
+            <div class="hint" id="r-domains-hint">One per line. example.com also matches cdn.example.com.</div>
           </div>
-
-          <div class="field">
-            <label for="r-subnets">Свои подсети</label>
-            <textarea id="r-subnets" spellcheck="false" placeholder="203.0.113.0/24">${esc((r.subnets || []).join('\n'))}</textarea>
+          <div class="field"><label for="r-subnets">IPv4 subnets or addresses</label>
+            <textarea id="r-subnets" rows="4" spellcheck="false" aria-describedby="r-subnets-hint r-subnets-err" placeholder="203.0.113.0/24">${esc((r.subnets || []).join('\n'))}</textarea>
             <div class="line-errors" id="r-subnets-err"></div>
-            <div class="hint">Тут FakeIP не участвует: клиент идёт сразу на настоящий адрес, спрашивать нечего.
-              Такой трафик метится по совпадению с nft-сетом — поэтому подсети ловят и приложения со своим DNS.</div>
+            <div class="hint" id="r-subnets-hint">One per line. Use 203.0.113.0/24 or 203.0.113.7.</div>
           </div>
         </div>
+        <details class="rule-help"><summary>Matching and DNS help</summary>
+          <p>Domains match by suffix, including subdomains. Manual domains normally use FakeIP, while subnets match real destination IPv4 addresses, including applications with their own DNS. Existing source and DNS settings remain unchanged by this editor.</p>
+        </details>
+      </section>
 
-        <div class="field rule-peers-field">
-          <label>Для кого</label>
-          <div class="radios">
-            <label class="radio-pill"><input type="radio" name="scope" value="all" ${r.peer_scope === 'selected' ? '' : 'checked'}> все клиенты</label>
-            <label class="radio-pill"><input type="radio" name="scope" value="selected" ${r.peer_scope === 'selected' ? 'checked' : ''}> выбранные</label>
-          </div>
-          <div class="list-grid rule-grid rule-peers" id="r-peers" ${r.peer_scope === 'selected' ? '' : 'hidden'}>${peersHtml}</div>
+      <section class="rule-section rule-action" aria-labelledby="r-action-heading">
+        <h3 id="r-action-heading">Action</h3>
+        <fieldset class="rule-choices"><legend>For matching traffic</legend>
+          <label class="radio-pill"><input type="radio" name="action" value="tunnel" ${r.action === 'tunnel' ? 'checked' : ''}> Tunnel</label>
+          <label class="radio-pill"><input type="radio" name="action" value="direct" ${r.action === 'direct' ? 'checked' : ''}> Direct</label>
+          <label class="radio-pill"><input type="radio" name="action" value="block" ${r.action === 'block' ? 'checked' : ''}> Block</label>
+        </fieldset>
+        <div class="field rule-target" id="r-tunnel-field" ${r.action === 'tunnel' ? '' : 'hidden'}>
+          <label for="r-tunnel">Tunnel</label>
+          <select id="r-tunnel" class="rule-tunnel" ${r.action === 'tunnel' ? '' : 'disabled'}>${tunnelOpts}</select>
         </div>
-
+        <p class="rule-action-hint" id="r-action-hint" aria-live="polite"></p>
+        ${warps.length || missingVia ? `<details class="rule-disclosure rule-via" id="r-via-field" ${r.via_tunnel_id ? 'open' : ''}>
+          <summary>Advanced · WARP chain${r.via_tunnel_id ? ' · configured' : ''}</summary>
+          <div class="field"><label for="r-via">Final exit through WARP</label><select id="r-via" class="rule-tunnel">${viaOpts}</select></div>
+          <p class="hint">Optional second link: traffic first uses the selected tunnel, then exits through WARP. WARP must be last; the two links must differ. No direct fallback.</p>
+        </details>` : ''}
         <div class="rule-overlap" id="r-overlap" hidden></div>
-      </div>
+      </section>
     </div>`,
-  `<button class="btn" data-act="close-modal">Отмена</button>
-     <button class="btn btn-primary" data-act="save-rule" data-id="${esc(id || '')}">Сохранить</button>`),
-  (m) => {
-    /* Куда: подсказка меняется вместе с выбором — она объясняет именно то
-       действие, которое пользователь только что нажал. */
+  `<span class="rule-save-note">Save records changes. Apply activates routing.</span>
+    <button class="btn" data-act="close-modal">Cancel</button>
+    <button class="btn btn-primary" data-act="save-rule" data-id="${esc(id || '')}">Save changes</button>`), (m) => {
+    // Native focus scrolling can leave the bottom of a field behind the footer.
+    m.querySelector('.rule-form').addEventListener('focusin', (event) => {
+      if (event.target.matches('input, textarea, select, summary, button')) {
+        event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+    });
     const viaSel = m.querySelector('#r-via');
     const syncAction = () => {
-      const act = m.querySelector('input[name="action"]:checked').value;
-      m.querySelector('#r-tunnel').disabled = act !== 'tunnel';
-      const trouble = ruleTrouble({ action: act, tunnel_id: m.querySelector('#r-tunnel').value, via_tunnel_id: viaSel?.value || '' });
-      m.querySelector('#r-action-hint').textContent = trouble
+      const action = m.querySelector('input[name="action"]:checked').value;
+      const tunnel = m.querySelector('#r-tunnel');
+      tunnel.disabled = action !== 'tunnel';
+      m.querySelector('#r-tunnel-field').hidden = action !== 'tunnel';
+      tunnel.title = tunnel.selectedOptions[0]?.textContent || '';
+      const trouble = ruleTrouble({ action, tunnel_id: tunnel.value, via_tunnel_id: viaSel?.value || '' });
+      const hint = m.querySelector('#r-action-hint');
+      hint.classList.toggle('blocked', trouble?.level === 'dead');
+      hint.textContent = trouble
         ? (trouble.level === 'dead' ? 'Target unavailable or disabled: matching traffic is blocked after Apply. There is no direct fallback.'
           : 'The last health check failed. Traffic still uses the tunnel; there is no direct fallback.')
-        : act === 'tunnel' ? 'Uses the selected tunnel after Apply. Health does not prove client connectivity; there is no direct fallback.' : ACTION_HINT[act] || '';
-      /* «Напрямую» и «блокировать» наружу не выходят — второму звену цепи
-         взяться неоткуда, и сервер такое правило отклонит. */
+        : action === 'tunnel' ? 'Matching traffic uses this tunnel after Apply. Health does not prove client connectivity; there is no direct fallback.'
+          : action === 'direct' ? 'Matching traffic goes directly from this server, using its public IP.'
+            : 'Matching connections are rejected. These resources will not open.';
       if (viaSel) {
-        m.querySelector('#r-via-field').hidden = act !== 'tunnel';
-        viaSel.disabled = act !== 'tunnel';
+        m.querySelector('#r-via-field').hidden = action !== 'tunnel';
+        viaSel.disabled = action !== 'tunnel';
+        viaSel.title = viaSel.selectedOptions[0]?.textContent || '';
       }
     };
-    $$('input[name="action"]', m).forEach((el) => el.addEventListener('change', syncAction));
+    $$('input[name="action"]', m).forEach((element) => element.addEventListener('change', syncAction));
     m.querySelector('#r-tunnel').addEventListener('change', syncAction);
     viaSel?.addEventListener('change', syncAction);
     syncAction();
 
-    $$('input[name="scope"]', m).forEach((el) => el.addEventListener('change', () => {
-      m.querySelector('#r-peers').hidden =
-        m.querySelector('input[name="scope"]:checked').value !== 'selected';
-      renderOverlap();
-    }));
-
-    const catalogCount = m.querySelector('#r-catalog-count');
-
-    /* Выбранные списки повторяются строкой над каталогом: при поиске
-       отмеченное уезжает за фильтр, и без этой строки не видно, что выбрано.
-       Строка лежит в потоке каталога и не отжимает сетку: раньше она росла над
-       ней и тем сильнее, чем активнее пользовались (issue #95). */
-    const picked = m.querySelector('#r-picked');
-    const pickedChips = m.querySelector('#r-picked-chips');
-    const renderPicked = () => {
-      const keys = $$('input[name="list"]:checked', m).map((e) => e.value);
-      picked.hidden = !keys.length;
-      pickedChips.innerHTML = keys.map((k) =>
-        `<button type="button" class="rule-chip" data-key="${esc(k)}" title="Убрать">${esc(listTitle(k))} ✕</button>`).join('');
-      const unavailable = keys.filter((key) => !state.communityLists.some((list) => list.key === key)).length;
-      catalogCount.textContent = keys.length
-        ? `${keys.length} selected${unavailable ? ` · ${unavailable} unavailable` : ''}` : '';
+    const filterRows = (query, list, empty) => {
+      const needle = query.value.trim().toLowerCase();
+      let visible = 0;
+      $$('.rule-item', list).forEach((row) => {
+        row.hidden = !row.dataset.title.includes(needle);
+        if (!row.hidden) visible++;
+      });
+      empty.hidden = visible > 0;
     };
-    picked.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-key]');
-      if (!btn) return;
-      const box = m.querySelector(`input[name="list"][value="${CSS.escape(btn.dataset.key)}"]`);
-      if (box) box.checked = false;
+    const peerQuery = m.querySelector('#r-peer-q');
+    peerQuery.addEventListener('input', () => filterRows(peerQuery, m.querySelector('#r-peers'), m.querySelector('#r-peers-empty')));
+    const syncPeers = () => {
+      m.querySelector('#r-peer-selection').hidden = m.querySelector('input[name="scope"]:checked').value !== 'selected';
+      const selected = $$('input[name="peer"]:checked', m).map((element) => peerById(element.value)).filter(Boolean);
+      const overridden = selected.filter((peer) => peer.egress_tunnel_id).length;
+      const disabled = selected.filter((peer) => !peer.enabled).length;
+      m.querySelector('#r-peer-count').textContent = `${selected.length} selected${overridden ? ` · ${overridden} overridden` : ''}${disabled ? ` · ${disabled} disabled` : ''}`;
+      renderOverlap();
+    };
+    $$('input[name="scope"], input[name="peer"]', m).forEach((element) => element.addEventListener('change', syncPeers));
+
+    const picked = m.querySelector('#r-picked');
+    const renderPicked = () => {
+      const selected = $$('input[name="list"]:checked', m).map((element) => element.value);
+      const unavailable = selected.filter((key) => !catalogKeys.has(key));
+      picked.hidden = !selected.length;
+      picked.querySelector('summary').textContent = `Review ${selected.length} selected sources${unavailable.length ? ` · ${unavailable.length} unavailable` : ''}`;
+      m.querySelector('#r-picked-chips').innerHTML = selected.map((key) =>
+        `<button type="button" class="rule-chip" data-key="${esc(key)}" aria-label="Remove ${esc(listTitle(key))}">
+          <span>${esc(listTitle(key))}${!catalogKeys.has(key) ? ' · catalog unavailable' : ''}</span><span aria-hidden="true">×</span></button>`).join('');
+      m.querySelector('#r-catalog-count').textContent = `${selected.length} selected${unavailable.length ? ` · ${unavailable.length} unavailable` : ''}`;
+      const warning = m.querySelector('#r-unavailable-note');
+      warning.hidden = !unavailable.length;
+      warning.textContent = `${unavailable.length} selected source${unavailable.length === 1 ? ' is' : 's are'} absent from the catalog. Retained until explicitly removed; review selected sources to inspect them.`;
+    };
+    picked.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-key]');
+      if (!button) return;
+      const checkbox = m.querySelector(`input[name="list"][value="${CSS.escape(button.dataset.key)}"]`);
+      if (checkbox) checkbox.checked = false;
       renderPicked();
       renderOverlap();
+      // Removing the focused chip must not strand keyboard focus in the document.
+      (picked.hidden ? m.querySelector('#r-catalog > summary') : picked.querySelector('summary')).focus();
     });
+    const listQuery = m.querySelector('#r-list-q');
+    listQuery?.addEventListener('input', () => filterRows(listQuery, m.querySelector('#r-lists'), m.querySelector('#r-lists-empty')));
+    $$('input[name="list"]', m).forEach((element) => element.addEventListener('change', () => { renderPicked(); renderOverlap(); }));
 
-    const q = m.querySelector('#r-list-q');
-    if (q) {
-      q.addEventListener('input', () => {
-        const needle = q.value.trim().toLowerCase();
-        let shown = 0;
-        $$('#r-lists .rule-item', m).forEach((el) => {
-          const hit = !needle || el.dataset.title.includes(needle);
-          el.hidden = !hit;
-          if (hit) shown++;
-        });
-        m.querySelector('#r-lists-empty').hidden = shown > 0;
-      });
-    }
-
-    /* Перекрытие считается по тому, что в форме сейчас, а не по сохранённому:
-       иначе пользователь узнаёт о конфликте только после «Сохранить». */
-    const box = m.querySelector('#r-overlap');
     function renderOverlap() {
       const mine = {
-        lists: $$('input[name="list"]:checked', m).map((e) => e.value),
+        lists: $$('input[name="list"]:checked', m).map((element) => element.value),
         domains: lines(m.querySelector('#r-domains').value),
         subnets: lines(m.querySelector('#r-subnets').value),
         peer_scope: m.querySelector('input[name="scope"]:checked').value,
-        peer_ids: $$('input[name="peer"]:checked', m).map((e) => e.value),
+        peer_ids: $$('input[name="peer"]:checked', m).map((element) => element.value),
       };
       const hits = overlap(mine, above);
+      const box = m.querySelector('#r-overlap');
       box.hidden = !hits.length;
       if (!hits.length) return;
       box.innerHTML = '<strong>Earlier rules overlap for shared-rule clients</strong>'
-        + hits.map((h) => `<div class="rule-overlap-line">«${esc(h.rule.name)}» — ${
-          h.shared.map((k) => esc(listTitle(k))).join(', ')}</div>`).join('')
+        + hits.map((hit) => `<div class="rule-overlap-line">“${esc(hit.rule.name)}” — ${hit.shared.map((key) => esc(listTitle(key))).join(', ')}</div>`).join('')
         + '<div class="rule-overlap-tail">Earlier rules take precedence for intersecting clients and these resources. Whole-Internet exits precede shared rules.</div>';
     }
-
-    $$('input[name="list"]', m).forEach((el) => el.addEventListener('change', () => {
-      renderPicked();
-      renderOverlap();
-    }));
-
-    const live = (sel, out, kind) => {
-      const el = m.querySelector(sel), o = m.querySelector(out);
-      const upd = () => {
-        const all = el.value.split('\n');
-        const bad = badLines(el.value, kind);
-        el.classList.toggle('bad', bad.length > 0);
-        o.innerHTML = bad.length
-          ? bad.slice(0, 3).map((n) =>
-            `<div>Строка ${n}: «${esc(all[n - 1].trim())}» — не ${PROBLEM[kind].word}</div>`).join('')
-            + (bad.length > 3 ? `<div>…и ещё ${bad.length - 3}</div>` : '')
-            + `<div class="rule-overlap-tail">${PROBLEM[kind].tail}</div>`
-          : '';
+    const live = (selector, output, kind) => {
+      const field = m.querySelector(selector), error = m.querySelector(output);
+      const update = () => {
+        const all = field.value.split('\n');
+        const bad = badLines(field.value, kind);
+        field.classList.toggle('bad', bad.length > 0);
+        field.setAttribute('aria-invalid', String(bad.length > 0));
+        error.innerHTML = bad.length ? bad.slice(0, 3).map((line) =>
+          `<div>Line ${line}: “${esc(all[line - 1].trim())}” is not a valid ${kind === 'domain' ? 'domain' : 'IPv4 subnet or address'}.</div>`).join('')
+          + (bad.length > 3 ? `<div>${bad.length - 3} more invalid lines.</div>` : '') : '';
         renderOverlap();
       };
-      el.addEventListener('input', upd);
-      upd();
+      field.addEventListener('input', update);
+      update();
     };
     live('#r-domains', '#r-domains-err', 'domain');
     live('#r-subnets', '#r-subnets-err', 'cidr');
-
-    $$('input[name="peer"]', m).forEach((el) => el.addEventListener('change', renderOverlap));
     renderPicked();
-    renderOverlap();
+    syncPeers();
     m.querySelector('#r-name').focus();
   });
 }
