@@ -96,9 +96,11 @@ function modalAddPeer() {
 async function createPeer() {
   const currentSession = api.session.guard();
   const revision = currentModalRevision();
-  const name = $('#peer-name').value.trim();
-  if (!name) { toast('Введите имя устройства', 'err'); return; }
+  const input = $('#peer-name');
   const btn = $('#modal [data-act="create-peer"]');
+  if (!input || !btn || btn.disabled) return;
+  const name = input.value.trim();
+  if (!name) { toast('Введите имя устройства', 'err'); return; }
   btn.disabled = true;
   try {
     const peer = await api.peers.create(name);
@@ -106,7 +108,7 @@ async function createPeer() {
     state.peers.push(peer);
     markDirty();
     refresh();
-    if (!isCurrentModal(revision)) return;
+    if (!currentSession() || !isCurrentModal(revision)) return;
     // Сразу QR, без промежуточного шага: ради него кнопку и нажимали.
     await modalPeerConfig(peer.id);
   } catch (err) {
@@ -119,6 +121,7 @@ async function createPeer() {
 /* --- конфиг клиента: QR + скачивание -------------------------------------- */
 
 async function modalPeerConfig(id) {
+  const currentSession = api.session.guard();
   const peer = peerById(id) || { id, name: 'Клиент' };
   const revision = openModal(modalShell(peer.name,
     '<div class="loading">Готовлю конфиг…</div>',
@@ -132,7 +135,7 @@ async function modalPeerConfig(id) {
     // демон.
     ({ text: conf, filename } = await api.peers.config(id));
   } catch (err) {
-    if (!isCurrentModal(revision)) return;
+    if (!currentSession() || !isCurrentModal(revision)) return;
     const text = err.missing
       ? 'Демон ещё не отдаёт клиентский конфиг — эндпоинт GET /api/peers/{id}/config не реализован.'
       : err.message;
@@ -142,7 +145,7 @@ async function modalPeerConfig(id) {
     return;
   }
 
-  if (!isCurrentModal(revision)) return;
+  if (!currentSession() || !isCurrentModal(revision)) return;
 
   const sub = state.settings
     ? `Адрес ${esc(peer.address || '')} · MTU ${esc(state.settings.client_mtu)} · DNS ${esc(state.settings.wg_server_address)}`
@@ -173,6 +176,18 @@ async function modalPeerConfig(id) {
   });
 }
 
+// Mutation results remain visible in their session; interaction feedback expires sooner.
+let clientActionRevision = 0;
+function clientAction() {
+  const currentSession = api.session.guard();
+  const action = ++clientActionRevision;
+  const modal = currentModalRevision();
+  return {
+    currentSession,
+    currentInteraction: () => currentSession() && action === clientActionRevision && modal === currentModalRevision(),
+  };
+}
+
 export const actions = {
   'add-peer': modalAddPeer,
   'create-peer': createPeer,
@@ -191,6 +206,7 @@ export const actions = {
   },
 
   'menu-peer': (id, btn) => {
+    clientActionRevision++;
     const p = peerById(id);
     openMenu(btn, [
       { act: 'rename-peer', id, label: 'Переименовать' },
@@ -200,33 +216,41 @@ export const actions = {
   },
 
   'rename-peer': async (id) => {
+    const { currentSession, currentInteraction } = clientAction();
     const p = peerById(id);
     const name = prompt('Новое имя', p.name);
     if (!name || !name.trim() || name.trim() === p.name) return;
     try {
       await api.peers.update(id, { name: name.trim() });
-      p.name = name.trim();
+      if (!currentSession()) return;
+      const currentPeer = peerById(id);
+      if (currentPeer) currentPeer.name = name.trim();
       refresh();
-      toast('Переименовано');
-    } catch (err) { toastError(err, 'Не переименовано'); }
+      if (currentInteraction()) toast('Renamed');
+    } catch (err) { if (currentInteraction()) toastError(err, 'Rename failed'); }
   },
 
   'toggle-peer': async (id) => {
+    const { currentSession, currentInteraction } = clientAction();
     const p = peerById(id);
     const enabled = p.enabled === false;
     try {
       await api.peers.update(id, { enabled });
-      p.enabled = enabled;
+      if (!currentSession()) return;
+      const currentPeer = peerById(id);
+      if (currentPeer) currentPeer.enabled = enabled;
       markDirty();
       refresh();
-    } catch (err) { toastError(err, 'Не переключено'); }
+    } catch (err) { if (currentInteraction()) toastError(err, 'Client state was not changed'); }
   },
 
   'delete-peer': async (id) => {
+    const { currentSession, currentInteraction } = clientAction();
     const p = peerById(id);
     let rules;
     try { rules = await api.rules.list(); }
-    catch (err) { toastError(err, 'Cannot inspect affected rules'); return; }
+    catch (err) { if (currentInteraction()) toastError(err, 'Cannot inspect affected rules'); return; }
+    if (!currentInteraction()) return;
     const affected = rules.filter((r) => r.peer_scope === 'selected' && (r.peer_ids || []).includes(id));
     const orphaned = affected.filter((r) => !(r.peer_ids || []).some((peer) => peer !== id && state.peers.some((p) => p.id === peer)));
     const detail = affected.length ? `\nAffected rules: ${affected.map((r) => r.name).join(', ')}.` : '';
@@ -234,15 +258,24 @@ export const actions = {
     if (!confirm(`Delete "${p.name}"? The device will lose access.${detail}${inactive}\nRule changes require Apply.`)) return;
     try {
       const effects = await api.peers.remove(id);
+      if (!currentSession()) return;
       state.peers = state.peers.filter((x) => x.id !== id);
       markDirty();
       refresh();
-      try { state.rules = await api.rules.list(); }
-      catch (err) { state.rules = []; toastError(err, 'Device deleted; reload rules before editing'); }
+      try {
+        const rules = await api.rules.list();
+        if (!currentSession()) return;
+        state.rules = rules;
+      } catch (err) {
+        if (!currentSession()) return;
+        state.rules = [];
+        if (currentInteraction()) toastError(err, 'Device deleted; reload rules before editing');
+      }
+      if (!currentInteraction()) return;
       toast((effects.inactivated_rule_ids || []).length
         ? 'Device deleted. Orphaned rules require reassignment and explicit activation.'
         : 'Device deleted');
-    } catch (err) { toastError(err, 'Не удалён'); }
+    } catch (err) { if (currentInteraction()) toastError(err, 'Deletion failed'); }
   },
 };
 
