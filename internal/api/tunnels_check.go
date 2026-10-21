@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sync"
@@ -8,12 +9,14 @@ import (
 
 	"github.com/ArghTeam/razdacha/internal/clash"
 	"github.com/ArghTeam/razdacha/internal/singbox"
+	"github.com/ArghTeam/razdacha/internal/store"
 )
 
 // Статусы туннеля из docs/05-api.md и мока прототипа (ui/prototype/mock-data.js).
 // Отдельные от статусов диагностики: там «ok/warn/error» про проверку, здесь —
 // про сам туннель.
 const (
+	tunnelUnknown    = "unknown"
 	tunnelUp         = "up"          // задержка измерена
 	tunnelSlow       = "slow"        // отвечает, но дольше clash.SlowThreshold
 	tunnelDown       = "down"        // sing-box проверил и не достучался
@@ -23,6 +26,7 @@ const (
 // tunnelCheck — результат последней проверки одного туннеля.
 type tunnelCheck struct {
 	Status    string
+	Signals   *tunnelSignals
 	LatencyMS *int
 	At        time.Time
 	Detail    string
@@ -51,12 +55,13 @@ func okStamp(res tunnelCheck) time.Time {
 // «не проверялось», и производные поля туннеля остаются null — ноль в latency
 // был бы измеренным нулём, а «down» — утверждением о непроверенном туннеле.
 type checkCache struct {
-	mu   sync.Mutex
-	last map[string]tunnelCheck
+	mu       sync.Mutex
+	last     map[string]tunnelCheck
+	dnsSlots chan struct{}
 }
 
 func newCheckCache() *checkCache {
-	return &checkCache{last: make(map[string]tunnelCheck)}
+	return &checkCache{last: make(map[string]tunnelCheck), dnsSlots: make(chan struct{}, 2)}
 }
 
 // put кладёт результат очередной проверки, сохраняя отметку последнего удачного
@@ -67,6 +72,9 @@ func (c *checkCache) put(id string, res tunnelCheck) {
 	defer c.mu.Unlock()
 	if ok := okStamp(res); !ok.IsZero() {
 		res.OKAt = ok
+		if previous := c.last[id].OKAt; previous.After(res.OKAt) {
+			res.OKAt = previous
+		}
 	} else if res.OKAt.IsZero() {
 		// Поднятая из БД отметка приходит прямо в res и своё берёт: затирать её
 		// пустым кэшем на старте демона нельзя.
@@ -103,6 +111,20 @@ func (s *Server) withCheck(t tunnelResponse) tunnelResponse {
 	status := res.Status
 	at := res.At.UTC()
 	t.Status = &status
+	t.Signals = res.Signals
+	if res.Signals != nil {
+		copy := *res.Signals
+		for _, sig := range []*signal{&copy.Runtime, &copy.DNS, &copy.HTTPS, &copy.Transport} {
+			if sig.ObservedAt != nil {
+				age := s.now().Sub(*sig.ObservedAt)
+				sig.Fresh = sig.Fresh && age >= 0 && age <= 5*time.Minute
+			}
+		}
+		t.Signals = &copy
+	}
+	if t.Signals == nil {
+		t.Signals = historicalSignals(res.At)
+	}
 	t.LatencyMS = res.LatencyMS
 	t.LastCheck = &at
 	if !res.OKAt.IsZero() {
@@ -117,11 +139,12 @@ func (s *Server) withCheck(t tunnelResponse) tunnelResponse {
 // Поля те же, что у туннеля в списке, плюс объяснение: «down» без причины
 // пользователю сказать нечего, а причина у sing-box одна на всю проверку.
 type tunnelCheckResponse struct {
-	ID        string    `json:"id"`
-	Status    string    `json:"status"`
-	LatencyMS *int      `json:"latency_ms"`
-	LastCheck time.Time `json:"last_check"`
-	Detail    string    `json:"detail"`
+	Signals   *tunnelSignals `json:"signals"`
+	ID        string         `json:"id"`
+	Status    string         `json:"status"`
+	LatencyMS *int           `json:"latency_ms"`
+	LastCheck time.Time      `json:"last_check"`
+	Detail    string         `json:"detail"`
 }
 
 // handleCheckTunnel — `POST /api/tunnels/{id}/check`.
@@ -152,8 +175,22 @@ func (s *Server) handleCheckTunnel(w http.ResponseWriter, r *http.Request) {
 		// о нём sing-box незачем — ответ был бы «не найден».
 		res.Status = tunnelNotApplied
 		res.Detail = "Туннель выключен, в конфиге sing-box его нет"
+	case t.Source == store.SourcePool:
+		proxies, err := s.proxies().Proxies(r.Context())
+		if err != nil {
+			writeError(w, s.log, http.StatusServiceUnavailable, codeNotReady, "Runtime observation unavailable")
+			return
+		}
+		measured, available := s.checkOne(r.Context(), t, proxies)
+		if available {
+			res = measured
+		} else {
+			res.Status = tunnelUnknown
+			res.Detail = "No pool history observation available"
+		}
 	default:
 		delay, derr := s.clash.Delay(r.Context(), singbox.TunnelTag(t.ID))
+		res.At = s.now().UTC()
 		switch {
 		case derr == nil:
 			ms := int(delay.Milliseconds())
@@ -162,18 +199,18 @@ func (s *Server) handleCheckTunnel(w http.ResponseWriter, r *http.Request) {
 			// не пойдёт, и увидеть это надо до того, как начнутся жалобы.
 			if delay >= clash.SlowThreshold {
 				res.Status = tunnelSlow
-				res.Detail = "Туннель отвечает медленно"
+				res.Detail = "HTTPS round trip succeeded slowly; transport health remains unknown"
 			} else {
 				res.Status = tunnelUp
-				res.Detail = "Туннель отвечает"
+				res.Detail = "HTTPS round trip succeeded; transport health remains unknown"
 			}
 		case errors.Is(derr, clash.ErrNotFound):
 			res.Status = tunnelNotApplied
 			res.Detail = "Туннель не применён: его нет в работающем конфиге sing-box. " +
 				"Нажмите «Применить»."
 		case errors.Is(derr, clash.ErrProbeFailed):
-			res.Status = tunnelDown
-			res.Detail = "Туннель не отвечает: " + derr.Error()
+			res.Status = tunnelUnknown
+			res.Detail = "HTTPS probe failed; DNS, TCP, TLS and target causes are not distinguished. Transport health is unknown."
 		case errors.Is(derr, clash.ErrUnavailable):
 			// Прошлый результат в кэше остаётся как был: у него своя отметка
 			// времени, и она честнее, чем «down» от неудавшейся проверки.
@@ -190,12 +227,86 @@ func (s *Server) handleCheckTunnel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	res.Signals = s.observeSignals(r.Context(), res)
+	if t.Source == store.SourcePool {
+		res.Signals.HTTPS.Scope = "runtime_pool_history"
+		res.Signals.HTTPS.Detail = "Existing pool history; not proof of every member"
+	}
 	s.checks.put(t.ID, res)
 	writeJSON(w, s.log, http.StatusOK, tunnelCheckResponse{
+		Signals:   res.Signals,
 		ID:        t.ID,
 		Status:    res.Status,
 		LatencyMS: res.LatencyMS,
 		LastCheck: res.At,
 		Detail:    res.Detail,
 	})
+}
+
+// signal describes only the evidence actually available from the controller.
+type signal struct {
+	State      string     `json:"state"`
+	Scope      string     `json:"scope"`
+	ObservedAt *time.Time `json:"observed_at"`
+	Fresh      bool       `json:"fresh"`
+	Detail     string     `json:"detail"`
+}
+type tunnelSignals struct {
+	Runtime   signal `json:"runtime"`
+	DNS       signal `json:"dns"`
+	HTTPS     signal `json:"https"`
+	Transport signal `json:"transport"`
+}
+
+func historicalSignals(at time.Time) *tunnelSignals {
+	return &tunnelSignals{
+		Runtime:   signal{State: "unknown", Scope: "controller"},
+		DNS:       signal{State: "unknown", Scope: "runtime_resolver"},
+		HTTPS:     signal{State: "unknown", Scope: "historical_round_trip", ObservedAt: &at, Detail: "Historical observation; no current runtime evidence"},
+		Transport: signal{State: "unknown", Scope: "wireguard_transport", Detail: "No independent handshake or packet observation"},
+	}
+}
+
+func (s *Server) observeSignals(ctx context.Context, res tunnelCheck) *tunnelSignals {
+	out := historicalSignals(res.At)
+	if res.Status != tunnelNotApplied {
+		at := s.now().UTC()
+		out.Runtime = signal{State: "reachable", Scope: "controller", ObservedAt: &at, Fresh: true}
+	}
+	out.HTTPS = signal{
+		State: res.Status, Scope: "runtime_applied_exit_single_target_https", ObservedAt: &res.At, Fresh: s.now().Sub(res.At) >= 0 && s.now().Sub(res.At) <= 5*time.Minute,
+		Detail: "One IP-literal HTTPS target; does not prove all protocols or clients",
+	}
+	if res.Status == tunnelNotApplied {
+		return out
+	}
+	out.DNS = signal{State: "unknown", Scope: "runtime_resolver", Detail: "Runtime resolver observation; not per-tunnel DNS"}
+	select {
+	case s.checks.dnsSlots <- struct{}{}:
+		defer func() { <-s.checks.dnsSlots }()
+	default:
+		out.DNS.Detail = "Runtime DNS observation deferred: diagnostic capacity busy"
+		return out
+	}
+	// This query observes existing policy and never installs a bypass or changes rules.
+	dnsCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	addrs, err := s.clash.ResolveA(dnsCtx, "www.gstatic.com")
+	at := s.now().UTC()
+	out.DNS.ObservedAt = &at
+	out.DNS.Fresh = true
+	switch {
+	case err == nil && len(addrs) > 0:
+		out.DNS.State = "answered"
+	case errors.Is(err, clash.ErrResolveFailed):
+		var resolveErr *clash.ResolveError
+		if errors.As(err, &resolveErr) && resolveErr.Refused() {
+			out.DNS.State = "rejected"
+		} else {
+			out.DNS.State = "failed"
+		}
+	default:
+		out.DNS.State = "unknown"
+	}
+	return out
 }

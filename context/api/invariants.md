@@ -120,3 +120,20 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
   follows session/request/interaction ownership. Existing editor layout/policy and
   backend contracts remain unchanged. Browser evidence uses synthetic intercepted
   requests, not installed networking or real domain probes.
+
+## Scoped tunnel observations (ADR 0031)
+
+- Individual HTTPS delay probes use a verified IP-literal target and a fifteen-second
+  runtime budget plus three seconds of controller slack. Pool URL tests and client
+  DNS/routing policy are unchanged. One shared broker coalesces tags, permits two
+  active runtime jobs and 32 pending identities, and retains failed-job capacity
+  until the budget expires. Queue waiting is bounded by the controller budget.
+- Generic controller probe failure is `unknown`, never independent transport-down
+  evidence. `signals` exposes runtime controller reachability, runtime-resolver DNS,
+  single-target HTTPS and unknown WireGuard transport with scope/time/freshness.
+  Runtime DNS is not per-tunnel resolution. HTTP success does not prove UDP, calls,
+  ICMP or every client. No handshake observation is available through this API.
+- Group checks consume existing pool history without fan-out and retain its timestamp.
+  Five-minute-old/future observations are not fresh. Restart restores historical
+  time/last success but starts current status unknown; indeterminate/stale HTTPS
+  cannot emit transport-down alerts. Partial diagnostic coverage is unknown.

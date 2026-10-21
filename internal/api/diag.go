@@ -219,7 +219,7 @@ func (s *Server) diagCheck(id string, in diagInput) check {
 	case checkRoute:
 		return routeCheck(in.route, in.routeErr)
 	case checkTunnels:
-		return tunnelsCheck(in.snap.Tunnels, s.checks)
+		return tunnelsCheck(in.snap.Tunnels, s.checks, s.now())
 	case checkLists:
 		return listsCheck(in.lists, in.listsErr, in.snap.Settings, s.now())
 	case checkForward:
@@ -392,7 +392,7 @@ func diagNames(items []string) string {
 // по кнопке в панели (`POST /api/tunnels/{id}/check`). Диагностика показывает
 // то, что уже измерено, а «не проверялось» называет своими словами — молча
 // выдавать это за «ok» нельзя.
-func tunnelsCheck(tunnels []store.Tunnel, cache *checkCache) check {
+func tunnelsCheck(tunnels []store.Tunnel, cache *checkCache, observedNow ...time.Time) check {
 	c := check{ID: "tunnels", Title: "Туннели"}
 
 	var enabled, checked int
@@ -407,9 +407,13 @@ func tunnelsCheck(tunnels []store.Tunnel, cache *checkCache) check {
 			continue
 		}
 		checked++
+		if len(observedNow) > 0 && (observedNow[0].Sub(res.At) > 5*time.Minute || res.At.After(observedNow[0])) {
+			bad = append(bad, t.Name)
+			continue
+		}
 		// Медленный туннель рабочий: в список проблемных он не идёт, иначе
 		// диагностика краснела бы на том, что пользователь и так видит цифрой.
-		if res.Status != tunnelUp && res.Status != tunnelSlow {
+		if (res.Status != tunnelUp && res.Status != tunnelSlow) || (res.Signals != nil && !res.Signals.HTTPS.Fresh) {
 			bad = append(bad, t.Name)
 		}
 	}
@@ -424,10 +428,13 @@ func tunnelsCheck(tunnels []store.Tunnel, cache *checkCache) check {
 			"туннели (%d) с запуска демона не проверялись: проверка запускается из панели", enabled)
 	case len(bad) > 0:
 		c.Status = statusWarn
-		c.Detail = "не отвечают: " + strings.Join(bad, ", ")
+		c.Detail = "HTTPS observations unavailable or unsuccessful: " + strings.Join(bad, ", ")
+	case checked < enabled:
+		c.Status = statusUnknown
+		c.Detail = fmt.Sprintf("HTTPS observations available for %d of %d enabled tunnels; transport health unknown", checked, enabled)
 	default:
 		c.Status = statusOK
-		c.Detail = fmt.Sprintf("проверено %d из %d, все отвечают", checked, enabled)
+		c.Detail = fmt.Sprintf("HTTPS observations available for %d of %d; transport health unknown", checked, enabled)
 	}
 	return c
 }

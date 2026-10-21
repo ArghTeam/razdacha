@@ -864,3 +864,22 @@ Whole-Internet routing overrides ordinary destination rules for one source, incl
 DNS. It supports IPv4 TCP/UDP; IPv6, ICMP and other forwarded protocols are blocked.
 The gateway remains accessible; private forwarding is blocked. Cached FakeIP names are
 resolved through the chosen exit and private/special resolved destinations are rejected.
+
+## Scoped tunnel observations
+
+Tunnel list and manual check responses include additive `signals` (`runtime`, `dns`,
+`https`, `transport`), each with `state`, `scope`, `observed_at`, `fresh` and `detail`.
+Transport is unknown without independent handshake/packet evidence. DNS describes
+only the runtime resolver. Individual HTTPS checks use `https://1.1.1.1/` with normal
+TLS verification and no redirect following; any HTTP response is a round trip.
+They do not change DNS rejection, client routing, pool selection or pool test URLs.
+Generic probe failure reports `status: unknown`; it cannot identify TCP/TLS/target
+causes. Runtime controller unavailability still returns 503 and preserves earlier
+observations until they age out. There is no inference of ICMP/UDP/Meet health.
+
+Runtime probing allows fifteen seconds plus three seconds controller slack, two
+active jobs, 32 coalesced pending tag identities and bounded queue waiting. Caller
+cancellation stops waiting but cannot cancel the pinned runtime's background job;
+uncertain requests retain capacity through their budget. Group checks read existing
+history without fan-out and keep its timestamp. Observations older than five minutes
+are historical. Restart retains last success/time but reports current status unknown.

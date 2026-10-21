@@ -325,3 +325,5 @@ performed. Backend cookie/persistence, protocol compatibility, connectivity and 
 accessibility certification remain outside this evidence. Final independent review,
 functional whole-app QA, hosted CI and primary-controlled merge/synchronization are
 separate gates. See [249](../../tasks/done/249-ui-remediation-verification.md).
+
+- Issue 218/166: label tunnel latency as HTTPS and expose inconclusive/historical, runtime DNS and unknown transport observations.

@@ -192,7 +192,7 @@ func TestEventsForgetDeleted(t *testing.T) {
 
 // Оповещение доезжает по итогам прогонов, а не по одному наблюдению, и то, о
 // чём сообщили, переживает перезапуск демона.
-func TestWatchAnnouncesConfirmedDown(t *testing.T) {
+func TestWatchDoesNotAnnounceIndeterminateHTTPSFailure(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)
 	tun := createTunnel(t, ts, cookie, "Нидерланды")
@@ -219,26 +219,15 @@ func TestWatchAnnouncesConfirmedDown(t *testing.T) {
 	if err := ts.refreshChecks(ctx); err != nil {
 		t.Fatalf("refreshChecks: %v", err)
 	}
-	if len(f.sent) != 1 || !strings.Contains(f.sent[0], "не отвечает") {
-		t.Fatalf("сообщения: %v", f.sent)
+	if len(f.sent) != 0 {
+		t.Fatalf("Indeterminate HTTPS failure emitted transport alert: %v", f.sent)
 	}
-
-	// Ещё прогоны — молчание: событие это переход, а не состояние.
-	for i := 0; i < 3; i++ {
-		if err := ts.refreshChecks(ctx); err != nil {
-			t.Fatalf("refreshChecks: %v", err)
-		}
-	}
-	if len(f.sent) != 1 {
-		t.Errorf("повторные сообщения об одном падении: %v", f.sent)
-	}
-
 	saved, err := ts.st.TunnelChecks(ctx)
 	if err != nil {
-		t.Fatalf("TunnelChecks: %v", err)
+		t.Fatal(err)
 	}
-	if saved[tun.ID].Notified != eventDown {
-		t.Errorf("сообщённый статус в БД = %q", saved[tun.ID].Notified)
+	if saved[tun.ID].Notified != "" {
+		t.Fatal("Indeterminate observation was notified")
 	}
 }
 
@@ -265,7 +254,7 @@ func TestWatchStaysSilentWhenNotifyDisabled(t *testing.T) {
 		t.Errorf("с выключенными оповещениями ушли сообщения: %v", f.sent)
 	}
 	res, _ := ts.checks.get(tun.ID)
-	if res.Status != tunnelDown {
+	if res.Status != tunnelUnknown {
 		t.Errorf("статус не записан: %q", res.Status)
 	}
 }

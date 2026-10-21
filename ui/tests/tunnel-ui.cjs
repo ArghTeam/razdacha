@@ -9,6 +9,17 @@ async function parsed(page) { await page.locator('#t-parse.ok').waitFor(); }
 (async () => {
   const browser = await chromium.launch({ headless: true }); const tests = suite(browser, 'tunnel UI');
   try {
+    await tests.check('scoped observations distinguish DNS, HTTPS and unknown transport', async t => {
+      const text = await t.page.locator('main').innerText();
+      assert.match(text, /HTTPS inconclusive/);
+      assert.match(text, /Transport: unknown/);
+      assert.match(text, /Runtime DNS: rejected/);
+      assert.equal(await t.page.locator('.badge.err').count(), 0);
+    }, { screen: 'tunnels', state: { tunnels: [{ ...exit, status: 'unknown', signals: { https: { fresh: true }, dns: { state: 'rejected' }, transport: { state: 'unknown' } } }] } });
+    await tests.check('historical HTTPS evidence cannot render green', async t => {
+      assert.match(await t.page.locator('main').innerText(), /Historical HTTPS observation/);
+      assert.equal(await t.page.locator('.badge.ok').count(), 0);
+    }, { screen: 'tunnels', state: { tunnels: [{ ...exit, signals: { https: { fresh: false }, transport: { state: 'unknown' } } }] } });
     await tests.check('new form validates before mutation and preserves parse warnings safely', async t => {
       await act(t, 'add-tunnel'); await act(t, 'save-tunnel'); assert(!t.journal.some(e => e.key === 'POST /api/tunnels'));
       await t.page.fill('#t-name', 'Created demo exit'); await act(t, 'save-tunnel'); assert(!t.journal.some(e => e.key === 'POST /api/tunnels'));

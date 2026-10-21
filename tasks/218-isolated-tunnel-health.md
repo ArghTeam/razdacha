@@ -46,3 +46,25 @@ Final acceptance requires baseline-fails/fix-passes evidence, adversarial negati
 cases and controlled staging observations under the [runbook](../docs/11-staging-validation.md).
 No unresolved P0/P1 findings may be marked ready to merge. Unknown results stay explicit.
 Review approval does not authorize merge or release. These reviews are planned, not completed.
+
+## Authorized scope amendment
+
+The user authorized issues 218 and 166 together, followed by production deployment
+and checks. The original after-217 ordering and eight-second budget are historical;
+ADR 0031 defines revised semantics and fifteen-second probing. Restore work remains
+excluded. Independent review remains required before production validation.
+
+## Implemented observations and verification
+
+Individual checks use a DNS-less, certificate-verified HTTPS target; runtime DNS is
+reported separately. Generic failure cannot identify WireGuard/TCP/TLS/target causes,
+so transport remains unknown. The bounded broker and history/restart/freshness rules
+are implemented without store migration, pool-selection or client-policy changes.
+
+Passed: repository Go suite; API/Clash race checks; pinned-runtime nested module;
+clean-cache lint; 29 focused Chromium cases including inconclusive/DNS rejection and
+historical evidence. Unit regressions cover coalescing, cancellation, uncertain-job
+capacity, queue limits, malformed delay, twelve-second measurement, partial/stale
+coverage and original group time. These unit checks are not an actual twelve-second
+WireGuard round trip. Controlled pinned-runtime baseline/fix evidence and independent
+security/final reviews remain required before acceptance and production validation.
