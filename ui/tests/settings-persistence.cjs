@@ -46,9 +46,14 @@ async function run() {
   const fixture = fixtureServer();
   await new Promise(resolve => fixture.server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${fixture.server.address().port}`;
-  const browser = await chromium.launch({channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome', headless:true});
+  const browser = await chromium.launch({channel: process.env.PLAYWRIGHT_CHANNEL || undefined, headless:true});
   try {
-    const page = await browser.newPage({viewport:{width:1440,height:900}});
+    async function fixturePage(viewport) {
+      const page = await browser.newPage({viewport});
+      await page.route('**/*', route => new URL(route.request().url()).origin === url ? route.continue() : route.abort());
+      return page;
+    }
+    const page = await fixturePage({width:1440,height:900});
     const errors=[]; page.on('pageerror',e=>errors.push(e.message));
     const open = async () => { await page.evaluate(()=>window.fixture.open()); await page.waitForFunction(()=>document.querySelector('#settings-backup fieldset')?.disabled === false); };
     const hold = endpoint => { fixture.controls.hold=endpoint; fixture.controls.release=null; };
@@ -62,7 +67,21 @@ async function run() {
     const nav = kind => page.locator(`[data-settings-section="${kind}"]`).click();
     const submit = kind => page.locator(`#settings-${kind} [type="submit"]`).click();
     const message = (kind,text) => page.waitForFunction(({kind,text})=>document.querySelector(`#settings-${kind} .settings-status`).textContent.includes(text),{kind,text});
-    await page.goto(url); await page.waitForFunction(()=>window.fixture); await open();
+    await page.goto(url); await page.waitForFunction(()=>window.fixture);
+    // Prove this alternate origin is reachable without interception, then reject it
+    // in the guarded page. The control loads only local CSS, never application code.
+    const alternateOriginTarget = `http://localhost:${fixture.server.address().port}/app.css`;
+    const control = await browser.newPage();
+    try {
+      await control.goto(`${url}/app.css`);
+      assert.equal(await control.evaluate(async target => {
+        try { await fetch(target, {mode:'no-cors'}); return true; } catch { return false; }
+      }, alternateOriginTarget), true, 'The loopback alias must be reachable without the guard');
+    } finally { await control.close(); }
+    assert.equal(await page.evaluate(async target => {
+      try { await fetch(target, {mode:'no-cors'}); return false; } catch { return true; }
+    }, alternateOriginTarget), true, 'The exact-origin guard must refuse the reachable alias');
+    await open();
     await page.locator('#s-mtu').fill('999'); await submit('network');
     await message('network','Client MTU: Enter a value of at least 1280.');
     assert.equal(fixture.writes.length,0); assert.equal(await page.locator('#s-mtu').getAttribute('aria-invalid'),'true');
@@ -178,7 +197,7 @@ async function run() {
     assert(await page.evaluate(()=>document.querySelector('#modal').contains(document.activeElement)));
     // Clean contexts prevent stress errors and drafts from entering visual evidence.
     for (const width of [1440,1024,375,320]) {
-      const clean=await browser.newPage({viewport:{width,height:900}}); await clean.goto(url); await clean.waitForFunction(()=>window.fixture); await clean.evaluate(()=>window.fixture.open());
+      const clean=await fixturePage({width,height:900}); await clean.goto(url); await clean.waitForFunction(()=>window.fixture); await clean.evaluate(()=>window.fixture.open());
       await clean.waitForFunction(()=>document.querySelector('#settings-backup fieldset')?.disabled===false);
       // Keyboard focus must stay geometrically clear of sticky dialog chrome.
       await clean.locator('[data-settings-section="schedules"]').click();

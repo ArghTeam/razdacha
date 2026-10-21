@@ -232,3 +232,15 @@ is canceled before dispatch. Confirmed responses update only their own section. 
 sends refresh delivery history only, including persisted errors, preserving form values.
 Settings focus scrolling keeps controls clear of sticky chrome; local validation uses
 deterministic English messages rather than browser-localized strings.
+
+## 2026-10-21 — Browser regression CI tooling (refs #249)
+
+Added a separate development-only browser CI job with Playwright 1.59.1 and committed
+npm dependency lock. The browser job pins supported Ubuntu 24.04; the floating
+Ubuntu image had advanced to unsupported 26.04. Chromium is installed in that job; sorted maintained CJS suites
+run sequentially with fail-fast exit status and per-suite timeout. Runner regressions
+verify discovery, failure propagation and timeout behavior. Settings defaults to the
+pinned bundled Chromium and blocks requests outside its exact fixture origin, including
+reachable loopback aliases. Existing client/rule fixtures retain their synthetic network
+guards. Node/npm remain outside Go build/release jobs and embedded assets. This adds
+repeatable tooling, not completion of the final integrated UI audit (#249).

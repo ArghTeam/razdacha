@@ -1,0 +1,14 @@
+{
+  "name": "razdacha-ui-browser-regressions",
+  "private": true,
+  "description": "Development-only Chromium regressions for the embedded panel",
+  "scripts": {
+    "test": "node --test run-browser-tests.test.js && node run-browser-tests.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "1.59.1"
+  }
+}
