@@ -72,7 +72,8 @@ func stabilizeWireGuardDetours(endpoints []option.Endpoint, outbounds []option.O
 			}
 			used[alias] = true
 			aliases[peer.Detour] = alias
-			outbounds = append(outbounds, option.Outbound{Type: C.TypeSelector, Tag: alias,
+			outbounds = append(outbounds, option.Outbound{
+				Type: C.TypeSelector, Tag: alias,
 				Options: &option.SelectorOutboundOptions{
 					Outbounds: []string{peer.Detour}, Default: peer.Detour, InterruptExistConnections: false,
 				},

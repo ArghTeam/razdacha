@@ -184,7 +184,8 @@ func TestHostnameChainOverProxyAndLiteralChainKeepDirectDetour(t *testing.T) {
 
 func TestHostnameAliasDoesNotChangePoolMemberPruning(t *testing.T) {
 	snap := hostnameChainFixture(t)
-	snap.Tunnels = append(snap.Tunnels, store.Tunnel{ID: "pool", Name: "Synthetic pool", Type: store.TunnelVLESS, Source: store.SourcePool, Enabled: true,
+	snap.Tunnels = append(snap.Tunnels, store.Tunnel{
+		ID: "pool", Name: "Synthetic pool", Type: store.TunnelVLESS, Source: store.SourcePool, Enabled: true,
 		Pool: []store.PoolServer{{URL: "vless://00000000-0000-0000-0000-000000000000@192.0.2.1:443?security=tls&sni=relay.example"}},
 	})
 	opts := mustGenerate(t, snap)
