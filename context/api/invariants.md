@@ -48,8 +48,10 @@ description: REST, встроенная SPA, диагностика и клие�
   Client creation, rename, enable/disable, deletion preflight and post-delete rule
   loading callbacks from an earlier session cannot mutate current inventory, pending
   state, notifications or confirmations. Completed mutations in the same session
-  remain visible after ordinary close or modal replacement. Menu-action feedback
-  and deletion confirmation also expire after a newer client action or modal change.
+  remain visible after ordinary close or modal replacement. Client-dialog feedback
+  and deletion confirmation render only in their initiating dialog/session; close,
+  replacement, logout and expiry invalidate them. Independent configuration/tunnel
+  operations retain the current editor and its draft.
   Client creation has one in-flight gate per form shared by Enter and pointer input;
   closing the form does not discard its successful same-session creation result.
   Backend invalid-session 401 cookie expiry is unchanged; a delayed expiry cookie
