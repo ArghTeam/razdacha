@@ -58,7 +58,7 @@ Do not combine this mode with other fixture mode flags.
   the oracle checks length, content and SHA-256, including source/frame identity.
   TCP is a byte stream and may segment; no TCP packet-size claim is made.
 - With the default WireGuard MTU of 1280, IPv4 UDP's 28-byte IP/UDP overhead puts
-  1252 bytes at the inner boundary. UDP uses `IP_PMTUDISC_DONT` for the matrix,
+  1252 bytes at the inner boundary. Both client and sink UDP sockets use `IP_PMTUDISC_DONT` for the matrix,
   allowing inner IPv4 fragmentation/reassembly above that boundary. With
   `IP_PMTUDISC_DO`, a 1253-byte UDP write must return `EMSGSIZE`; disabling DF must
   restore a successful exact exchange. The fixture is an integrity check, not a

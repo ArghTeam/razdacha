@@ -277,6 +277,7 @@ func qualityProbe(t *testing.T) {
 		}
 		if mode == "matrix" {
 			for _, size := range []int{64, 1200, 1252, 1253, 1400} {
+				fmt.Printf("266-QUALITY-MATRIX protocol=%s payload-bytes=%d\n", proto, size)
 				qualityExchange(t, c, prefix, qualityPayload(size, identity+proto+"-"+strconv.Itoa(size)))
 			}
 			if proto == "udp4" {

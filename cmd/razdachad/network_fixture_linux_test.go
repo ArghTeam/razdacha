@@ -196,6 +196,11 @@ func wireSink(t *testing.T) {
 	for _, addr := range []string{"203.0.113.10:12080", "203.0.113.20:12080", "203.0.113.30:12080", "203.0.113.99:12080"} {
 		udp, err := net.ListenPacket("udp4", addr)
 		wireMust(t, err)
+		if wireQualityEnabled() {
+			// The fragmentation matrix permits fragmentation in both directions;
+			// the echo server must not silently retain the kernel default DF policy.
+			qualitySetDF(t, udp.(*net.UDPConn), false)
+		}
 		udpSockets = append(udpSockets, udp)
 	}
 	tcp, err := net.Listen("tcp4", ":12080")
