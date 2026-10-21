@@ -64,3 +64,13 @@ no production execution is claimed by this implementation record.
 - Static Linux amd64 proof and pure-test ELF cross-builds passed. Pure Linux test
   execution and independent final review remain explicit pre-deployment gates.
 - No host upgrade or live service/network changes were performed by this task.
+
+## Independent pre-deployment verification
+
+Independent review accepted the final transaction, guard boundary, current-operation
+marker and before-start preservation checks. An independent Linux execution ran only
+the injected `TestGuardInspection` fixtures: both tests passed, exit zero, no skips.
+The exact test ELF SHA256 was
+`c798ef187e8a27e9f1a5b5b26ebeba13825b046adc7ea7affc7c9087fefe5cc1`.
+Service process identities, protected configuration and absent guard were unchanged;
+no owned test processes remained. This is a helper rehearsal, not a production upgrade.
