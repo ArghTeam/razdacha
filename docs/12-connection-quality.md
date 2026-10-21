@@ -69,7 +69,10 @@ Do not combine this mode with other fixture mode flags.
   a long-duration soak or a throughput benchmark.
 - Disabled and unreachable exits remain rejected with successful other-client
   controls. The independent sink's capture barriers and AF_PACKET drop accounting
-  continue to reject forbidden direct-delivery markers.
+  continue to reject forbidden direct-delivery markers. Quality mode uses a
+  single-member `PACKET_FANOUT_FLAG_DEFRAG` group so the kernel reassembles inner
+  IPv4 fragments before the datagram oracle; unreassembled fragments are errors,
+  and neither collector errors nor kernel packet drops are ignored.
 - A disposable gateway-underlay `netem` qdisc applies deterministic 100% outbound
   encrypted-packet loss. A bounded UDP receive timeout must coincide with an
   increasing qdisc drop counter. Removing only that test qdisc must restore

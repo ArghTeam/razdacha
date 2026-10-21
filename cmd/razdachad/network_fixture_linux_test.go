@@ -212,6 +212,14 @@ func wireSink(t *testing.T) {
 	sinkInterface, err := net.InterfaceByName("sink0")
 	wireMust(t, err)
 	wireMust(t, unix.Bind(raw, &unix.SockaddrLinklayer{Protocol: protocol, Ifindex: sinkInterface.Index}))
+	if wireQualityEnabled() {
+		qualityRequireIsolated(t)
+		// A one-member fanout group asks the kernel to reassemble IPv4 before
+		// the existing datagram/payload oracle. Direct WG forwarding can retain
+		// inner fragments; treating their first UDP length as corruption is wrong.
+		fanout := 1 | ((unix.PACKET_FANOUT_HASH | unix.PACKET_FANOUT_FLAG_DEFRAG) << 16)
+		wireMust(t, unix.SetsockoptInt(raw, unix.SOL_PACKET, unix.PACKET_FANOUT, fanout))
+	}
 	// This receiver is the only authority for capture barriers and packet losses.
 	go func() {
 		streams := make(map[string]*wirePayloadDetector)
@@ -232,6 +240,10 @@ func wireSink(t *testing.T) {
 				continue
 			}
 			ip = ip[:totalLength]
+			if wireQualityEnabled() && binary.BigEndian.Uint16(ip[6:8])&0x3fff != 0 {
+				fmt.Println("COLLECTOR-ERROR:unreassembled IPv4 fragment")
+				return
+			}
 			if ip[9] != unix.IPPROTO_TCP && ip[9] != unix.IPPROTO_UDP {
 				if (os.Getenv("RAZDACHA_WIRE_EGRESS") == "1" || os.Getenv("RAZDACHA_WIRE_TRANSPORT") != "") && (ip[9] == 1 || ip[9] == 253) {
 					payload := ip[ihl:]
@@ -687,6 +699,12 @@ func (h *wireHarness) captureBarrier(t *testing.T) {
 	case <-h.collectorDone:
 		t.Fatal("collector output ended before evidence barrier")
 	case <-timer.C:
+		h.mu.Lock()
+		err := h.collectorErr
+		h.mu.Unlock()
+		if err != nil {
+			t.Fatalf("capture barrier failed: %v", err)
+		}
 		t.Fatal("capture barrier ACK timed out")
 	case <-h.ctx.Done():
 		t.Fatal(h.ctx.Err())
