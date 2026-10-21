@@ -71,3 +71,28 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 - Native generation transport compatibility follows ADR 0029: unsupported refresh retains accepted content and validators, and publication reports transport prefixes in the unified nft count. A successful source download alone never applies pending policy.
 
 - Apply status compares the JSON persistence representation of editable and committed policy under the publication gate. Tunnel parsed-JSON whitespace and nil versus JSON null must not report pending edits after Apply or recovery; genuine peer egress and rule changes still do. Uninitialized or uncertain publication remains pending, and comparison encoding failures are returned as errors.
+
+## Tunnel action lifetime
+
+- Tunnel actions capture the initiating frontend session and modal/interaction.
+  Confirmed same-session mutations retain inventory/pending effects after ordinary
+  closure or navigation, but never close a replacement editor. Previous-session
+  completions cannot update inventory, pending state or feedback, nor dispatch
+  follow-up inventory/details reads. This guard does not change backend authentication
+  or delayed cookie delivery.
+- Current-session tunnel actions are single-flight for the same target. The tunnel
+  screen loader coalesces reads within an unchanged generation. Its shared
+  `beginInventoryRead()` token accepts a snapshot only in the same session and before
+  a newer reader or accepted mutation invalidates it. The Clients reader uses that
+  token plus its own screen/request guard and ignores obsolete read errors rather
+  than marking tunnel metadata missing. Startup `app.loadAll()` adoption of the same
+  token is tracked separately in #248; #256 alone does not close the demonstrated
+  bootstrap-batch overwrite race. Callback updates resolve the current inventory
+  identity. Connected initiating buttons are restored
+  by operation/session ownership independently of obsolete modal feedback.
+- Confirmed Save, WARP registration and catalog refresh success is distinct from
+  follow-up inventory/details failure, so read errors never imply that an accepted
+  mutation should be repeated. Pool metadata, raw loading and parser responses obey
+  their modal/session/request lifetime; raw cleanup and backend protocol/reference
+  semantics remain unchanged. Development-only tests use synthetic local responses,
+  never installed networking or external WARP registration.
