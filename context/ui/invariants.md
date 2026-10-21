@@ -99,6 +99,42 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
   readable in both system themes. Repeated controls identify their row in their
   accessible names; the rule tunnel selector has an associated label.
 
+## Diagnostics and shared shell
+
+- Shared modal action labels wrap within their available width at enlarged text sizes.
+  The Tunnel editor keeps header/footer outside its body scroller and reveals focused
+  name/configuration fields within the body. Its existing input, focus-trap and secret
+  lifetime contracts remain unchanged.
+- Header navigation retains exactly four screens. English labels and precise version
+  readouts wrap without overlap or ellipsis at narrow widths/enlarged text. The global
+  Apply bar reserves its measured height for content and notifications; global pending
+  does not identify any individual client's active route.
+- Only supported diagnostic checks, rerun and allowlisted summary download are active.
+  Logs and generated-configuration viewing are explicitly unavailable in this version;
+  no viewer request is dispatched to absent handlers. Empty/error/offline data is not
+  presented as unimplemented support or a fabricated healthy result. Long raw check
+  details remain local and keyboard-scrollable. Focused detail fields fit between
+  measured header/Apply chrome, including enlarged text.
+- Summary reports export known check labels/status enums, numeric settings/counts,
+  version cores and validated commit text. They exclude names/IDs/endpoints/DNS,
+  credentials and arbitrary diagnostic/runtime/version-suffix text. This is explicit
+  field selection, not universal redaction; sharing still requires review.
+- Diagnostic loads/reruns and touched shared load/navigation/Apply feedback capture
+  initiating session lifetime. Old sessions cannot overwrite results, dispatch a next
+  queued probe or repopulate feedback. An active rerun retains its progress snapshot
+  against older polls; failures keep an actionable inline error and retry. Obsolete
+  navigation completions cannot clear a newer screen's missing/offline state or post
+  errors, even within the same session.
+- Notifications reveal new entries within their own bounded stack without scrolling
+  the page or stealing unrelated focus. Removal of a focused entry continues useful
+  visible focus. New feedback continues notification-local focus when an older focused
+  entry would be scrolled away; unrelated page/modal focus stays unchanged.
+  Authentication cleanup owns the login focus target. They retain at
+  most three recent entries, deduplicate identical repeats,
+  support dismissal and expire after four seconds. Long content remains within bounded
+  scrollable space above Apply. Auth dismissal clears DOM/timers. Existing form errors,
+  modal/menu focus and secret cleanup retain their established ownership/lifetimes.
+
 ## Rule editor integrity
 
 - The rule dialog reads Name, Clients, Resources, Action in one primary body scroller,

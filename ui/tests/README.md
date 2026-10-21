@@ -49,7 +49,8 @@ as well as empty, unavailable-source, URL-only, orphan, chain and save-error sta
 screenshots; `rule.fixture.cjs` exports a loopback-only synthetic preview server.
 
 Current suites cover rule editor integrity, client action lifetime, unified Client
-Details drafts/delivery, responsive client layout/focus and Settings persistence/lifetime.
+Details drafts/delivery, responsive client layout/focus, Settings persistence/lifetime,
+and shared shell/Diagnostics functionality, report privacy and layout.
 The dedicated `ui-browser` CI job runs separately from Go tests,
 static builds and releases: Node, npm and browser downloads are never daemon build
 requirements. Installed packages are ignored by Git and are outside embedded assets.
@@ -59,3 +60,9 @@ lifetime using synthetic data. They do not verify backend cookie delivery timing
 real tunnel connectivity, live Telegram delivery or installed deployment behavior.
 Tooling integration references #249; the final combined remediation audit remains
 active until the remaining UI changes and their independent verification are complete.
+
+The shared app fixture (`app.fixture.cjs`) supports explicit state overrides, exact-origin
+request journals/unexpected-request failures, per-method/path hold/fail/release and
+login/empty readiness. `shell-preview.fixture.cjs` reuses its synthetic model for a
+loopback-only preview; unmodeled operations fail explicitly. `SHELL_SCREENSHOT_DIR`
+optionally captures the shared layout suite. These fixtures never contact a daemon.

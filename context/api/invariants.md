@@ -85,10 +85,13 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
   `beginInventoryRead()` token accepts a snapshot only in the same session and before
   a newer reader or accepted mutation invalidates it. The Clients reader uses that
   token plus its own screen/request guard and ignores obsolete read errors rather
-  than marking tunnel metadata missing. Startup `app.loadAll()` adoption of the same
-  token is tracked separately in #248; #256 alone does not close the demonstrated
-  bootstrap-batch overwrite race. Callback updates resolve the current inventory
-  identity. Connected initiating buttons are restored
+  than marking tunnel metadata missing. Startup `app.loadAll()` captures the same
+  token before its parallel batch
+  and accepts tunnel inventory through it, so an earlier completed tunnel response
+  cannot overwrite a mutation accepted while another bootstrap request is pending.
+  Bootstrap tunnel success/error feedback also checks token currency before changing
+  missing/offline state or posting errors. Callback updates resolve the current
+  inventory identity. Connected initiating buttons are restored
   by operation/session ownership independently of obsolete modal feedback.
 - Confirmed Save, WARP registration and catalog refresh success is distinct from
   follow-up inventory/details failure, so read errors never imply that an accepted

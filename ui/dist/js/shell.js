@@ -41,12 +41,66 @@ export function applyDocTitle() {
 
 /* --- тосты ---------------------------------------------------------------- */
 
+const notifications = new Map();
+const maxNotifications = 3;
+function revealToastControl(control) {
+  const stack = $('#toasts');
+  const bounds = stack.getBoundingClientRect();
+  const box = control.getBoundingClientRect();
+  if (box.top < bounds.top) stack.scrollTop -= bounds.top - box.top;
+  else if (box.bottom > bounds.bottom) stack.scrollTop += box.bottom - bounds.bottom;
+}
+function continueToastFocus() {
+  const target = $('#toasts').querySelector('.toast:last-child .toast-dismiss');
+  if (target) {
+    target.focus({ preventScroll: true });
+    revealToastControl(target);
+  } else if (modalOpen()) focusModal();
+  else {
+    const fallback = $('#app').hidden ? $('#password') : $('#tabs [aria-selected="true"]');
+    fallback?.focus({ preventScroll: true });
+  }
+}
+function removeToast(element, restoreFocus = true) {
+  const focused = element.contains(document.activeElement);
+  clearTimeout(notifications.get(element)?.timer);
+  notifications.delete(element);
+  element.remove();
+  if (focused && restoreFocus) continueToastFocus();
+  return focused;
+}
+
+export function clearToasts() {
+  // Authentication/modal cleanup owns the next focus target.
+  for (const element of notifications.keys()) removeToast(element, false);
+  $('#toasts').replaceChildren();
+}
+
 export function toast(text, kind) {
-  const el = document.createElement('div');
-  el.className = 'toast' + (kind === 'err' ? ' err' : '');
-  el.textContent = text;
-  $('#toasts').appendChild(el);
-  setTimeout(() => el.remove(), 4000);
+  const value = String(text);
+  let restoreFocus = $('#toasts').contains(document.activeElement);
+  for (const [element, entry] of notifications) {
+    if (!element.isConnected || entry.text === value && entry.kind === kind) restoreFocus = removeToast(element, false) || restoreFocus;
+  }
+  while (notifications.size >= maxNotifications) restoreFocus = removeToast(notifications.keys().next().value, false) || restoreFocus;
+  const element = document.createElement('div');
+  element.className = 'toast' + (kind === 'err' ? ' err' : '');
+  const content = document.createElement('span');
+  content.className = 'toast-message';
+  content.textContent = value;
+  if (value.length > 300 || value.split('\n').length > 4) content.tabIndex = 0;
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'toast-dismiss';
+  dismiss.setAttribute('aria-label', 'Dismiss notification');
+  dismiss.textContent = '×';
+  dismiss.addEventListener('click', () => removeToast(element));
+  element.append(content, dismiss);
+  const stack = $('#toasts');
+  stack.appendChild(element);
+  stack.scrollTop = stack.scrollHeight;
+  if (restoreFocus) continueToastFocus();
+  notifications.set(element, { text: value, kind, timer: setTimeout(() => removeToast(element), 4000) });
 }
 
 /** Показать ошибку запроса. Текст ошибки приходит с сервера на русском и
@@ -151,6 +205,15 @@ export function closeModal({ restoreFocus = true } = {}) {
 // These listeners never capture a dialog's DOM or async callbacks.
 document.addEventListener('focusin', (event) => {
   if (modalOpen() && !$('#modal').contains(event.target)) focusModal();
+  if (!event.target.matches('#t-name, #t-raw')) return;
+  const field = event.target;
+  requestAnimationFrame(() => {
+    if (!modalOpen() || !field.isConnected || document.activeElement !== field) return;
+    const body = field.closest('.modal-body');
+    const visible = body.getBoundingClientRect(), box = field.getBoundingClientRect();
+    if (box.bottom > visible.bottom - 12) body.scrollTop += box.bottom - visible.bottom + 12;
+    else if (box.top < visible.top + 12) body.scrollTop -= visible.top + 12 - box.top;
+  });
 });
 document.addEventListener('keydown', (event) => {
   if (!modalOpen()) return;

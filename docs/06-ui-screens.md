@@ -281,38 +281,63 @@ closing or repopulating a replacement editor. The editor does not change API, DN
 chain or routing semantics; the backend remains authoritative, including nonempty
 TunnelID validation for disabled rules.
 
-## 4. Диагностика
+## 4. Diagnostics
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Диагностика                        [Проверить заново]       │
-├──────────────────────────────────────────────────────────────┤
-│  ✓  WireGuard        wg0 поднят, 3 пира, 2 онлайн            │
-│  ✓  sing-box         1.12.4, запущен 4 часа назад            │
-│  ✓  Правила nftables таблица razdacha, 1284 подсети          │
-│  ⚠  Туннели          «Резервный» не отвечает                 │
-│  ✓  Списки           обновлены 3 часа назад                  │
-│  ✓  IP forwarding    включён                                 │
-│  ✓  Path MTU         1500 до всех туннелей                   │
-├──────────────────────────────────────────────────────────────┤
-│  [Скачать отчёт]   [Логи]   [Конфиг sing-box]                │
-└──────────────────────────────────────────────────────────────┘
-```
+Diagnostics shows the gateway's check statuses and server-supplied check time. Run
+checks keeps a visible sequential progress state, checks enabled tunnels through
+the supported API and requests the configured checks. Missing responses become
+unknown results rather than invented success. Empty results, unavailable support
+and connection failures are distinct; retry remains available. Long diagnostic
+text expands into a keyboard-scrollable local detail area. Focused details fit between
+the measured sticky header and fixed Apply bar, including enlarged text.
 
-«Скачать отчёт» собирает всё в один текстовый файл для багрепорта — с замаскированными
-ключами, IP-адресами эндпоинтов и UUID. Маскирование обязательно: пользователи вставляют
-такие отчёты в публичные чаты. Функция `maskIP` берётся из `fe-app-podkop/src/helpers/`.
+Log viewing and generated-configuration viewing are unavailable in this version.
+The screen states these capability limits as plain text and exposes no active viewer
+buttons or requests. The backend has no handlers for `GET /api/logs` or
+`GET /api/diag/singbox-config`; this UI task does not add raw log/config exposure.
 
-## Общие элементы
+Download report produces an allowlisted summary: check labels/status enums, numeric
+settings and inventory counts, version cores and a validated commit. Names, IDs,
+endpoints, DNS values, credentials, release suffixes and arbitrary check/runtime
+text are excluded. Full diagnostic details remain visible locally. This field-selection
+policy does not claim universal secret detection; review the file before sharing.
+The running version and mismatch details remain precise in the UI even though the
+summary export deliberately omits free-form version suffixes.
 
-**Плашка непримененных изменений** — фиксирована внизу, появляется после правки правил
-или настроек:
+Diagnostic loads and reruns capture session/operation lifetime. A former session
+cannot update current results, post notifications or dispatch the next queued probe.
+A running operation does not let an older poll replace its progress snapshot. Run
+failures retain an actionable local error and the retry action.
 
-```
-  Есть непримененные изменения                    [Применить]
-```
+## Shared controls
 
-Причина отложенного применения — в [API](05-api.md#applying).
+The header keeps four English navigation labels, running-version/freshness readouts,
+Settings and Log out. Labels and long version strings wrap at narrow widths and
+increased text sizes rather than overlapping or being clipped. Settings remains a
+dialog rather than a fifth screen. Existing modal focus trapping, inert background,
+opener restoration, body-mounted row menus and modal-owned secret cleanup remain.
+Shared modal action labels wrap within the available width when text is enlarged.
+The Tunnel editor scrolls its body independently of persistent header/footer actions.
+Keyboard focus reveals its name/configuration fields within that visible body; field
+behavior, focus trapping and secret cleanup retain their existing contracts.
+
+The fixed Apply bar reports global unapplied changes. It does not identify an
+individual client's active route; see [the API contract](05-api.md#applying). Its
+actual wrapped height reserves content clearance and notification space. Apply
+feedback and touched shared loads obey session lifetime; previous-session completion
+cannot clear current pending state, change a newer session or repopulate feedback.
+A successful Apply refreshes supported global status before reporting completion.
+Obsolete navigation callbacks cannot change a newer screen's missing/offline feedback.
+
+At most three recent notifications are retained. Repeats are deduplicated, every
+notification is dismissible and messages expire after four seconds. New messages are
+revealed inside the bounded stack without moving the page or unrelated focus. Removing
+a focused notification continues focus to a visible notification or dashboard/modal control.
+If focus is already within a retained notification, new feedback continues notification-local
+focus to its visible dismiss control; unrelated page/modal focus is preserved. Long messages
+wrap and scroll within bounded space above Apply. Logout/session expiry clears
+notification elements and timers. Durable actionable errors remain in their forms;
+notifications do not replace those errors.
 
 **Settings** open from the header gear as one dialog with Network, Schedules,
 Telegram and Backup navigation. Each section has its own Save action, draft indicator

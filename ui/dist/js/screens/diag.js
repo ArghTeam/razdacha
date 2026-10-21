@@ -1,390 +1,195 @@
-/* Экран «Диагностика». Отчёт собирается на клиенте и маскирует ключи, внешние
-   адреса и UUID: такие отчёты вставляют в публичные чаты. */
-
+/* Supported diagnostics and allowlisted summary reports; unavailable viewers stay explicit. */
 import * as api from '../api.js';
-import {
-  state, tunnelById, toast, toastError, openModal, modalShell,
-  notImplemented, refresh,
-} from '../shell.js';
-import { esc, since, isOnline, maskIP, maskKey, download, tunnelEndpoint } from '../util.js';
+import { state, toast, refresh } from '../shell.js';
+import { esc, download } from '../util.js';
 
-export const title = 'Диагностика';
+export const title = 'Diagnostics';
+let loadRevision = 0;
+let run = null;
+let runError = null;
+function activeRun() {
+  if (run && !run.currentSession()) run = null;
+  return run;
+}
 
 export async function load() {
-  // Версии перечитываются и во время перезапуска: они не часть сводки проверок
-  // и от неё не зависят. Отказ здесь не роняет экран — версии показываются
-  // отдельным блоком, и его отсутствие не должно скрывать проверки.
+  const currentSession = api.session.guard();
+  const revision = ++loadRevision;
+  const current = () => currentSession() && revision === loadRevision;
   try {
-    state.version = await api.version.get();
+    const version = await api.version.get();
+    if (!current()) return;
+    state.version = version;
   } catch {
+    if (!current()) return;
     state.version = null;
   }
-  // Пока идёт перезапуск, снимок с сервера не подменяет строки: он относится к
-  // прошлой проверке, и часть строк сейчас честно говорит «проверяется».
-  if (run) return;
-  state.diag = await api.diag.get();
+  if (activeRun()) return;
+  try {
+    const result = await api.diag.get();
+    if (current() && !activeRun()) state.diag = result;
+  } catch (err) {
+    if (current()) throw err;
+  }
 }
 
 const CHECK_ICON = { ok: '✓', warn: '⚠', error: '✕', unknown: '?' };
-const OVERALL_TEXT = {
-  ok: 'Всё в порядке', warn: 'Есть замечания',
-  error: 'Есть ошибки', unknown: 'Состояние неизвестно',
-};
-
-/** Сводный статус — той же логикой, что на сервере (`overall` в diag.go):
-    ошибка важнее предупреждения, а «неизвестно» не перебивает зелёные. Заголовок
-    «состояние неизвестно» над шестью галочками бесполезен и приучает его не
-    читать. Неизвестно в целом — только когда не ответила ни одна проверка.
-    Считать приходится и здесь: при прогоне по одной сервер видит только её. */
+const OVERALL_TEXT = { ok: 'All checks passed', warn: 'Warnings found', error: 'Errors found', unknown: 'Status unknown' };
 function worst(checks) {
-  let bad = '';
-  let ok = false;
-  let unknown = false;
-  for (const c of checks || []) {
-    if (c.status === 'error') bad = 'error';
-    else if (c.status === 'warn' && bad !== 'error') bad = 'warn';
-    else if (c.status === 'ok') ok = true;
-    else if (c.status === 'unknown') unknown = true;
+  let result = 'unknown';
+  for (const check of checks || []) {
+    if (check.status === 'error') return 'error';
+    if (check.status === 'warn') result = 'warn';
+    else if (check.status === 'ok' && result !== 'warn') result = 'ok';
   }
-  if (bad) return bad;
-  if (ok) return 'ok';
-  return unknown ? 'unknown' : 'ok';
+  return result;
 }
 
-/* --- ход перезапуска ------------------------------------------------------
-   Экран перерисовывается целиком, поэтому ход живёт в модуле, а не в DOM:
-   после каждой ответившей проверки вызывается refresh(), и разметка собирается
-   заново из этого объекта. */
-
-/** Идёт перезапуск: { ids, titles, done: Map(id → проверка), current }. */
-let run = null;
+function unavailableViewers() {
+  return `<div class="diag-unavailable" aria-label="Unavailable diagnostic viewers"><p><strong>Logs</strong><span>Log viewing is unavailable in this version.</span></p><p><strong>Generated configuration</strong><span>Configuration viewing is unavailable in this version.</span></p></div>`;
+}
 
 export function view() {
-  if (state.missing.has('diag') || !state.diag) {
-    return head() + `<div class="card">${notImplemented('Диагностика')}</div>` + versionsCard();
+  activeRun();
+  const failure = runError?.currentSession() ? `<div class="diag-feedback" role="alert">${esc(runError.text)} Use Run checks to retry.</div>` : '';
+  if (state.missing.has('diag')) {
+    return head() + failure + '<div class="card"><div class="empty">Diagnostics are unavailable in this version.</div></div>' + versionsCard() + unavailableViewers();
   }
-  return head() + overallBar() + `
-    <div class="card">
-      ${rows() || '<div class="empty">Проверок нет.</div>'}
-      <div class="toolbar">
-        <button class="btn" data-act="download-report">Скачать отчёт</button>
-        <button class="btn" data-act="logs">Логи</button>
-        <button class="btn" data-act="singbox-config">Конфиг sing-box</button>
-      </div>
-    </div>` + versionsCard() + `
-    <p class="screen-sub" style="margin-top:10px">
-      В отчёте маскируются ключи, внешние адреса эндпоинтов и UUID: такие отчёты
-      вставляют в публичные чаты.
-    </p>`;
+  if (!state.diag && !run) {
+    return head() + failure + '<div class="card"><div class="empty">Diagnostic results are unavailable. Check the connection and use Run checks to retry.</div></div>' + versionsCard() + unavailableViewers();
+  }
+  return head() + failure + overallBar() + `<div class="card diag-checks">${rows() || '<div class="empty">No diagnostic results yet. Use Run checks to request a new result.</div>'}<div class="toolbar"><button class="btn" data-act="download-report">Download report</button></div></div>` + versionsCard() + unavailableViewers() + '<p class="screen-sub diag-report-note">Summary reports exclude names, endpoints and free-form details. Review before sharing.</p>';
 }
 
-/* --- версии --------------------------------------------------------------
-   Что развёрнуто на сервере. Здесь, а не в настройках: сюда идут, когда
-   что-то не так, и первый вопрос после обновления — доехало ли оно вообще.
-   Проверки новых версий тут нет: за ней пришлось бы идти в GitHub, и такие
-   вещи у нас включаются явно. */
-
-/** Значение или «неизвестно» — пустота не заполняется выдумкой. */
-function versionValue(v, unknownText = 'неизвестно') {
-  return v ? `<dd>${esc(String(v))}</dd>` : `<dd class="unknown">${esc(unknownText)}</dd>`;
+function versionValue(value, unknown = 'Unknown') {
+  return value === null || value === undefined || value === '' ? `<dd class="unknown">${esc(unknown)}</dd>` : `<dd>${esc(String(value))}</dd>`;
 }
-
 function versionsCard() {
-  const v = state.version;
-  if (!v) {
-    return `<div class="card" style="margin-top:10px">
-      <div class="empty">Версии не пришли: демон не ответил на <code>GET /api/version</code>.</div>
-    </div>`;
-  }
-
-  const singbox = v.singbox || {};
-  return `<div class="card" style="margin-top:10px">
-    ${v.version_mismatch ? mismatchNote(v) : ''}
-    <dl class="versions">
-      <dt>Демон</dt>${versionValue(v.version)}
-      <dt>Коммит</dt>${versionValue(v.commit)}
-      <dt>Версия установки</dt>${versionValue(v.installed_version, 'не записана (установка старше 0.2.1)')}
-      <dt>Схема БД</dt>${versionValue(v.schema_version)}
-      <dt>sing-box, библиотека</dt>${versionValue(singbox.library)}
-      <dt>sing-box, рантайм</dt>${versionValue(singbox.runtime, singbox.runtime_detail || 'неизвестно')}
-    </dl>
-  </div>`;
+  const value = state.version;
+  if (!value) return '<div class="card diag-versions"><div class="empty">Version information is unavailable. Retry when the gateway is reachable.</div></div>';
+  const singbox = value.singbox || {};
+  return `<div class="card diag-versions">${value.version_mismatch ? `<div class="version-warn"><strong>Running version differs from the installed version</strong>Running ${esc(value.version)}; installed ${esc(value.installed_version || 'Unknown')}. The service may not have restarted after an update.</div>` : ''}<dl class="versions"><dt>Daemon</dt>${versionValue(value.version)}<dt>Commit</dt>${versionValue(value.commit)}<dt>Installed version</dt>${versionValue(value.installed_version, 'Not recorded')}<dt>Database schema</dt>${versionValue(value.schema_version)}<dt>sing-box library</dt>${versionValue(singbox.library)}<dt>sing-box runtime</dt>${versionValue(singbox.runtime, singbox.runtime_detail || 'Unknown')}</dl></div>`;
 }
-
-/** Расхождение названо словами и с действием: сама цифра ни о чём не говорит. */
-function mismatchNote(v) {
-  return `<div class="version-warn">
-    <strong>Работает не та версия, которую поставил установщик</strong>
-    Запущен демон ${esc(String(v.version))}, установщик записал
-    ${esc(String(v.installed_version || 'неизвестно'))}. Обычно это значит, что после
-    обновления юнит не перезапустился: на диске новый бинарник, в памяти старый процесс.
-    Поможет <code>systemctl restart razdachad</code>.
-  </div>`;
-}
-
 function head() {
-  if (!run) {
-    return `
-      <div class="screen-head">
-        <h1>Диагностика</h1>
-        <div class="spacer"></div>
-        <button class="btn" data-act="rerun-diag">Проверить заново</button>
-      </div>`;
-  }
-  const total = run.ids.length;
-  const done = run.done.size;
-  return `
-    <div class="screen-head">
-      <h1>Диагностика</h1>
-      <div class="spacer"></div>
-      <button class="btn" data-act="rerun-diag" disabled aria-busy="true">
-        Проверяю… ${done}&nbsp;/&nbsp;${total}</button>
-    </div>
-    <div class="diag-progress" role="progressbar" aria-label="Ход проверки"
-         aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}">
-      <div class="diag-progress-fill" style="width:${Math.round((done / total) * 100)}%"></div>
-    </div>`;
+  if (!run) return '<div class="screen-head"><h1>Diagnostics</h1><div class="spacer"></div><button class="btn" data-act="rerun-diag">Run checks</button></div>';
+  const total = run.ids.length, done = run.done.size;
+  return `<div class="screen-head"><h1>Diagnostics</h1><div class="spacer"></div><button class="btn" data-act="rerun-diag" disabled aria-busy="true">Checking… ${done} / ${total || '—'}</button></div>${total ? `<div class="diag-progress" role="progressbar" aria-label="Diagnostic progress" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><div class="diag-progress-fill" style="width:${Math.round(done / total * 100)}%"></div></div>` : ''}`;
 }
-
-/** Строки сводки. Во время перезапуска ответившие показывают новый результат,
-    остальные — «проверяется»: показывать прошлый результат как новый нельзя. */
 function rows() {
-  const list = run
-    ? run.ids.map((id) => run.done.get(id) || { id, title: run.titles.get(id), pending: true })
-    : (state.diag.checks || []);
-
-  return list.map((c) => `
-    <div class="check${c.pending ? ' pending' : ''}">
-      ${c.pending
-    ? '<span class="check-icon check-spin" aria-hidden="true"></span>'
-    : `<span class="check-icon ${esc(c.status)}">${CHECK_ICON[c.status] || '?'}</span>`}
-      <div>
-        <div class="check-title">${esc(c.title)}</div>
-        <div class="check-detail">${c.pending
-    ? (c.id === run.current ? 'проверяется…' : 'в очереди')
-    : esc(c.detail || '')}</div>
-      </div>
-    </div>`).join('');
+  const list = run ? run.ids.map(id => run.done.get(id) || { id, title: run.titles.get(id), pending: true }) : state.diag.checks || [];
+  return list.map(check => {
+    const detail = check.pending ? check.id === run.current ? 'Checking…' : 'Queued' : check.detail || '';
+    const long = detail.length > 600 || detail.split('\n').length > 8;
+    return `<div class="check${check.pending ? ' pending' : ''}">${check.pending ? '<span class="check-icon check-spin" aria-hidden="true"></span>' : `<span class="check-icon ${esc(check.status)}" aria-label="${esc(check.status || 'unknown')}">${CHECK_ICON[check.status] || '?'}</span>`}<div><div class="check-title">${esc(check.title)}</div><div class="check-detail">${long ? `<details class="diag-check-detail"><summary>Show diagnostic details</summary><pre tabindex="0">${esc(detail)}</pre></details>` : esc(detail)}</div></div></div>`;
+  }).join('');
 }
-
-/** Когда проверяли. Секунды сразу после прогона читаются как сбой отсчёта,
-    поэтому первые полминуты — «только что». */
-function checkedAgo(iso) {
-  const age = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(age)) return 'время проверки неизвестно';
-  return age < 30_000 ? 'проверено только что' : `проверено ${since(iso)}`;
-}
-
-/** Общий статус и время последней проверки. Время берётся из ответа сервера:
-    подставлять часы браузера — значит выдавать старый снимок за свежий. */
 function overallBar() {
-  if (run) {
-    return `
-      <div class="overall">
-        <span class="check-icon check-spin" aria-hidden="true"></span>
-        <strong>Идёт проверка</strong>
-        <span class="overall-time">${esc(run.titles.get(run.current) || '')}</span>
-      </div>`;
-  }
-  const d = state.diag;
-  const status = d.overall || worst(d.checks);
-  return `
-    <div class="overall">
-      <span class="check-icon ${esc(status)}">${CHECK_ICON[status] || '?'}</span>
-      <strong>${esc(OVERALL_TEXT[status] || 'Состояние неизвестно')}</strong>
-      <span class="overall-time">${d.checked_at
-    ? esc(checkedAgo(d.checked_at))
-    : 'время проверки неизвестно'}</span>
-    </div>`;
+  if (run) return `<div class="overall"><span class="check-icon check-spin" aria-hidden="true"></span><strong>Checks running</strong><span class="overall-time">${esc(run.titles.get(run.current) || '')}</span></div>`;
+  const diag = state.diag, status = diag.checks?.length ? diag.overall || worst(diag.checks) : 'unknown';
+  const stamp = diag.checked_at && Date.parse(diag.checked_at);
+  return `<div class="overall"><span class="check-icon ${esc(status)}">${CHECK_ICON[status] || '?'}</span><strong>${esc(OVERALL_TEXT[status] || 'Status unknown')}</strong><span class="overall-time">${stamp ? `Checked ${esc(new Date(stamp).toLocaleString('en-GB'))}` : 'Check time unavailable'}</span></div>`;
 }
 
-/* --- логи и конфиг -------------------------------------------------------- */
-
-function modalLogs() {
-  openModal(modalShell('Логи', `
-    <div class="radios">
-      <label class="radio-pill"><input type="radio" name="logsrc" value="razdachad" checked> razdachad</label>
-      <label class="radio-pill"><input type="radio" name="logsrc" value="sing-box"> sing-box</label>
-    </div>
-    <pre class="pane" id="log-pane">Загружаю…</pre>`,
-  '<button class="btn" data-act="close-modal">Закрыть</button>'),
-  (m) => {
-    const pane = m.querySelector('#log-pane');
-    const upd = async () => {
-      const src = m.querySelector('input[name="logsrc"]:checked').value;
-      pane.textContent = 'Загружаю…';
-      try {
-        pane.textContent = api.logLines(await api.diag.logs(src)).join('\n');
-      } catch (err) {
-        pane.textContent = err.missing
-          ? 'Логи появятся позже: GET /api/logs ещё не реализован.'
-          : err.message;
-      }
-    };
-    m.querySelectorAll('input[name="logsrc"]').forEach((e) => e.addEventListener('change', upd));
-    upd();
-  });
-}
-
-function modalSingboxConfig() {
-  openModal(modalShell('Конфиг sing-box', `
-    <div class="parse-result idle">Только просмотр: конфиг генерируется целиком из состояния
-      и никогда не патчится вручную.</div>
-    <pre class="pane" id="cfg-pane">Загружаю…</pre>`,
-  '<button class="btn" data-act="close-modal">Закрыть</button>'),
-  (m) => {
-    const pane = m.querySelector('#cfg-pane');
-    api.diag.singboxConfig()
-      .then((text) => { pane.textContent = text; })
-      .catch((err) => {
-        pane.textContent = err.missing
-          ? 'Конфиг появится позже: GET /api/diag/singbox-config ещё не реализован.'
-          : err.message;
-      });
-  });
-}
-
-/* --- отчёт ---------------------------------------------------------------- */
+const reportCheckNames = { wg: 'WireGuard', singbox: 'sing-box', tunnels: 'Tunnels', nft: 'Network policy', route: 'Marked routing', forward: 'IP forwarding', mtu: 'Path MTU', lists: 'Lists' };
+const reportStatus = value => ['ok', 'warn', 'error', 'unknown'].includes(value) ? value : 'unknown';
+const reportInteger = value => Number.isSafeInteger(value) && value >= 0 ? value : 'unknown';
+const reportVersion = value => /^(?:v)?(\d+\.\d+\.\d+)/.exec(String(value || ''))?.[1] || (value === 'dev' ? 'dev' : 'unknown');
 
 function report() {
-  const s = state.settings || {};
-  const d = state.diag || { overall: 'unknown', checks: [] };
-  const v = state.version || {};
-  const sb = v.singbox || {};
-  const out = [
-    'razdacha — отчёт диагностики',
-    `дата: ${new Date().toISOString()}`,
-    `общий статус: ${d.overall}`,
-    '',
-    // Версии идут в отчёт первым блоком: багрепорт без них разбирать нечем.
-    '## Версии',
-    `демон: ${v.version ?? '—'}${v.commit ? ` (${v.commit})` : ''}`,
-    `версия установки: ${v.installed_version ?? '—'}${v.version_mismatch ? ' — РАСХОЖДЕНИЕ с работающим бинарником' : ''}`,
-    `схема БД: ${v.schema_version ?? '—'}`,
-    `sing-box, библиотека: ${sb.library ?? '—'}`,
-    // Причина недоступности рантайма приходит от демона короткой фразой; ставим
-    // её после «неизвестно», иначе строка читается как версия.
-    `sing-box, рантайм: ${sb.runtime ?? `неизвестно — ${sb.runtime_detail || 'причина не названа'}`}`,
-    '',
-    '## Проверки',
-    ...(d.checks || []).map((c) => `${String(c.status).padEnd(5)} ${c.title}: ${c.detail || ''}`),
-    '',
-    '## Настройки',
-    `порт wg: ${s.wg_listen_port ?? '—'}`,
-    'внешний адрес: <замаскирован>',
-    `MTU клиентов: ${s.client_mtu ?? '—'}`,
-    `DNS: ${s.dns_upstream ?? '—'} (${s.dns_type ?? '—'})`,
-    '',
-    '## Туннели',
-    ...state.tunnels.map((t) =>
-      `${t.name}: ${t.type}, ${maskIP(tunnelEndpoint(t))}, ${t.status ?? 'unknown'}${t.latency_ms ? `, ${t.latency_ms} мс` : ''}`),
-    '',
-    '## Клиенты',
-    ...state.peers.map((p) =>
-      `${p.name}: ${p.address}, ключ ${maskKey(p.public_key)}, endpoint ${maskIP(p.endpoint) || '—'}, ${isOnline(p) ? 'онлайн' : 'офлайн'}`),
-    '',
-    '## Правила',
-    ...state.rules.map((r, i) =>
-      `${i + 1}. ${r.name} → ${r.action}${r.tunnel_id ? ' (' + ((tunnelById(r.tunnel_id) || {}).name || '?')
-        + (r.via_tunnel_id ? ' → ' + ((tunnelById(r.via_tunnel_id) || {}).name || '?') : '') + ')' : ''}${r.enabled ? '' : ' [выкл]'}`),
-    '',
+  const diag = state.diag || {}, version = state.version || {}, settings = state.settings || {};
+  // Export an explicit summary, never arbitrary server/user text. Raw details stay local.
+  const output = [
+    'razdacha — diagnostic report', `date: ${new Date().toISOString()}`,
+    'Summary only: names, endpoints, DNS values, credentials and free-form details are excluded.',
+    'Version cores omit release suffixes. Review before sharing.', '',
+    '## Versions', `daemon: ${reportVersion(version.version)}`,
+    `commit: ${/^[0-9a-f]{7,40}$/i.test(version.commit || '') ? version.commit : 'unknown'}`,
+    `installed: ${reportVersion(version.installed_version)}`,
+    `version mismatch: ${version.version_mismatch === true ? 'yes' : 'no'}`,
+    `database schema: ${reportInteger(version.schema_version)}`,
+    `sing-box library: ${reportVersion(version.singbox?.library)}`,
+    `sing-box runtime: ${reportVersion(version.singbox?.runtime)}`, '',
+    '## Check statuses', `overall: ${reportStatus(diag.checks?.length ? diag.overall || worst(diag.checks) : 'unknown')}`,
+    ...(diag.checks || []).map((check, index) => `${Object.hasOwn(reportCheckNames, check.id) ? reportCheckNames[check.id] : `Check ${index + 1}`}: ${reportStatus(check.status)}`), '',
+    '## Configuration summary', `WireGuard port: ${reportInteger(settings.wg_listen_port)}`,
+    `client MTU: ${reportInteger(settings.client_mtu)}`,
+    `clients: ${state.peers.length}; enabled: ${state.peers.filter(peer => peer.enabled !== false).length}`,
+    `tunnels: ${state.tunnels.length}; enabled: ${state.tunnels.filter(tunnel => tunnel.enabled !== false).length}`,
+    `rules: ${state.rules.length}; enabled: ${state.rules.filter(rule => rule.enabled !== false).length}`, '',
   ].join('\n');
-  download('razdacha-diag.txt', out);
-  toast('Отчёт скачан, ключи и адреса замаскированы');
+  download('razdacha-diag.txt', output);
+  toast('Summary report downloaded. Review before sharing.');
 }
 
-/* --- перезапуск ----------------------------------------------------------- */
-
-/**
- * Прогнать проверки по одной, показывая ход.
- *
- * Порядок берётся из последней сводки: список проверок задаёт демон, а не UI,
- * и зашитый здесь перечень разъехался бы с ним при первой же новой проверке.
- * Проверки идут последовательно — так видно, какая выполняется сейчас; они
- * локальные и быстрые, параллелить нечего.
- */
+/* Reruns keep one operation token; old sessions cannot dispatch another probe. */
 async function rerun() {
-  if (run) return; // повторное нажатие не плодит запросов
-  const base = (state.diag && state.diag.checks) || [];
-  if (!base.length) return rerunAll();
-
-  run = {
-    ids: base.map((c) => c.id),
-    titles: new Map(base.map((c) => [c.id, c.title])),
-    done: new Map(),
-    current: base[0].id,
+  if (activeRun()) return;
+  const checks = state.diag?.checks || [];
+  const execution = {
+    currentSession: api.session.guard(),
+    ids: checks.map(check => check.id),
+    titles: new Map(checks.map(check => [check.id, check.title])),
+    done: new Map(), current: checks[0]?.id,
   };
+  run = execution;
+  runError = null;
+  loadRevision++;
+  const current = () => execution.currentSession() && run === execution;
   refresh();
-
-  let checkedAt = null;
-  let failed = 0;
-
-  // Туннели проверяются здесь же: кнопка обещает «проверить заново», а строка
-  // «туннели» иначе остаётся серой сколько ни жми — их статус берётся из
-  // проверок, запущенных вручную с экрана туннелей.
-  await probeTunnels();
-
-  for (const id of run.ids) {
-    run.current = id;
-    refresh();
-    try {
-      const res = await api.diag.run(id);
-      const list = (res && res.checks) || [];
-      // Демон без поддержки `?check=` вернёт всю сводку — берём свою строку.
-      const c = list.find((x) => x.id === id) || (list.length === 1 ? list[0] : null);
-      run.done.set(id, c || unanswered(id, 'демон не вернул эту проверку'));
-      if (res && res.checked_at) checkedAt = res.checked_at;
-    } catch (err) {
-      failed++;
-      run.done.set(id, unanswered(id, err.message));
-    }
-  }
-
-  const checks = run.ids.map((id) => run.done.get(id));
-  run = null;
-  state.diag = { checks, overall: worst(checks), checked_at: checkedAt };
-  refresh();
-  if (failed) toast(`Проверок не ответило: ${failed}`, 'err');
-  else toast('Проверки перезапущены');
-}
-
-/** Прогнать проверку каждого включённого туннеля. Ошибки не роняют перезапуск:
-    недоступный sing-box — сам по себе повод показать это в строке «туннели». */
-async function probeTunnels() {
   try {
-    const list = await api.tunnels.list();
-    for (const t of list.filter((x) => x.enabled !== false)) {
-      try {
-        await api.tunnels.check(t.id);
-      } catch { /* строка «туннели» покажет, что именно не сошлось */ }
+    if (!execution.ids.length) {
+      let result = await api.diag.run();
+      if (!current()) return;
+      if (!result?.checks) result = await api.diag.get();
+      if (!current()) return;
+      state.diag = result;
+    } else {
+      await probeTunnels(current);
+      if (!current()) return;
+      let checkedAt = null, failed = 0;
+      for (const id of execution.ids) {
+        if (!current()) return;
+        execution.current = id;
+        refresh();
+        try {
+          const result = await api.diag.run(id);
+          if (!current()) return;
+          const list = result?.checks || [];
+          const check = list.find(check => check.id === id) || (list.length === 1 ? list[0] : null);
+          execution.done.set(id, check || unanswered(execution, id, 'The gateway did not return this check.'));
+          if (result?.checked_at) checkedAt = result.checked_at;
+        } catch (err) {
+          if (!current()) return;
+          failed++;
+          execution.done.set(id, unanswered(execution, id, err.message));
+        }
+      }
+      const results = execution.ids.map(id => execution.done.get(id));
+      state.diag = { checks: results, overall: worst(results), checked_at: checkedAt };
+      if (failed) toast(`${failed} checks did not respond. Review the results.`, 'err');
     }
-  } catch { /* список не пришёл — проверки диагностики всё равно идут */ }
-}
-
-/** Проверка не ответила. Статус «неизвестно» с причиной, а не прошлый
-    результат: невыполненная проверка — это не «всё хорошо». */
-const unanswered = (id, why) => ({
-  id,
-  title: (run && run.titles.get(id)) || id,
-  status: 'unknown',
-  detail: `проверка не ответила: ${why}`,
-});
-
-/** Запасной путь: сводки ещё нет, перечня проверок тоже — просим всё разом. */
-async function rerunAll() {
-  try {
-    const res = await api.diag.run();
-    state.diag = res && res.checks ? res : await api.diag.get();
-    refresh();
-    toast('Проверки перезапущены');
+    if (current()) {
+      state.missing.delete('diag');
+      toast('Diagnostic checks completed');
+    }
   } catch (err) {
-    toastError(err, 'Проверки не перезапущены');
+    if (current()) runError = { text: err.message || 'Checks could not be completed.', currentSession: execution.currentSession };
+  } finally {
+    if (run === execution) run = null;
+    if (execution.currentSession()) refresh();
   }
 }
+async function probeTunnels(current) {
+  try {
+    const tunnels = await api.tunnels.list();
+    if (!current()) return;
+    for (const tunnel of tunnels.filter(tunnel => tunnel.enabled !== false)) {
+      if (!current()) return;
+      try { await api.tunnels.check(tunnel.id); }
+      catch { /* Supported diagnostics report tunnel failures without aborting the run. */ }
+    }
+  } catch { /* Diagnostic checks remain useful when the tunnel list is unavailable. */ }
+}
+const unanswered = (execution, id, detail) => ({ id, title: execution.titles.get(id) || id, status: 'unknown', detail: `Check did not respond: ${detail}` });
 
-export const actions = {
-  'logs': modalLogs,
-  'singbox-config': modalSingboxConfig,
-  'download-report': report,
-  'rerun-diag': rerun,
-};
+export const actions = { 'download-report': report, 'rerun-diag': rerun };
