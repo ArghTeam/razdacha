@@ -68,11 +68,19 @@ async function run() {
     const submit = kind => page.locator(`#settings-${kind} [type="submit"]`).click();
     const message = (kind,text) => page.waitForFunction(({kind,text})=>document.querySelector(`#settings-${kind} .settings-status`).textContent.includes(text),{kind,text});
     await page.goto(url); await page.waitForFunction(()=>window.fixture);
-    // A reachable loopback alias is still a different origin. no-cors would resolve
-    // without the guard, so this checks refusal rather than a remote DNS/CORS failure.
+    // Prove this alternate origin is reachable without interception, then reject it
+    // in the guarded page. The control loads only local CSS, never application code.
+    const alternateOriginTarget = `http://localhost:${fixture.server.address().port}/app.css`;
+    const control = await browser.newPage();
+    try {
+      await control.goto(`${url}/app.css`);
+      assert.equal(await control.evaluate(async target => {
+        try { await fetch(target, {mode:'no-cors'}); return true; } catch { return false; }
+      }, alternateOriginTarget), true, 'The loopback alias must be reachable without the guard');
+    } finally { await control.close(); }
     assert.equal(await page.evaluate(async target => {
       try { await fetch(target, {mode:'no-cors'}); return false; } catch { return true; }
-    }, `http://localhost:${fixture.server.address().port}/app.css`), true);
+    }, alternateOriginTarget), true, 'The exact-origin guard must refuse the reachable alias');
     await open();
     await page.locator('#s-mtu').fill('999'); await submit('network');
     await message('network','Client MTU: Enter a value of at least 1280.');

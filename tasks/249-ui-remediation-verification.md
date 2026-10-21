@@ -44,7 +44,9 @@ full audit has been completed.
 - Four Node runner regressions passed: stable sequential discovery/helper exclusion,
   propagated child failure, real child timeout and refusal of an empty suite directory.
 - Settings exact-origin refusal uses a reachable alternate loopback hostname with
-  no-CORS fetch, avoiding a false pass from unreachable external DNS or CORS denial.
+  no-CORS fetch. A separate control page proves the same target is browser-reachable
+  without interception before the guarded page must reject it, avoiding a false pass
+  from hostname/binding/browser-policy failure or CORS denial.
 - `CGO_ENABLED=0 go test ./ui`, JavaScript syntax checks and diff whitespace passed.
 - Final integrated verification after #246–#248 is still pending. This specification
   remains active; this phase establishes repeatable CI tooling only.
