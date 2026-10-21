@@ -5,6 +5,21 @@
 
 ## 2026-10-21
 
+### #265 — bounded repeatable in-place operator transaction
+
+**Changed:** Explicit standard-library controller and bounded Linux proof helper wrap
+existing setup for healthy committed-v4, same-schema/runtime installations. Mandatory
+release hashes, stopped full snapshots, protected-file/config/policy/WG checks,
+private phases and current-operation identity replace ad hoc operator scripts.
+Rollback retains sibling quarantines and resumes atomic renames by inode identity.
+**Boundary:** Trusted daemon recovery owns guard release; independent actual
+Clash/DNS/TLS/process checks accept after publication. No Apply, legacy migration,
+new installer behavior or cross-host restore is introduced.
+**Validation:** Injected filesystem/process failure matrix and pure Linux helper
+fixtures; deployment/rehearsal evidence is recorded in [task 265](../../tasks/265-repeatable-inplace-upgrade.md).
+
+## 2026-10-21
+
 ### #264 — WAL-consistent pre-migration upgrade backups
 
 **Changed:** Setup uses a read-only SQLite snapshot before migrations, including

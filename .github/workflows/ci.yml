@@ -33,6 +33,9 @@ jobs:
 
       - run: go test ./...
 
+      - name: Test bounded in-place upgrade controller
+        run: python3 -m unittest discover -s tools/inplace-upgrade -p 'test_*.py'
+
       - name: Test pinned DNS runtime regression
         working-directory: tests/dnsruntime
         run: go test -mod=readonly ./... -count=1

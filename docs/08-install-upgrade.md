@@ -264,6 +264,22 @@ needs panel access.
 То же и для nginx: конфиг переписывается, только если его содержимое отличается от
 сгенерированного; symlink не дублируется; валидный сертификат не перевыпускается.
 
+## Controlled same-schema in-place upgrade
+
+For an existing healthy generation-v4 installation, the reviewed operator workflow
+in [`tools/inplace-upgrade`](../tools/inplace-upgrade/README.md) adds exact release
+verification, a fresh coherent full snapshot, private status/recovery records and
+collision-checked rollback around `razdacha setup --start=false`. A separate `check`
+action performs non-mutating host preflight before a new live transaction.
+
+This bounded path requires the same schema and pinned runtime. It never Applies
+pending policy, migrates legacy authority automatically or removes the daemon's
+guard. Committed daemon recovery releases traffic; independent Clash/DNS/TLS and
+preservation checks happen afterward. A maintenance interval is expected. Legacy,
+cross-host and schema/runtime-changing upgrades need a separate reviewed procedure.
+See the linked runbook for exact input manifests, build/run/status/recovery commands,
+rollback limits and retained private snapshots/quarantines.
+
 ## Обновление
 
 ```sh
