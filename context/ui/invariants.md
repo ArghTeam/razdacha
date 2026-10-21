@@ -108,6 +108,8 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
   older inventory loads cannot overwrite newer loads. Validation and save failures
   retain the draft and a persistent actionable dialog error. Selected empty disabled
   orphan rules remain editable without implicit enabling (ADR 0026).
-- Optional Chromium regressions in `ui/tests/rule-integrity.cjs` use the actual UI
-  modules with synthetic local API responses. Playwright is a developer prerequisite,
-  never a daemon build dependency; these checks do not verify deployed networking.
+- Development-only Chromium regressions in `ui/tests` run sequentially in the separate
+  `ui-browser` CI job with pinned Playwright, its matching browser and a supported runner
+  image. They use actual UI modules with synthetic local/intercepted API responses.
+  Node and Playwright are never daemon build or release dependencies; these checks do
+  not verify deployed networking or backend cookie delivery timing.
