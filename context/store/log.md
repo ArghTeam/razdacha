@@ -14,7 +14,7 @@ integrity-checked and synced; failures remove incomplete snapshots.
 **Validation:** Active-WAL source/schema/key preservation and setup-path regression,
 permissions, URI escaping, no-clobber, cancellation and corrupt-source cases.
 **Limit:** This is a database rollback snapshot, not a full runtime/authority backup
-or an automatic rollback controller. See [task 264](../../tasks/264-consistent-upgrade-backup.md).
+or an automatic rollback controller. See [task 264](../../tasks/done/264-consistent-upgrade-backup.md).
 
 ## 2026-10-20
 
