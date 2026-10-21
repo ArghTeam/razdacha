@@ -99,3 +99,22 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
   their modal/session/request lifetime; raw cleanup and backend protocol/reference
   semantics remain unchanged. Development-only tests use synthetic local responses,
   never installed networking or external WARP registration.
+
+## Rule inventory and probe lifetime
+
+- Rule inventory actions are single-flight per target, with full-order writes gated
+  separately. Confirmed same-session effects update current identities and pending
+  state after ordinary navigation/replacement; previous-session completions cannot
+  publish state/feedback or start follow-up reads. Reorder failure never restores a
+  captured inventory snapshot over concurrent accepted changes.
+- Shared `rules.beginInventoryRead()` tokens accept inventory only in their initiating
+  session and before a newer read or accepted mutation. Rule screen/editor/duplicate
+  and Clients deletion-follow-up readers use that authority and ignore stale read
+  errors. Startup batch adoption is owned by dependent #249; #259 alone does not
+  close the demonstrated bootstrap rules overwrite before that integration lands.
+- Duplicate success is distinct from inventory refresh failure and retains existing
+  URL sources/resolve_real_ip. Domain route and direct-reachability probes remain
+  shared-rule diagnostics, never per-client exit evaluation; result/error/busy state
+  follows session/request/interaction ownership. Existing editor layout/policy and
+  backend contracts remain unchanged. Browser evidence uses synthetic intercepted
+  requests, not installed networking or real domain probes.
