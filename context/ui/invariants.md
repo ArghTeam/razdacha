@@ -87,3 +87,27 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
   controls. Disabled rows do not use whole-row opacity; small neutral hints remain
   readable in both system themes. Repeated controls identify their row in their
   accessible names; the rule tunnel selector has an associated label.
+
+## Rule editor integrity
+
+- Community source selections absent from a partial or unavailable catalog remain
+  checked and visibly identified as unavailable. An unrelated edit preserves their
+  IDs; removal requires the existing explicit checkbox/chip action. API-managed URL
+  sources render as escaped read-only text and are omitted from PATCH so they remain
+  server-owned. URL-only rules remain editable.
+- New rules require an explicit tunnel choice. Empty, missing, disabled and empty-pool
+  targets never silently select a replacement; existing references remain visible.
+  The editor explains blocked traffic and no direct fallback, distinguishes failed
+  health checks from configured rejection, and retains unavailable chain references.
+- Resource overlap warnings require intersecting enabled shared-rule clients. Clients
+  with whole-Internet exits are excluded because source routing precedes shared rules
+  (ADR 0028); partial intersections never claim to shadow every client.
+- Rule Save completion may mark pending changes and reload inventory after ordinary
+  dialog closure in the same session. It cannot close a replacement dialog or put an
+  error into it. Previous-session completions cannot update pending state or inventory;
+  older inventory loads cannot overwrite newer loads. Validation and save failures
+  retain the draft and a persistent actionable dialog error. Selected empty disabled
+  orphan rules remain editable without implicit enabling (ADR 0026).
+- Optional Chromium regressions in `ui/tests/rule-integrity.cjs` use the actual UI
+  modules with synthetic local API responses. Playwright is a developer prerequisite,
+  never a daemon build dependency; these checks do not verify deployed networking.
