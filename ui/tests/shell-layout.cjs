@@ -82,6 +82,21 @@ async function enlargeText(page) {
         else if (dialog === 'tunnel') { await t.navigate('tunnels'); await t.page.locator('[data-act="add-tunnel"]').click(); }
         else { await t.page.locator('#btn-settings').click(); await t.page.locator('[data-settings-section="backup"]').click(); }
         await t.settle(); await enlargeText(t.page);
+        if (dialog === 'tunnel') {
+          await t.page.locator('#t-name').focus(); await t.page.keyboard.press('Tab');
+          assert.equal(await t.page.locator('#t-raw').evaluate(element => element === document.activeElement), true);
+          await t.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+          const bounds = await t.page.locator('#t-raw').evaluate(element => ({ top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom, header: document.querySelector('#modal .modal-head').getBoundingClientRect().bottom, footer: document.querySelector('#modal .modal-foot').getBoundingClientRect().top }));
+          assert(bounds.top >= bounds.header + 1 && bounds.bottom <= bounds.footer - 1, JSON.stringify(bounds));
+          let repeatedTextareaFocus = 0;
+          for (let step = 0; step < 20; step++) {
+            await t.page.keyboard.press('Tab');
+            await t.page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            const focused = await t.page.evaluate(() => { const field = document.activeElement; if (field.id !== 't-raw') return null; const box = field.getBoundingClientRect(); return { top: box.top, bottom: box.bottom, header: document.querySelector('#modal .modal-head').getBoundingClientRect().bottom, footer: document.querySelector('#modal .modal-foot').getBoundingClientRect().top }; });
+            if (focused) { repeatedTextareaFocus++; assert(focused.top >= focused.header + 1 && focused.bottom <= focused.footer - 1, JSON.stringify(focused)); }
+          }
+          assert(repeatedTextareaFocus >= 3);
+        }
         const actions = await t.page.locator('#modal .btn:visible').evaluateAll(elements => elements.map(element => { const box = element.getBoundingClientRect(), modal = document.querySelector('#modal').getBoundingClientRect(); return { text: element.textContent, left: box.left, right: box.right, modalLeft: modal.left, modalRight: modal.right, clipped: element.scrollWidth > element.clientWidth + 1 }; }));
         assert(actions.length > 0);
         for (const action of actions) { assert(!action.clipped, JSON.stringify(action)); assert(action.left >= action.modalLeft && action.right <= action.modalRight, JSON.stringify(action)); }

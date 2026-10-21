@@ -935,6 +935,12 @@ button:focus-visible, summary:focus-visible, a:focus-visible {
   .settings-actions .btn { width: 100%; }
 }
 
+/* Tunnel inputs scroll independently of persistent dialog actions. */
+.modal:has(#t-raw) { display: flex; flex-direction: column; overflow: hidden; }
+.modal:has(#t-raw) :is(.modal-head, .modal-foot) { flex: 0 0 auto; position: static; }
+.modal:has(#t-raw) .modal-body { overflow-y: auto; min-height: 0; scroll-padding-block: 12px; }
+.modal:has(#t-raw) :is(input, textarea) { scroll-margin-block: 12px; }
+
 /* Modal actions retain readable labels when text is enlarged. */
 .modal .btn { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 

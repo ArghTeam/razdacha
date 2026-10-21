@@ -102,6 +102,9 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 ## Diagnostics and shared shell
 
 - Shared modal action labels wrap within their available width at enlarged text sizes.
+  The Tunnel editor keeps header/footer outside its body scroller and reveals focused
+  name/configuration fields within the body. Its existing input, focus-trap and secret
+  lifetime contracts remain unchanged.
 - Header navigation retains exactly four screens. English labels and precise version
   readouts wrap without overlap or ellipsis at narrow widths/enlarged text. The global
   Apply bar reserves its measured height for content and notifications; global pending

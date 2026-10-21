@@ -22,7 +22,10 @@ backend authentication and publication semantics are unchanged.
 **Validation:** All nine maintained browser suites passed, including 28 shared
 functional cases and 16 shell/dialog layout matrices. Runner unit checks, focused
 Go API/UI, JavaScript syntax and diff checks passed. Independent final visual/exact-head
-review and hosted CI remain merge gates. See the
+review and hosted CI remain merge gates. Three independent visual rounds identified
+a final inherited Tunnel textarea focus overlap; the subsequent scoped body-scroller/
+focus-reveal repair has actual Tab geometry coverage. No fourth round or post-repair
+visual PASS is claimed. See the
 [completed implementation specification](../../tasks/done/248-shell-diagnostics.md).
 No live networking, old-host/staging calls or deployment are part of these checks.
 

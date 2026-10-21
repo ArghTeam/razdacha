@@ -317,6 +317,9 @@ increased text sizes rather than overlapping or being clipped. Settings remains 
 dialog rather than a fifth screen. Existing modal focus trapping, inert background,
 opener restoration, body-mounted row menus and modal-owned secret cleanup remain.
 Shared modal action labels wrap within the available width when text is enlarged.
+The Tunnel editor scrolls its body independently of persistent header/footer actions.
+Keyboard focus reveals its name/configuration fields within that visible body; field
+behavior, focus trapping and secret cleanup retain their existing contracts.
 
 The fixed Apply bar reports global unapplied changes. It does not identify an
 individual client's active route; see [the API contract](05-api.md#applying). Its

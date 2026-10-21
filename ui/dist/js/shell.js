@@ -205,6 +205,15 @@ export function closeModal({ restoreFocus = true } = {}) {
 // These listeners never capture a dialog's DOM or async callbacks.
 document.addEventListener('focusin', (event) => {
   if (modalOpen() && !$('#modal').contains(event.target)) focusModal();
+  if (!event.target.matches('#t-name, #t-raw')) return;
+  const field = event.target;
+  requestAnimationFrame(() => {
+    if (!modalOpen() || !field.isConnected || document.activeElement !== field) return;
+    const body = field.closest('.modal-body');
+    const visible = body.getBoundingClientRect(), box = field.getBoundingClientRect();
+    if (box.bottom > visible.bottom - 12) body.scrollTop += box.bottom - visible.bottom + 12;
+    else if (box.top < visible.top + 12) body.scrollTop -= visible.top + 12 - box.top;
+  });
 });
 document.addEventListener('keydown', (event) => {
   if (!modalOpen()) return;

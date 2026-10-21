@@ -77,3 +77,25 @@ all requested repairs have maintained regressions. Attempt 3 and exact committed
 review remain merge gates alongside all hosted CI checks. Synthetic checks do not
 establish installed networking, live delivery, backend cookie timing or deployment
 behavior. The local synthetic preview remains available for independent evaluation.
+
+## Post-round-three correctness repair
+
+Independent visual round three verified the prior notification, Backup wrapping and
+Diagnostics fixes, but returned MAJOR REVISION under its any-zero rubric for one
+remaining inherited New tunnel focus defect: at 320 × 667 with text/line-height doubled,
+`#t-raw` extended 9.61 px under the footer in both themes on `6bcade9`. This report is
+not a visual PASS; no fourth design-evaluation round is claimed or requested.
+
+The coordinator authorized an ordinary bounded correctness repair. The Tunnel modal
+now keeps header/footer outside an independently scrolling body. Its name/configuration
+focus handler reveals the field inside that body without changing inputs, parsing,
+focus trapping or secret cleanup. The regression uses real Tab from name to textarea,
+then twenty trapped Tab steps in fresh light/dark 320 × 667 doubled-text contexts,
+checking full textarea/header/footer geometry on every repeated focus. Final focused
+repair checks and exact-head review are recorded separately from visual acceptance.
+
+Post-repair verification passed: shared layout 16 (including twenty repeated Tab
+steps per fresh doubled-text Tunnel theme), shared functional/session 28 and Tunnel
+lifetime/secret/parser 47. Embedded UI Go, JavaScript syntax and diff checks passed.
+The prior complete nine-suite runner passed on the preceding implementation commit;
+new-head hosted CI and independent bounded code/geometry review remain required.
