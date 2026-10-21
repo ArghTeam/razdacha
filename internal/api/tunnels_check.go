@@ -287,7 +287,10 @@ func (s *Server) observeSignals(ctx context.Context, res tunnelCheck) *tunnelSig
 
 // sing-box 1.12.25 starts /dns/query with context.Background and a ten-second
 // timeout. Canceling the controller request does not stop that runtime work.
-const runtimeDNSBudget = 10 * time.Second
+const (
+	runtimeDNSBudget = 10 * time.Second
+	dnsHTTPBudget    = 2 * time.Second
+)
 
 type dnsObservationJob struct {
 	done        chan struct{}
@@ -319,7 +322,7 @@ func (s *Server) observeRuntimeDNS(ctx context.Context) signal {
 func (s *Server) runDNSObservation(cache *checkCache, job *dnsObservationJob) {
 	started := time.Now()
 	// Waiters cannot cancel or release this job's runtime capacity.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), dnsHTTPBudget)
 	addrs, err := s.clash.ResolveA(ctx, "www.gstatic.com")
 	cancel()
 	at := s.now().UTC()
@@ -337,10 +340,11 @@ func (s *Server) runDNSObservation(cache *checkCache, job *dnsObservationJob) {
 	}
 	close(job.done)
 	// Only a known resolver response establishes completion. On uncertain HTTP
-	// failure retain the coalescing identity through the actual runtime budget.
+	// failure retain the identity through the runtime budget plus HTTP dispatch
+	// margin: sing-box can start its background timer near the HTTP deadline.
 	var resolveErr *clash.ResolveError
 	if err != nil && !errors.As(err, &resolveErr) {
-		if remaining := runtimeDNSBudget - time.Since(started); remaining > 0 {
+		if remaining := runtimeDNSBudget + dnsHTTPBudget - time.Since(started); remaining > 0 {
 			time.Sleep(remaining)
 		}
 	}

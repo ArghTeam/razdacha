@@ -28,3 +28,9 @@ its identity through the pinned runtime's ten-second DNS budget, preventing
 cancellation or short HTTP deadlines from accumulating detached resolver work.
 Pool confirmation compares history timestamps at persisted whole-second precision;
 replaying one fractional timestamp cannot establish repeated recovery evidence.
+
+The uncertain DNS lease includes the two-second HTTP dispatch budget in addition
+to the ten-second runtime timer (twelve seconds total from local admission).
+The runtime timer may start near the HTTP deadline; releasing at ten seconds from
+local start could otherwise overlap a still-running resolver job. A regression
+checks that the original job identity remains retained beyond ten seconds.

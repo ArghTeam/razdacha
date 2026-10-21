@@ -85,3 +85,9 @@ IP TLS, HEAD/301 without redirect following, untrusted TLS rejection, a real
 This proves API/TLS/budget behavior, not WireGuard transport, installed-host state,
 client DNS policy, UDP or Google Meet. Full nested race checks and vet passed.
 Independent final review and authorized production observations remain separate.
+
+The uncertain DNS lease includes the two-second HTTP dispatch budget in addition
+to the ten-second runtime timer (twelve seconds total from local admission).
+The runtime timer may start near the HTTP deadline; releasing at ten seconds from
+local start could otherwise overlap a still-running resolver job. A regression
+checks that the original job identity remains retained beyond ten seconds.

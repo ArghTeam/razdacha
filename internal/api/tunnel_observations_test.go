@@ -99,6 +99,15 @@ func TestDNSObservationCancellationAndHTTPTimeoutRetainRuntimeCapacity(t *testin
 	if calls.Load() != 1 {
 		t.Fatalf("Canceled/timed-out DNS work lost its runtime lease: %d jobs", calls.Load())
 	}
+	// A runtime handler may begin near the HTTP dispatch deadline, so the lease
+	// must still be held after ten seconds measured from the local start.
+	time.Sleep(runtimeDNSBudget)
+	if got := ts.observeRuntimeDNS(context.Background()); got.State != "unknown" {
+		t.Fatal(got)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("DNS lease omitted dispatch margin: %d jobs", calls.Load())
+	}
 }
 
 func TestFractionalGroupHistoryCannotConfirmRecoveryRepeatedly(t *testing.T) {
