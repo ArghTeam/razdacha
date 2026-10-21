@@ -51,3 +51,16 @@ missing-marker unfinished operations and installer-environment removal.
 Linux helper fixtures independently reject foreign guard shapes. Cross-build and
 local injected acceptance are required before independent review and any live use;
 no production execution is claimed by this implementation record.
+
+## Local verification
+
+- Fresh `origin/main` at `505b398cd99d0cd5231c0665a35afb494d43dff1` was merged
+  without rebasing the implementation branch.
+- `go test ./...` passed on the integrated branch.
+- `python3 -m unittest discover -s tools/inplace-upgrade -p 'test_*.py'` passed
+  all 19 injected tests. The same command is included in the existing CI test job.
+- Configured repository lint and Linux-target proof-helper lint passed with zero
+  issues; `git diff --check` passed.
+- Static Linux amd64 proof and pure-test ELF cross-builds passed. Pure Linux test
+  execution and independent final review remain explicit pre-deployment gates.
+- No host upgrade or live service/network changes were performed by this task.
