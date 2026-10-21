@@ -282,28 +282,48 @@ Cloudflare 1020); вердикт красится по классу и прих�
 
 Причина отложенного применения — в [API](05-api.md#applying).
 
-**Settings** open from the header gear icon in a modal: WireGuard port, external
-address, client MTU, DNS, list/pool refresh intervals and tunnel checks. The pool country
-blocklist is configurable through the settings API. Settings are persisted in SQLite;
-there is no `config.yaml` file.
+**Settings** open from the header gear as one dialog with Network, Schedules,
+Telegram and Backup navigation. Each section has its own Save action, draft indicator
+and persistent inline feedback. Switching sections preserves drafts; closing discards
+only unsaved edits. Network saves validate port, MTU and required DNS before any
+request and require global Apply. Changed client connection settings require updated
+client configurations. Schedules save only list/pool/check intervals and are picked up
+automatically. Use global Apply to update the active configuration record as well.
+Unknown current interval values remain selected instead of silently
+resetting to a preset. Pool refresh has a 30-minute minimum.
 
-Селектор **«Обновление пула»** — как часто демон обходит каталог ключей встроенного
-пула. Нижний пункт — 30 минут: чаще нельзя, демон отвергнет (`store.MinPoolUpdateInterval`),
-дефолт — раз в час. Смену подхватывает расписание пулов без перезапуска демона.
+Network and Schedules PATCH only changed fields, preserving hidden settings such as
+the pool country blocklist and untouched values loaded before an earlier save finishes.
+Settings, Telegram and Backup endpoints perform full-record read/modify/write, so
+the panel serializes all section saves across sections and replacement dialogs.
+Telegram and Backup also omit unchanged ordinary fields so an older replacement
+form cannot revert a preceding save or secret rotation. Queued sections show a waiting
+status and retain their draft; success or failure releases the next request. Queued
+intent from a previous session is canceled before dispatch. Successful responses confirm
+only their own section's values, avoiding stale cross-section response overwrites. Telegram and Backup save only through their own endpoints and take
+effect immediately. No action silently saves another section. Failed requests retain
+the draft and explain that saving could not be confirmed; other sections were not saved.
+Settings are persisted by the daemon; advanced options use the authenticated settings
+API, not a configuration file or direct database edits.
 
-Там же два блока с секретами: оповещения в телеграм и резервная копия состояния. В
-блоке копии — кнопка «Скачать состояние», парольная фраза, интервал отправки и галочка.
+Telegram token, backup passphrase and interval controls have persistent labels. Saved
+secret presence is separate from the empty secret field. Blank secret fields are omitted
+from requests, preserving existing values. Modal cleanup drops drafts and clears secret
+fields; late callbacks cannot refill replacement dialogs or update a later session.
 
-**Кнопка «Скачать состояние» подписана тем, что лежит в файле:** приватные ключи всех
-пиров, то есть доступ ко всему VPN. Скачивание не шифруется — запрос авторизован, — а
-вот что делать с файлом дальше, решает человек, и знать он должен до нажатия.
+Test saved channel and Send saved backup now use saved configuration and never save
+first. Unsaved edits disable the section's delivery action until saved or reverted.
+Delivery is allowed with notifications or backup scheduling disabled, but needs a saved
+Telegram channel and, for backups, an encryption passphrase. Delivery failures leave
+saved settings unchanged and remain visible in the section. Backup sends refresh only
+delivery history after success or failure, without replacing form values. History-read
+failures explicitly mark that metadata unavailable.
 
-**Цена забытой парольной фразы названа рядом с полем ввода**, а не в документации:
-забыли фразу — копия бесполезна, расшифровать её нечем
-([ADR 0016](decisions/0016-backup-full-and-encrypted.md)). Галочка «Присылать копию в
-телеграм» без фразы не включается: сервер отказывает, интерфейс говорит почему.
-Сохранённая фраза обратно не приходит — поле остаётся пустым с подсказкой «фраза
-сохранена», как и токен бота.
+Download full backup uses saved state without saving the form. Its adjacent warning
+states that the unencrypted file contains all client private keys and access to the
+entire VPN. Telegram delivery is encrypted. The passphrase warning explains that a
+forgotten phrase makes encrypted backups unrecoverable and must be stored separately
+from the delivery chat ([ADR 0016](decisions/0016-backup-full-and-encrypted.md)).
 
 ## Что не делаем
 
