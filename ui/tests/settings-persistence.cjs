@@ -13,6 +13,7 @@ function fixtureServer() {
   let settings = structuredClone(initial);
   let notify = { enabled: false, chat_id: '-1001234567890', token_set: true };
   let backup = { enabled: false, interval_hours: 24, passphrase_set: true, telegram_ready: true, last_sent_at: null, last_error: '' };
+  let notifySecret='synthetic-old-token', backupSecret='synthetic-old-passphrase';
   const controls = { fail: '', hold: '', release: null };
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -22,13 +23,15 @@ function fixtureServer() {
       if (req.method !== 'GET') writes.push({ path: url.pathname, method: req.method, body });
       // Match the production settings handler: read the full record before write.
       const snapshot = structuredClone(settings);
+      const notifySnapshot = {...notify, secret:notifySecret};
+      const backupSnapshot = {...backup, secret:backupSecret};
       if (controls.hold === url.pathname) { controls.hold = ''; await new Promise(resolve => controls.release = resolve); }
       res.setHeader('Content-Type', 'application/json');
       if (controls.fail === url.pathname) { controls.fail = ''; if(url.pathname==='/api/backup/send') backup.last_error='Synthetic request failure'; res.writeHead(500); res.end(JSON.stringify({error:'Synthetic request failure'})); return; }
       let result;
       if (url.pathname === '/api/settings') { if (body) settings = {...snapshot,...body}; result = settings; }
-      else if (url.pathname === '/api/notify') { if (body) notify = { enabled: body.enabled, chat_id: body.chat_id, token_set: !!body.token || notify.token_set }; result = notify; }
-      else if (url.pathname === '/api/backup') { if (body) backup = {...backup, enabled: body.enabled, interval_hours: body.interval_hours, passphrase_set: !!body.passphrase || backup.passphrase_set}; result = backup; }
+      else if (url.pathname === '/api/notify') { if (body) { notifySecret=body.token ?? notifySnapshot.secret; notify={enabled:body.enabled ?? notifySnapshot.enabled,chat_id:body.chat_id ?? notifySnapshot.chat_id,token_set:!!notifySecret}; } result = notify; }
+      else if (url.pathname === '/api/backup') { if (body) { backupSecret=body.passphrase ?? backupSnapshot.secret; backup={...backup,enabled:body.enabled ?? backupSnapshot.enabled,interval_hours:body.interval_hours ?? backupSnapshot.interval_hours,passphrase_set:!!backupSecret}; } result = backup; }
       else { if(url.pathname==='/api/backup/send') backup={...backup,last_sent_at:'2026-10-21T12:00:00Z',last_error:''}; result = {ok:true}; }
       res.end(JSON.stringify(result)); return;
     }
@@ -37,7 +40,7 @@ function fixtureServer() {
     if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) { res.writeHead(404); res.end(); return; }
     res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : 'text/css'); res.end(fs.readFileSync(file));
   });
-  return { server, writes, controls };
+  return { server, writes, controls, secrets:()=>({token:notifySecret,passphrase:backupSecret}) };
 }
 async function run() {
   const fixture = fixtureServer();
@@ -117,6 +120,17 @@ async function run() {
     fixture.controls.release(); await message('schedules','Schedules saved'); await message('network','Save could not be confirmed');
     const afterFailure=await page.evaluate(()=>window.fixture.api.settings.get());
     assert.equal(afterFailure.client_mtu,1320); assert.equal(afterFailure.pool_update_interval,43200);
+    // Pending secret rotation must survive an ordinary edit in a replacement form.
+    await nav('telegram'); await page.locator('#s-ntf-token').fill('synthetic-rotated-token'); hold('/api/notify'); await submit('telegram'); await waitHeld();
+    await open(); await nav('telegram'); await page.locator('#s-ntf-chat').fill('-100replacement');
+    const notifyCount=fixture.writes.length; await submit('telegram'); await message('telegram','Waiting to save this section'); assert.equal(fixture.writes.length,notifyCount);
+    fixture.controls.release(); await message('telegram','Telegram saved');
+    assert.equal(fixture.secrets().token,'synthetic-rotated-token'); assert.deepEqual(fixture.writes.at(-1).body,{chat_id:'-100replacement'});
+    await nav('backup'); await page.locator('#s-bak-phrase').fill('synthetic-rotated-passphrase'); hold('/api/backup'); await submit('backup'); await waitHeld();
+    await open(); await nav('backup'); await page.locator('#s-bak-int').selectOption('6');
+    const backupCount=fixture.writes.length; await submit('backup'); await message('backup','Waiting to save this section'); assert.equal(fixture.writes.length,backupCount);
+    fixture.controls.release(); await message('backup','Backup saved');
+    assert.equal(fixture.secrets().passphrase,'synthetic-rotated-passphrase'); assert.deepEqual(fixture.writes.at(-1).body,{interval_hours:6});
     // A pending response cannot write feedback into a replacement dialog.
     hold('/api/notify'); await nav('telegram'); await submit('telegram'); await page.waitForFunction(()=>document.querySelector('#settings-telegram').dataset.busy==='true');
     await waitHeld(); await open(); fixture.controls.release(); await page.waitForResponse(r=>r.url().endsWith('/api/notify') && r.request().method()==='PUT');
@@ -127,11 +141,13 @@ async function run() {
     await waitHeld();
     const sessionRequestCount=fixture.writes.filter(write=>write.path==='/api/settings').length;
     await nav('schedules'); await page.locator('#s-pool').selectOption('1800'); await submit('schedules'); await message('schedules','Waiting to save this section');
+    await nav('telegram'); await page.locator('#s-ntf-token').fill('synthetic-canceled-session-token'); await submit('telegram'); await message('telegram','Waiting to save this section');
     await page.evaluate(()=>{window.fixture.api.session.login('synthetic'); window.fixture.shell.state.settings.endpoint_host='new-session.example.test'; window.fixture.shell.closeModal();});
     fixture.controls.release(); await page.waitForResponse(r=>r.url().endsWith('/api/settings'));
     assert.equal(await page.evaluate(()=>window.fixture.shell.state.settings.endpoint_host),'new-session.example.test');
     await open(); await nav('network'); await page.locator('#s-dns').fill('8.8.8.8'); await submit('network'); await message('network','Network saved');
     assert.equal(fixture.writes.filter(write=>write.path==='/api/settings').length,sessionRequestCount+1,'Old-session queued settings intent must not dispatch');
+    assert(!fixture.writes.some(write=>write.body?.token==='synthetic-canceled-session-token'),'Old-session queued secret rotation must not dispatch');
 
     // Loading failure is local and retryable; invalid short secrets never reach PUT.
     fixture.controls.fail='/api/notify'; await page.evaluate(()=>window.fixture.open());

@@ -224,9 +224,10 @@ implicitly save. Secret fields remain blank and omitted when unchanged, with sep
 presence hints and modal/session lifetime guards. Corrected configuration-file guidance.
 
 
-Network/Schedules saves serialize across dialogs because the shared endpoint reads and
-writes a whole settings record. Only changed keys are dispatched; untouched values
-from an older modal cannot revert an earlier queued save. Queued old-session intent
+All section saves serialize across dialogs because their endpoints read and write
+complete configuration records. Only changed ordinary fields and explicit new secrets
+are dispatched; untouched values from an older modal cannot revert an earlier queued
+save or secret rotation. Blank secrets remain omitted. Queued old-session intent
 is canceled before dispatch. Confirmed responses update only their own section. Backup
 sends refresh delivery history only, including persisted errors, preserving form values.
 Settings focus scrolling keeps controls clear of sticky chrome; local validation uses

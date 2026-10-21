@@ -4,16 +4,16 @@ import { state, openModal, modalShell, notice, markDirty, applyDocTitle,
   currentModalRevision, isCurrentModal, onModalCleanup } from '../shell.js';
 import { esc, intervalSeconds } from '../util.js';
 
-// The shared endpoint performs a full-record read/modify/write. Serialize local
-// settings saves across dialogs, and never dispatch queued intent in a new session.
-let settingsWrite = Promise.resolve();
-function updateSettings(body, sameSession, onStart) {
-  const result = settingsWrite.then(() => {
+// Configuration endpoints read/modify/write complete records. Serialize saves
+// across dialogs, and never dispatch queued intent in a new session.
+let configWrite = Promise.resolve();
+function enqueueSave(request, sameSession, onStart) {
+  const result = configWrite.then(() => {
     if (!sameSession()) throw new Error('The session changed before this save started');
     onStart();
-    return api.settings.update(body);
+    return request();
   });
-  settingsWrite = result.then(() => undefined, () => undefined);
+  configWrite = result.then(() => undefined, () => undefined);
   return result;
 }
 const names = ['Network', 'Schedules', 'Telegram', 'Backup'];
@@ -61,15 +61,18 @@ function mount(modal) {
   let notifyCfg = null, backupCfg = null;
   const saved = new Map();
   const forms = [...modal.querySelectorAll('.settings-section')];
-  const settingsFields = {
+  const sectionFields = {
     network: { wg_listen_port: 's-port', endpoint_host: 's-host', client_mtu: 's-mtu', dns_upstream: 's-dns' },
     schedules: { list_update_interval: 's-int', pool_update_interval: 's-pool', tunnel_check_interval: 's-check' },
+    telegram: { enabled: 's-ntf-on', chat_id: 's-ntf-chat' },
+    backup: { enabled: 's-bak-on', interval_hours: 's-bak-int' },
   };
-  const readSettings = kind => Object.fromEntries(Object.entries(settingsFields[kind]).map(([key, id]) => {
+  const readSection = kind => Object.fromEntries(Object.entries(sectionFields[kind]).map(([key, id]) => {
     const input = $(`#${id}`);
-    return [key, input.type === 'number' || input.tagName === 'SELECT' ? Number(input.value) : input.value.trim()];
+    return [key, input.type === 'checkbox' ? input.checked : input.type === 'number' || input.tagName === 'SELECT' ? Number(input.value) : input.value.trim()];
   }));
-  const baseline = { network: readSettings('network'), schedules: readSettings('schedules') };
+  const baseline = Object.fromEntries(Object.keys(sectionFields).map(kind => [kind, readSection(kind)]));
+  const changed = (kind, body) => Object.fromEntries(Object.entries(body).filter(([key, value]) => value !== baseline[kind][key]));
 
   const values = form => JSON.stringify([...form.querySelectorAll('input, select')].map(el => el.type === 'checkbox' ? el.checked : el.value));
   const dirty = form => saved.get(form) !== values(form);
@@ -132,6 +135,7 @@ function mount(modal) {
         $('#s-bak-secret').textContent = cfg.passphrase_set ? 'A passphrase is saved.' : 'No passphrase saved.';
         $('#s-bak-last').textContent = backupHistory(cfg);
       }
+      baseline[kind] = readSection(kind);
       remember(form); status(form, 'Saved settings loaded.');
     } catch (err) {
       if (!current()) return;
@@ -158,10 +162,7 @@ function mount(modal) {
       invalid(form, el, `${el.labels[0].textContent}: ${reason}`); return null;
     }
     const kind = form.dataset.section;
-    if (settingsFields[kind]) {
-      const body = readSettings(kind);
-      return Object.fromEntries(Object.entries(body).filter(([key, value]) => value !== baseline[kind][key]));
-    }
+    if (kind === 'network' || kind === 'schedules') return changed(kind, readSection(kind));
     if (kind === 'telegram') {
       const body = { enabled: $('#s-ntf-on').checked, chat_id: $('#s-ntf-chat').value.trim() };
       const token = $('#s-ntf-token').value.trim();
@@ -169,7 +170,7 @@ function mount(modal) {
         invalid(form, !body.chat_id ? $('#s-ntf-chat') : $('#s-ntf-token'), 'Enter a chat ID and bot token before enabling notifications.'); return null;
       }
       if (token) body.token = token;
-      return body;
+      return changed(kind, body);
     }
     const body = { enabled: $('#s-bak-on').checked, interval_hours: Number($('#s-bak-int').value) };
     const phrase = $('#s-bak-phrase').value.trim();
@@ -177,28 +178,29 @@ function mount(modal) {
     if (body.enabled && !phrase && !backupCfg?.passphrase_set) { invalid(form, $('#s-bak-phrase'), 'Set an encryption passphrase before enabling backup delivery.'); return null; }
     if (body.enabled && (!notifyCfg?.token_set || !notifyCfg?.chat_id)) { status(form, 'Save a bot token and chat ID in Telegram before enabling backup delivery.', 'err'); return null; }
     if (phrase) body.passphrase = phrase;
-    return body;
+    return changed(kind, body);
   }
   async function save(form) {
     if (form.dataset.busy === 'true') return;
     const body = payload(form); if (!body) return;
     const kind = form.dataset.section;
-    busy(form, true); status(form, ['network', 'schedules'].includes(kind) ? 'Waiting to save this section…' : 'Saving this section…');
+    busy(form, true); status(form, 'Waiting to save this section…');
     try {
-      const res = await (kind === 'telegram' ? api.notify.save(body) : kind === 'backup' ? api.backup.save(body) : updateSettings(body, sameSession, () => { if (current()) status(form, 'Saving this section…'); }));
+      const res = await enqueueSave(() => kind === 'telegram' ? api.notify.save(body) : kind === 'backup' ? api.backup.save(body) : api.settings.update(body), sameSession, () => { if (current()) status(form, 'Saving this section…'); });
       if (!sameSession()) return;
-      if (settingsFields[kind]) {
-        const confirmed = Object.fromEntries(Object.keys(settingsFields[kind]).map(key => [key, res?.[key] ?? body[key] ?? baseline[kind][key]]));
+      if (kind === 'network' || kind === 'schedules') {
+        const confirmed = Object.fromEntries(Object.keys(sectionFields[kind]).map(key => [key, res?.[key] ?? body[key] ?? baseline[kind][key]]));
         state.settings = { ...state.settings, ...confirmed };
         if (current()) {
-          for (const [key, id] of Object.entries(settingsFields[kind])) $(`#${id}`).value = confirmed[key];
+          for (const [key, id] of Object.entries(sectionFields[kind])) $(`#${id}`).value = confirmed[key];
           baseline[kind] = confirmed;
         }
         applyDocTitle(); markDirty();
       }
       if (!current()) return;
-      if (kind === 'telegram') { notifyCfg = res; $('#s-ntf-token').value = ''; $('#s-ntf-secret').textContent = res.token_set ? 'A token is saved.' : 'No token saved.'; }
-      if (kind === 'backup') { backupCfg = res; $('#s-bak-phrase').value = ''; $('#s-bak-secret').textContent = res.passphrase_set ? 'A passphrase is saved.' : 'No passphrase saved.'; }
+      if (kind === 'telegram') { notifyCfg = res; $('#s-ntf-chat').value = res.chat_id; $('#s-ntf-on').checked = !!res.enabled; $('#s-ntf-token').value = ''; $('#s-ntf-secret').textContent = res.token_set ? 'A token is saved.' : 'No token saved.'; }
+      if (kind === 'backup') { backupCfg = res; $('#s-bak-on').checked = !!res.enabled; $('#s-bak-int').innerHTML = options(backupIntervals, res.interval_hours, 'hours'); $('#s-bak-phrase').value = ''; $('#s-bak-secret').textContent = res.passphrase_set ? 'A passphrase is saved.' : 'No passphrase saved.'; }
+      baseline[kind] = readSection(kind);
       remember(form);
       status(form, kind === 'network' ? `Network saved. Use Apply in the panel to activate changes.${res?.requires_client_reconfig ? ' Download and redistribute updated client configurations.' : ''}` : `${names.find(name => name.toLowerCase() === kind)} saved.${kind === 'schedules' ? ' Timers update automatically. Use Apply to update the active configuration record.' : ' No Apply is needed.'}`, 'ok');
     } catch (err) { if (current()) status(form, `Save could not be confirmed: ${err.message}. Your draft is retained. This request did not save other sections.`, 'err'); }

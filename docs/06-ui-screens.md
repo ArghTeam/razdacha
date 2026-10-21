@@ -294,8 +294,10 @@ resetting to a preset. Pool refresh has a 30-minute minimum.
 
 Network and Schedules PATCH only changed fields, preserving hidden settings such as
 the pool country blocklist and untouched values loaded before an earlier save finishes.
-Their shared endpoint performs a full-record read/modify/write, so the panel serializes
-these requests across sections and replacement dialogs. Queued sections show a waiting
+Settings, Telegram and Backup endpoints perform full-record read/modify/write, so
+the panel serializes all section saves across sections and replacement dialogs.
+Telegram and Backup also omit unchanged ordinary fields so an older replacement
+form cannot revert a preceding save or secret rotation. Queued sections show a waiting
 status and retain their draft; success or failure releases the next request. Queued
 intent from a previous session is canceled before dispatch. Successful responses confirm
 only their own section's values, avoiding stale cross-section response overwrites. Telegram and Backup save only through their own endpoints and take

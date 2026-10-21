@@ -25,11 +25,14 @@ layouts at 1440/1024/375/320. No external service calls or staging mutations.
 
 ## Final implementation constraints
 
-The shared settings endpoint performs full-record read/modify/write. Serialize its
-requests across modal lifetimes, release the queue after either outcome and gate queued
+The settings, Telegram and Backup endpoints perform full-record read/modify/write.
+Serialize all section saves across modal lifetimes, release the queue after either
+outcome and gate queued
 intent by its original session before dispatch. Send only changed fields; a replacement
 modal opened during a prior save must not revert untouched values from its older view.
-Use confirmed values only for the response's own section. Backup sends refresh delivery
+Use confirmed values only for the response's own section. Telegram/Backup send only
+changed ordinary fields and explicit new secrets; unchanged secrets stay omitted, so
+replacement forms cannot restore values from before an earlier pending secret rotation. Backup sends refresh delivery
 metadata after either outcome and never reload draft controls. Keyboard focus must be
 geometrically clear of sticky header/footer. Validation messages are deterministic English.
 
@@ -43,7 +46,8 @@ geometrically clear of sticky header/footer. Validation messages are determinist
   save/delivery failures, saved-secret omission and clearing, retries, custom intervals,
   stale GET/save callbacks, shared write queue across replacement, failed queue head,
   queued session cancellation and refreshed backup delivery history. The fixture reads
-  the full settings snapshot before an optional hold, reproducing backend RMW behavior.
+  full settings/Telegram/Backup snapshots before an optional hold, reproducing backend
+  RMW behavior, including optional fields and secret rotations across replacements.
 - Responsive checks at 1440/1024/375/320 include persistent labels, horizontal overflow,
   bottom actions and actual Tab-to-Save geometry above/below sticky chrome.
 - Independent visual evaluation used fresh actual Chrome sessions and the available
