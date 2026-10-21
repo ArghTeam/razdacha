@@ -137,3 +137,10 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
   Five-minute-old/future observations are not fresh. Restart restores historical
   time/last success but starts current status unknown; indeterminate/stale HTTPS
   cannot emit transport-down alerts. Partial diagnostic coverage is unknown.
+
+Runtime DNS observations share one coalesced job for the fixed diagnostic name.
+Canceling a waiter does not cancel that job. Uncertain controller failure retains
+its identity through the pinned runtime's ten-second DNS budget, preventing
+cancellation or short HTTP deadlines from accumulating detached resolver work.
+Pool confirmation compares history timestamps at persisted whole-second precision;
+replaying one fractional timestamp cannot establish repeated recovery evidence.

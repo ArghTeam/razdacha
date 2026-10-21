@@ -883,3 +883,10 @@ cancellation stops waiting but cannot cancel the pinned runtime's background job
 uncertain requests retain capacity through their budget. Group checks read existing
 history without fan-out and keep its timestamp. Observations older than five minutes
 are historical. Restart retains last success/time but reports current status unknown.
+
+Runtime DNS observations share one coalesced job for the fixed diagnostic name.
+Canceling a waiter does not cancel that job. Uncertain controller failure retains
+its identity through the pinned runtime's ten-second DNS budget, preventing
+cancellation or short HTTP deadlines from accumulating detached resolver work.
+Pool confirmation compares history timestamps at persisted whole-second precision;
+replaying one fractional timestamp cannot establish repeated recovery evidence.

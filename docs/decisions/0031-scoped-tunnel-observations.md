@@ -21,3 +21,10 @@ retain history timestamps. Partial/stale observations cannot report all healthy.
 
 The user authorized issues 218 and 166 together and production validation after
 independent review, superseding previous after-217 ordering. Policy is unchanged.
+
+Runtime DNS observations share one coalesced job for the fixed diagnostic name.
+Canceling a waiter does not cancel that job. Uncertain controller failure retains
+its identity through the pinned runtime's ten-second DNS budget, preventing
+cancellation or short HTTP deadlines from accumulating detached resolver work.
+Pool confirmation compares history timestamps at persisted whole-second precision;
+replaying one fractional timestamp cannot establish repeated recovery evidence.

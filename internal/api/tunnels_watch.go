@@ -148,7 +148,9 @@ func (s *Server) refreshChecks(ctx context.Context) error {
 			s.events.observe(t.ID, t.Name, tunnelUnknown, saved[t.ID].Notified, res.At)
 			continue
 		}
-		if !res.At.After(saved[t.ID].CheckedAt) {
+		// Persistence stores seconds; compare at the same precision so replaying
+		// fractional runtime history cannot count as a new confirmation.
+		if !res.At.Truncate(time.Second).After(saved[t.ID].CheckedAt) {
 			continue
 		}
 		v := s.events.observe(t.ID, t.Name, res.Status, saved[t.ID].Notified, res.At)

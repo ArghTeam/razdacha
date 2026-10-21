@@ -68,3 +68,20 @@ capacity, queue limits, malformed delay, twelve-second measurement, partial/stal
 coverage and original group time. These unit checks are not an actual twelve-second
 WireGuard round trip. Controlled pinned-runtime baseline/fix evidence and independent
 security/final reviews remain required before acceptance and production validation.
+
+## Review fixes and controlled runtime boundary
+
+Review found premature DNS capacity release after HTTP cancellation and fractional
+history timestamps replayed against second-precision persistence. DNS now shares
+one detached fixed-name job and retains uncertain work for the actual ten-second
+runtime budget. Confirmation compares timestamps at persisted second precision.
+Adversarial race regressions verify cancellation/HTTP timeout keep one DNS job and
+five repetitions of one fractional pool sample cannot confirm recovery.
+
+The independent pinned-runtime fixture exercises actual URLTest and Clash APIs
+with a controlled loopback dialer: rejected hostname resolution versus verified
+IP TLS, HEAD/301 without redirect following, untrusted TLS rejection, a real
+12-second successful round trip, and indistinguishable generic DNS/TCP/TLS 503s.
+This proves API/TLS/budget behavior, not WireGuard transport, installed-host state,
+client DNS policy, UDP or Google Meet. Full nested race checks and vet passed.
+Independent final review and authorized production observations remain separate.

@@ -55,13 +55,14 @@ func okStamp(res tunnelCheck) time.Time {
 // «не проверялось», и производные поля туннеля остаются null — ноль в latency
 // был бы измеренным нулём, а «down» — утверждением о непроверенном туннеле.
 type checkCache struct {
-	mu       sync.Mutex
-	last     map[string]tunnelCheck
-	dnsSlots chan struct{}
+	mu     sync.Mutex
+	last   map[string]tunnelCheck
+	dnsMu  sync.Mutex
+	dnsJob *dnsObservationJob
 }
 
 func newCheckCache() *checkCache {
-	return &checkCache{last: make(map[string]tunnelCheck), dnsSlots: make(chan struct{}, 2)}
+	return &checkCache{last: make(map[string]tunnelCheck)}
 }
 
 // put кладёт результат очередной проверки, сохраняя отметку последнего удачного
@@ -280,33 +281,72 @@ func (s *Server) observeSignals(ctx context.Context, res tunnelCheck) *tunnelSig
 	if res.Status == tunnelNotApplied {
 		return out
 	}
-	out.DNS = signal{State: "unknown", Scope: "runtime_resolver", Detail: "Runtime resolver observation; not per-tunnel DNS"}
-	select {
-	case s.checks.dnsSlots <- struct{}{}:
-		defer func() { <-s.checks.dnsSlots }()
-	default:
-		out.DNS.Detail = "Runtime DNS observation deferred: diagnostic capacity busy"
-		return out
+	out.DNS = s.observeRuntimeDNS(ctx)
+	return out
+}
+
+// sing-box 1.12.25 starts /dns/query with context.Background and a ten-second
+// timeout. Canceling the controller request does not stop that runtime work.
+const runtimeDNSBudget = 10 * time.Second
+
+type dnsObservationJob struct {
+	done        chan struct{}
+	observation signal
+}
+
+func (s *Server) observeRuntimeDNS(ctx context.Context) signal {
+	unknown := signal{State: "unknown", Scope: "runtime_resolver", Detail: "Runtime resolver observation; not per-tunnel DNS"}
+	if ctx.Err() != nil {
+		return unknown
 	}
-	// This query observes existing policy and never installs a bypass or changes rules.
-	dnsCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	addrs, err := s.clash.ResolveA(dnsCtx, "www.gstatic.com")
+	cache := s.checks
+	cache.dnsMu.Lock()
+	job := cache.dnsJob
+	if job == nil {
+		job = &dnsObservationJob{done: make(chan struct{})}
+		cache.dnsJob = job
+		go s.runDNSObservation(cache, job)
+	}
+	cache.dnsMu.Unlock()
+	select {
+	case <-ctx.Done():
+		return unknown
+	case <-job.done:
+		return job.observation
+	}
+}
+
+func (s *Server) runDNSObservation(cache *checkCache, job *dnsObservationJob) {
+	started := time.Now()
+	// Waiters cannot cancel or release this job's runtime capacity.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	addrs, err := s.clash.ResolveA(ctx, "www.gstatic.com")
+	cancel()
 	at := s.now().UTC()
-	out.DNS.ObservedAt = &at
-	out.DNS.Fresh = true
+	job.observation = signal{State: "unknown", Scope: "runtime_resolver", ObservedAt: &at, Fresh: true, Detail: "Runtime resolver observation; not per-tunnel DNS"}
 	switch {
 	case err == nil && len(addrs) > 0:
-		out.DNS.State = "answered"
+		job.observation.State = "answered"
 	case errors.Is(err, clash.ErrResolveFailed):
 		var resolveErr *clash.ResolveError
 		if errors.As(err, &resolveErr) && resolveErr.Refused() {
-			out.DNS.State = "rejected"
+			job.observation.State = "rejected"
 		} else {
-			out.DNS.State = "failed"
+			job.observation.State = "failed"
 		}
-	default:
-		out.DNS.State = "unknown"
 	}
-	return out
+	close(job.done)
+	// Only a known resolver response establishes completion. On uncertain HTTP
+	// failure retain the coalescing identity through the actual runtime budget.
+	var resolveErr *clash.ResolveError
+	if err != nil && !errors.As(err, &resolveErr) {
+		if remaining := runtimeDNSBudget - time.Since(started); remaining > 0 {
+			time.Sleep(remaining)
+		}
+	}
+	cache.dnsMu.Lock()
+	if cache.dnsJob == job {
+		cache.dnsJob = nil
+	}
+	cache.dnsMu.Unlock()
 }
