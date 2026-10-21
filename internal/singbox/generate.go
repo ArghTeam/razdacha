@@ -185,10 +185,6 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 					tunnelTag = ""
 				} else {
 					tunnelTag = ChainTag(via.ID, t.ID)
-					if !seenChains[tunnelTag] {
-						seenChains[tunnelTag] = true
-						chains = append(chains, chainPair{viaID: via.ID, firstID: t.ID})
-					}
 				}
 			}
 		}
@@ -232,6 +228,10 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 			seenSets[set.Tag] = true
 			ruleSets = append(ruleSets, set)
 		}
+		if unavailable == "" && r.Action == store.ActionTunnel && r.ViaTunnelID != "" && !seenChains[tunnelTag] {
+			seenChains[tunnelTag] = true
+			chains = append(chains, chainPair{viaID: r.ViaTunnelID, firstID: r.TunnelID})
+		}
 		denied := unavailable != ""
 		diags = append(diags, RuleDiag{ID: r.ID, Name: r.Name, Reason: unavailable})
 		routeRules = append(routeRules, routeRule(r, tags, sources, tunnelTag, denied))
@@ -246,6 +246,11 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 			return option.Options{}, nil, err
 		}
 		endpoints = append(endpoints, ep)
+	}
+
+	endpoints, outbounds, err = stabilizeWireGuardDetours(endpoints, outbounds)
+	if err != nil {
+		return option.Options{}, nil, err
 	}
 
 	dnsListen, err := listen(snap.Settings.WGServerAddress, dnsPort)

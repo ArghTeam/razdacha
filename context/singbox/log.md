@@ -3,6 +3,14 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-10-21
+
+### #262 — hostname WireGuard chains initialize fixed parents safely
+
+**Changed:** Generate deterministic singleton selectors only for hostname WireGuard children detouring through WireGuard parents; preserve peer/DNS/route/source policy. Materialize chain clones after confirming an actual routed rule. Literal/non-WireGuard parent detours remain unchanged.
+**Decision:** [ADR 0030](../../docs/decisions/0030-wireguard-parent-startup-alias.md) clarifies ADR 0012 without replacing chain clones.
+**Validation:** Generator regressions cover policy/key/address preservation, deduplication/collisions, unavailable/orphan/empty rules and pool pruning. A pinned-runtime test verifies cached direct/deleted exits cannot escape the fixed parent. Private isolated startup observations are described without provider identities in the task specification. Actual candidate-generated frozen-source preparation and isolated startup/shutdown passed; see the [completed specification](../../tasks/done/262-hostname-wireguard-chain.md). No deployment or version bump is part of this change.
+
 ## 2026-10-20
 
 ### #215 — preserve selected scope after peer deletion

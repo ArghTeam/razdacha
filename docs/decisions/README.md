@@ -39,3 +39,5 @@
 | [0028](0028-peer-egress.md) | Source-scoped whole-Internet tunnel routing | 2026-10-20 | accepted; extends 0003, 0013 and 0023 |
 
 | [0029](0029-bounded-native-transport.md) | Bounded native transport address rules | 2026-10-20 | accepted; extends 0025 |
+
+| [0030](0030-wireguard-parent-startup-alias.md) | Fixed WireGuard parent aliases avoid hostname chain startup locks | 2026-10-21 | accepted; clarifies 0012 |
