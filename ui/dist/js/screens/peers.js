@@ -2,6 +2,7 @@
 
 import * as api from '../api.js';
 import * as qr from '../qr.js';
+import { beginInventoryRead } from './tunnels.js';
 import {
   state, peerById, tunnelById, closeModal, toast, openModal, modalShell,
   currentModalRevision, isCurrentModal, onModalCleanup,
@@ -15,20 +16,21 @@ let inventoryRevision = 0;
 /** Session and load order protect inventory from obsolete poll responses. */
 export async function load() {
   const currentSession = api.session.guard();
+  const screen = state.screen;
   const revision = ++inventoryRevision;
-  const active = () => currentSession() && revision === inventoryRevision;
+  const active = () => currentSession() && revision === inventoryRevision && screen === state.screen;
   let peers;
   try { peers = await api.peers.list(); }
   catch (err) { if (active()) throw err; return; }
   if (!active()) return;
   state.peers = peers;
+  const tunnelRead = beginInventoryRead();
   try {
     const tunnels = await api.tunnels.list();
-    if (!active()) return;
-    state.tunnels = tunnels;
+    if (!active() || !tunnelRead.accept(tunnels)) return;
     state.missing.delete('peer-tunnels');
   } catch (err) {
-    if (!active()) return;
+    if (!active() || !tunnelRead.current()) return;
     if (err.status === 401) throw err;
     state.missing.add('peer-tunnels');
   }

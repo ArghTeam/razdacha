@@ -16,8 +16,112 @@ import {
 
 export const title = 'Туннели';
 
+let inventoryRevision = 0;
+let inventoryLoad = null;
+const operations = new Map();
+
+/** Shared publication token for screen and startup tunnel inventory readers. */
+export function beginInventoryRead() {
+  const currentSession = api.session.guard();
+  const revision = ++inventoryRevision;
+  const current = () => currentSession() && revision === inventoryRevision;
+  return {
+    current,
+    accept(tunnels) {
+      if (!current()) return false;
+      state.tunnels = tunnels;
+      return true;
+    },
+  };
+}
+
+/** Coalesce unchanged reads; accepted mutations invalidate older snapshots. */
 export async function load() {
-  state.tunnels = await api.tunnels.list();
+  if (inventoryLoad?.read.current()) return inventoryLoad.pending;
+  const read = beginInventoryRead();
+  const entry = { read, pending: null };
+  entry.pending = (async () => {
+    try {
+      const tunnels = await api.tunnels.list();
+      read.accept(tunnels);
+    } catch (err) {
+      if (read.current()) throw err;
+    } finally {
+      if (inventoryLoad === entry) inventoryLoad = null;
+    }
+  })();
+  inventoryLoad = entry;
+  return entry.pending;
+}
+
+// A new login never waits behind an operation from the previous session.
+function beginOperation(key, button, modal = false) {
+  if (operations.get(key)?.currentSession()) {
+    toast('A tunnel operation is already in progress. Wait for it to finish before retrying.', 'err');
+    return null;
+  }
+  const ctx = {
+    key, button, label: button?.textContent, modal, revision: currentModalRevision(),
+    currentSession: api.session.guard(), screen: state.screen, screenNode: $('#screen')?.firstElementChild,
+  };
+  ctx.current = () => ctx.currentSession() && ctx.revision === currentModalRevision()
+    && (ctx.modal ? isCurrentModal(ctx.revision)
+      : ctx.screen === state.screen && ctx.screenNode === $('#screen')?.firstElementChild);
+  operations.set(key, ctx);
+  if (button) button.disabled = true;
+  return ctx;
+}
+
+function finishOperation(ctx) {
+  const owned = operations.get(ctx.key) === ctx;
+  if (owned) operations.delete(ctx.key);
+  // Restoring our connected control is independent of obsolete modal feedback.
+  if (owned && ctx.currentSession() && ctx.button?.isConnected) {
+    ctx.button.disabled = false;
+    ctx.button.textContent = ctx.label;
+  }
+}
+
+function operationError(ctx, err, fallback) {
+  if (ctx.current()) toastError(err, fallback);
+}
+
+/** The inventory never keeps editor raw configuration copies. */
+function acceptTunnel(result, fallback = {}) {
+  inventoryRevision++;
+  const safe = { ...fallback, ...(result || {}) };
+  delete safe.raw;
+  if (!safe.id) return;
+  const tunnel = tunnelById(safe.id);
+  if (tunnel) Object.assign(tunnel, safe);
+  else state.tunnels.push(safe);
+}
+
+function acceptPool(id, result) {
+  inventoryRevision++;
+  const tunnel = tunnelById(id);
+  if (!tunnel || !result) return tunnel;
+  if (result.pool) {
+    const safe = { ...result };
+    delete safe.raw;
+    Object.assign(tunnel, safe);
+  } else tunnel.pool = { ...(tunnel.pool || {}), ...result };
+  return tunnel;
+}
+
+async function reloadAfterMutation(ctx, success) {
+  if (!ctx.currentSession()) return;
+  try {
+    await load();
+  } catch (err) {
+    if (!ctx.currentSession()) return;
+    if (ctx.current()) toast(`${success}. Inventory refresh failed: ${err.message}. The change was saved; reload the Tunnels screen instead of repeating it.`, 'err');
+    refresh();
+    return;
+  }
+  if (!ctx.currentSession()) return;
+  if (ctx.current()) toast(success);
+  refresh();
 }
 
 /* Кнопка «+ WARP» показывается, пока WARP не заведён: второй раз она отвечает
@@ -245,18 +349,27 @@ function modalPoolDetails(id) {
   () => loadPoolDetails(id));
 }
 
+let poolDetailsRevision = 0;
 async function loadPoolDetails(id) {
   const box = $('#pool-details');
-  if (!box) return;
-  const t = tunnelById(id);
+  if (!box) return false;
+  const currentSession = api.session.guard(), modalRevision = currentModalRevision();
+  const revision = ++poolDetailsRevision;
+  const current = () => currentSession() && isCurrentModal(modalRevision)
+    && revision === poolDetailsRevision && box === $('#pool-details');
   try {
     const data = await api.tunnels.poolServers(id);
-    box.innerHTML = poolDetailsHTML(t, data);
+    if (!current()) return false;
+    const tunnel = tunnelById(id);
+    if (!tunnel) return false;
+    box.innerHTML = poolDetailsHTML(tunnel, data);
+    return true;
   } catch (err) {
+    if (!current()) return false;
     box.innerHTML = `<div class="parse-result ${err.missing ? 'idle' : 'err'}"></div>`;
     box.firstElementChild.textContent = err.missing
-      ? 'Список серверов появится позже: GET /api/tunnels/{id}/pool ещё не реализован'
-      : err.message;
+      ? 'Server details are unavailable: GET /api/tunnels/{id}/pool is not implemented.' : err.message;
+    return false;
   }
 }
 
@@ -351,6 +464,7 @@ function modalTunnel(id) {
      <button class="btn btn-primary" data-act="save-tunnel" data-id="${esc(t ? t.id : '')}">Сохранить</button>`),
   (m) => {
     const raw = m.querySelector('#t-raw');
+    const currentSession = api.session.guard(), revision = currentModalRevision();
     let timer = null;
     onModalCleanup(() => {
       clearTimeout(timer);
@@ -362,7 +476,9 @@ function modalTunnel(id) {
       parseRevision++;
       lastParse = { ok: false, raw: '' };
       clearTimeout(timer);
-      timer = setTimeout(() => runParse(raw.value), 350);
+      timer = setTimeout(() => {
+        if (currentSession() && isCurrentModal(revision)) runParse(raw.value);
+      }, 350);
     });
     if (t) loadTunnelRaw(t, m);
     else m.querySelector('#t-name').focus();
@@ -379,11 +495,12 @@ function modalTunnel(id) {
    заменит прежний: заводить туннель заново из-за отказа одной ручки незачем. */
 async function loadTunnelRaw(t, m) {
   const revision = currentModalRevision();
+  const currentSession = api.session.guard();
   const raw = m.querySelector('#t-raw');
   const out = m.querySelector('#t-parse');
   try {
     const got = await api.tunnels.raw(t.id);
-    if (!isCurrentModal(revision)) return;
+    if (!currentSession() || !isCurrentModal(revision)) return;
     if (got.editable === false) {
       // Ключ сгенерировал сервер (WARP): править его руками нечего, поле
       // конфига уступает место объяснению, и правится только имя.
@@ -399,7 +516,7 @@ async function loadTunnelRaw(t, m) {
     raw.focus();
     runParse(raw.value);
   } catch (err) {
-    if (!isCurrentModal(revision)) return;
+    if (!currentSession() || !isCurrentModal(revision)) return;
     raw.disabled = false;
     out.className = 'parse-result ' + (err.missing ? 'idle' : 'err');
     out.textContent = err.missing
@@ -417,7 +534,8 @@ let parseRevision = 0;
 async function runParse(raw) {
   const revision = currentModalRevision();
   const requestRevision = ++parseRevision;
-  const current = () => isCurrentModal(revision) && requestRevision === parseRevision;
+  const currentSession = api.session.guard();
+  const current = () => currentSession() && isCurrentModal(revision) && requestRevision === parseRevision;
   const out = $('#t-parse');
   if (!out) return;
   const value = (raw || '').trim();
@@ -455,187 +573,185 @@ async function runParse(raw) {
 }
 
 async function saveTunnel(id) {
-  const name = $('#t-name').value.trim();
-  // Поля конфига нет вовсе у туннеля, чей ключ выдал сервер (WARP): у него
-  // меняется только имя, и слать `raw` в PATCH значило бы стереть ключ.
-  const field = $('#t-raw');
+  const modal = $('#modal');
+  const nameField = modal.querySelector('#t-name');
+  const button = modal.querySelector('[data-act="save-tunnel"]');
+  if (!nameField || !button || button.disabled) return;
+  const name = nameField.value.trim();
+  // Server-owned WARP configuration must remain omitted from PATCH.
+  const field = modal.querySelector('#t-raw');
   const raw = field ? field.value.trim() : '';
-  if (!name) { toast('Введите имя туннеля', 'err'); return; }
-  if (field && field.disabled) { toast('Конфиг ещё загружается', 'err'); return; }
-  if (field && !raw) { toast('Вставьте конфиг туннеля', 'err'); return; }
+  if (!name) { toast('Enter a tunnel name.', 'err'); return; }
+  if (field && field.disabled) { toast('Configuration is still loading.', 'err'); return; }
+  if (field && !raw) { toast('Paste the tunnel configuration.', 'err'); return; }
   if (field && lastParse.raw === raw && !lastParse.ok) {
-    toast('Конфиг не разобран — исправьте его перед сохранением', 'err');
+    toast('Correct the configuration before saving.', 'err');
     return;
   }
-  const btn = $('#modal [data-act="save-tunnel"]');
-  btn.disabled = true;
+  const ctx = beginOperation(id ? `tunnel:${id}` : 'create', button, true);
+  if (!ctx) return;
+  button.textContent = 'Saving…';
   try {
-    if (id) await api.tunnels.update(id, field ? { name, raw } : { name });
-    else await api.tunnels.create(name, raw);
-    closeModal();
+    let saved;
+    try {
+      saved = id ? await api.tunnels.update(id, field ? { name, raw } : { name }) : await api.tunnels.create(name, raw);
+    } catch (err) {
+      operationError(ctx, err, 'Tunnel was not saved. Your draft is preserved.');
+      return;
+    }
+    if (!ctx.currentSession()) return;
+    acceptTunnel(saved, id ? { id, name } : {});
     markDirty();
-    state.tunnels = await api.tunnels.list();
-    refresh();
-    toast(`Туннель «${name}» сохранён`);
-  } catch (err) {
-    btn.disabled = false;
-    toastError(err, 'Туннель не сохранён');
-  }
+    if (ctx.current()) {
+      closeModal();
+      ctx.modal = false;
+      ctx.revision = currentModalRevision();
+      ctx.screenNode = $('#screen')?.firstElementChild;
+    }
+    await reloadAfterMutation(ctx, `Tunnel “${name}” saved`);
+  } finally { finishOperation(ctx); }
 }
 
 export const actions = {
   'add-tunnel': () => modalTunnel(null),
-
-  /* Добавить WARP. Ключи демон берёт у Cloudflare сам — это единственное
-     действие панели, за которым сервер идёт наружу, и происходит оно только по
-     этому нажатию.
-
-     Кнопка блокируется на время запроса: регистрация занимает секунды, и второе
-     нажатие означало бы второе устройство у Cloudflare. Сервер от этого защищён
-     и сам (409), но ждать отказа, чтобы узнать о собственном двойном клике, —
-     плохой способ об этом сообщить. */
-  'add-warp': async (_id, btn) => {
-    btn.disabled = true;
-    btn.textContent = 'Регистрирую…';
-    try {
-      const created = await api.tunnels.addWarp();
-      markDirty();
-      state.tunnels = await api.tunnels.list();
-      refresh();
-      toast(`Туннель «${created?.name || 'WARP'}» добавлен`);
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = '+ WARP';
-      if (err.missing) {
-        toast('Добавление WARP появится позже: POST /api/tunnels/warp ещё не реализован');
-        return;
-      }
-      // Текст приходит с сервера: «не удалось связаться с Cloudflare» и
-      // «Cloudflare отказал» — разные причины с разными действиями.
-      toastError(err, 'WARP не добавлен');
-    }
-  },
   'edit-tunnel': (id) => modalTunnel(id),
   'save-tunnel': (id) => saveTunnel(id || null),
 
-  /* Меню строки. Наборов ровно два.
-
-     У пула — «Детали» (состав серверов вместо формы конфига) и включение.
-     «Изменить» нет: править нечего, кроме каталога. «Удалить» нет: встроенный пул
-     заводит демон (ADR 0018), и API удалить его не даёт — прятать кнопку, оставляя
-     разрешение в API, значит расходиться с самим собой.
-
-     Набор меню выбирается по тому, что это пул, а не по флагу builtin: у пула
-     править нечего, кроме каталога, поэтому «Изменить» и «Удалить» не показываем
-     ни у встроенного пула, ни у редкого пула из ручной правки БД. */
-  'menu-tunnel': (id, btn) => {
-    const t = tunnelById(id);
-    const toggle = { act: 'toggle-tunnel', id, label: t.enabled === false ? 'Включить' : 'Выключить' };
-    openMenu(btn, tunnelPool(t)
-      ? [{ act: 'pool-details', id, label: 'Детали' }, toggle]
-      : [
-        { act: 'edit-tunnel', id, label: 'Изменить' },
-        toggle,
-        { act: 'delete-tunnel', id, label: 'Удалить', danger: true },
-      ]);
+  'add-warp': async (_id, button) => {
+    const ctx = beginOperation('warp', button);
+    if (!ctx) return;
+    if (button) button.textContent = 'Registering…';
+    try {
+      let created;
+      try { created = await api.tunnels.addWarp(); }
+      catch (err) {
+        if (ctx.current() && err.missing) toast('WARP registration is unavailable: POST /api/tunnels/warp is not implemented.');
+        else operationError(ctx, err, 'WARP was not added.');
+        return;
+      }
+      if (!ctx.currentSession()) return;
+      acceptTunnel(created);
+      markDirty();
+      await reloadAfterMutation(ctx, `Tunnel “${created?.name || 'WARP'}” added`);
+    } finally { finishOperation(ctx); }
   },
 
+  // Pools keep their existing Details/Enable menu; backend deletion rules are unchanged.
+  'menu-tunnel': (id, button) => {
+    const tunnel = tunnelById(id);
+    if (!tunnel) return;
+    const toggle = { act: 'toggle-tunnel', id, label: tunnel.enabled === false ? 'Enable' : 'Disable' };
+    openMenu(button, tunnelPool(tunnel)
+      ? [{ act: 'pool-details', id, label: 'Details' }, toggle]
+      : [
+        { act: 'edit-tunnel', id, label: 'Edit' }, toggle,
+        { act: 'delete-tunnel', id, label: 'Delete', danger: true },
+      ]);
+  },
   'pool-details': (id) => modalPoolDetails(id),
 
-  /* Та же ручка, что у кнопки строки, но обновляется открытая модалка: закрывать
-     её ради перечитанного каталога незачем. */
-  'refresh-pool-details': async (id, btn) => {
-    const t = tunnelById(id);
-    btn.disabled = true;
-    btn.textContent = 'Обновляю…';
+  'refresh-pool-details': async (id, button) => {
+    const ctx = beginOperation(`tunnel:${id}`, button, true);
+    if (!ctx) return;
+    poolDetailsRevision++;
+    if (button) button.textContent = 'Refreshing…';
     try {
-      const res = await api.tunnels.refresh(id);
-      if (res && res.pool) Object.assign(t, res);
+      let result;
+      try { result = await api.tunnels.refresh(id); }
+      catch (err) {
+        operationError(ctx, err, 'Catalog was not refreshed.');
+        return;
+      }
+      if (!ctx.currentSession()) return;
+      const tunnel = acceptPool(id, result);
+      // Durable catalog state survives close; metadata belongs only to this modal.
+      if (!ctx.current()) { refresh(); return; }
+      const loaded = await loadPoolDetails(id);
+      if (!ctx.currentSession()) return;
+      if (ctx.current()) toast(loaded
+        ? `${tunnel?.name || 'Pool'}: catalog refreshed`
+        : 'Catalog refreshed, but server details could not be loaded. Reopen Details to retry.', loaded ? '' : 'err');
       refresh();
-      await loadPoolDetails(id);
-      toast(`${t.name}: каталог обновлён`);
-    } catch (err) {
-      if (err.missing) toast('Обновление каталога появится позже: '
-        + 'POST /api/tunnels/{id}/refresh ещё не реализован');
-      else toastError(err, 'Каталог не обновлён');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Обновить каталог';
-    }
+    } finally { finishOperation(ctx); }
   },
 
   'toggle-tunnel': async (id) => {
-    const t = tunnelById(id);
-    const enabled = t.enabled === false;
+    const tunnel = tunnelById(id);
+    if (!tunnel) return;
+    const enabled = tunnel.enabled === false;
+    const ctx = beginOperation(`tunnel:${id}`);
+    if (!ctx) return;
     try {
-      await api.tunnels.update(id, { enabled });
-      t.enabled = enabled;
+      let result;
+      try { result = await api.tunnels.update(id, { enabled }); }
+      catch (err) { operationError(ctx, err, 'Tunnel was not changed.'); return; }
+      if (!ctx.currentSession()) return;
+      acceptTunnel(result, { id, enabled });
       markDirty();
       refresh();
-    } catch (err) { toastError(err, 'Не переключено'); }
+    } finally { finishOperation(ctx); }
   },
 
   'delete-tunnel': async (id) => {
-    const t = tunnelById(id);
-    if (!confirm(`Удалить туннель «${t.name}»?`)) return;
+    const tunnel = tunnelById(id);
+    if (!tunnel || !confirm(`Delete tunnel “${tunnel.name}”?`)) return;
+    const ctx = beginOperation(`tunnel:${id}`);
+    if (!ctx) return;
     try {
-      await api.tunnels.remove(id);
-      state.tunnels = state.tunnels.filter((x) => x.id !== id);
+      try { await api.tunnels.remove(id); }
+      catch (err) { operationError(ctx, err, 'Tunnel was not deleted.'); return; }
+      if (!ctx.currentSession()) return;
+      inventoryRevision++;
+      state.tunnels = state.tunnels.filter((item) => item.id !== id);
       markDirty();
+      if (ctx.current()) toast('Tunnel deleted');
       refresh();
-      toast('Туннель удалён');
-    } catch (err) {
-      // 409 — на туннель ссылается правило; текст приходит с сервера.
-      toastError(err, 'Туннель не удалён');
-    }
+    } finally { finishOperation(ctx); }
   },
 
-  /* Перечитать каталог пула. Ручки ещё нет: 404 означает «не написали», и это
-     говорится словами — так же, как предпросмотр разбора в форме туннеля. */
-  'refresh-pool': async (id, btn) => {
-    const t = tunnelById(id);
-    btn.disabled = true;
-    btn.textContent = 'Обновляю…';
+  'refresh-pool': async (id, button) => {
+    const ctx = beginOperation(`tunnel:${id}`, button);
+    if (!ctx) return;
+    if (button) button.textContent = 'Refreshing…';
     try {
-      const res = await api.tunnels.refresh(id);
-      // Ручка может вернуть весь туннель или только блок пула — принимаем оба.
-      if (res && res.pool) Object.assign(t, res);
-      else if (res) t.pool = { ...(t.pool || {}), ...res };
-      refresh();
-      const p = t.pool || {};
-      toast(typeof p.servers_alive === 'number' && p.servers_total
-        ? `${t.name}: живых ${p.servers_alive} из ${p.servers_total}`
-        : `${t.name}: каталог обновлён`);
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = 'Обновить';
-      if (err.missing) {
-        toast('Обновление каталога появится позже: POST /api/tunnels/{id}/refresh ещё не реализован');
+      let result;
+      try { result = await api.tunnels.refresh(id); }
+      catch (err) {
+        if (ctx.current() && err.missing) toast('Catalog refresh is unavailable: POST /api/tunnels/{id}/refresh is not implemented.');
+        else operationError(ctx, err, 'Catalog was not refreshed.');
         return;
       }
-      toastError(err, 'Каталог не обновлён');
-    }
+      if (!ctx.currentSession()) return;
+      const tunnel = acceptPool(id, result);
+      const pool = tunnel?.pool || {};
+      if (ctx.current()) toast(typeof pool.servers_alive === 'number' && pool.servers_total
+        ? `${tunnel.name}: ${pool.servers_alive} alive of ${pool.servers_total}`
+        : `${tunnel?.name || 'Pool'}: catalog refreshed`);
+      refresh();
+    } finally { finishOperation(ctx); }
   },
 
-  'check-tunnel': async (id, btn) => {
-    const t = tunnelById(id);
-    btn.disabled = true;
-    btn.textContent = 'Проверяю…';
+  'check-tunnel': async (id, button) => {
+    const ctx = beginOperation(`tunnel:${id}`, button);
+    if (!ctx) return;
+    if (button) button.textContent = 'Checking…';
     try {
-      const res = await api.tunnels.check(id);
-      Object.assign(t, {
-        status: res?.status ?? t.status,
-        latency_ms: res?.latency_ms ?? null,
-        last_check: res?.last_check ?? new Date().toISOString(),
+      let result;
+      try { result = await api.tunnels.check(id); }
+      catch (err) { operationError(ctx, err, 'Tunnel check failed.'); return; }
+      if (!ctx.currentSession()) return;
+      inventoryRevision++;
+      const tunnel = tunnelById(id);
+      if (tunnel) Object.assign(tunnel, {
+        status: result?.status ?? tunnel.status,
+        latency_ms: result?.latency_ms ?? null,
+        last_check: result?.last_check ?? new Date().toISOString(),
       });
+      const ok = tunnel?.status === 'up' || tunnel?.status === 'slow';
+      if (ctx.current()) toast(ok
+        ? `${tunnel.name}: ${tunnel.latency_ms} ms${tunnel.status === 'slow' ? ' · slow' : ''}`
+        : `${tunnel?.name || 'Tunnel'}: ${result?.detail || 'no response'}`, ok ? '' : 'err');
       refresh();
-      const ok = t.status === 'up' || t.status === 'slow';
-      toast(ok ? `${t.name}: ${t.latency_ms} мс${t.status === 'slow' ? ' — медленно' : ''}`
-        : `${t.name}: ${res?.detail || 'нет ответа'}`, ok ? '' : 'err');
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = 'Проверить';
-      toastError(err, 'Проверка не выполнена');
-    }
+    } finally { finishOperation(ctx); }
   },
 };
