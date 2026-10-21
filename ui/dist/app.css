@@ -932,3 +932,35 @@ button:focus-visible, summary:focus-visible, a:focus-visible {
   .screen-head:has(.client-subtitle) { flex-wrap: wrap; gap: 12px; }
   .screen-head:has(.client-subtitle) .spacer { display: none; }
 }
+
+/* Settings sections own their drafts, actions and persistent feedback. */
+.modal:has(.settings-hub) { width: min(680px, 100%); }
+.settings-hub { min-width: 0; }
+.settings-intro { margin: 0 0 14px; color: var(--fg-dim); font-size: 13px; line-height: 1.5; }
+.settings-nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding-bottom: 16px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+.settings-nav .btn { padding-inline: 8px; min-width: 0; }
+.settings-nav [aria-current="true"] { color: var(--accent); border-color: var(--accent); background: var(--bg-sunken); }
+.settings-section { display: flex; flex-direction: column; gap: 16px; }
+.settings-section header h3 { margin: 0 0 5px; font-size: 18px; }
+.settings-section header p { margin: 0; color: var(--fg-dim); font-size: 13px; line-height: 1.5; }
+.settings-section fieldset { display: flex; flex-direction: column; gap: 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.settings-section input:not([type="checkbox"]), .settings-section select { width: 100%; min-width: 0; }
+.settings-section .hint, .settings-close-hint { font-size: 12px; line-height: 1.5; color: var(--fg-dim); margin: 0; overflow-wrap: anywhere; }
+.settings-check { display: flex; align-items: center; gap: 9px; font-size: 13px; min-height: 30px; }
+.settings-status { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-sunken); color: var(--fg-dim); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.settings-status:empty { display: none; }
+.settings-status.err, .settings-field-error { color: var(--err); }
+.settings-status.ok { color: var(--ok); }
+.settings-field-error { font-size: 12px; line-height: 1.4; }
+.settings-field-error:empty { display: none; }
+.settings-section [aria-invalid="true"] { border-color: var(--err); }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 2px; }
+.settings-warning { margin: 0; padding-left: 12px; border-left: 3px solid var(--warn); color: var(--fg-dim); font-size: 13px; line-height: 1.5; }
+.settings-download { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.settings-close-hint { margin-right: auto; }
+@media (max-width: 520px) {
+  .settings-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .settings-nav .btn, .settings-actions .btn, .settings-download .btn, .settings-check { min-height: 44px; }
+  .settings-actions { flex-direction: column; }
+  .settings-actions .btn { width: 100%; }
+}

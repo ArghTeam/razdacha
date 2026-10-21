@@ -211,3 +211,23 @@ checks. This establishes frontend presentation and sequencing, not live VPN publ
 release or deployment. The evaluator used the available OpenAI model; no review by a
 different provider is claimed. See the [completed task 236](../../tasks/done/236-client-routing-ui.md)
 for provenance, evidence and validation limits.
+
+## 2026-10-21 — Settings section persistence (#245)
+
+Replaced the combined settings save with Network, Schedules, Telegram and Backup
+sections. Disjoint settings PATCH payloads preserve untouched fields. Drafts survive
+navigation/failures with persistent local feedback; network saves explain Apply and
+client configuration redistribution. Timers pick up saved intervals automatically;
+Apply still updates the active configuration record. Delivery actions use saved state
+only and never
+implicitly save. Secret fields remain blank and omitted when unchanged, with separate
+presence hints and modal/session lifetime guards. Corrected configuration-file guidance.
+
+
+Network/Schedules saves serialize across dialogs because the shared endpoint reads and
+writes a whole settings record. Only changed keys are dispatched; untouched values
+from an older modal cannot revert an earlier queued save. Queued old-session intent
+is canceled before dispatch. Confirmed responses update only their own section. Backup
+sends refresh delivery history only, including persisted errors, preserving form values.
+Settings focus scrolling keeps controls clear of sticky chrome; local validation uses
+deterministic English messages rather than browser-localized strings.
