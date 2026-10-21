@@ -8,34 +8,63 @@ The panel uses HTML, CSS and ES modules in `ui/dist`, embedded in the daemon wit
 The [task #22 specification](../tasks/done/22-ui.md#decisions) records why Svelte + Vite
 was rejected.
 
-## 1. Клиенты
+## 1. Clients
 
-Главный экран, открывается по умолчанию — самая частая задача — «добавить устройство».
+The default inventory shows device identity/address, enabled state, handshake activity,
+traffic since gateway-interface startup and configured routing. Each row has one
+**Details** action. Routing summaries distinguish shared rules from a selected exit;
+missing, disabled and empty-pool exits remain visibly blocked without direct fallback.
+Neither a healthy exit nor global pending status proves a client's active route.
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Клиенты                                    [+ Добавить]     │
-├──────────────────────────────────────────────────────────────┤
-│  ● iPhone Ромы      10.8.0.5    ↓ 184 МБ ↑ 12 МБ    [QR] [⋮] │
-│  ● MacBook          10.8.0.6    ↓ 2.1 ГБ ↑ 340 МБ   [QR] [⋮] │
-│  ○ Телевизор        10.8.0.7    ↓ 12 КБ ↑ 1 КБ · был 3 дня назад [QR] [⋮] │
-│  ○ Ноутбук гостя    10.8.0.8    отключён            [QR] [⋮] │
-└──────────────────────────────────────────────────────────────┘
-```
+**Add client** asks only for a device name. Address, keys, MTU and DNS are assigned
+automatically. Enter and pointer submission share one in-flight gate. A successful
+creation opens the same Details dialog and reveals its expanded WireGuard loading,
+ready or retry section, including on narrow screens. A
+same-session creation finishing after ordinary close still updates inventory and
+pending changes, without reopening the dialog.
 
-- `●` / `○` — хендшейк менее / более 3 минут назад
-- `[+ Добавить]` → спрашивает только имя → сразу открывает модальное окно с QR-кодом
-  и кнопкой «Скачать .conf». Никаких настроек: адрес, ключи, MTU, DNS выставляются сами
-- `[⋮]` — переименовать, отключить, удалить
-- Трафик виден и у офлайн-пира — счётчики берутся с `wg0`, а не только у текущего
-  соединения; исчезает он лишь у выключенного пира, которого демон снял с интерфейса
-  (данных для него больше нет). Не подключавшийся ни разу пир показывает честный
-  ноль, а не пустоту
-- Счёт идёт с последнего поднятия `wg0` — интерфейс перезапустился, счётчик обнулился;
-  это не «трафик за всё время», и экран говорит об этом прямо
+Details contains:
 
-**Осознанно отсутствует:** выбор адреса, срок действия, лимиты трафика, выбор правил
-для пира (это на экране «Правила», со стороны правила).
+- **Device:** name and enabled state.
+- **Internet routing:** explicit Shared rules or Whole Internet through a tunnel.
+  Shared rules may tunnel, send directly or block selected resources; unmatched
+  traffic goes direct. Whole Internet supports IPv4 TCP/UDP and DNS, blocks IPv6,
+  ping/other protocols/private forwarding, retains gateway access and has no direct
+  fallback (ADR 0028). An unavailable saved/selected exit is retained rather than
+  silently replaced. Tunnel loading/retry does not discard the current selection.
+- **WireGuard configuration:** an independently loaded disclosure with QR, Copy,
+  Download and optional configuration text. All configuration and filenames come
+  from the daemon. Delivery uses saved settings; unsaved name edits disable Copy
+  and Download with an adjacent Save-the-name explanation until saved or reverted. Saved rename invalidates the old text, QR and filename,
+  including in another open Details interaction for the same client. Configuration
+  errors offer Retry while the device/routing draft remains editable.
+- **Delete device:** a separate inline confirmation names affected and orphaned
+  selected-client rules. Keep client returns to the preserved draft. Orphaned rules
+  require reassignment and explicit activation; rule publication still needs Apply
+  (ADR 0026).
+
+**Save changes** sends one transactional PATCH containing only changed fields. Writes
+for the same client are sequenced across replacement dialogs; a stale untouched form
+snapshot cannot revert an earlier accepted change. Failures retain the draft and a
+persistent inline error. Successful same-session saves update inventory and pending
+state after ordinary close; they cannot replace a newer editor or its draft. Previous
+session callbacks cannot change new-session state. Close, header close, Escape and
+backdrop discard unsaved edits; the persistent footer states this explicitly.
+
+Saving routing is distinct from Apply. Enabled changes and deletion may affect
+WireGuard access during the daemon's next 10-second synchronization, before Apply.
+The UI does not promise a per-device applied state or an exact revocation deadline.
+
+Configuration text, filename, QR pixels and download object URLs belong to the modal
+and are cleared on close/replacement/logout/session expiry. Late responses cannot
+repopulate another modal. Copy captures the delivered text and guards asynchronous
+feedback; clipboard content deliberately leaves the application and is not erased
+by modal cleanup. Removing application references does not promise heap erasure.
+
+Client addresses, expiry, traffic limits and per-client resource-list selection are
+not configurable here. Rules assign selected clients from the Rules screen. Handshake
+status and traffic counters remain observations, not claims of successful Internet
+connectivity or lifetime usage.
 
 ## 2. Туннели
 

@@ -42,8 +42,9 @@ No `NODE_PATH`, personal dependency path or separate application server is requi
 
 ## Scope and limits
 
-Current suites cover rule editor integrity, client action lifetime and Settings
-persistence/lifetime. The dedicated `ui-browser` CI job runs separately from Go tests,
+Current suites cover rule editor integrity, client action lifetime, unified Client
+Details drafts/delivery, responsive client layout/focus and Settings persistence/lifetime.
+The dedicated `ui-browser` CI job runs separately from Go tests,
 static builds and releases: Node, npm and browser downloads are never daemon build
 requirements. Installed packages are ignored by Git and are outside embedded assets.
 

@@ -53,19 +53,30 @@ promising heap erasure or immunity to delayed cookie expiry. A dataset marker al
 does not prove visible rendering. Keep case-specific coverage and inconclusive
 observations explicit in the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md).
 
-- The client inventory exposes a direct Routing action beside Configuration and labels
-  its route as configured, never inferred active. The editor uses explicit Shared rules
-  and Whole Internet radio choices with a conditional exit selector. Disabled/missing
-  exits remain selected and visibly blocked; an empty inventory cannot save an empty
-  target. Save failures stay in the editor with its selection preserved.
-- Saving routing marks global pending state; Apply activates configuration. Authenticated
-  Apply status restores global dirty state after reload, but cannot identify which peer
-  changed or its individual active route. Health and enabled status never imply successful
-  client connectivity. Whole Internet mode alone shows its IPv4 TCP/UDP scope, blocked
-  IPv6/ping/other protocols/private forwarding, gateway access and no direct fallback.
-  Shared-mode guidance describes tunnel, direct and block rule actions neutrally (ADR 0028).
-- Routing loading, retry and save callbacks obey modal/session lifetime; an old response
-  cannot replace a newer editor. Existing configuration download/QR cleanup is unchanged.
+- Client inventory has exactly one Details entry per row. The unified dialog keeps
+  name/enabled state and Internet routing immediately discoverable, with server-owned
+  WireGuard configuration in a separate disclosure. Creation reveals that disclosure
+  and its loading/ready/retry state without hiding the handoff below the first view.
+  Configured routes and global
+  pending status do not identify an individual active route. Whole Internet scope,
+  gateway access and no direct fallback remain explicit (ADR 0028).
+- One client Save sends only changed name/enabled/exit fields in a transactional
+  PATCH. Same-client writes are sequenced across replacement dialogs and recheck the
+  initiating session before dispatch. Same-session durable success can update inventory
+  and pending state after close, without replacing a newer draft. Inventory loads
+  enforce session and request order. Errors/retries retain drafts; unavailable tunnel
+  selections remain selected and blocked rather than silently replaced.
+- Configuration loading/retry never replaces the editor. Saved rename invalidates
+  text, QR, filename and download URLs, even after another Details dialog opens for
+  that client. Copy/Download use saved identity; unsaved name edits disable delivery
+  with a separate adjacent explanation, cleared on revert or confirmed save.
+  Clipboard text is intentionally external; only callback feedback is lifetime-guarded.
+  Close, Escape, header close and backdrop uniformly discard drafts, stated in the footer.
+- Routing and affected rules need Apply, while enabled/deleted peers are synchronized
+  from saved state to WireGuard on the daemon's 10-second interval and can revoke
+  access before Apply. No per-client activation or exact revocation deadline is claimed.
+  Deletion uses inline affected/orphaned-rule confirmation; cancellation preserves draft
+  and explicit orphan reassignment/activation instructions remain (ADR 0026).
 
 - Tunnel usage includes client exit references; rule assignment identifies clients whose whole-Internet mode takes precedence. Domain diagnostics are explicitly labeled as shared-rule scope and do not claim to evaluate a selected client exit.
 
