@@ -240,3 +240,10 @@ are required before merge. See the [completed implementation record](../../tasks
 Peer PATCH has omitted/string/null exit semantics and transactional field updates; unknown/empty references return 400 and referenced tunnel deletion returns 409. Authenticated GET /api/apply/status reads editable-versus-committed policy and uncertainty under the publication gate without mutation. Committed/bootstrap writers use generation v3; old envelopes containing new peer routing are rejected. Refresh/recovery never publish pending choices (ADR 0028).
 
 Implementation and verification record: [task 231](../../tasks/done/231-peer-egress.md). The bounded isolated Linux fixture and independent synthetic-browser checks passed; the completed record retains the failed first attempt and exact evidence boundaries. The fixture uses veth identities and a synthetic SOCKS exit, not encrypted incoming WireGuard or a DO client flow.
+
+- Issue 218/166: scoped HTTPS/DNS/unknown-transport observations, bounded shared probe admission, retained pool timestamps and honest partial/restart summaries (ADR 0031).
+
+- Review follow-up for 218/166: coalesced runtime DNS retains its ten-second lease
+  despite caller/HTTP cancellation; fractional history cannot count repeatedly
+  against second-precision persisted confirmations. Controlled pinned-runtime
+  loopback tests verify TLS/API/12-second behavior, not actual WG or client policy.

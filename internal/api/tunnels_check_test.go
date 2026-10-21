@@ -13,7 +13,13 @@ import (
 // в тестах нет: проверяется, как панель переводит его ответы пользователю.
 func withClash(t *testing.T, ts *testServer, h http.HandlerFunc) {
 	t.Helper()
-	srv := httptest.NewServer(h)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/dns/query" {
+			_, _ = w.Write([]byte(`{"Status":0,"Answer":[{"type":1,"data":"192.0.2.1"}]}`))
+			return
+		}
+		h(w, r)
+	}))
 	t.Cleanup(srv.Close)
 	ts.clash = clash.New(clash.Options{
 		Addr:         srv.Listener.Addr().String(),
@@ -127,8 +133,8 @@ func TestCheckTunnelDown(t *testing.T) {
 	var out tunnelCheckResponse
 	decodeJSONBody(t, resp, &out)
 
-	if out.Status != tunnelDown {
-		t.Errorf("статус = %q, ожидался %q", out.Status, tunnelDown)
+	if out.Status != tunnelUnknown {
+		t.Errorf("статус = %q, ожидался %q", out.Status, tunnelUnknown)
 	}
 	if out.LatencyMS != nil {
 		t.Errorf("у неотвечающего туннеля задержка %v", *out.LatencyMS)

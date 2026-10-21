@@ -36,15 +36,11 @@ const (
 	// по всему миру и не считается «сервисом», который где-то заблокируют.
 	DefaultTestURL = "https://www.gstatic.com/generate_204"
 
-	// DefaultProbeTimeout — сколько ждёт цели сам sing-box (параметр timeout
-	// запроса).
-	//
-	// Podkop берёт две секунды, и на стенде этого не хватило: рабочий
-	// WireGuard-туннель отвечал стабильно за ~5 с и помечался «не отвечает».
-	// Пользователь при этом видел его рабочим — трафик через туннель ходил.
-	// Ложное «мёртв» на живом туннеле хуже, чем лишние секунды ожидания:
-	// по нему принимают решение перевыпустить конфиг или сменить сервер.
-	DefaultProbeTimeout = 8 * time.Second
+	// DiagnosticTestURL avoids hostname policy without disabling TLS verification.
+	DiagnosticTestURL = "https://1.1.1.1/"
+
+	// DefaultProbeTimeout permits slow HTTPS observations within a bounded budget.
+	DefaultProbeTimeout = 15 * time.Second
 
 	// SlowThreshold — с какой задержки туннель считается медленным. Отдельный
 	// статус нужен, чтобы «работает, но еле-еле» не выглядело как «работает»:
@@ -72,8 +68,8 @@ var (
 	// заведённый в панели, но ещё не применённый.
 	ErrNotFound = errors.New("туннель не найден в конфиге sing-box")
 
-	// ErrProbeFailed — sing-box проверку выполнил, но цель через туннель не
-	// открылась. Это единственная ошибка, которая говорит о самом туннеле.
+	// ErrProbeFailed means an HTTPS probe failed with an unspecified cause.
+	// It does not establish tunnel transport failure.
 	ErrProbeFailed = errors.New("туннель не ответил на проверку")
 
 	// ErrBadResponse — ответ Clash API не разобран.
@@ -109,6 +105,7 @@ type Client struct {
 	// sing-box. Всегда больше probe, см. requestSlack.
 	deadline time.Duration
 	hc       *http.Client
+	broker   probeBroker
 }
 
 // New собирает клиент. Ошибок нет намеренно: неверный адрес всплывёт при первом
@@ -131,7 +128,7 @@ func New(opts Options) *Client {
 	}
 	testURL := opts.TestURL
 	if testURL == "" {
-		testURL = DefaultTestURL
+		testURL = DiagnosticTestURL
 	}
 	// Дедлайн запроса берётся у подставленного клиента, если он задан: иначе
 	// тест на «sing-box завис» ждал бы реальные секунды.
@@ -186,12 +183,8 @@ func (p Proxy) Latency() (time.Duration, bool) {
 	return time.Duration(last.Delay) * time.Millisecond, true
 }
 
-// Delay измеряет задержку до [Options.TestURL] через прокси с тегом tag.
-//
-// Разбор ответа даёт три разных исхода, и путать их нельзя: [ErrNotFound] —
-// туннель не применён, [ErrProbeFailed] — применён, но не работает,
-// [ErrUnavailable] — не работает сам sing-box.
-func (c *Client) Delay(ctx context.Context, tag string) (time.Duration, error) {
+// delay performs one controller request; Delay owns shared admission and lifetime.
+func (c *Client) delay(ctx context.Context, tag string) (time.Duration, error) {
 	q := url.Values{
 		"url":     {c.testURL},
 		"timeout": {strconv.FormatInt(c.probe.Milliseconds(), 10)},
@@ -204,12 +197,15 @@ func (c *Client) Delay(ctx context.Context, tag string) (time.Duration, error) {
 	switch {
 	case status == http.StatusOK:
 		var out struct {
-			Delay uint16 `json:"delay"`
+			Delay *uint16 `json:"delay"`
 		}
 		if err := json.Unmarshal(body, &out); err != nil {
 			return 0, fmt.Errorf("%w: задержка туннеля %q: %w", ErrBadResponse, tag, err)
 		}
-		return time.Duration(out.Delay) * time.Millisecond, nil
+		if out.Delay == nil {
+			return 0, fmt.Errorf("%w: missing delay", ErrBadResponse)
+		}
+		return time.Duration(*out.Delay) * time.Millisecond, nil
 	case status == http.StatusNotFound:
 		return 0, fmt.Errorf("%w: %s", ErrNotFound, tag)
 	case status >= 500:
