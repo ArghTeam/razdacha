@@ -275,7 +275,8 @@ func qualityProbe(t *testing.T) {
 		if proto == "udp4" {
 			qualitySetDF(t, c, false)
 		}
-		if mode == "matrix" {
+		switch mode {
+		case "matrix":
 			for _, size := range []int{64, 1200, 1252, 1253, 1400} {
 				fmt.Printf("266-QUALITY-MATRIX protocol=%s payload-bytes=%d\n", proto, size)
 				qualityExchange(t, c, prefix, qualityPayload(size, identity+proto+"-"+strconv.Itoa(size)))
@@ -290,14 +291,14 @@ func qualityProbe(t *testing.T) {
 				qualitySetDF(t, c, false)
 				qualityExchange(t, c, prefix, qualityPayload(1253, "fragmentation-recovery"))
 			}
-		} else if mode == "persistent" {
+		case "persistent":
 			started := time.Now()
 			for i := 0; i < 40; i++ {
 				qualityExchange(t, c, prefix, qualityPayload(1200, fmt.Sprintf("%s/persistent-%s-%d", identity, proto, i)))
 				time.Sleep(50 * time.Millisecond)
 			}
 			fmt.Printf("266-QUALITY-PERSISTENT protocol=%s frames=40 elapsed-ms=%d\n", proto, time.Since(started).Milliseconds())
-		} else {
+		default:
 			t.Fatal("invalid quality mode")
 		}
 		wireMust(t, c.Close())
