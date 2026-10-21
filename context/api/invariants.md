@@ -110,8 +110,10 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 - Shared `rules.beginInventoryRead()` tokens accept inventory only in their initiating
   session and before a newer read or accepted mutation. Rule screen/editor/duplicate
   and Clients deletion-follow-up readers use that authority and ignore stale read
-  errors. Startup batch adoption is owned by dependent #249; #259 alone does not
-  close the demonstrated bootstrap rules overwrite before that integration lands.
+  errors. Startup `app.loadAll()` captures its rules token before the parallel
+  batch, gates success/error metadata and feedback with token currency, and publishes
+  only through `accept`. An old boot result cannot replace a mutation accepted while
+  another startup request is pending, even before the final navigation refresh.
 - Duplicate success is distinct from inventory refresh failure and retains existing
   URL sources/resolve_real_ip. Domain route and direct-reachability probes remain
   shared-rule diagnostics, never per-client exit evaluation; result/error/busy state

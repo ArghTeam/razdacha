@@ -34,3 +34,9 @@ Synthetic Chromium coverage includes creation single-flight, save/error/retry, c
 - Layout captures use 1440/1024/375/320 in light/dark, long names, all section bottoms, actual keyboard focus/hit-area geometry and doubled computed text at 1440/320. Native browser zoom, screen-reader output, QR camera scan, actual VPN connectivity, backend cookie delivery and deployed runtime behavior are outside this synthetic verification.
 - Loopback preview: `node ui/tests/client-preview.fixture.cjs`. Optional captures: set `CLIENT_SCREENSHOT_DIR` for `client-layout.cjs`. Fixture/helper files are excluded from CI suite discovery. No live credentials or real client profiles are used; no staging/deployment calls were performed.
 - Independent design evaluation passed on the second attempt after the two bounded creation/delivery refinements. Fresh 320/375 light/dark captures verified creation loading/error/retry/ready, ordinary-entry focus, name draft/revert/confirmed rename and server filename refresh. The separate final exact-commit review and CI remain required; visual acceptance grants no merge authority.
+
+## Integration closure
+
+This implementation was merged and the designated primary checkout synchronized before
+final #249 integrated verification. This record was moved to `tasks/done` during that
+verification; original implementation evidence and its limitations above are retained.

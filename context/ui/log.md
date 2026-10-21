@@ -270,3 +270,58 @@ pinned bundled Chromium and blocks requests outside its exact fixture origin, in
 reachable loopback aliases. Existing client/rule fixtures retain their synthetic network
 guards. Node/npm remain outside Go build/release jobs and embedded assets. This adds
 repeatable tooling, not completion of the final integrated UI audit (#249).
+
+## 2026-10-21 — Merged UI remediation records (#243, #244, #246, #247, #256, #248)
+
+Rule source/target integrity (#243, PR251) and client creation/callback lifetime
+(#244, PR250) are merged. Their actual synthetic-browser and independent-review
+boundaries remain in [243](../../tasks/done/243-rule-editor-integrity.md) and
+[244](../../tasks/done/244-client-action-lifetime.md). Unified Client Details (#246,
+PR254) and the rule editor hierarchy (#247, PR255) are merged with independent exact
+source review, browser regressions and their recorded design evaluation outcomes.
+See [246](../../tasks/done/246-client-details.md) and
+[247](../../tasks/done/247-rule-editor-layout.md).
+
+Tunnel operation lifetime (#256, PR257) is merged, including the shared inventory
+reader needed to reject older cross-screen snapshots. Its boot-reader dependency was
+adopted by #248 (PR258). [256](../../tasks/done/256-tunnel-action-lifetime.md) retains
+the original failing reproduction and the limits of its synthetic verification.
+
+Shell/Diagnostics (#248, PR258) is merged: supported diagnostics and allowlisted report
+export remain available, unavailable raw viewers are explicitly disclosed, and Apply,
+navigation, feedback and focus obey their ownership boundaries. The third design
+attempt retained a textarea focus finding; an ordinary post-evaluation scoped fix was
+then independently verified with actual keyboard geometry. There was no fourth design
+evaluation or final design PASS claim. See
+[248](../../tasks/done/248-shell-diagnostics.md). Final integrated correctness QA is
+tracked separately in the final #249 verification record.
+
+## 2026-10-21 — Rule action lifetime and startup integration (#259, #249)
+
+Rule inventory/probe lifetime (#259, PR260) is merged with independent exact-source
+review, 38 focused synthetic browser cases and all hosted checks. The dependent final
+#249 integration captures `rules.beginInventoryRead()` before startup's parallel batch,
+uses token currency for pull feedback and accepts rules only through that token.
+The held-settings reproduction demonstrated an accepted toggle being overwritten before
+the final navigation reload; the regression now pauses the final startup read to keep
+that transient corruption observable. Obsolete bootstrap success, missing/error and
+network outcomes must preserve current inventory and metadata. See
+[259](../../tasks/done/259-rule-action-lifetime.md).
+
+
+## 2026-10-21 — Final integrated UI verification (#249)
+
+The complete maintained runner passed all 13 browser suites plus four runner tests.
+New actual-app coverage closes inventory/probe, broad tunnel UI and cross-screen
+integration gaps without replacing prior integrity/lifetime/geometry suites. The
+startup rules reader correction is bounded to token capture, gated pull feedback and
+accepted publication. Relevant Go UI/API checks, JavaScript syntax and whitespace passed.
+
+Ordinary synthetic screenshots are separate from stress fixtures and carry viewport,
+verified screen-heading and production-source hashes. The final gallery has 114 normal
+and 11 stress images; displayed version and identities are synthetic, not a deployed
+candidate. No real API mutation, installed networking, external delivery or release was
+performed. Backend cookie/persistence, protocol compatibility, connectivity and full
+accessibility certification remain outside this evidence. Final independent review,
+functional whole-app QA, hosted CI and primary-controlled merge/synchronization are
+separate gates. See [249](../../tasks/done/249-ui-remediation-verification.md).
