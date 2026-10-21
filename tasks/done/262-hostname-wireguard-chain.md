@@ -38,5 +38,12 @@ Parent-fetched base: `f690981dbc1dd7b0ddd08baf323c42e8512a9f08`.
   and the full separate pinned-runtime suite (`go test -mod=readonly ./... -count=1`).
 - Actual pinned selector cache regression proves empty/current/direct/deleted cached
   selections retain the sole parent and reject alternate selections.
-- Independent final review and candidate-generated isolated runtime/traffic evidence
-  are still delivery gates. No server mutation was performed by this implementation.
+- Independent source/context review found no material issue. A private frozen-snapshot
+  preparation using actual implementation source `738b24c8806212e9e85e2c059ec9bd3e880b2479`
+  preserved the old policy and all 25 sources (16 native, 9 plain). It generated one
+  singleton alias and preserved both hostname peers, keys and DNS policy.
+- The actual generated candidate started its pinned-runtime Clash API and stopped
+  cleanly in an isolated network namespace without manual endpoint edits. The helper
+  provenance remains the implementation commit above; this closeout changes docs only.
+- Implementation acceptance is complete. Deployment and its transport-traffic gates
+  are separate work; this task does not authorize a service/configuration change.
