@@ -52,7 +52,10 @@ func wireEnv(key, value string) []string {
 
 func wireExec(t *testing.T, ns netns.NsHandle, role string, args ...string) *exec.Cmd {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^TestNetworkGenerationWire$", "-test.timeout=80s")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestNetworkGenerationWire$", wireTestTimeout())
+	if wireQualityEnabled() {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+	}
 	cmd.Env = append(wireEnv("RAZDACHA_WIRE_ROLE", "enter"), "RAZDACHA_WIRE_NEXT="+role, "RAZDACHA_WIRE_ARGS="+strings.Join(args, "|"))
 	fd, err := unix.Dup(int(ns))
 	wireMust(t, err)
@@ -100,6 +103,9 @@ func wireRoute(t *testing.T, h *netlink.Handle, dst, gw, dev string) {
 
 func wireTopology(t *testing.T) (netns.NsHandle, netns.NsHandle) {
 	t.Helper()
+	if wireQualityEnabled() {
+		qualityRequireFresh(t)
+	}
 	client, sink := wireNewNS(t), wireNewNS(t)
 	gateway, err := netlink.NewHandle()
 	wireMust(t, err)
@@ -119,13 +125,16 @@ func wireTopology(t *testing.T) (netns.NsHandle, netns.NsHandle) {
 		name, peer, addr, paddr string
 		ns                      netns.NsHandle
 		h                       *netlink.Handle
-	}{{"wg0", "client0", "10.8.0.1/24", "10.8.0.2/24", client, ch}, {"wan0", "sink0", "192.0.2.1/24", "192.0.2.2/24", sink, sh}} {
+	}{{wireIngressName(), wireClientUnderlayName(), wireGatewayAddress(), wireClientAddress(), client, ch}, {"wan0", "sink0", "192.0.2.1/24", "192.0.2.2/24", sink, sh}} {
 		wireMust(t, gateway.LinkAdd(&netlink.Veth{LinkAttrs: netlink.LinkAttrs{Name: v.name}, PeerName: v.peer}))
 		peer, err := gateway.LinkByName(v.peer)
 		wireMust(t, err)
 		wireMust(t, gateway.LinkSetNsFd(peer, int(v.ns)))
 		wireLink(t, gateway, v.name, v.addr)
 		wireLink(t, v.h, v.peer, v.paddr)
+	}
+	if wireQualityEnabled() {
+		qualityWireGuard(t, gateway, ch, client)
 	}
 	wireLink(t, sh, "lo", "203.0.113.10/32")
 	wireLink(t, sh, "lo", "203.0.113.20/32")
@@ -147,6 +156,9 @@ func wireRole(t *testing.T) bool {
 		runtime.LockOSThread()
 		wireMust(t, unix.Setns(3, unix.CLONE_NEWNET))
 		wireMust(t, unix.Exec(os.Args[0], os.Args, wireEnv("RAZDACHA_WIRE_ROLE", os.Getenv("RAZDACHA_WIRE_NEXT"))))
+		return true
+	case "quality-probe":
+		qualityProbe(t)
 		return true
 	case "egress-fake", "egress-raw", "egress-dns-failure":
 		peerEgressProbe(t)
@@ -468,6 +480,9 @@ func (r *wireReload) Reload(ctx context.Context) error {
 	}
 	r.stop()
 	cmd := exec.Command(r.bin, "run", "-c", r.path)
+	if wireQualityEnabled() {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
+	}
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -522,7 +537,11 @@ type wireHarness struct {
 func newWireHarness(t *testing.T) *wireHarness {
 	t.Helper()
 	clientNS, sinkNS := wireTopology(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	duration := 60 * time.Second
+	if wireQualityEnabled() {
+		duration = 150 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
 	t.Cleanup(cancel)
 	h := &wireHarness{ctx: ctx, client: clientNS, seen: make(map[string]bool), collectorDone: make(chan struct{}), collectorACK: make(chan string, 16)}
 	sink := wireExec(t, sinkNS, "sink")
@@ -712,13 +731,16 @@ func TestNetworkGenerationWire(t *testing.T) {
 		wireMust(t, err)
 		parentMount, err := os.Readlink("/proc/self/ns/mnt")
 		wireMust(t, err)
-		args := []string{"-test.run=^TestNetworkGenerationWire$", "-test.timeout=80s"}
+		args := []string{"-test.run=^TestNetworkGenerationWire$", wireTestTimeout()}
 		if testing.Verbose() {
 			args = append(args, "-test.v")
 		}
 		cmd := exec.Command(os.Args[0], args...)
 		cmd.Env = append(wireEnv("RAZDACHA_WIRE_ROLE", "gateway"), "RAZDACHA_WIRE_PARENT="+parent, "RAZDACHA_WIRE_PARENT_MOUNT="+parentMount, "RAZDACHA_WIRE_BIN="+bin)
 		cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: unix.CLONE_NEWNET | unix.CLONE_NEWNS}
+		if wireQualityEnabled() {
+			cmd.SysProcAttr.Pdeathsig = syscall.SIGKILL
+		}
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("isolated fixture failed: %v\n%s", err, out)
@@ -736,10 +758,19 @@ func TestNetworkGenerationWire(t *testing.T) {
 	if currentMount == os.Getenv("RAZDACHA_WIRE_PARENT_MOUNT") || os.Getenv("RAZDACHA_WIRE_PARENT_MOUNT") == "" {
 		t.Fatal("refusing host mount namespace")
 	}
+	if wireQualityEnabled() {
+		qualityRequireFresh(t)
+	}
 	wireMust(t, unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""))
 	wireMust(t, unix.Mount("tmpfs", "/var/lib", "tmpfs", 0, "size=16m"))
 	wireMust(t, os.MkdirAll("/var/lib/sing-box", 0o700))
+	if wireQualityEnabled() {
+		// Prevent wgctrl userspace fallback from ever finding installed sockets.
+		wireMust(t, unix.Mount("tmpfs", "/run", "tmpfs", 0, "size=1m"))
+	}
 	switch {
+	case wireQualityEnabled():
+		peerEgressWireExercise(t)
 	case os.Getenv("RAZDACHA_WIRE_TRANSPORT") != "":
 		nativeTransportWireExercise(t)
 	case os.Getenv("RAZDACHA_WIRE_EGRESS") == "1":

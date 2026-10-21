@@ -33,3 +33,17 @@ description: wg0, nft-правила и маршрутизация через ne
 - Whole-Internet interception uses exact committed IPv4 peer sources, not a global destination catch-all. DNS, configured gateway and canonical local destinations precede source TCP/UDP capture; source return prevents unsupported protocols entering ordinary marks. Residual FORWARD traffic from selected sources is rejected without established-flow exemptions. Gateway INPUT remains available, private forwarding and unsupported protocols fail closed, other peers retain behavior (ADR 0028).
 
 - ADR 0029 transport envelopes use the separate `transport_subnets` nft set and TCP/UDP-only marks after DNS/local exemptions. Ordinary subnet behavior remains unchanged; transport-only lists never newly mark ICMP or arbitrary IP protocols. Generation v4 pins these fields; older envelopes cannot carry transport projection authority.
+
+## Encrypted connection-quality test boundary
+
+- The double-opt-in [quality fixture](../../docs/12-connection-quality.md) requires
+  fresh network and mount namespaces before mutation, uses disposable kernel
+  WireGuard keys and a documentation-only underlay without a host uplink, and
+  hides installed runtime state and userspace WireGuard sockets with private tmpfs.
+- Handshake and increasing bidirectional WireGuard counters prove actual encrypted
+  ingress. Existing production publication, nft/TProxy and independent sink/drop
+  checks exercise selective/full/shared policy. Synthetic SOCKS exits do not
+  prove a real outgoing provider, external path MTU or Google Meet/WebRTC success.
+- Address/MTU publication still uses the test WG adapter; the fixture does not
+  establish production key allocation or live peer-reconciliation lifecycle.
+  Its two logical source identities share one synthetic encrypted peer.

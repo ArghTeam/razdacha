@@ -3,6 +3,19 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-10-21
+
+### #266 — Isolated encrypted client connection-quality fixture
+
+**Changed:** Added an explicitly requested kernel WireGuard ingress to the existing
+private NET+MOUNT network fixture, retaining default veth behavior otherwise.
+**New surface:** Handshake/counter proof, exact TCP/UDP MTU payload matrix,
+DF/fragmentation behavior, bounded persistent sockets/reconnect, and deterministic
+underlay loss with measured qdisc drops and recovery.
+**Beware:** Synthetic exits and the address/MTU WG publication adapter do not prove
+real-provider performance, Meet/WebRTC or production key lifecycle. Build-only
+checks are not Linux runtime evidence; see `docs/12-connection-quality.md`.
+
 ## 2026-07-29
 
 ### #126 — в nft-сет идут подсети правил с любым действием
