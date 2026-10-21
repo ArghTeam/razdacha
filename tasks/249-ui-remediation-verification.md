@@ -50,3 +50,10 @@ full audit has been completed.
 - `CGO_ENABLED=0 go test ./ui`, JavaScript syntax checks and diff whitespace passed.
 - Final integrated verification after #246–#248 is still pending. This specification
   remains active; this phase establishes repeatable CI tooling only.
+
+
+The initial hosted browser job failed during browser installation because
+`ubuntu-latest` resolved to Ubuntu 26.04, unsupported by Playwright 1.59.1. The browser
+job now pins Ubuntu 24.04, verified in the pinned package's browser/dependency mappings.
+Other CI jobs retain their existing runner selection. Hosted rerun remains a separate
+gate from successful local tooling/suite checks.

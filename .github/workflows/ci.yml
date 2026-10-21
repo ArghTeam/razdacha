@@ -38,7 +38,8 @@ jobs:
         run: go test -mod=readonly ./... -count=1
 
   ui-browser:
-    runs-on: ubuntu-latest
+    # Match the operating systems supported by the pinned Playwright package.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:

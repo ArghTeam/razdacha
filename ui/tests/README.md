@@ -27,7 +27,9 @@ npx playwright install --with-deps chromium
 Playwright is pinned to `1.59.1`, the version already exercised by these suites before
 adding CI; `package-lock.json` pins dependency artifacts. Update the version and lock
 together, install its matching browser revision and rerun all suites when upgrading.
-CI installs the browser for that exact package rather than using an arbitrary Chrome.
+CI pins Ubuntu 24.04, which this Playwright version supports, and installs the browser
+for that exact package rather than using an arbitrary Chrome. Do not switch the job to
+a newer runner image without checking its support in the pinned Playwright package.
 The Settings suite alone also accepts `PLAYWRIGHT_CHANNEL=chrome` for an explicit local
 installed-Chrome check; leave it unset for the full pinned Chromium run.
 
