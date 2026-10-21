@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"os"
@@ -169,11 +171,16 @@ func TestConfFileName(t *testing.T) {
 func TestBackupDB(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "state.db")
-	if err := os.WriteFile(dbPath, []byte("состояние"), 0o600); err != nil {
-		t.Fatalf("подготовка БД: %v", err)
+	st, err := store.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if err := st.SetInstalledVersion(context.Background(), "saved-version"); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
 
-	path, err := backupDB(dbPath, "1.2.3")
+	path, err := backupDB(context.Background(), dbPath, "1.2.3")
 	if err != nil {
 		t.Fatalf("резервная копия: %v", err)
 	}
@@ -183,9 +190,9 @@ func TestBackupDB(t *testing.T) {
 	if !strings.HasPrefix(filepath.Base(path), "state-1.2.3-") {
 		t.Fatalf("имя копии %q не содержит версии", filepath.Base(path))
 	}
-	data, err := os.ReadFile(path)
-	if err != nil || string(data) != "состояние" {
-		t.Fatalf("содержимое копии: %q %v", data, err)
+	saved, err := store.InstalledVersionAt(context.Background(), path)
+	if err != nil || saved != "saved-version" {
+		t.Fatalf("saved installation version = %q, error = %v", saved, err)
 	}
 	info, err := os.Stat(path)
 	if err != nil || info.Mode().Perm() != 0o600 {
@@ -198,11 +205,16 @@ func TestBackupDB(t *testing.T) {
 func TestBackupDBUnknownVersion(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "state.db")
-	if err := os.WriteFile(dbPath, []byte("состояние"), 0o600); err != nil {
-		t.Fatalf("подготовка БД: %v", err)
+	st, err := store.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if err := st.SetInstalledVersion(context.Background(), "saved-version"); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
 
-	path, err := backupDB(dbPath, "")
+	path, err := backupDB(context.Background(), dbPath, "")
 	if err != nil {
 		t.Fatalf("резервная копия: %v", err)
 	}
@@ -233,7 +245,7 @@ func TestBackupNamesSavedVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("чтение версии установки: %v", err)
 	}
-	path, err := backupDB(dbPath, prev)
+	path, err := backupDB(context.Background(), dbPath, prev)
 	if err != nil {
 		t.Fatalf("резервная копия: %v", err)
 	}
@@ -553,5 +565,72 @@ func TestFreshSetupRefusesOrphanRoutingAuthorityBeforeCreatingDatabase(t *testin
 				t.Fatal("fresh setup created a database before rejecting stale authority")
 			}
 		})
+	}
+}
+
+// TestBackupDBPreservesLegacyWAL exercises setup's actual pre-migration path.
+func TestBackupDBPreservesLegacyWAL(t *testing.T) {
+	ctx := context.Background()
+	source := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	defer func() { _ = db.Close() }()
+	for _, statement := range []string{
+		"PRAGMA user_version = 1",
+		"CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+		"CREATE TABLE legacy_keys (private_key TEXT NOT NULL)",
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA wal_autocheckpoint = 0",
+		"PRAGMA wal_checkpoint(TRUNCATE)",
+		"INSERT INTO settings VALUES ('installed_version', 'legacy-release')",
+		"INSERT INTO legacy_keys VALUES ('synthetic-key')",
+	} {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	beforeMain, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeWAL, err := os.ReadFile(source + "-wal")
+	if err != nil || len(beforeWAL) <= 32 {
+		t.Fatalf("uncheckpointed WAL fixture: %v", err)
+	}
+	savedVersion, err := store.InstalledVersionAt(ctx, source)
+	if err != nil || savedVersion != "legacy-release" {
+		t.Fatalf("saved version = %q: %v", savedVersion, err)
+	}
+	backup, err := backupDB(ctx, source, savedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copied, err := sql.Open("sqlite", backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = copied.Close() }()
+	for query, want := range map[string]string{
+		"PRAGMA user_version": "1", "PRAGMA integrity_check": "ok",
+		"SELECT private_key FROM legacy_keys":                        "synthetic-key",
+		"SELECT value FROM settings WHERE key = 'installed_version'": "legacy-release",
+	} {
+		var got string
+		if err := copied.QueryRowContext(ctx, query).Scan(&got); err != nil || got != want {
+			t.Fatalf("%s: %q, want %q: %v", query, got, want, err)
+		}
+	}
+	for suffix, before := range map[string][]byte{"": beforeMain, "-wal": beforeWAL} {
+		after, err := os.ReadFile(source + suffix)
+		if err != nil || !bytes.Equal(before, after) {
+			t.Fatalf("source %q changed: %v", suffix, err)
+		}
+	}
+	second, err := backupDB(ctx, source, savedVersion)
+	if err != nil || second == backup {
+		t.Fatalf("repeated backup must not replace first snapshot: %q, %v", second, err)
 	}
 }

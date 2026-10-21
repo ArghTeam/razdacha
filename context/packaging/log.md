@@ -3,6 +3,19 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-10-21
+
+### #264 — WAL-consistent pre-migration upgrade backups
+
+**Changed:** Setup uses a read-only SQLite snapshot before migrations, including
+committed WAL while preserving the saved schema and version. Version inspection
+no longer enables WAL. Outputs are reserved exclusively with owner-only access,
+integrity-checked and synced; failures remove incomplete snapshots.
+**Validation:** Active-WAL source/schema/key preservation and setup-path regression,
+permissions, URI escaping, no-clobber, cancellation and corrupt-source cases.
+**Limit:** This is a database rollback snapshot, not a full runtime/authority backup
+or an automatic rollback controller. See [task 264](../../tasks/done/264-consistent-upgrade-backup.md).
+
 ## 2026-08-20
 
 ### #200 — руководство по роутеру переписано

@@ -5,6 +5,7 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 ---
 
 ## Invariants
+- Setup takes its rollback snapshot through `store.BackupAt` before `Store.Open`; copying the main SQLite file is insufficient with active WAL. Saved-version names have subsecond precision, existing outputs are never overwritten, and cancellation or snapshot/integrity failure aborts before migrations. The existing restore backup caller shares this helper without changing restore sequencing.
 - Tags containing a prerelease suffix, such as `v0.11.0-rc.1`, publish as GitHub prereleases with `latest=false`. Stable tags retain the existing release behavior; staging candidates must not replace `/releases/latest/download` for normal installations.
 - Версия Go задаётся один раз — в `go.mod`; CI читает её через `go-version-file`, числом нигде не дублируется.
 - `CGO_ENABLED=0` проверяется отдельным шагом CI, а не подразумевается: нарушение роняет job (ADR 0006).

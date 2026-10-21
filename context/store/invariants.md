@@ -5,6 +5,7 @@ description: "SQLite: схема четырёх сущностей, миграц
 ---
 
 ## Invariants
+- Pre-migration `BackupAt` reads existing SQLite state without migrations or journal-mode changes. Its transaction includes committed WAL, preserves schema/installation metadata, and creates a standalone integrity-checked, synced `0600` snapshot. Exclusive reservation refuses existing files/symlinks; failures remove incomplete output. `InstalledVersionAt` uses the same read-only path and never creates an absent source.
 - `PRAGMA foreign_keys = ON` ставится в DSN и действует на каждом соединении: в SQLite внешние ключи выключены по умолчанию, без прагмы `ON DELETE RESTRICT` на `rules.tunnel_id` не работает.
 - Удаление туннеля, на который ссылается правило, отклоняется до обращения к БД и называет эти правила; схемный `RESTRICT` — вторая линия, а не единственная.
 - Приоритет правил назначает слой хранения, а не вызывающий: добавление в конец, сжатие после удаления, порядок меняется только через `ReorderRules` с полным списком идентификаторов.

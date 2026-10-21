@@ -156,7 +156,7 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		if err != nil {
 			return summary{}, err
 		}
-		backup, err := backupDB(dbPath, prev)
+		backup, err := backupDB(ctx, dbPath, prev)
 		if err != nil {
 			return summary{}, err
 		}
@@ -320,30 +320,14 @@ func backupVersion(ver string) string {
 	return ver
 }
 
-// backupDB копирует состояние перед обновлением.
-//
-// Миграции накатываются при открытии БД и назад не откатываются: единственный
-// способ вернуться на предыдущую версию демона — вернуть файл. Копия называется
-// по версии и времени, потому что обновлений на одну версию бывает несколько
-// (переустановка того же релиза), и затирать прошлую копию нечем оправдать.
-//
-// ver — версия, состояние которой сохраняется, то есть та, что стояла до этого
-// запуска. Не та, на которую обновляемся: имя файла отката обязано называть то,
-// к чему откатываешься (issue #82).
-func backupDB(dbPath, ver string) (string, error) {
+// backupDB snapshots the installed schema before Store.Open applies migrations.
+// The saved version identifies the rollback target, not the incoming release.
+func backupDB(ctx context.Context, dbPath, ver string) (string, error) {
 	dir := filepath.Join(filepath.Dir(dbPath), backupDir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("создание каталога %s: %w", dir, err)
-	}
-	data, err := os.ReadFile(dbPath)
-	if err != nil {
-		return "", fmt.Errorf("чтение состояния %s: %w", dbPath, err)
-	}
-	name := fmt.Sprintf("state-%s-%s.db", backupVersion(ver), time.Now().UTC().Format("20060102-150405"))
+	name := fmt.Sprintf("state-%s-%s.db", backupVersion(ver), time.Now().UTC().Format("20060102-150405.000000000"))
 	path := filepath.Join(dir, name)
-	// 0600 — там приватные ключи пиров, ровно как в оригинале.
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return "", fmt.Errorf("запись резервной копии %s: %w", path, err)
+	if err := store.BackupAt(ctx, dbPath, path); err != nil {
+		return "", err
 	}
 	return path, nil
 }
