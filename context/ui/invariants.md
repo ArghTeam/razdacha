@@ -189,3 +189,11 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
   unsaved section edits disable delivery. Backup sends refresh delivery history only,
   without replacing drafts. Direct full-backup download does not save the form and
   discloses its unencrypted client-key contents (ADR 0016).
+
+## Tunnel observation labels
+
+Tunnel rows label measured latency as HTTPS, distinguish inconclusive and historical
+observations, and expose runtime-resolver DNS separately. Transport remains unknown;
+a successful HTTPS observation does not promise every protocol, client or pool member.
+Manual check completion carries the additive signals into current inventory under the
+existing session/interaction guards. ADR 0031 defines backend scope and freshness.

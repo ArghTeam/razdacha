@@ -54,9 +54,10 @@ type tunnelResponse struct {
 	Host string `json:"host,omitempty"`
 	Port uint16 `json:"port,omitempty"`
 
-	Status    *string    `json:"status"`
-	LatencyMS *int       `json:"latency_ms"`
-	LastCheck *time.Time `json:"last_check"`
+	Signals   *tunnelSignals `json:"signals"`
+	Status    *string        `json:"status"`
+	LatencyMS *int           `json:"latency_ms"`
+	LastCheck *time.Time     `json:"last_check"`
 
 	// LastOK — когда туннель отвечал в последний раз (проверка со статусом `up`
 	// или `slow`). Отдельно от LastCheck: у молчащего туннеля LastCheck

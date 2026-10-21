@@ -24,9 +24,15 @@ import (
 // two source identities and independent AF_PACKET/drop-accounted sink collector.
 // The incoming wg0 device is a veth adapter, not an encrypted WG handshake.
 func peerEgressWireExercise(t *testing.T) {
+	if wireQualityEnabled() {
+		wireMust(t, os.Setenv("RAZDACHA_WIRE_EGRESS", "1"))
+	}
 	wireMust(t, os.Setenv("RAZDACHA_WIRE_PEER_CASE", "grant"))
 	p := newPeerWire(t)
 	p.controls(t, "egress-precondition")
+	if wireQualityEnabled() {
+		p.qualityExercise(t, "selective")
+	}
 	p.rule.Domains = append(p.rule.Domains, "private-address.example")
 	wireMust(t, p.st.UpdateRule(p.h.ctx, p.rule))
 	_, err := p.gate.ApplyCurrent(p.h.ctx, p.st)
@@ -101,6 +107,9 @@ func peerEgressWireExercise(t *testing.T) {
 		p.rawEgress(t, p.a.Address, proto, false, "selected")
 		p.rawEgress(t, p.b.Address, proto, true, "after")
 	}
+	if wireQualityEnabled() {
+		p.qualityExercise(t, "full-egress")
+	}
 	// Pending clear must not escape via background list/pool refresh or recovery.
 	p.a.EgressTunnelID = nil
 	wireMust(t, p.st.UpdatePeer(p.h.ctx, p.a))
@@ -142,6 +151,9 @@ func peerEgressWireExercise(t *testing.T) {
 		t.Fatalf("unreachable DNS guard: %v %s", err, out)
 	}
 	p.controls(t, "egress-unreachable-other-client")
+	if wireQualityEnabled() {
+		p.qualityUnavailable(t)
+	}
 	// Explicitly restoring shared mode restores direct Internet only for A.
 	p.a.EgressTunnelID = nil
 	wireMust(t, p.st.UpdatePeer(p.h.ctx, p.a))
@@ -152,6 +164,11 @@ func peerEgressWireExercise(t *testing.T) {
 	}
 	p.controls(t, "egress-cleared-other-client")
 	p.h.assertNoForbidden(t)
+	if wireQualityEnabled() {
+		p.qualityExercise(t, "shared")
+		p.qualityLossRecovery(t)
+		t.Log("266-ENCRYPTED-QUALITY-PASS")
+	}
 	t.Log("231-PEER-EGRESS-WIRE-PASS TCP UDP DNS stale-FakeIP unavailable source-isolation raw-protocols pending-clear")
 }
 
@@ -384,12 +401,21 @@ func (r *egressWireRelay) serve(c net.Conn) {
 	if _, err := c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0}); err != nil {
 		return
 	}
-	body, err := bufio.NewReader(c).ReadString('\n')
-	if err != nil || len(body) > 2048 {
-		return
-	}
-	response, err := r.exchange("tcp4", target, []byte(body))
-	if err == nil {
-		_, _ = c.Write(response)
+	reader := bufio.NewReader(c)
+	for {
+		body, err := reader.ReadString('\n')
+		if err != nil || len(body) > 2048 {
+			return
+		}
+		response, err := r.exchange("tcp4", target, []byte(body))
+		if err != nil {
+			return
+		}
+		if _, err := c.Write(response); err != nil {
+			return
+		}
+		if !wireQualityEnabled() {
+			return
+		}
 	}
 }

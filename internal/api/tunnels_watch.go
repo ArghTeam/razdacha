@@ -75,7 +75,7 @@ func (s *Server) loadChecks(ctx context.Context) {
 	for id, c := range saved {
 		// OKAt поднимается вместе со статусом: иначе после перезапуска панель
 		// не смогла бы сказать, с какого момента туннель молчит.
-		s.checks.put(id, tunnelCheck{Status: c.Status, At: c.CheckedAt, OKAt: c.OKAt})
+		s.checks.put(id, tunnelCheck{Status: tunnelUnknown, At: c.CheckedAt, OKAt: c.OKAt})
 	}
 	if len(saved) > 0 {
 		s.log.Debug("подняты сохранённые проверки туннелей", "количество", len(saved))
@@ -127,14 +127,32 @@ func (s *Server) refreshChecks(ctx context.Context) error {
 		if !ok {
 			continue
 		}
+		res.Signals = s.observeSignals(ctx, res)
+		if p := proxies[singbox.TunnelTag(t.ID)]; len(p.All) > 0 {
+			res.Signals.HTTPS.Scope = "runtime_pool_history"
+			res.Signals.HTTPS.Detail = "Existing pool selection history; not an IP-literal diagnostic or proof of every member"
+		}
 		s.checks.put(t.ID, res)
-		if err := s.store.SaveTunnelCheck(ctx, t.ID, res.Status, res.At, okStamp(res)); err != nil {
+		successAt := okStamp(res)
+		if successAt.Before(saved[t.ID].OKAt) {
+			successAt = time.Time{}
+		}
+		if err := s.store.SaveTunnelCheck(ctx, t.ID, res.Status, res.At, successAt); err != nil {
 			s.log.Error("запись проверки туннеля", "туннель", t.ID, "ошибка", err)
 			// Без записи проверки некуда писать и сообщённый статус: пропускаем
 			// круг по этому туннелю, чтобы не разъехаться с БД.
 			continue
 		}
 
+		if !res.Signals.HTTPS.Fresh || (res.Status != tunnelUp && res.Status != tunnelSlow && res.Status != tunnelNotApplied) {
+			s.events.observe(t.ID, t.Name, tunnelUnknown, saved[t.ID].Notified, res.At)
+			continue
+		}
+		// Persistence stores seconds; compare at the same precision so replaying
+		// fractional runtime history cannot count as a new confirmation.
+		if !res.At.Truncate(time.Second).After(saved[t.ID].CheckedAt) {
+			continue
+		}
 		v := s.events.observe(t.ID, t.Name, res.Status, saved[t.ID].Notified, res.At)
 		if v.Confirmed == "" || v.Confirmed == saved[t.ID].Notified {
 			continue
@@ -177,6 +195,10 @@ func (s *Server) checkOne(
 			return tunnelCheck{}, false
 		}
 		res.Status = statusFor(delay)
+		res.At = p.History[len(p.History)-1].Time
+		if res.At.IsZero() {
+			return tunnelCheck{}, false
+		}
 		ms := int(delay.Milliseconds())
 		res.LatencyMS = &ms
 		return res, true
@@ -184,6 +206,7 @@ func (s *Server) checkOne(
 
 	// Обычный outbound: его никто не проверяет, кроме нас.
 	delay, err := s.clash.Delay(ctx, singbox.TunnelTag(t.ID))
+	res.At = s.now().UTC()
 	switch {
 	case err == nil:
 		res.Status = statusFor(delay)
@@ -192,7 +215,7 @@ func (s *Server) checkOne(
 	case errors.Is(err, clash.ErrNotFound):
 		res.Status = tunnelNotApplied
 	case errors.Is(err, clash.ErrProbeFailed):
-		res.Status = tunnelDown
+		res.Status = tunnelUnknown
 	default:
 		// Сам sing-box не отвечает или ответил непонятным — записывать туннелю
 		// «down» на этом основании было бы утверждением, которого мы не делали.

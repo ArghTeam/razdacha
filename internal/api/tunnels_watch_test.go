@@ -180,7 +180,7 @@ func TestRefreshChecksPersistStatusWithoutLatency(t *testing.T) {
 	if !ok {
 		t.Fatal("сохранённая проверка не поднялась в кэш")
 	}
-	if res.Status != tunnelUp {
+	if res.Status != tunnelUnknown {
 		t.Errorf("поднятый статус = %q, ожидался %q", res.Status, tunnelUp)
 	}
 	if res.LatencyMS != nil {
@@ -224,8 +224,8 @@ func TestRefreshChecksKeepsLastOK(t *testing.T) {
 	if !ok {
 		t.Fatal("сохранённая проверка не поднялась в кэш")
 	}
-	if res.Status != tunnelDown {
-		t.Errorf("статус = %q, ожидался %q", res.Status, tunnelDown)
+	if res.Status != tunnelUnknown {
+		t.Errorf("статус = %q, ожидался %q", res.Status, tunnelUnknown)
 	}
 	if !res.OKAt.Equal(okAt) {
 		t.Errorf("OKAt = %v, ожидалось %v", res.OKAt, okAt)
@@ -264,7 +264,7 @@ func TestRefreshChecksNeverOKLeavesLastOKNull(t *testing.T) {
 
 	var out []tunnelResponse
 	decodeJSONBody(t, ts.auth(t, cookie, http.MethodGet, "/api/tunnels", ""), &out)
-	if len(out) != 1 || out[0].Status == nil || *out[0].Status != tunnelDown {
+	if len(out) != 1 || out[0].Status == nil || *out[0].Status != tunnelUnknown {
 		t.Fatalf("ответ = %+v, ожидался один туннель со статусом down", out)
 	}
 	if out[0].LastOK != nil {

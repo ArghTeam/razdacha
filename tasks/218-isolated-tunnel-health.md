@@ -46,3 +46,48 @@ Final acceptance requires baseline-fails/fix-passes evidence, adversarial negati
 cases and controlled staging observations under the [runbook](../docs/11-staging-validation.md).
 No unresolved P0/P1 findings may be marked ready to merge. Unknown results stay explicit.
 Review approval does not authorize merge or release. These reviews are planned, not completed.
+
+## Authorized scope amendment
+
+The user authorized issues 218 and 166 together, followed by production deployment
+and checks. The original after-217 ordering and eight-second budget are historical;
+ADR 0031 defines revised semantics and fifteen-second probing. Restore work remains
+excluded. Independent review remains required before production validation.
+
+## Implemented observations and verification
+
+Individual checks use a DNS-less, certificate-verified HTTPS target; runtime DNS is
+reported separately. Generic failure cannot identify WireGuard/TCP/TLS/target causes,
+so transport remains unknown. The bounded broker and history/restart/freshness rules
+are implemented without store migration, pool-selection or client-policy changes.
+
+Passed: repository Go suite; API/Clash race checks; pinned-runtime nested module;
+clean-cache lint; 29 focused Chromium cases including inconclusive/DNS rejection and
+historical evidence. Unit regressions cover coalescing, cancellation, uncertain-job
+capacity, queue limits, malformed delay, twelve-second measurement, partial/stale
+coverage and original group time. These unit checks are not an actual twelve-second
+WireGuard round trip. Controlled pinned-runtime baseline/fix evidence and independent
+security/final reviews remain required before acceptance and production validation.
+
+## Review fixes and controlled runtime boundary
+
+Review found premature DNS capacity release after HTTP cancellation and fractional
+history timestamps replayed against second-precision persistence. DNS now shares
+one detached fixed-name job and retains uncertain work for the actual ten-second
+runtime budget. Confirmation compares timestamps at persisted second precision.
+Adversarial race regressions verify cancellation/HTTP timeout keep one DNS job and
+five repetitions of one fractional pool sample cannot confirm recovery.
+
+The independent pinned-runtime fixture exercises actual URLTest and Clash APIs
+with a controlled loopback dialer: rejected hostname resolution versus verified
+IP TLS, HEAD/301 without redirect following, untrusted TLS rejection, a real
+12-second successful round trip, and indistinguishable generic DNS/TCP/TLS 503s.
+This proves API/TLS/budget behavior, not WireGuard transport, installed-host state,
+client DNS policy, UDP or Google Meet. Full nested race checks and vet passed.
+Independent final review and authorized production observations remain separate.
+
+The uncertain DNS lease includes the two-second HTTP dispatch budget in addition
+to the ten-second runtime timer (twelve seconds total from local admission).
+The runtime timer may start near the HTTP deadline; releasing at ten seconds from
+local start could otherwise overlap a still-running resolver job. A regression
+checks that the original job identity remains retained beyond ten seconds.

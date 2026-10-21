@@ -383,12 +383,16 @@ function tunnelRow(t) {
   const off = t.enabled === false;
   const st = t.enabled === false
     ? { cls: 'off', badge: '', label: 'выключен' }
+    : t.signals?.https && !t.signals.https.fresh
+      ? { cls: 'off', badge: '<span class="badge">Historical HTTPS observation</span>', label: '' }
+    : t.status === 'unknown'
+      ? { cls: 'warn', badge: '<span class="badge warn">HTTPS inconclusive</span>', label: '' }
     : t.status === 'up'
-      ? { cls: 'on', badge: `<span class="badge ok">${esc(t.latency_ms)} мс</span>`, label: '' }
+      ? { cls: 'on', badge: `<span class="badge ok">HTTPS ${esc(t.latency_ms)} ms</span>`, label: '' }
       // Медленный туннель рабочий, но не годится для видео и звонков —
       // показываем цифру и отличаем цветом, а не прячем среди зелёных.
       : t.status === 'slow'
-        ? { cls: 'warn', badge: `<span class="badge warn">${esc(t.latency_ms)} мс, медленно</span>`, label: '' }
+        ? { cls: 'warn', badge: `<span class="badge warn">HTTPS ${esc(t.latency_ms)} ms, slow</span>`, label: '' }
         : t.status === 'down'
           ? { cls: 'bad', badge: '<span class="badge err">нет ответа</span>', label: '' }
           : t.status === 'not_applied'
@@ -403,6 +407,8 @@ function tunnelRow(t) {
             ${pool ? poolServers(pool, off) : ''}
             ${pool ? poolExcludedBadge(pool) : ''}
             ${st.badge}
+            <span class="badge" title="HTTPS does not prove all protocols or clients">Transport: unknown</span>
+            ${t.signals?.dns ? `<span class="badge">Runtime DNS: ${esc(t.signals.dns.state)}</span>` : ''}
           </div>
           <div class="row-meta mono">${esc(tunnelEndpoint(t))}</div>
           ${pool ? poolCurrent(pool, off) : ''}
@@ -744,6 +750,7 @@ export const actions = {
       const tunnel = tunnelById(id);
       if (tunnel) Object.assign(tunnel, {
         status: result?.status ?? tunnel.status,
+        signals: result?.signals ?? tunnel.signals,
         latency_ms: result?.latency_ms ?? null,
         last_check: result?.last_check ?? new Date().toISOString(),
       });

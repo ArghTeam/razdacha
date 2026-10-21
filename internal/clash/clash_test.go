@@ -47,7 +47,7 @@ func TestDelayOK(t *testing.T) {
 	if gotPath != "/proxies/tun-abc/delay" {
 		t.Errorf("путь = %q", gotPath)
 	}
-	if gotURL != DefaultTestURL {
+	if gotURL != DiagnosticTestURL {
 		t.Errorf("цель проверки = %q", gotURL)
 	}
 	if gotTimeout != "100" {
