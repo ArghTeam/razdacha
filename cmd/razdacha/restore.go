@@ -177,7 +177,7 @@ func restore(ctx context.Context, opts restoreOptions) error {
 	}
 
 	if !target.Empty() {
-		saved, err := backupDB(dbPath, "before-restore")
+		saved, err := backupDB(ctx, dbPath, "before-restore")
 		if err != nil {
 			return err
 		}

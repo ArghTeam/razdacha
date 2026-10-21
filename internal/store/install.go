@@ -80,7 +80,7 @@ func (s *Store) SetInstalledVersion(ctx context.Context, version string) error {
 // Ничего не найдено — пустая строка без ошибки: БД от версии, которая ключа не
 // знала, это не сбой.
 func InstalledVersionAt(ctx context.Context, path string) (string, error) {
-	db, err := sql.Open("sqlite", dsn(path))
+	db, err := openReadOnly(path)
 	if err != nil {
 		return "", fmt.Errorf("чтение версии установки из %s: %w", path, err)
 	}

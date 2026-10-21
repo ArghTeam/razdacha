@@ -276,15 +276,18 @@ curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install
 1. фаза проверок, как при установке; наличие `state.db` переводит её в режим обновления
 2. скачивание архива для текущей архитектуры и сверка `checksums.txt`
 3. замена бинарников в `/usr/local/bin`
-4. **резервная копия БД** в `/var/lib/razdacha/backups/state-<version>-<время>.db` —
-   снимается до открытия БД, потому что миграции накатываются при открытии и назад не
-   откатываются: вернуться на прошлую версию можно только возвратом файла.
-   `<version>` — **версия, состояние которой в копии лежит**, то есть та, что стояла
-   до обновления: копия и есть путь отката, и назвать её версией, на которую
-   обновляемся, значит соврать в имени файла. Версия читается из самой БД (ключ
-   `installed_version`) отдельным чтением, без миграций — они бы уже изменили файл.
-   Копии, снятые при обновлении с версий до 0.2.1, называются `state-unknown-<время>.db`:
-   те версии свою версию в БД не записывали, и придумать её задним числом нечем
+4. **Pre-migration database snapshot** in
+   `/var/lib/razdacha/backups/state-<saved-version>-<timestamp>.db`. SQLite reads a
+   consistent transaction including committed WAL; copying only the main file
+   would lose recent keys or settings. The source is opened read-only without
+   migrations or journal-mode changes. The standalone snapshot retains its
+   original schema and installation metadata, passes `integrity_check`, and is
+   synced before setup continues. Files are reserved exclusively with mode `0600`
+   in a private backup directory; existing names and symlinks are refused. Failure
+   or cancellation removes incomplete output and aborts before migrations.
+   `<saved-version>` is the installed version being backed up, not the incoming
+   release. Releases that did not save `installed_version` use `unknown`.
+   Nanosecond timestamps distinguish repeated updates without replacing backups.
 5. Schema migrations and nginx configuration refresh; the existing sing-box config
    remains authoritative until the guarded daemon publishes a committed generation.
    Upgrades never rewrite runtime config from pending database edits or create a
