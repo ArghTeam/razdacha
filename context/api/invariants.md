@@ -45,7 +45,13 @@ description: REST, встроенная SPA, диагностика и клие�
   daemon startup mode; it never runs schedulers or initializes installed networking.
 - Frontend requests capture a session revision. Login/logout attempts and the first
   current authenticated 401 advance it; a stale 401 cannot invalidate a newer login.
-  Peer-creation callbacks from an earlier session cannot repopulate current UI state.
+  Client creation, rename, enable/disable, deletion preflight and post-delete rule
+  loading callbacks from an earlier session cannot mutate current inventory, pending
+  state, notifications or confirmations. Completed mutations in the same session
+  remain visible after ordinary close or modal replacement. Menu-action feedback
+  and deletion confirmation also expire after a newer client action or modal change.
+  Client creation has one in-flight gate per form shared by Enter and pointer input;
+  closing the form does not discard its successful same-session creation result.
   Backend invalid-session 401 cookie expiry is unchanged; a delayed expiry cookie
   may still require another login. The frontend guard does not control cookie timing.
   This browser lifetime guard does not replace backend session authentication.
