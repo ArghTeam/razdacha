@@ -13,7 +13,10 @@ private NET+MOUNT network fixture, retaining default veth behavior otherwise.
 DF/fragmentation behavior, bounded persistent sockets/reconnect, and deterministic
 underlay loss with measured qdisc drops and recovery.
 **Beware:** Synthetic exits and the address/MTU WG publication adapter do not prove
-real-provider performance, Meet/WebRTC or production key lifecycle. Build-only
+real-provider performance, Meet/WebRTC or production key lifecycle. Kernel capture
+reassembly cannot establish absence of incomplete fragments. A reviewed isolated
+Linux canary passed all three routing stages, 47 zero-drop barriers and measured
+underlay loss/recovery with unchanged production baselines. Build-only
 checks are not Linux runtime evidence; see `docs/12-connection-quality.md`.
 
 ## 2026-07-29

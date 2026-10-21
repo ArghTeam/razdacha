@@ -44,6 +44,9 @@ description: wg0, nft-правила и маршрутизация через ne
   ingress. Existing production publication, nft/TProxy and independent sink/drop
   checks exercise selective/full/shared policy. Synthetic SOCKS exits do not
   prove a real outgoing provider, external path MTU or Google Meet/WebRTC success.
+- Quality capture defrag verifies complete datagrams; zero socket drops and a
+  barrier do not prove absence of arbitrary incomplete fragments held/dropped by
+  kernel reassembly. Negative fail-closed probes remain small and unfragmented.
 - Address/MTU publication still uses the test WG adapter; the fixture does not
   establish production key allocation or live peer-reconciliation lifecycle.
   Its two logical source identities share one synthetic encrypted peer.

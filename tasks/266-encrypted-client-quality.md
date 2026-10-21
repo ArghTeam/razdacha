@@ -32,3 +32,22 @@ persistent TCP/UDP connections, and bounded deterministic loss and recovery.
 Portable helper tests, daemon tests, Linux compile/vet, static test-binary hashing,
 and an independently reviewed Linux namespace execution. Runtime evidence is
 reported separately from build-only checks.
+
+## Reviewed runtime evidence
+
+- Tested source: `fc66990881c7a14985c05dcfb91e20c797271db0`.
+- Static Linux amd64 ELF SHA-256:
+  `66b060a8ebb07f8355bce0b477c5364bad8e251daa319fc1f9858af24d89463c`.
+- Isolated execution: exit 0, 22.07 seconds, no skips, 33 MiB peak memory.
+- Selective/full-egress/shared stages: encrypted handshake and positive RX/TX
+  deltas, exact TCP/UDP MTU matrices, persistent client sockets and reconnect.
+- Capture: 47 zero-drop barriers; deterministic impairment: one netem drop,
+  bounded receive failure and successful new TCP/UDP traffic after removal.
+- Production service PIDs/restarts, binary/configuration hashes, schema and stable
+  policy/peer/settings digests, WireGuard identity and absent guard unchanged.
+- Cleanup: no owned test processes, collected inactive unit, private 0600 evidence.
+- Early isolated runs exposed fixture-only return-DF and raw-capture fragmentation
+  assumptions; both were corrected and reviewed before the successful rerun.
+- Limits remain explicit: synthetic exits, no Meet/provider/production key-lifecycle
+  claim, no established-socket survival-through-loss claim, and no proof excluding
+  arbitrary incomplete fragments held/dropped before socket delivery.

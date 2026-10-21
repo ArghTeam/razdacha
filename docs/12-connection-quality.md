@@ -72,7 +72,13 @@ Do not combine this mode with other fixture mode flags.
   continue to reject forbidden direct-delivery markers. Quality mode uses a
   single-member `PACKET_FANOUT_FLAG_DEFRAG` group so the kernel reassembles inner
   IPv4 fragments before the datagram oracle; unreassembled fragments are errors,
-  and neither collector errors nor kernel packet drops are ignored.
+  and neither collector errors nor kernel packet drops are ignored. The kernel
+  can retain or discard incomplete fragment sets before delivering a datagram to
+  this socket. Consequently a barrier ACK with zero socket drops does not prove
+  that no individual incomplete fragment ever reached the sink. Fail-closed
+  negative probes use small unfragmented packets; the above-MTU matrix establishes
+  complete, exact successful echoes, not absence of arbitrary partial-fragment
+  attempts.
 - A disposable gateway-underlay `netem` qdisc applies deterministic 100% outbound
   encrypted-packet loss. A bounded UDP receive timeout must coincide with an
   increasing qdisc drop counter. Removing only that test qdisc must restore
@@ -91,3 +97,24 @@ path MTU, DNS correctness outside the fixture, Google Meet/WebRTC behavior,
 congestion handling, randomized loss/jitter tolerance, multi-hour stability or
 performance. Those require a separately scoped client/provider run. The fixture
 never accepts real credentials or real provider profiles.
+
+## Recorded isolated validation
+
+On 2026-10-21, reviewed test source
+`fc66990881c7a14985c05dcfb91e20c797271db0` and static Linux amd64 test ELF
+SHA-256 `66b060a8ebb07f8355bce0b477c5364bad8e251daa319fc1f9858af24d89463c`
+completed the isolated fixture with exit 0 in 22.07 seconds and no skipped tests.
+All three routing stages produced positive encrypted receive/transmit deltas;
+47 capture barriers reported zero socket drops. The deliberate underlay-loss
+phase recorded one netem drop and successful new TCP/UDP traffic after removal.
+This does not prove survival of an established socket through the loss interval.
+
+The canary ran in its own systemd control group with `MemoryMax=512M`,
+`CPUQuota=40%`, `TasksMax=128`, `RuntimeMaxSec=210` and `KillMode=control-group`.
+Measured memory peak was 33 MiB. Before/after read-only production checks matched:
+service main PIDs and restart counters, installed binary/runtime configuration
+hashes, database schema and stable policy/peer/settings digests, WireGuard identity,
+and absent ingress guard. Dynamic pool catalog contents and health observations
+were deliberately excluded from policy comparison. No installed configuration,
+services, production peers or host network were changed. The unit was collected
+and no owned test process remained. Raw evidence stays private on the test host.
