@@ -15,14 +15,50 @@ import {
 export const title = 'Правила';
 
 let rulesRevision = 0;
+const inventoryActions = new Map();
+
+/** Shared token for rule screen, editor, client deletion and startup readers. */
+export function beginInventoryRead() {
+  const currentSession = api.session.guard(), revision = ++rulesRevision;
+  const current = () => currentSession() && revision === rulesRevision;
+  return { current, accept(rules) { if (!current()) return false; state.rules = rules; return true; } };
+}
+
 export async function load() {
-  const current = api.session.guard(), revision = ++rulesRevision;
-  try {
-    const rules = await api.rules.list();
-    if (current() && revision === rulesRevision) state.rules = rules;
-  } catch (err) {
-    if (current() && revision === rulesRevision) throw err;
+  const read = beginInventoryRead();
+  try { read.accept(await api.rules.list()); }
+  catch (err) { if (read.current()) throw err; }
+}
+
+function beginInventoryAction(key) {
+  if (inventoryActions.get(key)?.currentSession()) return null;
+  const ctx = {
+    key, currentSession: api.session.guard(), screen: state.screen,
+    modalRevision: currentModalRevision(), screenNode: $('#screen')?.firstElementChild,
+  };
+  ctx.current = () => ctx.currentSession() && ctx.screen === state.screen
+    && ctx.modalRevision === currentModalRevision() && ctx.screenNode === $('#screen')?.firstElementChild;
+  inventoryActions.set(key, ctx);
+  return ctx;
+}
+function finishInventoryAction(ctx) {
+  if (inventoryActions.get(ctx.key) === ctx) inventoryActions.delete(ctx.key);
+}
+function inventoryError(ctx, err, message) {
+  if (ctx.current()) toastError(err, message);
+}
+
+async function reloadAfterDuplicate(ctx) {
+  if (!ctx.currentSession()) return;
+  try { await load(); }
+  catch (err) {
+    if (!ctx.currentSession()) return;
+    if (ctx.current()) toast(`Rule duplicated. Inventory refresh failed: ${err.message}. The copy was saved; reload Rules instead of duplicating it again.`, 'err');
+    refresh(); return;
   }
+  if (!ctx.currentSession()) return;
+  if (ctx.current()) toast('Rule duplicated');
+  refresh();
 }
 
 const head = () => `
@@ -226,6 +262,7 @@ function overlap(mine, upper) {
 const shadowedBy = (index) => overlap(conditions(state.rules[index]), state.rules.slice(0, index));
 
 export function view() {
+  syncProbeSession();
   if (state.missing.has('rules')) {
     return head() + `<div class="card">${notImplemented('Правила')}</div>`;
   }
@@ -432,7 +469,7 @@ function probeView() {
    `reachable` — спокойно. Ничего от себя панель не добавляет: «похоже на геоблок»
    сказал демон, и додумывать «а туннель починит» здесь нельзя (это Фаза 1). */
 function reachResult() {
-  if (reach.error) return `<div class="probe-out err">${esc(reach.error)}</div>`;
+  if (reach.error) return `<div class="probe-out err"><strong>Direct reachability · shared-rule diagnostics:</strong> ${esc(reach.error)}</div>`;
   const p = reach.result;
   if (!p) return '';
   const tone = p.class === 'geoblock_suspect' ? 'err'
@@ -445,7 +482,7 @@ function reachResult() {
 }
 
 function probeResult() {
-  if (probe.error) return `<div class="probe-out err">${esc(probe.error)}</div>`;
+  if (probe.error) return `<div class="probe-out err"><strong>Shared-rule route check:</strong> ${esc(probe.error)}</div>`;
   const p = probe.result;
   if (!p) return '';
 
@@ -472,51 +509,58 @@ function probeResult() {
     </div>`;
 }
 
-async function runProbe() {
-  const field = $('#probe-domain');
-  probe.domain = field ? field.value.trim() : probe.domain;
-  if (!probe.domain) {
-    toast('Введите домен, например youtube.com', 'err');
-    if (field) field.focus();
-    return;
-  }
-  probe.busy = true;
-  probe.error = '';
-  refresh();
-  try {
-    probe.result = await api.route.test(probe.domain);
-  } catch (err) {
-    // Недоступное ядро отвечает 503 с объяснением — показываем его как есть:
-    // пустой результат читался бы как «ни одно правило не сработает».
-    probe.result = null;
-    probe.error = err.message;
-  } finally {
-    probe.busy = false;
-    refresh();
-  }
+let probeSession = api.session.guard();
+let probeRevision = 0;
+let probeNavigationRevision = 0;
+function syncProbeSession() {
+  if (probeSession()) return;
+  Object.assign(probe, { domain: '', busy: false, result: null, error: '' });
+  Object.assign(reach, { busy: false, result: null, error: '' });
+  probeRevision++;
+  probeSession = api.session.guard();
 }
+// Navigation abandons an in-flight diagnostic without cancelling its server request.
+window.addEventListener('hashchange', () => {
+  probeNavigationRevision++;
+  probeRevision++;
+  probe.busy = false;
+  reach.busy = false;
+});
 
-async function runReach() {
+async function runDiagnostic(target, request) {
+  syncProbeSession();
+  if (state.screen !== 'rules' || probe.busy || reach.busy) return;
   const field = $('#probe-domain');
   probe.domain = field ? field.value.trim() : probe.domain;
-  if (!probe.domain) {
-    toast('Введите домен, например youtube.com', 'err');
-    if (field) field.focus();
-    return;
-  }
-  reach.busy = true;
-  reach.error = '';
+  if (!probe.domain) { toast('Enter a domain, for example example.com.', 'err'); field?.focus(); return; }
+  const currentSession = api.session.guard(), revision = ++probeRevision;
+  const navigation = probeNavigationRevision, modal = currentModalRevision();
+  const current = () => currentSession() && revision === probeRevision;
+  const interaction = () => current() && state.screen === 'rules'
+    && navigation === probeNavigationRevision && modal === currentModalRevision();
+  const domain = probe.domain;
+  target.busy = true;
+  target.error = '';
   refresh();
   try {
-    reach.result = await api.domain.reachability(probe.domain);
+    const result = await request(domain);
+    if (interaction()) target.result = result;
   } catch (err) {
-    reach.result = null;
-    reach.error = err.message;
+    if (interaction()) { target.result = null; target.error = err.message; }
   } finally {
-    reach.busy = false;
-    refresh();
+    if (current()) {
+      target.busy = false;
+      if (state.screen === 'rules') {
+        // Keep any new domain draft typed while the request was pending.
+        const input = $('#probe-domain');
+        if (input) probe.domain = input.value;
+        refresh();
+      }
+    }
   }
 }
+async function runProbe() { await runDiagnostic(probe, api.route.test); }
+async function runReach() { await runDiagnostic(reach, api.domain.reachability); }
 
 /* --- форма правила -------------------------------------------------------- */
 
@@ -853,10 +897,9 @@ async function saveRule(id) {
     if (!currentSession()) return;
     markDirty();
     if (isCurrentModal(revision)) closeModal();
-    const listRevision = ++rulesRevision;
+    const read = beginInventoryRead();
     const rules = await api.rules.list();
-    if (!currentSession() || listRevision !== rulesRevision) return;
-    state.rules = rules;
+    if (!currentSession() || !read.accept(rules)) return;
     refresh();
   } catch (err) {
     if (!currentSession() || !isCurrentModal(revision)) return;
@@ -866,22 +909,26 @@ async function saveRule(id) {
   }
 }
 
-/** Порядок отправляется целиком: атомарно и без промежуточных дублей приоритета. */
+/** Publish one accepted full order; never roll back a captured inventory snapshot. */
 async function move(id, delta) {
-  const i = state.rules.findIndex((r) => r.id === id);
-  const j = i + delta;
-  if (i < 0 || j < 0 || j >= state.rules.length) return;
-  const before = state.rules.slice();
-  [state.rules[i], state.rules[j]] = [state.rules[j], state.rules[i]];
-  refresh();
+  const index = state.rules.findIndex((rule) => rule.id === id), next = index + delta;
+  if (index < 0 || next < 0 || next >= state.rules.length) return;
+  const ctx = beginInventoryAction('order');
+  if (!ctx) return;
+  const order = state.rules.map((rule) => rule.id);
+  [order[index], order[next]] = [order[next], order[index]];
   try {
-    await api.rules.reorder(state.rules.map((r) => r.id));
-    markDirty();
-  } catch (err) {
-    state.rules = before;
-    refresh();
-    toastError(err, 'Порядок не изменён');
-  }
+    try { await api.rules.reorder(order); }
+    catch (err) { inventoryError(ctx, err, 'Rule order was not changed.'); return; }
+    if (!ctx.currentSession()) return;
+    rulesRevision++;
+    const current = new Map(state.rules.map((rule) => [rule.id, rule]));
+    const known = new Set(order);
+    state.rules = order.filter((ruleId) => current.has(ruleId)).map((ruleId) => current.get(ruleId))
+      .concat(state.rules.filter((rule) => !known.has(rule.id)));
+    state.rules.forEach((rule, priority) => { rule.priority = priority; });
+    markDirty(); refresh();
+  } finally { finishInventoryAction(ctx); }
 }
 
 export const actions = {
@@ -913,14 +960,19 @@ export const actions = {
   'rule-down': (id) => move(id, 1),
 
   'toggle-rule': async (id) => {
-    const r = state.rules.find((x) => x.id === id);
-    const enabled = !r.enabled;
+    const rule = state.rules.find((item) => item.id === id);
+    if (!rule) return;
+    const enabled = !rule.enabled, ctx = beginInventoryAction(`rule:${id}`);
+    if (!ctx) return;
     try {
-      await api.rules.update(id, { enabled });
-      r.enabled = enabled;
-      markDirty();
-      refresh();
-    } catch (err) { toastError(err, 'Не переключено'); }
+      try { await api.rules.update(id, { enabled }); }
+      catch (err) { inventoryError(ctx, err, 'Rule was not changed.'); return; }
+      if (!ctx.currentSession()) return;
+      rulesRevision++;
+      const current = state.rules.find((item) => item.id === id);
+      if (current) current.enabled = enabled;
+      markDirty(); refresh();
+    } finally { finishInventoryAction(ctx); }
   },
 
   'menu-rule': (id, btn) => openMenu(btn, [
@@ -930,28 +982,39 @@ export const actions = {
   ]),
 
   'duplicate-rule': async (id) => {
-    const r = state.rules.find((x) => x.id === id);
-    const copy = { ...r, name: `${r.name} (копия)` };
+    const rule = state.rules.find((item) => item.id === id);
+    if (!rule) return;
+    const ctx = beginInventoryAction(`rule:${id}`);
+    if (!ctx) return;
+    const copy = { ...rule, name: `${rule.name} (copy)` };
     delete copy.id;
     delete copy.priority;
     try {
-      await api.rules.create(copy);
+      let created;
+      try { created = await api.rules.create(copy); }
+      catch (err) { inventoryError(ctx, err, 'Rule was not duplicated.'); return; }
+      if (!ctx.currentSession()) return;
+      rulesRevision++;
+      if (created?.id && !state.rules.some((item) => item.id === created.id)) state.rules.push(created);
       markDirty();
-      state.rules = await api.rules.list();
-      refresh();
-      toast('Правило продублировано');
-    } catch (err) { toastError(err, 'Не продублировано'); }
+      await reloadAfterDuplicate(ctx);
+    } finally { finishInventoryAction(ctx); }
   },
 
   'delete-rule': async (id) => {
-    const r = state.rules.find((x) => x.id === id);
-    if (!confirm(`Удалить правило «${r.name}»?`)) return;
+    const rule = state.rules.find((item) => item.id === id);
+    if (!rule || !confirm(`Delete rule “${rule.name}”?`)) return;
+    const ctx = beginInventoryAction(`rule:${id}`);
+    if (!ctx) return;
     try {
-      await api.rules.remove(id);
-      state.rules = state.rules.filter((x) => x.id !== id);
+      try { await api.rules.remove(id); }
+      catch (err) { inventoryError(ctx, err, 'Rule was not deleted.'); return; }
+      if (!ctx.currentSession()) return;
+      rulesRevision++;
+      state.rules = state.rules.filter((item) => item.id !== id);
       markDirty();
+      if (ctx.current()) toast('Rule deleted');
       refresh();
-      toast('Правило удалено');
-    } catch (err) { toastError(err, 'Не удалено'); }
+    } finally { finishInventoryAction(ctx); }
   },
 };

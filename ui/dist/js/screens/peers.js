@@ -3,6 +3,7 @@
 import * as api from '../api.js';
 import * as qr from '../qr.js';
 import { beginInventoryRead } from './tunnels.js';
+import { beginInventoryRead as beginRuleInventoryRead } from './rules.js';
 import {
   state, peerById, tunnelById, closeModal, toast, openModal, modalShell,
   currentModalRevision, isCurrentModal, onModalCleanup,
@@ -445,13 +446,14 @@ async function confirmClientDelete() {
     state.peers = state.peers.filter(peer => peer.id !== ctx.id);
     markDirty(); refresh();
     let rulesError = false;
+    const ruleRead = beginRuleInventoryRead();
     try {
       const rules = await api.rules.list();
       if (!ctx.currentSession()) return;
-      state.rules = rules;
+      ruleRead.accept(rules);
     } catch {
       if (!ctx.currentSession()) return;
-      state.rules = []; rulesError = true;
+      if (ruleRead.current()) { state.rules = []; rulesError = true; }
     }
     if (!current(ctx)) return;
     closeModal();
