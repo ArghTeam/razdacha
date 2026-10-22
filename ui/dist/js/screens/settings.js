@@ -47,7 +47,7 @@ export function modalSettings() {
   ${field('s-port', 'WireGuard port', `type="number" required min="1" max="65535" step="1" value="${esc(s.wg_listen_port)}"`)}
   ${field('s-host', 'External address', `type="text" value="${esc(s.endpoint_host)}"`, 'Hostname or IP address used by clients. Client configurations are unavailable while this is empty.')}
   ${field('s-mtu', 'Client MTU', `type="number" required min="1280" max="1420" step="1" value="${esc(s.client_mtu)}"`, 'Default: 1280. Change only when your network requires it.')}
-  ${field('s-dns', 'DNS upstream', `type="text" required value="${esc(s.dns_upstream)}"`)}</div><p class="hint">Other network options are available through the authenticated settings API. Settings are stored by the daemon; there is no configuration file to edit.</p>`)}
+  ${field('s-dns', 'DNS upstream', `type="text" required value="${esc(s.dns_upstream)}"`)}</div>`)}
   ${section('Schedules', 'Timers use saved intervals automatically. Use Apply to also update the active configuration record.', `${select('s-int', 'List refresh', options(listIntervals, intervalSeconds(s.list_update_interval)))}${select('s-pool', 'Pool catalog refresh', options(poolIntervals, s.pool_update_interval || 3600), 'Minimum: 30 minutes. Used when the built-in pool is enabled.')}${select('s-check', 'Tunnel health checks', options(checkIntervals, s.tunnel_check_interval || 120), 'Notifications confirm changes across three checks.')}`)}
   ${section('Telegram', 'The shared delivery channel for notifications and encrypted backups. Saving takes effect immediately.', `<p class="hint">Create a bot with @BotFather, add it to your chat and enter the chat ID.</p>${field('s-ntf-chat', 'Chat ID', 'type="text" autocomplete="off"', 'For example: -1001234567890.')}${field('s-ntf-token', 'Bot token', 'type="password" autocomplete="new-password"', '<span id="s-ntf-secret">Loading saved token status…</span> Leave empty to keep the saved token.')}<label class="settings-check" for="s-ntf-on"><input type="checkbox" id="s-ntf-on"> Send tunnel notifications</label><p class="hint">Test sends a message with saved Telegram settings, even when notifications are off. Save edits first.</p>`, '<button type="button" class="btn" data-delivery="telegram">Test saved channel</button>')}
   ${section('Backup', 'A full backup contains settings, tunnels, rules and every client private key. Protect it like a password.', `<div class="settings-download"><a class="btn" href="${esc(api.backup.DOWNLOAD_PATH)}" download>Download full backup</a><p class="hint">The downloaded file is unencrypted and contains access to the entire VPN. Download uses saved state without saving this form.</p></div>${field('s-bak-phrase', 'Encryption passphrase', 'type="password" autocomplete="new-password"', '<span id="s-bak-secret">Loading saved passphrase status…</span> At least 8 characters. Leave empty to keep the saved passphrase.')}<p class="settings-warning">If you lose the passphrase, encrypted backups cannot be restored. Store it separately from the Telegram chat.</p>${select('s-bak-int', 'Backup delivery interval', options(backupIntervals, 24, 'hours'))}<label class="settings-check" for="s-bak-on"><input type="checkbox" id="s-bak-on"> Send encrypted backups to Telegram</label><p class="hint">Uses the saved Telegram channel. Save Telegram edits in its section first. Send now uses saved settings, even when the schedule is off.</p><p class="hint" id="s-bak-last"></p>`, '<button type="button" class="btn" data-delivery="backup">Send saved backup now</button>')}</div>`;
@@ -100,8 +100,8 @@ function mount(modal) {
     const bounds = target.getBoundingClientRect();
     const top = $('.modal-head').getBoundingClientRect().bottom + 12;
     const bottom = $('.modal-foot').getBoundingClientRect().top - 12;
-    if (bounds.bottom > bottom) modal.scrollTop += bounds.bottom - bottom;
-    else if (bounds.top < top) modal.scrollTop -= top - bounds.top;
+    if (bounds.bottom > bottom) $('.modal-body').scrollTop += bounds.bottom - bottom;
+    else if (bounds.top < top) $('.modal-body').scrollTop -= top - bounds.top;
   });
   modal.addEventListener('focusin', revealFocus);
   onModalCleanup(() => {
@@ -111,7 +111,7 @@ function mount(modal) {
   for (const button of modal.querySelectorAll('[data-settings-section]')) button.addEventListener('click', () => {
     for (const form of forms) form.hidden = form.dataset.section !== button.dataset.settingsSection;
     for (const nav of modal.querySelectorAll('[data-settings-section]')) nav.setAttribute('aria-current', String(nav === button));
-    modal.scrollTop = 0;
+    $('.modal-body').scrollTop = 0;
   });
   for (const form of forms) {
     if (['telegram', 'backup'].includes(form.dataset.section)) busy(form, true);

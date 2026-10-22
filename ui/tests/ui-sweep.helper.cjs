@@ -31,7 +31,14 @@ function suite(browser, title) {
   };
 }
 async function act(t, action, id) {
-  await t.page.locator(`[data-act="${action}"]${id ? `[data-id="${id}"]` : ''}`).first().click();
+  const selector = `[data-act="${action}"]${id ? `[data-id="${id}"]` : ''}`;
+  if (!await t.page.locator(selector).count()) {
+    const domains = { 'peer-details': 'peer', 'peer-configuration': 'peer', 'edit-rule': 'rule', 'toggle-rule': 'rule', 'rule-up': 'rule', 'rule-down': 'rule', 'check-tunnel': 'tunnel', 'refresh-pool': 'tunnel' };
+    const domain = domains[action];
+    assert(domain, `Missing action ${action}`);
+    await t.page.locator(`[data-act="menu-${domain}"]${id ? `[data-id="${id}"]` : ''}`).first().click();
+  }
+  await t.page.locator(selector).first().click();
   await t.settle();
 }
 async function menu(t, domain, id, action) {

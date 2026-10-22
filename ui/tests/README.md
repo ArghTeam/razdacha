@@ -92,3 +92,15 @@ addresses are synthetic. The full-app direct-download case uses a disposable loo
 server serving only the synthetic backup file because browser-managed downloads bypass
 Playwright page/context routes; all other paths are journaled and refused. The downloaded
 file verifies delivery plumbing only and is intentionally not a restorable database.
+
+
+## Unified design acceptance
+
+`design-system.cjs` exercises actual vertical-more menus across client, tunnel and
+rule inventories, shared control/search metrics, wide rule composition, settings
+navigation, long catalog paging and hidden-selection preservation. It also retains
+obsolete confirmation controls across replacement, expiry/new login and entity
+replacement, and checks that detached menu operations show progress without duplicate
+requests. `DESIGN_SCREENSHOT_DIR=<temporary directory>` exports synthetic screenshots.
+Rule and pool content uses bounded pages within the primary dialog body scroller;
+scroll tests verify that the last page and persistent actions remain reachable.

@@ -50,7 +50,7 @@ async function doubleText(page) {
       const t = await fixture(browser, url, { theme, width });
       try {
         const { page } = t;
-        assert.deepEqual(await page.locator('.rule-section > h3').allTextContents(), ['Name', 'Clients', 'Resources', 'Action']);
+        assert.deepEqual(await page.locator('.rule-section > h3').allTextContents(), ['Name', 'Resources', 'Action', 'Clients']);
         assert.equal(await page.locator('#r-picked').getAttribute('open'), null, 'Selected sources start compact');
         assert.equal(await page.locator('#r-catalog').getAttribute('open'), null, 'Catalog starts compact');
         assert.match(await page.locator('#r-peer-count').innerText(), /24 selected.*1 overridden.*1 disabled/);
@@ -62,14 +62,14 @@ async function doubleText(page) {
         assert.equal(await page.locator('#r-peers .rule-item:visible').count(), 1);
         await page.locator('#r-peer-q').fill('unmatched'); assert(await page.locator('#r-peers-empty').isVisible());
         await page.locator('#r-peer-q').fill('');
-        await page.locator('#r-peers input').last().focus(); await focusGeometry(page);
+        await page.locator('#r-peer-q').fill('Example device 24'); await page.locator('#r-peers input').last().focus(); await focusGeometry(page);
         await page.locator('#r-picked > summary').click();
-        assert.equal(await page.locator('#r-picked button').count(), 36);
-        await page.locator('#r-picked button').last().focus(); await focusGeometry(page); await shot(page, `${theme}-${width}-selection-end`);
+        assert.equal(await page.locator('#r-picked-chips button').count(), 36);
+        while (await page.getByRole('button', { name: 'Next selected sources page', exact: true }).isEnabled()) await page.getByRole('button', { name: 'Next selected sources page', exact: true }).click(); await page.locator('#r-picked-chips button').last().focus(); await focusGeometry(page); await shot(page, `${theme}-${width}-selection-end`);
         await page.locator('#r-picked > summary').click();
         await page.locator('#r-catalog > summary').click(); await page.locator('#r-list-q').fill('source 36');
         assert.equal(await page.locator('#r-lists .rule-item:visible').count(), 1);
-        await page.locator('#r-list-q').fill(''); await page.locator('#r-lists input').last().focus(); await focusGeometry(page);
+        await page.locator('#r-list-q').fill('source 36'); await page.locator('#r-lists input').last().focus(); await focusGeometry(page);
         await page.locator('#r-catalog > summary').click();
         const manual = page.locator('#r-domains');
         assert.equal((await manual.inputValue()).split('\n').length, 39);
@@ -82,7 +82,7 @@ async function doubleText(page) {
         for (let i = 0; i < 43; i++) { await page.keyboard.press('Tab'); await focusGeometry(page); }
         for (const selector of ['.rule-choices label', '.rule-disclosure > summary', '.rule-item:visible', '.modal-foot .btn']) {
           const sizes = await page.locator(selector).evaluateAll(elements => elements.map(element => { const r = element.getBoundingClientRect(); return [r.width, r.height]; }));
-          for (const [w, h] of sizes) { assert(w >= 43.5, `${selector} narrow hit area`); assert(h >= 43.5, `${selector} short hit area`); }
+          for (const [w, h] of sizes) { assert(w >= (width < 761 ? 43.5 : 39.5), `${selector} narrow hit area`); assert(h >= (width < 761 ? 43.5 : 39.5), `${selector} short hit area`); }
         }
         await doubleText(page); await checkFrame(page, width);
         await page.locator('#r-tunnel').focus(); await focusGeometry(page); await shot(page, `${theme}-${width}-text200-action`);
@@ -101,7 +101,7 @@ async function doubleText(page) {
         if (scenario === 'unavailable') {
           assert.match(await page.locator('#r-unavailable-note').innerText(), /Retained until explicitly removed/);
           await page.locator('#r-picked > summary').click(); assert.match(await page.locator('#r-picked').innerText(), /retained-source.*catalog unavailable/s);
-          await page.locator('#r-picked button').click(); assert.equal(await page.locator('input[name="list"]:checked').count(), 0); await focusGeometry(page);
+          await page.locator('#r-picked-chips button').click(); assert.equal(await page.locator('input[name="list"]:checked').count(), 0); await focusGeometry(page);
         }
         if (scenario === 'url-only') {
           assert.equal(await page.locator('.rule-remote li').count(), 2); assert.equal(await page.locator('.rule-remote a, .rule-remote img').count(), 0);

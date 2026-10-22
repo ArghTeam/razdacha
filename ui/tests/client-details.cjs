@@ -7,7 +7,7 @@ const { fixture, examplePeer, exampleTunnels, config } = require('./client.fixtu
   async function check(run, options) { const t = await fixture(browser, options); const errors = []; t.page.on('pageerror', error => errors.push(error.message)); try { await run(t); assert.deepEqual(errors, []); cases++; } finally { await t.page.close(); } }
   try {
     await check(async t => {
-      assert.equal(await t.page.locator('.client-row [data-act]').count(), 1); assert.equal(await t.page.locator('.client-row [data-act="peer-details"]').count(), 1);
+      assert.equal(await t.page.locator('.client-row [data-act]').count(), 1); assert.equal(await t.page.locator('.client-row [data-act="menu-peer"]').count(), 1);
       await t.open(); await t.page.fill('#client-name', 'Renamed example'); await t.page.uncheck('#client-enabled'); await t.page.check('[name="client-route-mode"][value="tunnel"]'); await t.page.selectOption('#client-target', 'exit');
       await t.invoke('save-client-details'); await t.done();
       assert.deepEqual(t.calls.filter(c => c.key === 'PATCH /api/peers/example').map(c => c.body), [{ name: 'Renamed example', enabled: false, egress_tunnel_id: 'exit' }]);

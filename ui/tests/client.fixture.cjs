@@ -54,7 +54,12 @@ async function fixture(browser, options = {}) {
   const reply = async (key, body = {}, status = 200) => { await waitHeld(key); const route = held.get(key); held.delete(key); holds.delete(key); await json(route, body, status); };
   const replyConfig = async (key = 'GET /api/peers/example/config', text = config, filename = 'example.conf') => { await waitHeld(key); const route = held.get(key); held.delete(key); holds.delete(key); await route.fulfill({ contentType: 'text/plain', headers: { 'Content-Disposition': `attachment; filename="${filename}"` }, body: text }); };
   const done = () => page.waitForFunction(() => window.actionDone);
-  const open = async (id = 'example') => { await invoke('peer-details', id); await page.locator('#client-name').waitFor(); };
+  const open = async (id = 'example') => {
+    // Replacement-dialog lifetime cases intentionally enter the handler directly.
+    if (await page.locator('#modal-backdrop').isVisible()) await invoke('peer-details', id);
+    else { await page.locator(`[data-act="menu-peer"][data-id="${id}"]`).click(); await page.locator('#row-menu [data-act="peer-details"]').click(); }
+    await page.locator('#client-name').waitFor();
+  };
   const expand = async () => { await page.locator('#client-configuration > summary').click(); };
   const readyConfig = async () => { if (!await page.locator('#client-configuration').getAttribute('open').then(x => x !== null)) await expand(); await page.locator('#client-config-result').waitFor({ state: 'visible' }); };
   const replace = () => page.evaluate(async () => { const s = await import('/js/shell.js'); s.openModal(s.modalShell('Replacement', '<p>Keep this interaction</p>', '')); });

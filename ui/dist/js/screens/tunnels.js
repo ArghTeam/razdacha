@@ -5,16 +5,16 @@
 
 import * as api from '../api.js';
 import {
-  state, tunnelById, toast, toastError, openModal, closeModal, modalShell,
+  state, tunnelById, toast, toastError, openModal, closeModal, modalShell, confirmAction,
   openMenu, notImplemented, refresh, markDirty,
   currentModalRevision, isCurrentModal, onModalCleanup,
 } from '../shell.js';
 import {
-  $, esc, plural, since, until, stamp, TUNNEL_LABEL, tunnelLabel, tunnelEndpoint, tunnelPool,
+  $, esc, since, until, stamp, TUNNEL_LABEL, tunnelLabel, tunnelEndpoint, tunnelPool,
   isWarp,
 } from '../util.js';
 
-export const title = 'Туннели';
+export const title = 'Tunnels';
 
 let inventoryRevision = 0;
 let inventoryLoad = null;
@@ -67,7 +67,20 @@ function beginOperation(key, button, modal = false) {
   ctx.current = () => ctx.currentSession() && ctx.revision === currentModalRevision()
     && (ctx.modal ? isCurrentModal(ctx.revision)
       : ctx.screen === state.screen && ctx.screenNode === $('#screen')?.firstElementChild);
+  ctx.status = button?.dataset.act === 'check-tunnel' ? 'Checking HTTPS…'
+    : button?.dataset.act?.startsWith('refresh-pool') ? 'Refreshing catalog…' : 'Updating…';
   operations.set(key, ctx);
+  if (key.startsWith('tunnel:') && state.screen === 'tunnels') {
+    const anchor = document.querySelector(`[data-act="menu-tunnel"][data-id="${CSS.escape(key.slice(7))}"]`);
+    const row = anchor?.closest('.row');
+    if (row) {
+      row.setAttribute('aria-busy', 'true');
+      const status = document.createElement('span');
+      status.className = 'badge'; status.dataset.operationStatus = ''; status.setAttribute('role', 'status');
+      status.textContent = ctx.status;
+      row.querySelector('.row-title').append(status);
+    }
+  }
   if (button) button.disabled = true;
   return ctx;
 }
@@ -75,6 +88,12 @@ function beginOperation(key, button, modal = false) {
 function finishOperation(ctx) {
   const owned = operations.get(ctx.key) === ctx;
   if (owned) operations.delete(ctx.key);
+  if (owned && ctx.currentSession() && ctx.key.startsWith('tunnel:')) {
+    const anchor = document.querySelector(`[data-act="menu-tunnel"][data-id="${CSS.escape(ctx.key.slice(7))}"]`);
+    const row = anchor?.closest('.row');
+    row?.removeAttribute('aria-busy');
+    row?.querySelector('[data-operation-status]')?.remove();
+  }
   // Restoring our connected control is independent of obsolete modal feedback.
   if (owned && ctx.currentSession() && ctx.button?.isConnected) {
     ctx.button.disabled = false;
@@ -134,10 +153,10 @@ async function reloadAfterMutation(ctx, success) {
    конфига и тоже прячет кнопку (ADR 0012). */
 const head = () => `
   <div class="screen-head">
-    <h1>Туннели</h1>
+    <h1>Tunnels</h1>
     <div class="spacer"></div>
     ${state.tunnels.some(isWarp) ? '' : '<button class="btn" data-act="add-warp">+ WARP</button>'}
-    <button class="btn btn-primary" data-act="add-tunnel">+ Добавить</button>
+    <button class="btn btn-primary" data-act="add-tunnel">+ Add tunnel</button>
   </div>`;
 
 /* --- пул ------------------------------------------------------------------
@@ -161,10 +180,10 @@ function poolServers(pool, off) {
   // Живых не знаем (поля нет) или знать нечего (пул выключен) — говорим только
   // про размер списка, а не подставляем ноль.
   if (off || typeof pool.servers_alive !== 'number') {
-    return `<span class="badge">известно ${total} ${plural(total, 'сервер', 'сервера', 'серверов')}</span>`;
+    return `<span class="badge">${total} known servers</span>`;
   }
   const alive = pool.servers_alive;
-  return `<span class="badge ${alive ? 'ok' : 'err'}">живых ${alive} из ${total}</span>`;
+  return `<span class="badge ${alive ? 'ok' : 'err'}">${alive} responding / ${total} known</span>`;
 }
 
 /** Сколько нод выброшено фильтром пула (ADR 0020).
@@ -174,7 +193,7 @@ function poolServers(pool, off) {
 function poolExcludedBadge(pool) {
   const n = Number(pool.servers_excluded) || 0;
   if (!n) return '';
-  return `<span class="badge">исключено ${n}</span>`;
+  return `<span class="badge">${n} excluded</span>`;
 }
 
 /** Сервер, через который пул идёт прямо сейчас. */
@@ -182,8 +201,8 @@ function poolCurrent(pool, off) {
   const cur = pool.current || {};
   if (off || !cur.name) return '';
   const parts = [esc(String(cur.name))];
-  if (cur.latency_ms != null) parts.push(`${esc(cur.latency_ms)} мс`);
-  return `<div class="row-meta pool-now">Сейчас: ${parts.join(' · ')}</div>`;
+  if (cur.latency_ms != null) parts.push(`${esc(cur.latency_ms)} ms`);
+  return `<div class="row-meta pool-now">Current: ${parts.join(' · ')}</div>`;
 }
 
 /** Расписание каталога. Следующего обновления у выключенного пула не будет —
@@ -196,16 +215,16 @@ function poolSchedule(pool, off) {
   if (pool.updated_at) {
     const abs = stamp(pool.updated_at);
     parts.push(abs
-      ? `каталог обновлён ${abs} (${since(pool.updated_at)})`
-      : `каталог обновлён ${since(pool.updated_at)}`);
+      ? `Catalog updated ${abs} (${since(pool.updated_at)})`
+      : `Catalog updated ${since(pool.updated_at)}`);
   } else {
-    parts.push('каталог ещё не загружался');
+    parts.push('Catalog not loaded');
   }
   if (!off) {
     // У следующего обхода абсолютной даты нет намеренно: точное «когда обходили»
     // нужно, а точное «когда обойдёт» — нет, и строка меты и без него длинная.
     const next = until(pool.next_update_at);
-    if (next) parts.push(`дальше ${next}`);
+    if (next) parts.push(`Next ${next}`);
   }
   return ' · ' + parts.join(' · ');
 }
@@ -232,29 +251,29 @@ function poolServerRow(s, { current } = {}) {
   if (s.alive === true) {
     dot = 'on';
     badge = s.latency_ms != null
-      ? `<span class="badge ok">${esc(s.latency_ms)} мс</span>`
-      : '<span class="badge ok">отвечает</span>';
+      ? `<span class="badge ok">${esc(s.latency_ms)} ms</span>`
+      : '<span class="badge ok">Responding</span>';
   } else if (s.alive === false) {
     dot = 'bad';
-    badge = '<span class="badge err">нет ответа</span>';
+    badge = '<span class="badge err">No response</span>';
   } else if (s.in_rotation) {
-    badge = '<span class="badge">не проверялся</span>';
+    badge = '<span class="badge">Not checked</span>';
   } else if (s.ping_ms != null) {
     // Вне ротации своей задержки нет: показываем пинг карточки каталога и
     // подписываем, откуда он, чтобы его не спутали с измеренным.
-    badge = `<span class="badge">${esc(s.ping_ms)} мс по каталогу</span>`;
+    badge = `<span class="badge">Catalog ${esc(s.ping_ms)} ms</span>`;
   } else {
     // Пинга у каталога может не быть вовсе: outlinekeys задержку не измеряет
     // (ADR 0015). Ноль здесь читался бы как «ноль миллисекунд», поэтому так и
     // говорим — неизвестно.
-    badge = '<span class="badge">пинг неизвестен</span>';
+    badge = '<span class="badge">Latency unknown</span>';
   }
 
   return `<div class="pool-srv${current ? ' current' : ''}">
       <span class="dot ${dot}"></span>
       <div class="pool-srv-main">${parts.join(' · ')}</div>
       ${badge}
-      ${current ? '<span class="badge accent">сейчас</span>' : ''}
+      ${current ? '<span class="badge accent">Current</span>' : ''}
     </div>`;
 }
 
@@ -276,7 +295,7 @@ function poolFold(title, n, body) {
 function poolExcludedRow(s) {
   return `<div class="pool-srv">
       <div class="pool-srv-main"><span class="pool-srv-name">${esc(s.title || '—')}</span></div>
-      <span class="badge err">${esc(s.reason || 'исключён фильтром')}</span>
+      <span class="badge err">${esc(s.reason || 'Filtered out')}</span>
     </div>`;
 }
 
@@ -285,9 +304,8 @@ function poolExcludedRow(s) {
     поломка каталога, а не как работа фильтра (ADR 0020). */
 function poolExcludedSection(excluded) {
   if (!excluded.length) return '';
-  return poolFold('Исключены фильтром', excluded.length,
-    `<div class="hint">Эти ключи в пул не идут: страна из чёрного списка либо транспорт
-       без шифрования. Страна — со слов каталога, по IP она не проверяется.</div>
+  return poolFold('Filtered out', excluded.length,
+    `<div class="hint">Excluded for country policy or unencrypted transport. Country comes from the catalog and is not verified by IP.</div>
      <div class="pool-list">${excluded.map(poolExcludedRow).join('')}</div>`);
 }
 
@@ -296,12 +314,11 @@ function poolDetailsHTML(t, data) {
   const excluded = data.excluded || [];
   if (!servers.length) {
     if (excluded.length) {
-      return `<div class="parse-result idle">Все ${excluded.length} известных ключей
-        отбракованы фильтром — в пул не попал ни один.</div>
+      return `<div class="parse-result idle">All ${excluded.length} known keys are excluded by filters.</div>
         ${poolExcludedSection(excluded)}`;
     }
-    return '<div class="parse-result idle">Каталог ещё не обходился — серверов пока нет. '
-      + 'Нажмите «Обновить каталог».</div>';
+    return '<div class="parse-result idle">No servers loaded yet. '
+      + 'Use Refresh catalog to try again.</div>';
   }
 
   const rotation = servers.filter((s) => s.in_rotation);
@@ -310,27 +327,25 @@ function poolDetailsHTML(t, data) {
   const rest = servers.filter((s) => !s.in_rotation);
 
   const when = data.updated_at
-    ? `каталог обновлён ${stamp(data.updated_at)} (${since(data.updated_at)})`
-    : 'каталог ещё не обновлялся';
+    ? `Catalog updated ${stamp(data.updated_at)} (${since(data.updated_at)})`
+    : 'Catalog not updated';
   const off = t.enabled === false
-    ? '<div class="parse-result idle">Пул выключен: серверы не проверяются, '
-      + 'поэтому про живость каждого сказать нечего.</div>'
+    ? '<div class="parse-result idle">Pool disabled. Server health is not measured '
+      + 'while this pool is disabled.</div>'
     : '';
 
   return `
-    <div class="row-meta">${esc(when)} · известно ${servers.length} ${
-      plural(servers.length, 'сервер', 'сервера', 'серверов')}</div>
+    <div class="row-meta">${esc(when)} · ${servers.length} known servers</div>
     ${off}
     <div class="pool-sect">
-      <div class="pool-sect-head">В ротации <span class="pool-fold-count">${live.length}</span></div>
+      <div class="pool-sect-head">In rotation <span class="pool-fold-count">${live.length}</span></div>
       <div class="pool-list">${live.map((s) => poolServerRow(s, { current: s.current })).join('')
-        || '<div class="rule-none">ни один сервер не отвечает</div>'}</div>
+        || '<div class="rule-none">No responding servers</div>'}</div>
     </div>
-    ${poolFold('Не отвечают', dead.length,
+    ${poolFold('No response', dead.length,
     `<div class="pool-list">${dead.map((s) => poolServerRow(s)).join('')}</div>`)}
-    ${poolFold('Остальные — вне ротации', rest.length,
-    `<div class="hint">Проверяются только серверы в ротации — в конфиг попадают лучшие
-       по пингу каталога. Об остальных известно лишь то, что было на карточке.</div>
+    ${poolFold('Outside rotation', rest.length,
+    `<div class="hint">Only rotation candidates are checked. Other latency values come from the catalog.</div>
      <div class="pool-list">${rest.map((s) => poolServerRow(s)).join('')}</div>`)}
     ${poolExcludedSection(excluded)}`;
 }
@@ -338,15 +353,49 @@ function poolDetailsHTML(t, data) {
 function modalPoolDetails(id) {
   const t = tunnelById(id);
   if (!t) return;
-  openModal(modalShell(`Пул «${t.name}»`, `
+  openModal(modalShell(`Pool · ${t.name}`, `
     <div class="row-meta mono pool-catalog-url">${esc(tunnelEndpoint(t))}</div>
+    <div class="field"><label for="pool-search">Search servers</label><input id="pool-search" type="search" placeholder="Server name or country" autocomplete="off"><span id="pool-search-count" class="hint" role="status"></span></div>
     <div class="pool-details" id="pool-details">
-      <div class="parse-result idle">Загружаю список серверов…</div>
+      <div class="parse-result idle">Loading servers…</div>
     </div>`,
-  `<button class="btn" data-act="refresh-pool-details" data-id="${esc(id)}">Обновить каталог</button>
+  `<button class="btn" data-act="refresh-pool-details" data-id="${esc(id)}">Refresh catalog</button>
      <div class="spacer" style="flex:1"></div>
-     <button class="btn btn-primary" data-act="close-modal">Закрыть</button>`),
-  () => loadPoolDetails(id));
+     <button class="btn btn-primary" data-act="close-modal">Close</button>`),
+  modal => {
+    modal.querySelector('#pool-search').addEventListener('input', () => {
+      for (const list of modal.querySelectorAll('.pool-list')) list.dataset.page = '0';
+      filterPoolDetails();
+    });
+    loadPoolDetails(id);
+  });
+}
+
+function filterPoolDetails() {
+  const search = $('#pool-search');
+  if (!search) return;
+  const query = search.value.trim().toLowerCase();
+  const rows = [...$('#pool-details').querySelectorAll('.pool-srv')];
+  let matches = 0;
+  for (const list of $('#pool-details').querySelectorAll('.pool-list')) {
+    const candidates = [...list.querySelectorAll('.pool-srv')].filter(row => !query || row.textContent.toLowerCase().includes(query));
+    matches += candidates.length;
+    const page = Math.min(Number(list.dataset.page || 0), Math.max(0, Math.ceil(candidates.length / 6) - 1));
+    list.dataset.page = String(page);
+    const visible = new Set(candidates.slice(page * 6, (page + 1) * 6));
+    for (const row of list.querySelectorAll('.pool-srv')) row.hidden = !visible.has(row);
+    const pager = list.nextElementSibling;
+    if (pager?.classList.contains('pool-pagination')) {
+      pager.hidden = candidates.length <= 6;
+      pager.querySelector('span').textContent = `${page * 6 + 1}–${Math.min((page + 1) * 6, candidates.length)} of ${candidates.length}`;
+      pager.querySelector('[data-page-step="-1"]').disabled = page === 0;
+      pager.querySelector('[data-page-step="1"]').disabled = (page + 1) * 6 >= candidates.length;
+    }
+  }
+  for (const group of $('#pool-details').querySelectorAll('.pool-fold')) {
+    if (query && group.querySelector('.pool-srv:not([hidden])')) group.open = true;
+  }
+  $('#pool-search-count').textContent = rows.length ? `${matches} of ${rows.length} servers${query && !matches ? ' · No matches' : ''}` : '';
 }
 
 let poolDetailsRevision = 0;
@@ -363,18 +412,33 @@ async function loadPoolDetails(id) {
     const tunnel = tunnelById(id);
     if (!tunnel) return false;
     box.innerHTML = poolDetailsHTML(tunnel, data);
+    box.querySelectorAll('.pool-list').forEach((list, index) => {
+      const pager = document.createElement('div');
+      pager.className = 'rule-pagination pool-pagination';
+      pager.innerHTML = `<button type="button" class="btn" data-page-step="-1" aria-label="Previous servers page, group ${index + 1}">Previous</button><span role="status" aria-live="polite"></span><button type="button" class="btn" data-page-step="1" aria-label="Next servers page, group ${index + 1}">Next</button>`;
+      list.after(pager);
+      pager.addEventListener('click', event => {
+        const button = event.target.closest('[data-page-step]');
+        if (!button || button.disabled) return;
+        list.dataset.page = String(Number(list.dataset.page || 0) + Number(button.dataset.pageStep));
+        filterPoolDetails();
+      });
+    });
+    filterPoolDetails();
     return true;
   } catch (err) {
     if (!current()) return false;
     box.innerHTML = `<div class="parse-result ${err.missing ? 'idle' : 'err'}"></div>`;
     box.firstElementChild.textContent = err.missing
-      ? 'Server details are unavailable: GET /api/tunnels/{id}/pool is not implemented.' : err.message;
+      ? 'Server details are unavailable. Retry or refresh the catalog.' : err.message;
     return false;
   }
 }
 
 /** Одна строка списка туннелей — общая для встроенного пула и своих туннелей. */
 function tunnelRow(t) {
+  const pending = operations.get(`tunnel:${t.id}`);
+  const busy = pending?.currentSession() ? pending : null;
   // Правило считается использующим туннель обоими звеньями цепи: вторым
   // звеном туннель держится так же, и удалить его сервер не даст (ADR 0012).
   const used = state.rules.filter((r) => r.tunnel_id === t.id || r.via_tunnel_id === t.id).length;
@@ -382,7 +446,7 @@ function tunnelRow(t) {
   const pool = tunnelPool(t);
   const off = t.enabled === false;
   const st = t.enabled === false
-    ? { cls: 'off', badge: '', label: 'выключен' }
+    ? { cls: 'off', badge: '', label: 'Disabled' }
     : t.signals?.https && !t.signals.https.fresh
       ? { cls: 'off', badge: '<span class="badge">Historical HTTPS observation</span>', label: '' }
     : t.status === 'unknown'
@@ -394,15 +458,16 @@ function tunnelRow(t) {
       : t.status === 'slow'
         ? { cls: 'warn', badge: `<span class="badge warn">HTTPS ${esc(t.latency_ms)} ms, slow</span>`, label: '' }
         : t.status === 'down'
-          ? { cls: 'bad', badge: '<span class="badge err">нет ответа</span>', label: '' }
+          ? { cls: 'bad', badge: '<span class="badge err">No response</span>', label: '' }
           : t.status === 'not_applied'
-            ? { cls: 'off', badge: '<span class="badge">не применён</span>', label: '' }
-            : { cls: 'off', badge: '<span class="badge">не проверялся</span>', label: '' };
+            ? { cls: 'off', badge: '<span class="badge">Not applied</span>', label: '' }
+            : { cls: 'off', badge: '<span class="badge">Not checked</span>', label: '' };
   return `
-      <div class="row${pool ? ' pool' : ''}${off ? ' dim' : ''}">
+      <div ${busy ? 'aria-busy="true" ' : ''}class="row${pool ? ' pool' : ''}${off ? ' dim' : ''}">
         <span class="dot ${st.cls}"></span>
         <div class="row-main">
           <div class="row-title">${esc(t.name)}
+            ${busy ? `<span class="badge" data-operation-status role="status">${esc(busy.status)}</span>` : ''}
             <span class="badge${pool ? ' accent' : ''}">${esc(tunnelLabel(t))}</span>
             ${pool ? poolServers(pool, off) : ''}
             ${pool ? poolExcludedBadge(pool) : ''}
@@ -413,36 +478,31 @@ function tunnelRow(t) {
           <div class="row-meta mono">${esc(tunnelEndpoint(t))}</div>
           ${pool ? poolCurrent(pool, off) : ''}
           <div class="row-meta">${used
-            ? `используют ${used} ${plural(used, 'правило', 'правила', 'правил')}`
-            : 'ни одно правило не ссылается'}${clients.length ? ` · Client exits: ${clients.map((p) => esc(p.name)).join(', ')}` : ''}${st.label ? ' · ' + st.label : ''}${
+            ? `${used} rule references`
+            : 'No rule references'}${clients.length ? ` · Client exits: ${clients.slice(0, 2).map((p) => esc(p.name)).join(', ')}${clients.length > 2 ? ` +${clients.length - 2} more` : ''}` : ''}${st.label ? ' · ' + st.label : ''}${
             pool ? poolSchedule(pool, off) : ''}</div>
         </div>
         <div class="row-actions">
-          ${pool ? `<button class="btn btn-sm" data-act="refresh-pool" data-id="${esc(t.id)}" aria-label="Refresh pool ${esc(t.name)}">Обновить</button>` : ''}
-          <button class="btn btn-sm" data-act="check-tunnel" data-id="${esc(t.id)}" aria-label="Check tunnel ${esc(t.name)}">Проверить</button>
-          <div class="menu-wrap">
-            <button class="btn btn-sm btn-ghost" data-act="menu-tunnel" data-id="${esc(t.id)}" aria-label="Actions for tunnel ${esc(t.name)}" aria-haspopup="menu" aria-expanded="false">⋮</button>
-          </div>
+          <button class="icon-btn more-btn" data-act="menu-tunnel" data-id="${esc(t.id)}" aria-label="Actions for tunnel ${esc(t.name)}" aria-haspopup="menu" aria-expanded="false">⋮</button>
         </div>
       </div>`;
 }
 
 export function view() {
   if (state.missing.has('tunnels')) {
-    return head() + `<div class="card">${notImplemented('Туннели')}</div>`;
+    return head() + `<div class="card">${notImplemented('Tunnels')}</div>`;
   }
 
   // Встроенный общий пул рисуется как один туннель в общем списке (ADR 0018):
   // отдельного раздела «по странам» больше нет. Свой ряд пул отличает выделением
   // строки и набором данных — каталог вместо адреса, живые серверы, текущий выбор.
-  const empty = '<div class="empty">Туннелей пока нет.</div>';
+  const empty = '<div class="empty">No tunnels yet.</div>';
   const listCard = `<div class="card">${
     state.tunnels.map(tunnelRow).join('') || empty}</div>`;
 
   return head() + listCard + `
     <p class="screen-sub" style="margin-top:10px">
-      Тип определяется по вставленному конфигу — выбирать его руками не нужно.
-      Исходящие WireGuard-туннели поднимаются в userspace внутри sing-box.
+      Protocol is detected from the configuration. Save changes, then Apply routing.
     </p>`;
 }
 
@@ -451,23 +511,23 @@ export function view() {
 /* Ссылки https:// на каталог ключей в подсказке нет намеренно: пул заводит
    демон — один общий (ADR 0018), руками его не создают, и такой ввод получает
    отказ (#71). Предлагать то, что не сработает, — обещать несуществующее. */
-const IDLE_HINT = 'Вставьте ссылку vless://, ss://, trojan://, hysteria2://, socks5://, '
-  + 'конфиг WireGuard или JSON outbound.';
+const IDLE_HINT = 'Paste vless://, ss://, trojan://, hysteria2://, socks5://, '
+  + 'WireGuard configuration or JSON outbound.';
 
 function modalTunnel(id) {
   const t = id ? tunnelById(id) : null;
-  openModal(modalShell(t ? t.name : 'Новый туннель', `
+  openModal(modalShell(t ? t.name : 'New tunnel', `
     <div class="field">
-      <label for="t-name">Имя</label>
-      <input type="text" id="t-name" value="${esc(t ? t.name : '')}" placeholder="Нидерланды" autocomplete="off">
+      <label for="t-name">Name</label>
+      <input type="text" id="t-name" value="${esc(t ? t.name : '')}" placeholder="Example exit" autocomplete="off">
     </div>
     <div class="field" id="t-raw-field">
-      <label for="t-raw">Вставьте ссылку или конфиг WireGuard</label>
+      <label for="t-raw">Connection URL or configuration</label>
       <textarea id="t-raw" spellcheck="false" placeholder="vless://…"${t ? ' disabled' : ''}></textarea>
-      <div class="parse-result idle" id="t-parse">${esc(t ? 'Загружаю конфиг…' : IDLE_HINT)}</div>
+      <div class="parse-result idle" id="t-parse">${esc(t ? 'Loading configuration…' : IDLE_HINT)}</div>
     </div>`,
-  `<button class="btn" data-act="close-modal">Отмена</button>
-     <button class="btn btn-primary" data-act="save-tunnel" data-id="${esc(t ? t.id : '')}">Сохранить</button>`),
+  `<button class="btn" data-act="close-modal">Cancel</button>
+     <button class="btn btn-primary" data-act="save-tunnel" data-id="${esc(t ? t.id : '')}">Save changes</button>`),
   (m) => {
     const raw = m.querySelector('#t-raw');
     const currentSession = api.session.guard(), revision = currentModalRevision();
@@ -513,7 +573,7 @@ async function loadTunnelRaw(t, m) {
       const field = m.querySelector('#t-raw-field');
       field.innerHTML = '<div class="parse-result idle"></div>';
       field.firstElementChild.textContent = got.note
-        || 'Конфиг этого туннеля выдал сервер — править его руками нечего.';
+        || 'This tunnel is managed automatically. Only its name can be changed.';
       m.querySelector('#t-name').focus();
       return;
     }
@@ -526,10 +586,10 @@ async function loadTunnelRaw(t, m) {
     raw.disabled = false;
     out.className = 'parse-result ' + (err.missing ? 'idle' : 'err');
     out.textContent = err.missing
-      ? 'Конфиг не загружен: GET /api/tunnels/{id}/raw ещё не реализован. '
-        + 'Вставьте конфиг заново — сохранение заменит прежний.'
-      : 'Конфиг не загружен: ' + err.message
-        + '. Вставьте его заново — сохранение заменит прежний.';
+      ? 'Saved configuration is unavailable. '
+        + 'Paste a replacement configuration to save it.'
+      : 'Configuration could not be loaded: ' + err.message
+        + '. Paste a replacement configuration to save it.';
   }
 }
 
@@ -552,7 +612,7 @@ async function runParse(raw) {
     return;
   }
   out.className = 'parse-result idle';
-  out.textContent = 'Разбираю…';
+  out.textContent = 'Checking configuration…';
   try {
     const r = await api.tunnels.parse(value);
     if (!current()) return;
@@ -565,13 +625,13 @@ async function runParse(raw) {
       ? `<div style="color:var(--warn);margin-top:4px">⚠ ${(r.warnings).map(esc).join('; ')}</div>`
       : '';
     out.className = 'parse-result ok';
-    out.innerHTML = '✓ Распознан ' + esc(parts.join(' · ')) + warn;
+    out.innerHTML = '✓ Detected ' + esc(parts.join(' · ')) + warn;
   } catch (err) {
     if (!current()) return;
     lastParse = { ok: false, raw: value };
     out.className = 'parse-result ' + (err.missing ? 'idle' : 'err');
     out.textContent = err.missing
-      ? 'Предпросмотр недоступен: POST /api/tunnels/parse ещё не реализован. Сохранить всё равно можно — разбор сделает сервер.'
+      ? 'Preview unavailable. You can save; the gateway will validate the configuration.'
       : '✕ ' + err.message;
     // Пока предпросмотра нет, сохранение не блокируем: иначе туннель не завести.
     if (err.missing) lastParse = { ok: true, raw: value };
@@ -648,10 +708,10 @@ export const actions = {
     if (!tunnel) return;
     const toggle = { act: 'toggle-tunnel', id, label: tunnel.enabled === false ? 'Enable' : 'Disable' };
     openMenu(button, tunnelPool(tunnel)
-      ? [{ act: 'pool-details', id, label: 'Details' }, toggle]
+      ? [{ act: 'pool-details', id, label: 'Details' }, { act: 'check-tunnel', id, label: 'Check HTTPS' }, { act: 'refresh-pool', id, label: 'Refresh catalog' }, toggle]
       : [
-        { act: 'edit-tunnel', id, label: 'Edit' }, toggle,
-        { act: 'delete-tunnel', id, label: 'Delete', danger: true },
+        { act: 'edit-tunnel', id, label: 'Edit' }, { act: 'check-tunnel', id, label: 'Check HTTPS' }, toggle,
+        { act: 'delete-tunnel', id, label: 'Delete…', danger: true },
       ]);
   },
   'pool-details': (id) => modalPoolDetails(id),
@@ -700,7 +760,9 @@ export const actions = {
 
   'delete-tunnel': async (id) => {
     const tunnel = tunnelById(id);
-    if (!tunnel || !confirm(`Delete tunnel “${tunnel.name}”?`)) return;
+    if (!tunnel) return;
+    const currentSession = api.session.guard();
+    if (!await confirmAction('Delete tunnel', tunnel.name, 'This cannot be undone. Saved routing changes need Apply.') || !currentSession() || tunnelById(id) !== tunnel) return;
     const ctx = beginOperation(`tunnel:${id}`);
     if (!ctx) return;
     try {

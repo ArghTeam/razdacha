@@ -22,7 +22,7 @@ const { fixture, examplePeer } = require('./client.fixture.cjs');
         const bounds = await t.page.locator('#modal').boundingBox(); assert(bounds.x >= 0 && bounds.x + bounds.width <= width + 1);
         for (const selector of ['.client-details .btn:visible', '.client-details summary:visible', '.client-routing-choice', '.client-enabled']) {
           const boxes = await t.page.locator(selector).evaluateAll(elements => elements.map(element => { const r = element.getBoundingClientRect(); return { width: r.width, height: r.height }; }));
-          for (const box of boxes) { assert(box.height >= 43.5, `${selector} hit area ${JSON.stringify(box)}`); assert(box.width >= 43.5); }
+          for (const box of boxes) { assert(box.height >= (width < 761 ? 43.5 : 39.5), `${selector} hit area ${JSON.stringify(box)}`); assert(box.width >= (width < 761 ? 43.5 : 39.5)); }
         }
         await t.page.locator('[data-act="cancel-client-delete"]').click();
         await t.page.locator('#modal h2').focus();

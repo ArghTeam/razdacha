@@ -6,7 +6,7 @@ const {fixture,exampleRule,exampleRules}=require('./rule-actions-lifetime.fixtur
  const count=(t,key)=>t.calls.filter(call=>call.key===key).length;
  const ids=async t=>(await t.state()).rules.map(rule=>rule.id);
  async function run(name,test,options){const t=await fixture(browser,options);try{await test(t);assert.deepEqual(t.errors,[]);assert.deepEqual(t.unknown,[],'Unknown requests');assert.deepEqual(t.external,[],'External requests');passed++;console.log(`PASS ${name}`);}finally{await t.context.close();}}
- const start=async(t,action,id='r1')=>{if(action==='delete-rule')t.page.once('dialog',dialog=>dialog.accept());return t.invoke(action,id);};
+ const start=async(t,action,id='r1')=>{const token=await t.invoke(action,id);if(action==='delete-rule')await t.page.locator('[data-confirm-accept]').click();return token;};
  const routeKey='POST /api/route/test',reachKey='POST /api/domain/reachability';
  const diagnostic=async(t,action='probe-run',domain='example.invalid')=>{await t.page.locator('#probe-domain').fill(domain);return t.invoke(action);};
  try{
@@ -44,7 +44,7 @@ const {fixture,exampleRule,exampleRules}=require('./rule-actions-lifetime.fixtur
    await t.invoke('edit-rule','r1');t.holds.add('GET /api/rules');const save=await t.invoke('save-rule','r1');await t.waitHeld('GET /api/rules');await t.invoke('toggle-rule','r2');await t.done();await t.reply('GET /api/rules',exampleRules);await t.done(save);assert.equal((await t.state()).rules.find(rule=>rule.id==='r2').enabled,false);
   });
   for(const status of [200,500])await run(`actual Clients deletion follow-up ${status} cannot replace a later Rules mutation`,async t=>{
-   await t.page.locator('[data-act="peer-details"]').first().click();await t.page.locator('#client-name').waitFor();await t.page.locator('[data-act="inspect-client-delete"]').click();await t.page.locator('#client-delete-confirmation').waitFor({state:'visible'});
+   await t.page.locator('[data-act="menu-peer"]').first().click();await t.page.locator('#row-menu [data-act="peer-details"]').click();await t.page.locator('#client-name').waitFor();await t.page.locator('[data-act="inspect-client-delete"]').click();await t.page.locator('#client-delete-confirmation').waitFor({state:'visible'});
    t.holds.add('GET /api/rules');await t.page.locator('[data-act="confirm-client-delete"]').click();await t.waitHeld('GET /api/rules');await t.page.evaluate(()=>h.shell.closeModal());await t.page.locator('[data-screen="rules"]').click();await t.waitHeld('GET /api/rules',2);await t.reply('GET /api/rules',exampleRules,200,1);await t.page.locator('[data-act="menu-rule"][data-id="r1"]').click();await t.page.locator('[data-act="toggle-rule"][data-id="r1"]').click();await t.page.waitForFunction(()=>h.shell.state.rules.find(rule=>rule.id==='r1')?.enabled===false);
    await t.reply('GET /api/rules',status===200?exampleRules:{error:'Obsolete deletion read failure'},status);await t.page.waitForTimeout(80);assert.equal((await t.state()).rules.find(rule=>rule.id==='r1').enabled,false);assert.doesNotMatch((await t.state()).toasts,/Reload rules/);
   },{application:true});

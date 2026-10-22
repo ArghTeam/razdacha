@@ -10,8 +10,8 @@ export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export function bytes(n) {
-  if (!n) return '0 Б';
-  const u = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+  if (!n) return '0 B';
+  const u = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   let i = 0, v = n;
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
   return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
@@ -25,17 +25,13 @@ export function plural(n, one, few, many) {
 }
 
 export function since(iso) {
-  if (!iso) return 'никогда';
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return 'никогда';
-  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (sec < 60) return `${sec} ${plural(sec, 'секунду', 'секунды', 'секунд')} назад`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} ${plural(min, 'минуту', 'минуты', 'минут')} назад`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h} ${plural(h, 'час', 'часа', 'часов')} назад`;
-  const d = Math.floor(h / 24);
-  return `${d} ${plural(d, 'день', 'дня', 'дней')} назад`;
+  const time = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(time)) return 'Never';
+  const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
 }
 
 /** Онлайн — хендшейк менее 3 минут назад, то же правило, что в docs/02-data-model.md.
@@ -62,18 +58,14 @@ export function stamp(iso) {
 /** Через сколько наступит момент в будущем — зеркало `since()`.
     Нужно расписанию обновления каталога у пула. */
 export function until(iso) {
-  if (!iso) return '';
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return '';
-  const sec = Math.floor((t - Date.now()) / 1000);
-  if (sec <= 0) return 'вот-вот';
-  if (sec < 60) return `через ${sec} ${plural(sec, 'секунду', 'секунды', 'секунд')}`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `через ${min} ${plural(min, 'минуту', 'минуты', 'минут')}`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `через ${h} ${plural(h, 'час', 'часа', 'часов')}`;
-  const d = Math.floor(h / 24);
-  return `через ${d} ${plural(d, 'день', 'дня', 'дней')}`;
+  const time = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(time)) return '';
+  const seconds = Math.floor((time - Date.now()) / 1000);
+  if (seconds <= 0) return 'soon';
+  if (seconds < 60) return `in ${seconds}s`;
+  if (seconds < 3600) return `in ${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `in ${Math.floor(seconds / 3600)}h`;
+  return `in ${Math.floor(seconds / 86400)}d`;
 }
 
 export const TUNNEL_LABEL = {
@@ -81,7 +73,7 @@ export const TUNNEL_LABEL = {
   trojan: 'Trojan', hysteria2: 'Hysteria2', socks: 'SOCKS', raw: 'JSON',
   // Пул — не протокол, а набор серверов из каталога: тип показывается словом,
   // потому что от одиночного туннеля он отличается поведением, а не шифром.
-  pool: 'Пул',
+  pool: 'Pool',
   // WARP — тот же WireGuard, но с ключами Cloudflare. Подпись своя, потому что
   // от неё зависит, что пользователь ждёт от туннеля: чужой адрес, а не свой
   // сервер.

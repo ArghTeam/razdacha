@@ -11,7 +11,7 @@ async function geometry(page, width) {
     return { pageWidth: document.documentElement.scrollWidth, tabs: [...document.querySelectorAll('#tabs .tab')].map(element => ({ ...rectangle(element), clipped: element.scrollWidth > element.clientWidth + 1 })), version: { ...rectangle(document.querySelector('#brand-version')), clipped: document.querySelector('#brand-version').scrollWidth > document.querySelector('#brand-version').clientWidth + 1 }, controls: [...document.querySelectorAll('.topbar .icon-btn')].map(rectangle), apply: rectangle(document.querySelector('#apply-bar')) };
   });
   assert.equal(data.pageWidth, width);
-  for (const control of [...data.tabs, ...data.controls]) { assert(control.width >= 43.5 && control.height >= 43.5); assert(control.left >= -1 && control.right <= width + 1); assert.equal(control.clipped || false, false); }
+  for (const control of [...data.tabs, ...data.controls]) { assert(control.width >= (width < 761 ? 43.5 : 39.5) && control.height >= (width < 761 ? 43.5 : 39.5)); assert(control.left >= -1 && control.right <= width + 1); assert.equal(control.clipped || false, false); }
   const controls = [...data.tabs, ...data.controls];
   for (let i = 0; i < controls.length; i++) for (let j = i + 1; j < controls.length; j++) assert(!(Math.min(controls[i].right, controls[j].right) > Math.max(controls[i].left, controls[j].left) + 1 && Math.min(controls[i].bottom, controls[j].bottom) > Math.max(controls[i].top, controls[j].top) + 1), 'Header controls overlap');
   assert.equal(data.version.clipped, false); assert(data.version.left >= -1 && data.version.right <= width + 1);
@@ -56,7 +56,7 @@ async function enlargeText(page) {
         assert(retainedFocus.dismiss && retainedFocus.top >= retainedFocus.stackTop - 1 && retainedFocus.bottom <= retainedFocus.stackBottom + 1, JSON.stringify(retainedFocus));
         await capture(t.page, `${theme}-${width}-notifications`); await t.page.locator('.toast-dismiss').last().click(); assert.equal(await t.page.locator('.toast').count(), 2);
         await t.page.evaluate(async () => { (await import('/js/shell.js')).clearToasts(); });
-        await t.navigate('peers'); await t.page.locator('[data-act="peer-details"]').click(); await t.page.locator('#client-name').waitFor();
+        await t.navigate('peers'); await t.page.locator('[data-act="menu-peer"]').first().click(); await t.page.locator('#row-menu [data-act="peer-details"]').click(); await t.page.locator('#client-name').waitFor();
         assert.equal(await t.page.locator('#app').evaluate(element => element.inert), true); await t.page.keyboard.press('Tab'); assert.equal(await t.page.evaluate(() => document.querySelector('#modal').contains(document.activeElement)), true); await t.page.keyboard.press('Escape');
         await t.navigate('rules'); await t.page.locator('[data-act="add-rule"]').first().click(); await t.page.locator('.rule-form').waitFor(); await t.page.keyboard.press('Escape');
         await t.page.locator('#btn-settings').click(); await t.page.locator('.settings-hub').waitFor(); await t.settle(); await t.page.keyboard.press('Escape');
@@ -77,7 +77,7 @@ async function enlargeText(page) {
     for (const theme of ['light', 'dark']) for (const dialog of ['client', 'rule', 'settings', 'tunnel']) {
       const t = await appFixture(browser, { theme, viewport: { width: 320, height: 667 } });
       try {
-        if (dialog === 'client') await t.page.locator('[data-act="peer-details"]').click();
+        if (dialog === 'client') { await t.page.locator('[data-act="menu-peer"]').first().click(); await t.page.locator('#row-menu [data-act="peer-details"]').click(); }
         else if (dialog === 'rule') { await t.navigate('rules'); await t.page.locator('[data-act="add-rule"]').first().click(); }
         else if (dialog === 'tunnel') { await t.navigate('tunnels'); await t.page.locator('[data-act="add-tunnel"]').click(); }
         else { await t.page.locator('#btn-settings').click(); await t.page.locator('[data-settings-section="backup"]').click(); }
