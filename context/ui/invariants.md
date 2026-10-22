@@ -92,7 +92,13 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 - Body-mounted row menus expose menu semantics, move focus with arrow/Home/End
   keys, close on Escape/Tab/outside interaction, and clean listeners and anchor
   ARIA state. Every screen render dismisses stale menus after replacing rows so
-  focus can return to the current equivalent anchor.
+  focus can return to the current equivalent anchor. Periodic polling skips open menus.
+  A background read already in flight may accept current-session data, but its final
+  render cannot replace controls while a menu, modal or typed draft is active. A later
+  poll resumes rendering after interaction ends; explicit navigation and mutations
+  retain their ordinary render/menu-cleanup behavior. Enable/Disable items capture an
+  explicit boolean intent when opened; accepted background state cannot invert the
+  advertised operation. Missing or invalid intent never dispatches a toggle.
 - At narrow widths or with a coarse pointer, shared controls have non-overlapping
   44 px minimum hit areas. Long unbroken names wrap without displacing modal close
   controls. Disabled rows do not use whole-row opacity; small neutral hints remain

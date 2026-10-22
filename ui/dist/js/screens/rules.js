@@ -954,10 +954,11 @@ export const actions = {
   'rule-up': (id) => move(id, -1),
   'rule-down': (id) => move(id, 1),
 
-  'toggle-rule': async (id) => {
+  'toggle-rule': async (id, button) => {
     const rule = state.rules.find((item) => item.id === id);
-    if (!rule) return;
-    const enabled = !rule.enabled, ctx = beginInventoryAction(`rule:${id}`);
+    const intent = button?.dataset.enabled;
+    if (!rule || !['true', 'false'].includes(intent)) return;
+    const enabled = intent === 'true', ctx = beginInventoryAction(`rule:${id}`);
     if (!ctx) return;
     try {
       try { await api.rules.update(id, { enabled }); }
@@ -976,7 +977,7 @@ export const actions = {
     const index = state.rules.indexOf(rule);
     openMenu(btn, [
       { act: 'edit-rule', id, label: 'Edit' },
-      { act: 'toggle-rule', id, label: rule.enabled ? 'Disable' : 'Enable' },
+      { act: 'toggle-rule', id, label: rule.enabled ? 'Disable' : 'Enable', enabled: !rule.enabled },
       { act: 'duplicate-rule', id, label: 'Duplicate' },
       { act: 'rule-up', id, label: 'Move up', disabled: index === 0 },
       { act: 'rule-down', id, label: 'Move down', disabled: index === state.rules.length - 1 },
