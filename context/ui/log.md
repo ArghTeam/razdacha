@@ -339,3 +339,37 @@ confirmations replace native rule/tunnel deletion prompts. Existing client confi
 modal/session, async operation and independent settings-save lifetimes remain intact.
 Design contract and synthetic browser acceptance live in docs/ui-design-system.md and
 ui/tests/design-system.cjs. Validation details are recorded in the task and PR.
+
+
+## 2026-10-23 — Dashboard implementation acceptance (#280)
+
+[The completed implementation record](../../tasks/done/280-dashboard-design-system.md)
+tracks PR #281, merged as `7c2f8a0` after independent design/code acceptance and all
+six hosted CI checks. Final review fixes preserve replacement drafts when obsolete
+confirmation controls fire and preserve Name above the workspace when errors appear.
+The 14-suite browser runner, focused error-state matrices and embedded-asset checks
+passed. Primary synchronization was verified before release preparation. Staging
+acceptance is a separate record; this entry does not claim deployed behavior.
+
+The bounded polling follow-up in PR #282 (`2acb9d5`, reviewed HEAD `a77edca`) also
+passed independent review and all six hosted checks. Twelve controlled-clock/native
+pointer cases verify open-menu admission/completion protection and explicit advertised
+toggle intent, while retaining fresh inventory and existing cleanup/sequencing guards.
+Primary synchronization was verified before the next release preparation.
+
+
+## 2026-10-23 — Final staging dashboard acceptance (#280)
+
+Published v0.11.0-rc.7 (`2acb9d5adbeb`) passed the bounded upgrade check/run with
+strict preservation and a private fresh stopped snapshot. Actual authenticated browser
+postflight passed 48 checks, 24 screen/theme/viewport frames, 16 mobile dialog frames
+and all 11 exact served-asset hashes. Client/configuration cleanup, rule/manual-tunnel/
+pool dialogs, all Settings sections and a 16-second retained menu with natural pointer
+Edit passed. Settled 320/390-pixel header/footer/scroll-end checks passed.
+
+No persisted configuration writes or Apply occurred. Two pure parse previews and the
+owned logout were allowlisted; there were zero JavaScript errors. The owned session
+was confirmed revoked and its temporary authentication file deleted. Full operational
+identity, release checksum and limits are in the
+[completed delivery record](../../tasks/done/280-dashboard-design-system.md#staging-acceptance).
+This is installed UI/API acceptance, not VPN/media end-to-end or no-outage evidence.

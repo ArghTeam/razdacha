@@ -14,3 +14,21 @@ Keep ADR 0009 authentication and schema unchanged. Store a random password-state
 
 ## Checkout
 Primary: `/Users/romanzhigalkin/Web/razdacha`; origin: `git@github.com:ArghTeam/razdacha.git`; target: `main`; verified fetched base: `e262cc69d573a8e97a54b47cf5d700716190abf9`.
+
+
+## Completion
+
+Merged as [PR #278](https://github.com/ArghTeam/razdacha/pull/278), commit
+`af68bd8bef4258c4fdd05b7d89113b089bd92fc3`. Independent review accepted the
+password-state issuance barrier. Deterministic stale verification, same-hash/ABA,
+independent-connection and ordinary authentication cases were verified; hosted tests,
+race/static validation and all six hosted CI checks passed. The change preserves the
+schema and ADR 0009 contract. Deployment is recorded separately from implementation.
+
+
+## Delivery
+
+Included in the verified staging v0.11.0-rc.7 release. See the shared
+[staging acceptance record](280-dashboard-design-system.md#staging-acceptance) for
+exact running identity, preserved-state evidence and browser/operator boundaries.
+This delivery record does not claim replay of the security/MTU test matrix on a live host.

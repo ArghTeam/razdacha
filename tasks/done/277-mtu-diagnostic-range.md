@@ -7,3 +7,21 @@ Cover lower/upper edges, valid intermediate values, invalid values, mismatches a
 
 ## Checkout
 Primary: `/Users/romanzhigalkin/Web/razdacha`; origin: `git@github.com:ArghTeam/razdacha.git`; target: `main`; verified fetched base: `e262cc69d573a8e97a54b47cf5d700716190abf9`.
+
+
+## Completion
+
+Merged as [PR #279](https://github.com/ArghTeam/razdacha/pull/279), commit
+`6ff099cc63f36a7900a9b5f0b7877da73d9b2e4b`. Independent review and focused
+range/mismatch/unavailable-observation tests passed, along with all six hosted CI
+checks. This fixes diagnostic classification only: no MTU, existing client configuration
+or network setting changes automatically. Deployment is recorded separately from
+implementation.
+
+
+## Delivery
+
+Included in the verified staging v0.11.0-rc.7 release. See the shared
+[staging acceptance record](280-dashboard-design-system.md#staging-acceptance) for
+exact running identity, preserved-state evidence and browser/operator boundaries.
+This delivery record does not claim replay of the security/MTU test matrix on a live host.
