@@ -183,3 +183,16 @@ handshake; finite queued capture observations, no universal lossless claim; nati
 SRS/JSON remains #220. No application or production deployment occurred.
 **Review:** pre-canary and owner gates passed. Distinct final review and current CI
 are required before merge. See the [completed implementation record](../../tasks/done/214-coherent-network-state.md).
+
+## 2026-10-22 — Checked in-place staging upgrade validated
+
+The reviewed paired-authority and checked-configuration proof completed a staging
+`0.11.0-rc.3` to published `0.11.0-rc.4` upgrade. The real baseline required one
+ADR 0019 pool-member rejection; private checked preparation exactly reproduced it.
+Preflight passed before stop, the fresh full snapshot was retained, stock setup and
+startup completed, and postflight accepted exact process/runtime identity, DNS,
+trusted HTTPS, preserved policy/protected files and an absent native guard.
+The older installation remained untouched. This proves the bounded staging update,
+not zero outage or every application's connectivity. See the completed
+[authority](../../tasks/done/271-pool-authority-upgrade.md) and
+[checked-upgrade](../../tasks/done/273-checked-pool-upgrade.md) records.
