@@ -113,20 +113,30 @@ rewritten to normalize the baseline. Every current native artifact is independen
 verified on every proof. Duplicate JSON keys are refused during preflight before
 services stop. This does not approve pending Apply edits.
 
-The helper also hashes the exact `Generate`/`Marshal` result from committed policy
-and frozen list contents. Preflight refuses before stopping services unless this
-output exactly reproduces the installed baseline config, bounding generator and
-rollback compatibility for the actual snapshot. Setup and pre-start rollback checks
-retain the original config hash. After startup only, an allowed pool catalog refresh
-may change config bytes: actual config must exactly equal the current accepted
-generation's generated hash, after strict authority comparison. Arbitrary config
-changes remain rejected; no runtime config fields are ignored or normalized.
+The helper derives config identity through the same bounded checked preparation
+as the daemon: `PrepareRecovery` with frozen committed policy/lists and the pinned
+installed `sing-box check`. A fresh private temporary ConfigPath captures the final
+accepted candidate; it never calls Commit, Reload or starts another runtime. ADR 0019
+may remove only rejected pool members through the existing bounded retry logic.
+Non-pool validation failures are refused. Owned temporary candidates are removed on
+success and failure. The checker version must match the compiled pinned library;
+its executable hash is verified before/after the proof and every check.
 
-Raw generation must reproduce the runtime config without checker-driven pool-member
-pruning (ADR 0019). A baseline produced by such pruning, unsupported generator changes
-or another config preparation step is outside this procedure and is refused during
-preflight. A later unprovable generated config remains a guarded recovery failure;
-this tool does not invent a broader exception to make the upgrade pass.
+For compatibility, `generated_config_sha256` now identifies the final **checked**
+candidate. `raw_generated_config_sha256` retains the initial generated digest as
+private evidence. The controller matches the checker hash/version to its installation
+baseline. Preflight refuses before stopping services unless checked preparation
+exactly reproduces the installed config. No runtime config fields are normalized.
+
+After both writers stop under the verified guard, a fresh authority proof must still
+match original preflight policy except paired pool catalog fields, and its exact
+checked config hash must equal actual stopped config bytes. The snapshot records
+separate `stopped_authority`/`stopped_config_sha256`; original preflight evidence is
+retained unchanged. This handles a legitimate pool refresh between preflight and
+stop. Setup and pre-start rollback pin the **stopped snapshot** config hash. After
+startup only, actual config must exactly equal checked preparation of current
+strictly accepted authority. Arbitrary config changes and unprovable output remain
+rejected; a checker-pruned baseline is accepted only when reproduced precisely.
 
 This proof format requires the matching controller/helper pair. Do not replace a
 helper inside an old unfinished operation or reinterpret its historical ledger;

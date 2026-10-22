@@ -286,12 +286,16 @@ matching tunnel IDs with `source=pool` on both sides and permits only `pool` and
 evidence is retained; kind/version, other policy fields, list/native authority and
 JSON scalar types remain strict. Native artifacts are verified again for each
 current proof. Historical operation records are never normalized or repurposed.
-The helper must exactly reproduce baseline config bytes during preflight or refuse
-before stopping services. Before startup the baseline config hash stays strict;
-after startup actual config must exactly match generation from accepted current
-authority. This permits only proven pool-driven output changes, without ignoring
-runtime config fields. Checker-pruned or otherwise unreproducible baseline configs
-are outside the accepted procedure; see the runbook's compatibility bounds.
+The helper must exactly reproduce baseline config bytes through private checked
+`PrepareRecovery` with the pinned installed runtime before stopping services. ADR
+0019 retries may prune rejected pool members; non-pool errors refuse the operation.
+The helper never publishes or reloads its temporary config. After both writers stop
+under protection, the separately recorded stopped authority/config must still pass
+the same strict policy and exact checked-output proofs. Original preflight evidence
+is retained; setup and pre-start rollback pin the stopped snapshot hash. Post-start
+actual config must exactly match checked preparation of accepted current authority.
+See the runbook for checker pinning, owned temporary cleanup and compatibility bounds.
+
 
 ## Обновление
 

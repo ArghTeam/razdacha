@@ -5,6 +5,22 @@
 
 ## 2026-10-22
 
+### #273 — checked pool config and coherent stopped snapshot proofs
+
+**Changed:** In-place config identity comes from private checked `PrepareRecovery`,
+including existing ADR 0019 pool-only retries. Pinned runtime version/hash checks
+surround each check and the whole proof; no Commit/Reload is available. Temporary
+candidates are cleaned on every return. Raw and checked hashes remain distinct
+private evidence. Non-pool validation and incompatible exact output are refused.
+**Snapshot boundary:** After both writers stop under protection, current accepted
+authority and exact checked output establish separate stopped evidence. This may
+reflect a paired-pool refresh since preflight; original preflight records remain
+unchanged. Pre-start setup/rollback use the stopped snapshot hash.
+**Validation:** Bounded pruning/non-pool/cleanup/pin regressions and forward/rollback
+pool-refresh-between-phases cases. See [task 273](../../tasks/273-checked-pool-upgrade.md).
+
+## 2026-10-22
+
 ### #271 — startup pool catalogs in committed-authority proofs
 
 **Changed:** The operator uses paired tunnel ID/source comparison for the two
