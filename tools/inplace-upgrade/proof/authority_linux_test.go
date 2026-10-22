@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -15,6 +16,10 @@ import (
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
+
+type acceptConfig struct{}
+
+func (acceptConfig) Check(context.Context, string) error { return nil }
 
 func TestAuthorityProofRetainsExactPrivateEvidence(t *testing.T) {
 	dir := t.TempDir()
@@ -36,7 +41,7 @@ func TestAuthorityProofRetainsExactPrivateEvidence(t *testing.T) {
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	proof, err := authorityProof(dir)
+	proof, err := authorityProofWithChecker(context.Background(), dir, acceptConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,13 +83,13 @@ func TestAuthorityProofRevalidatesCurrentNativeArtifactEveryTime(t *testing.T) {
 	if err := networkstate.Write(filepath.Join(dir, networkstate.CommittedFile), gen); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authorityProof(dir); err != nil {
+	if _, err := authorityProofWithChecker(context.Background(), dir, acceptConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("corrupt synthetic artifact"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := authorityProof(dir); err == nil {
+	if _, err := authorityProofWithChecker(context.Background(), dir, acceptConfig{}); err == nil {
 		t.Fatal("current native artifact corruption accepted after previous successful proof")
 	}
 }
@@ -102,7 +107,7 @@ func TestAuthorityGeneratedConfigTracksEnabledPoolExactly(t *testing.T) {
 	if err := networkstate.Write(path, gen); err != nil {
 		t.Fatal(err)
 	}
-	first, err := authorityProof(dir)
+	first, err := authorityProofWithChecker(context.Background(), dir, acceptConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +115,7 @@ func TestAuthorityGeneratedConfigTracksEnabledPoolExactly(t *testing.T) {
 	if err := networkstate.Write(path, gen); err != nil {
 		t.Fatal(err)
 	}
-	second, err := authorityProof(dir)
+	second, err := authorityProofWithChecker(context.Background(), dir, acceptConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

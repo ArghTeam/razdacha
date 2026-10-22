@@ -85,6 +85,8 @@ class FakeHost:
         self.corrupt_started_config = False
         self.catalog_refresh = False
         self.fault_stop = False
+        self.refresh_before_stop = False
+        self.corrupt_before_stop = False
 
     def proof(self, command, *arguments):
         self.events.append(('proof', command))
@@ -93,7 +95,9 @@ class FakeHost:
         if command == 'candidate':
             return {'runtime': '1.12.25'}
         if command == 'authority':
-            return authority_evidence(upgrade.read_private(self.layout.state / 'applied-network.json'))
+            result = authority_evidence(upgrade.read_private(self.layout.state / 'applied-network.json'))
+            result.update(checker_sha256=upgrade.sha(self.layout.runtime), checker_version='1.12.25')
+            return result
         if command == 'wireguard':
             return {'sha256': 'b' * 64, 'peers': 1}
         if command == 'backup':
@@ -156,7 +160,27 @@ class FakeHost:
         self.events.append(('stop', service))
         if self.fault_stop:
             raise upgrade.Refused('stop failed')
+        if service == 'razdachad' and self.refresh_before_stop:
+            self.refresh_before_stop = False
+            self.refresh_catalog()
+        if service == 'razdachad' and self.corrupt_before_stop:
+            self.corrupt_before_stop = False
+            self.layout.path('/etc/sing-box/config.json').write_text('arbitrary concurrent config')
         self.services[service] = False
+
+    def refresh_catalog(self):
+        connection = sqlite3.connect(self.layout.database)
+        connection.execute("UPDATE tunnels SET pool='new',pool_updated_at='new-time' WHERE source='pool'")
+        connection.commit()
+        connection.close()
+        path = self.layout.state / 'applied-network.json'
+        generation = upgrade.read_private(path)
+        for tunnel in generation['policy']['tunnels']:
+            if tunnel['source'] == 'pool':
+                tunnel['pool'] = [{'url': 'synthetic-refreshed-key'}]
+                tunnel['pool_updated_at'] = 'refreshed-time'
+        upgrade.private_json(path, generation)
+        self.layout.path('/etc/sing-box/config.json').write_text(synthetic_generated_config(generation))
 
     def assert_stopped(self, service):
         upgrade.require(not self.services[service], 'writer still running')
@@ -170,18 +194,7 @@ class FakeHost:
                 # of subsequent operator acceptance, just like production.
                 self.protected = False
                 if self.catalog_refresh:
-                    connection = sqlite3.connect(self.layout.database)
-                    connection.execute("UPDATE tunnels SET pool='new',pool_updated_at='new-time' WHERE source='pool'")
-                    connection.commit()
-                    connection.close()
-                    path = self.layout.state / 'applied-network.json'
-                    generation = upgrade.read_private(path)
-                    for tunnel in generation['policy']['tunnels']:
-                        if tunnel['source'] == 'pool':
-                            tunnel['pool'] = [{'url': 'synthetic-refreshed-key'}]
-                            tunnel['pool_updated_at'] = 'refreshed-time'
-                    upgrade.private_json(path, generation)
-                    self.layout.path('/etc/sing-box/config.json').write_text(synthetic_generated_config(generation))
+                    self.refresh_catalog()
                 if self.corrupt_started_config and upgrade.db_state(self.layout.database)['installed'] == '1.1.0':
                     self.layout.path('/etc/sing-box/config.json').write_text('arbitrary changed config')
 
@@ -301,6 +314,41 @@ class Fixture(unittest.TestCase):
         actual = upgrade.sha(self.layout.path('/etc/sing-box/config.json'))
         self.assertEqual(actual, self.host.proof('authority')['generated_config_sha256'])
         self.assertFalse(self.host.protected)
+
+    def test_pool_refresh_between_preflight_and_snapshot_uses_exact_stopped_baseline(self):
+        for rollback in (False, True):
+            with self.subTest(rollback=rollback):
+                fixture = Fixture('test_success_keeps_policy_and_snapshot')
+                fixture.setUp()
+                try:
+                    initial_config = upgrade.sha(fixture.layout.path('/etc/sing-box/config.json'))
+                    initial_authority = fixture.host.proof('authority')
+                    fixture.host.refresh_before_stop = True
+                    fixture.host.fail_readiness = rollback
+                    if rollback:
+                        with self.assertRaises(upgrade.Refused):
+                            fixture.transaction.execute(fixture.manifest)
+                    else:
+                        fixture.transaction.execute(fixture.manifest)
+                    ledger = fixture.transaction.ledger
+                    self.assertEqual(ledger['phase'], 'rolled-back' if rollback else 'accepted')
+                    self.assertEqual(ledger['config_sha256'], initial_config)
+                    self.assertEqual(ledger['authority'], initial_authority)
+                    self.assertNotEqual(ledger['stopped_config_sha256'], initial_config)
+                    self.assertEqual(ledger['stopped_config_sha256'], ledger['stopped_authority']['generated_config_sha256'])
+                    self.assertEqual(upgrade.sha(fixture.layout.path('/etc/sing-box/config.json')), ledger['stopped_config_sha256'])
+                    self.assertFalse(fixture.host.protected)
+                finally:
+                    fixture.doCleanups()
+
+    def test_arbitrary_config_between_preflight_and_snapshot_is_not_rebaselined(self):
+        self.host.corrupt_before_stop = True
+        with self.assertRaises(upgrade.Refused):
+            self.transaction.execute(self.manifest)
+        self.assertEqual(self.transaction.ledger['phase'], 'recovery-required')
+        self.assertTrue(self.host.protected)
+        self.assertNotIn('stopped_config_sha256', self.transaction.ledger)
+        self.assertNotIn(('ready', '1.1.0'), self.host.events)
 
     def test_checksum_failure_does_not_stop_services(self):
         self.manifest['archive_sha256'] = '0' * 64

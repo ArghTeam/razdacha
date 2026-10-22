@@ -223,7 +223,7 @@ def authority_generation(proof):
 def equal_authority(before, after):
     """Only paired source-pool catalog/time fields may change during recovery."""
     left, right = authority_generation(before), authority_generation(after)
-    evidence = {'sha256', 'raw_sha256', 'generation_raw', 'generated_config_sha256'}
+    evidence = {'sha256', 'raw_sha256', 'generation_raw', 'generated_config_sha256', 'raw_generated_config_sha256'}
     def strict_json(value):
         return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
     require(strict_json({key: value for key, value in before.items() if key not in evidence})
@@ -560,6 +560,9 @@ class Transaction:
                             manifest['schema'])
         authority = self.host.proof('authority')
         equal_authority(authority, authority)
+        require(authority.get('checker_sha256') == binary_hashes['sing-box']
+                and authority.get('checker_version') == manifest['runtime'],
+                'Authority proof used a different pinned checker')
         require(sha(self.layout.path('/etc/sing-box/config.json')) == generated_config_sha256(authority),
                 'Helper generator does not reproduce baseline runtime config; transition unsupported')
         wireguard = self.host.proof('wireguard')
@@ -591,7 +594,13 @@ class Transaction:
         self.host.guard(True)
         equal_policy(self.ledger['baseline'], db_state(self.layout.database))
         require(self.protected() == self.ledger['protected'], 'Protected files changed before snapshot')
-        equal_authority(self.ledger['authority'], self.host.proof('authority'))
+        stopped_authority = self.host.proof('authority')
+        equal_authority(self.ledger['authority'], stopped_authority)
+        require(stopped_authority.get('checker_sha256') == self.ledger['binary_hashes']['sing-box'],
+                'Stopped snapshot proof used a different checker')
+        stopped_config_sha256 = sha(self.layout.path('/etc/sing-box/config.json'))
+        require(stopped_config_sha256 == generated_config_sha256(stopped_authority),
+                'Stopped config is not the exact checked accepted authority')
         snapshot = self.operation / 'snapshot'
         snapshot.mkdir(mode=0o700)
         roots = self.layout.trees + self.layout.protected + self.layout.binaries + [self.layout.runtime]
@@ -608,6 +617,8 @@ class Transaction:
         os.rename(destination, state_copy / 'state.db')
         equal_policy(db_state(state_copy / 'state.db'), db_state(self.layout.database))
         self.ledger['baseline'] = db_state(state_copy / 'state.db')
+        self.ledger['stopped_authority'] = stopped_authority
+        self.ledger['stopped_config_sha256'] = stopped_config_sha256
         self.ledger['snapshot'] = {str(path): str(snapshot / str(index)) for index, path in enumerate(roots)}
         self.ledger['snapshot_fingerprints'] = {str(path): fingerprint(snapshot / str(index))
                                               for index, path in enumerate(roots)}
@@ -618,11 +629,13 @@ class Transaction:
         equal_policy(self.ledger['baseline'], db_state(self.layout.database))
         current_authority = self.host.proof('authority')
         equal_authority(self.ledger['authority'], current_authority)
+        require(current_authority.get('checker_sha256') == self.ledger['binary_hashes']['sing-box'],
+                'Authority proof checker changed')
         require(self.host.proof('wireguard') == self.ledger['wireguard'], 'WireGuard identity changed')
         require(self.protected() == self.ledger['protected'], 'Protected TLS/nginx/unit files changed')
         require(sha(self.layout.runtime) == self.ledger['binary_hashes']['sing-box'], 'Pinned runtime changed')
         expected_config = (generated_config_sha256(current_authority) if after_start
-                           else self.ledger['config_sha256'])
+                           else self.ledger['stopped_config_sha256'])
         require(sha(self.layout.path('/etc/sing-box/config.json')) == expected_config,
                 'Runtime configuration differs from its exact accepted generation')
         require(sha(self.layout.path('/usr/sbin/nginx')) == self.ledger['binary_hashes']['nginx'],

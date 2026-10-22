@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -23,7 +24,26 @@ import (
 // authorityProof retains exact private evidence as well as the previous canonical
 // digest. Acceptance compares generations in the controller; artifact verification
 // is repeated for every current proof, regardless of catalog-only differences.
-func authorityProof(dir string) (map[string]any, error) {
+func authorityProof(ctx context.Context, dir string) (out map[string]any, err error) {
+	checker, err := newPinnedChecker(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if pinErr := checker.verify(); pinErr != nil {
+			out = nil
+			err = errors.Join(err, pinErr)
+		}
+	}()
+	out, err = authorityProofWithChecker(ctx, dir, checker)
+	if err == nil {
+		out["checker_sha256"] = checker.digest
+		out["checker_version"] = checker.version
+	}
+	return out, err
+}
+
+func authorityProofWithChecker(ctx context.Context, dir string, checker singbox.Checker) (map[string]any, error) {
 	if _, err := os.Lstat(filepath.Join(dir, networkstate.BootstrapFile)); !errors.Is(err, os.ErrNotExist) {
 		return nil, errors.New("bootstrap authority is not supported")
 	}
@@ -45,18 +65,10 @@ func authorityProof(dir string) (map[string]any, error) {
 		}
 		count++
 	}
-	config, err := singbox.Generate(gen.Policy, func(url string) (singbox.PlainList, bool) {
-		list, ok := gen.Lists[url]
-		return singbox.PlainList{Domains: list.Domains, Subnets: list.Subnets, Native: list.Native}, ok
-	})
+	rawConfigSHA, checkedConfigSHA, err := checkedConfiguration(ctx, gen, checker, "")
 	if err != nil {
-		return nil, fmt.Errorf("generate committed runtime config: %w", err)
+		return nil, err
 	}
-	configBytes, err := singbox.Marshal(config)
-	if err != nil {
-		return nil, fmt.Errorf("marshal committed runtime config: %w", err)
-	}
-	configHash := sha256.Sum256(configBytes)
 	encoded, err := json.Marshal(gen)
 	if err != nil {
 		return nil, err
@@ -80,7 +92,7 @@ func authorityProof(dir string) (map[string]any, error) {
 	return map[string]any{
 		"version": 4, "sha256": hex.EncodeToString(canonicalHash[:]),
 		"native_sources": count, "raw_sha256": hex.EncodeToString(rawHash[:]),
-		"generation_raw": string(raw), "generated_config_sha256": hex.EncodeToString(configHash[:]),
+		"generation_raw": string(raw), "generated_config_sha256": checkedConfigSHA, "raw_generated_config_sha256": rawConfigSHA,
 	}, nil
 }
 

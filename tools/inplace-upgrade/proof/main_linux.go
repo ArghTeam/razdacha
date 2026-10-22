@@ -116,7 +116,7 @@ func command(args []string) (any, error) {
 		if len(args) != 1 {
 			break
 		}
-		return authorityProof(stateDir)
+		return authorityProof(ctx, stateDir)
 	case "wireguard":
 		if len(args) != 1 {
 			break
