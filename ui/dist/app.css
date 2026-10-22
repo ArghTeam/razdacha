@@ -559,10 +559,12 @@ input:focus, textarea:focus, select:focus { outline: 2px solid color-mix(in srgb
 .modal:has(.rule-form) .modal-body { overflow-y: auto; min-height: 0; padding: 0 24px; scroll-padding-block: 12px; }
 .rule-form { min-width: 0; display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr); gap: 0 var(--space-6); align-items: start; }
 .rule-identity, .rule-error { grid-column: 1 / -1; }
+.rule-error { grid-row: 1; }
+.rule-identity { grid-row: 2; }
 .rule-form .rule-identity { padding-block: var(--space-4); }
 .rule-identity > h3 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.rule-resources { grid-column: 1; grid-row: 2; }
-.rule-outcome { grid-column: 2; grid-row: 2; position: sticky; top: 0; min-width: 0; background: var(--bg-sunken); border: 1px solid var(--line); border-radius: var(--radius); }
+.rule-resources { grid-column: 1; grid-row: 3; }
+.rule-outcome { grid-column: 2; grid-row: 3; position: sticky; top: 0; min-width: 0; background: var(--bg-sunken); border: 1px solid var(--line); border-radius: var(--radius); }
 .rule-form .rule-action, .rule-form .rule-clients { padding: var(--space-4); background: transparent; }
 .rule-action .rule-choices, .rule-clients .rule-choices { gap: var(--space-2); }
 .rule-clients .rule-grid { grid-template-columns: minmax(0, 1fr); }

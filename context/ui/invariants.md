@@ -139,7 +139,9 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 
 - The rule dialog reads Name, Resources, Action, Clients in one primary body scroller.
   Desktop resources sit beside one grouped outcome/client pane; the pane stays together
-  during long-source browsing, with a persistent Save/Cancel footer and Apply reminder. Ordering and DNS explanations
+  during long-source browsing, with a persistent Save/Cancel footer and Apply reminder.
+  Validation and server errors occupy an explicit row above Name; revealing errors
+  never moves identity below the resource/outcome workspace. Ordering and DNS explanations
   are optional help. Client search/count and separate disabled/whole-Internet status
   retain fully wrapping identities. Catalog and selected-source review are compact
   disclosures with six-row pages and search; hidden pages retain checked inputs. Counts

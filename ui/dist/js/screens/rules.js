@@ -899,7 +899,7 @@ async function saveRule(id) {
   } catch (err) {
     if (!currentSession() || !isCurrentModal(revision)) return;
     btn.disabled = false;
-    btn.textContent = 'Save';
+    btn.textContent = 'Save changes';
     report(`Rule could not be saved: ${err.message}. Your draft is preserved; correct the problem and retry.`);
   }
 }

@@ -44,3 +44,8 @@ remain enabled. `go test ./ui`, runner unit checks, changed-module syntax checks
 `git diff --check` pass. Synthetic screenshots stay outside the repository. The
 checks establish frontend behavior, not installed networking or backend cookie timing.
 Root owns final independent review, versioning, release and staging deployment.
+
+
+Final review follow-up: explicit error/name/workspace grid rows preserve form order
+when validation or server errors appear. The design matrices exercise both errors
+at desktop and mobile widths, checking order, retained drafts and visible frame bounds.

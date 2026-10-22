@@ -66,6 +66,24 @@ async function frame(page, width) {
         assert.equal(await t.page.locator('#r-lists .rule-item:visible').count(), 1);
         assert.equal(await t.page.locator('#r-lists').evaluate(el => getComputedStyle(el).overflowY), 'visible');
         await shot(t.page, `${prefix}-rule-expanded`);
+        for (const errorKind of ['validation', 'save']) {
+          const before = t.journal.filter(entry => entry.key === 'PATCH /api/rules/work').length;
+          await t.page.fill('#r-name', errorKind === 'validation' ? '' : 'Retained name draft');
+          if (errorKind === 'save') t.fail('PATCH', '/api/rules/work', { error: 'Synthetic save rejection' }, 422);
+          await act(t, 'save-rule'); await t.page.locator('#r-error').waitFor({ state: 'visible' });
+          const positions = await t.page.evaluate(() => {
+            const rect = selector => { const b = document.querySelector(selector).getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; };
+            return { error: rect('#r-error'), name: rect('.rule-identity'), resources: rect('.rule-resources'), outcome: rect('.rule-outcome') };
+          });
+          assert(positions.error.bottom <= positions.name.top + 1, `${errorKind}: error displaced Name`);
+          assert(positions.name.bottom <= positions.resources.top + 1, `${errorKind}: Name moved below Resources`);
+          assert(positions.name.bottom <= positions.outcome.top + 1, `${errorKind}: Name moved below outcome`);
+          assert.equal(t.journal.filter(entry => entry.key === 'PATCH /api/rules/work').length - before, errorKind === 'validation' ? 0 : 1);
+          assert.equal(await t.page.inputValue('#r-name'), errorKind === 'validation' ? '' : 'Retained name draft');
+          assert.equal(await t.page.locator('[data-act="save-rule"]').innerText(), 'Save changes');
+          await frame(t.page, width); await shot(t.page, `${prefix}-rule-${errorKind}-error`);
+          t.recover('PATCH', '/api/rules/work');
+        }
         await t.page.keyboard.press('Escape');
         await t.navigate('peers'); await menu(t, 'peer', 'tablet', 'peer-details');
         assert(await t.page.isChecked('[name="client-route-mode"][value="tunnel"]'));
