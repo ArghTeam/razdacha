@@ -48,19 +48,19 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// issueSession создаёт сессию и ставит cookie.
-func (s *Server) issueSession(ctx context.Context, w http.ResponseWriter) error {
+// issueSession publishes a cookie only after the verified state is accepted.
+func (s *Server) issueSession(ctx context.Context, w http.ResponseWriter, state store.PasswordState) error {
 	token, err := newSessionToken()
 	if err != nil {
 		return err
 	}
 	now := s.now()
 	expires := now.Add(sessionTTL)
-	if err := s.store.CreateSession(ctx, store.Session{
+	if err := s.store.CreateVerifiedSession(ctx, store.Session{
 		TokenHash: hashToken(token),
 		CreatedAt: now,
 		ExpiresAt: expires,
-	}); err != nil {
+	}, state); err != nil {
 		return fmt.Errorf("создание сессии: %w", err)
 	}
 	http.SetCookie(w, s.sessionCookie(token, expires))
