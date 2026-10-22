@@ -706,7 +706,7 @@ export const actions = {
   'menu-tunnel': (id, button) => {
     const tunnel = tunnelById(id);
     if (!tunnel) return;
-    const toggle = { act: 'toggle-tunnel', id, label: tunnel.enabled === false ? 'Enable' : 'Disable' };
+    const toggle = { act: 'toggle-tunnel', id, label: tunnel.enabled === false ? 'Enable' : 'Disable', enabled: tunnel.enabled === false };
     openMenu(button, tunnelPool(tunnel)
       ? [{ act: 'pool-details', id, label: 'Details' }, { act: 'check-tunnel', id, label: 'Check HTTPS' }, { act: 'refresh-pool', id, label: 'Refresh catalog' }, toggle]
       : [
@@ -741,10 +741,11 @@ export const actions = {
     } finally { finishOperation(ctx); }
   },
 
-  'toggle-tunnel': async (id) => {
+  'toggle-tunnel': async (id, button) => {
     const tunnel = tunnelById(id);
-    if (!tunnel) return;
-    const enabled = tunnel.enabled === false;
+    const intent = button?.dataset.enabled;
+    if (!tunnel || !['true', 'false'].includes(intent)) return;
+    const enabled = intent === 'true';
     const ctx = beginOperation(`tunnel:${id}`);
     if (!ctx) return;
     try {

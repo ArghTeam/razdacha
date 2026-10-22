@@ -61,7 +61,13 @@ async function fixture(browser, options = {}) {
     await page.evaluate(async()=>{window.h={shell:await import('/js/shell.js'),tunnels:await import('/js/screens/tunnels.js'),peers:await import('/js/screens/peers.js'),api:await import('/js/api.js')};await h.peers.load();});
   } else await page.waitForFunction(() => window.fixtureReady);
   const invoke = async (action, id) => page.evaluate(({ action, id }) => {
-    const button = [...document.querySelectorAll('[data-act]')].find(button => button.dataset.act === action && (!id || button.dataset.id === id));
+    let button = [...document.querySelectorAll('[data-act]')].find(button => button.dataset.act === action && (!id || button.dataset.id === id));
+    if (action === 'toggle-tunnel' && !button) {
+      const anchor = [...document.querySelectorAll('[data-act="menu-tunnel"]')].find(element => element.dataset.id === id);
+      h.tunnels.actions['menu-tunnel'](id, anchor);
+      button = document.querySelector('#row-menu [data-act="toggle-tunnel"]');
+      h.shell.closeMenu();
+    }
     const token = (window.actionSequence || 0) + 1;
     window.actionSequence = token;
     window.actionPromises ||= {};

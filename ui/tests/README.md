@@ -104,3 +104,11 @@ replacement, and checks that detached menu operations show progress without dupl
 requests. `DESIGN_SCREENSHOT_DIR=<temporary directory>` exports synthetic screenshots.
 Rule and pool content uses bounded pages within the primary dialog body scroller;
 scroll tests verify that the last page and persistent actions remain reachable.
+
+
+`menu-polling.cjs` installs a controlled Chromium clock before application startup
+through the fixture's optional `beforeGoto` hook. It advances the real 15-second poll
+listener while using native pointer menu/Edit interactions. Cases retain open menus
+against poll admission and late successful/failed reads, verify fresh accepted data,
+resume refresh after close, and retain intentional navigation/expiry cleanup. The hook
+is development-only; runtime request interception remains restricted to the fixture.

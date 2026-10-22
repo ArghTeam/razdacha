@@ -281,7 +281,7 @@ export function openMenu(anchor, items) {
   anchor.setAttribute('aria-expanded', 'true');
   anchor.setAttribute('aria-controls', menu.id);
   menu.innerHTML = items.map((it) =>
-    `<button role="menuitem" tabindex="-1" data-act="${it.act}" data-id="${esc(it.id)}" class="${it.danger ? 'danger' : ''}"${it.disabled ? ' disabled aria-disabled="true"' : ''}>${esc(it.label)}</button>`).join('');
+    `<button role="menuitem" tabindex="-1" data-act="${it.act}" data-id="${esc(it.id)}" class="${it.danger ? 'danger' : ''}"${typeof it.enabled === 'boolean' ? ` data-enabled="${it.enabled}"` : ''}${it.disabled ? ' disabled aria-disabled="true"' : ''}>${esc(it.label)}</button>`).join('');
   document.body.appendChild(menu);
   const origin = focusOrigin(anchor);
   const place = () => {
