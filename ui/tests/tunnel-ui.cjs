@@ -40,12 +40,12 @@ async function parsed(page) { await page.locator('#t-parse.ok').waitFor(); }
       t.fail('POST', '/api/tunnels/parse', { error: 'Synthetic invalid input' }, 422); await t.page.fill('#t-raw', 'invalid synthetic input'); await t.page.locator('#t-parse.err').waitFor();
       await act(t, 'save-tunnel'); assert(!t.journal.some(e => e.key === 'POST /api/tunnels'));
       t.fail('POST', '/api/tunnels/parse', { error: 'Synthetic missing preview' }, 404); await t.page.fill('#t-raw', 'socks5://example.invalid:1080');
-      await t.page.waitForFunction(() => document.querySelector('#t-parse').classList.contains('idle') && document.querySelector('#t-parse').textContent.includes('POST /api/tunnels/parse'));
+      await t.page.waitForFunction(() => document.querySelector('#t-parse').classList.contains('idle') && document.querySelector('#t-parse').textContent.includes('Preview unavailable'));
       await act(t, 'save-tunnel'); assert(t.journal.some(e => e.key === 'POST /api/tunnels'));
     }, { screen: 'tunnels' });
     for (const status of [404, 503]) await tests.check(`raw configuration ${status} explains replacement without losing name`, async t => {
       await menu(t, 'tunnel', 'exit', 'edit-tunnel'); assert.equal(await t.page.inputValue('#t-name'), 'Demo exit'); assert(await t.page.locator('#t-raw').isEnabled());
-      const failure = await t.page.locator('#t-parse').innerText(); assert(failure.includes(status === 404 ? 'GET /api/tunnels/{id}/raw' : 'Synthetic raw read failure')); await t.page.fill('#t-raw', 'socks5://replacement.example.invalid:1080'); await parsed(t.page); await act(t, 'save-tunnel');
+      const failure = await t.page.locator('#t-parse').innerText(); assert(failure.includes(status === 404 ? 'Saved configuration is unavailable' : 'Synthetic raw read failure')); await t.page.fill('#t-raw', 'socks5://replacement.example.invalid:1080'); await parsed(t.page); await act(t, 'save-tunnel');
       assert.equal(t.journal.find(e => e.key === 'PATCH /api/tunnels/exit').body.raw, 'socks5://replacement.example.invalid:1080');
     }, { screen: 'tunnels', state: { tunnels: [exit] }, responses: { 'GET /api/tunnels/exit/raw': { status, contentType: 'application/json', body: '{"error":"Synthetic raw read failure"}' } } });
     await tests.check('WARP name-only editor never exposes or writes raw configuration', async t => {
@@ -57,8 +57,8 @@ async function parsed(page) { await page.locator('#t-parse.ok').waitFor(); }
       await act(t, 'check-tunnel', 'exit'); assert(t.journal.some(e => e.key === 'POST /api/tunnels/exit/check'));
       await act(t, 'refresh-pool', 'pool'); assert(t.journal.some(e => e.key === 'POST /api/tunnels/pool/refresh'));
       await menu(t, 'tunnel', 'exit', 'toggle-tunnel'); assert.equal(t.state.tunnels.find(item => item.id === 'exit').enabled, false); assert.equal(await t.page.evaluate(async () => (await import('/js/shell.js')).state.tunnels.find(item => item.id === 'exit').enabled), false);
-      t.page.once('dialog', dialog => dialog.dismiss()); await menu(t, 'tunnel', 'exit', 'delete-tunnel'); assert(!t.journal.some(e => e.key === 'DELETE /api/tunnels/exit'));
-      t.page.once('dialog', dialog => dialog.accept()); await menu(t, 'tunnel', 'exit', 'delete-tunnel'); assert(!t.state.tunnels.some(item => item.id === 'exit'));
+      await menu(t, 'tunnel', 'exit', 'delete-tunnel'); await t.page.locator('.modal-foot [data-act="close-modal"]').click(); assert(!t.journal.some(e => e.key === 'DELETE /api/tunnels/exit'));
+      await menu(t, 'tunnel', 'exit', 'delete-tunnel'); await t.page.locator('[data-confirm-accept]').click(); await t.settle(); assert(!t.state.tunnels.some(item => item.id === 'exit'));
       await act(t, 'add-warp'); assert(t.state.tunnels.some(item => item.source === 'warp')); assert.equal(await t.page.locator('[data-act="add-warp"]').count(), 0);
       assert.equal(t.journal.filter(e => e.key === 'POST /api/tunnels/warp').length, 1);
     }, { screen: 'tunnels', state: { tunnels: [exit, pool] } });
@@ -78,11 +78,11 @@ async function parsed(page) { await page.locator('#t-parse.ok').waitFor(); }
       assert.match(await t.page.locator('#pool-details').innerText(), status === 404 ? /unavailable/ : /Synthetic pool detail failure/);
       t.recover('GET', '/api/tunnels/pool/pool'); await act(t, 'refresh-pool-details', 'pool'); assert(await t.page.locator('#pool-details > .parse-result.idle').isVisible()); assert.equal(await t.page.locator('#pool-details .err').count(), 0);
     }, { screen: 'tunnels', state: { tunnels: [pool] } });
-    for (const theme of ['light', 'dark']) for (const width of [1440, 1024, 375, 320]) await tests.check(`${theme} ${width} pool nested scroll ends and focused footer`, async t => {
+    for (const theme of ['light', 'dark']) for (const width of [1440, 1024, 375, 320]) await tests.check(`${theme} ${width} pool single scroll end, search and focused footer`, async t => {
       await menu(t, 'tunnel', 'pool', 'pool-details');
       for (const summary of await t.page.locator('.pool-fold > summary').all()) await summary.click();
       assert.equal(await t.page.locator('.pool-list').count(), 4);
-      await scrollEnds(t.page, '.pool-list', { requireOverflow: true }); await scrollEnds(t.page, '#modal');
+      assert.equal(await t.page.locator('.pool-list').evaluateAll(els => els.filter(el => /auto|scroll/.test(getComputedStyle(el).overflowY)).length), 0); await scrollEnds(t.page, '#modal .modal-body', { requireOverflow: true }); await t.page.fill('#pool-search', 'live-1'); assert.match(await t.page.locator('#pool-search-count').innerText(), /of 100 servers/); await t.page.fill('#pool-search', '');
       await t.page.locator('[data-act="refresh-pool-details"]').focus(); await visibleFocus(t.page, '[data-act="refresh-pool-details"]');
       assert.equal(await t.page.evaluate(() => document.documentElement.scrollWidth), width);
       await capture(t.page, `pool-${theme}-${width}-all-scroll-ends`, 'stress');

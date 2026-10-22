@@ -122,7 +122,7 @@ async function close(t, mode = 'escape') {
       await t.page.locator('#t-raw').focus(); await visibleFocus(t.page, '#t-raw'); await close(t, 'footer');
       await menu(t, 'tunnel', 'exit', 'edit-tunnel'); await t.page.locator('#t-parse.ok').waitFor(); await capture(t.page, `${prefix}-edit-tunnel`); await close(t, 'header');
       await menu(t, 'tunnel', 'pool', 'pool-details'); for (const summary of await t.page.locator('.pool-fold > summary').all()) await summary.click();
-      await scrollEnds(t.page, '.pool-list'); await t.page.locator('[data-act="refresh-pool-details"]').focus(); await visibleFocus(t.page, '[data-act="refresh-pool-details"]'); await capture(t.page, `${prefix}-pool-details`); await close(t);
+      await scrollEnds(t.page, '#modal .modal-body'); await t.page.locator('[data-act="refresh-pool-details"]').focus(); await visibleFocus(t.page, '[data-act="refresh-pool-details"]'); await capture(t.page, `${prefix}-pool-details`); await close(t);
       await t.navigate('diag'); await t.page.locator('[data-act="rerun-diag"]').click(); await t.settle(); assert.match(await t.page.locator('#toasts').innerText(), /Diagnostic checks completed/);
       await t.logout(); await t.login(); assert(await t.page.locator('#app').isVisible());
     }, { theme, viewport: { width, height: width < 500 ? 844 : 1000 }, state: normalState });

@@ -327,3 +327,15 @@ functional whole-app QA, hosted CI and primary-controlled merge/synchronization 
 separate gates. See [249](../../tasks/done/249-ui-remediation-verification.md).
 
 - Issue 218/166: label tunnel latency as HTTPS and expose inconclusive/historical, runtime DNS and unknown transport observations.
+
+
+## 2026-10-23 — Unified dashboard design system (#280)
+
+Consolidated client/tunnel/rule operations into one shared vertical-more menu per row,
+including rule movement and tunnel checks. Added shared control/spacing/dialog tokens,
+compact inventory, a wide rule resources/outcome workspace with state-preserving pages,
+searchable pool details and persistent Settings section navigation. Shared in-app
+confirmations replace native rule/tunnel deletion prompts. Existing client configuration,
+modal/session, async operation and independent settings-save lifetimes remain intact.
+Design contract and synthetic browser acceptance live in docs/ui-design-system.md and
+ui/tests/design-system.cjs. Validation details are recorded in the task and PR.

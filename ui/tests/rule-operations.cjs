@@ -41,23 +41,22 @@ const rule = (id, extra = {}) => ({ id, name: `Example ${id}`, enabled: true, pr
       const method = operation === 'duplicate-rule' ? 'POST' : operation === 'delete-rule' ? 'DELETE' : 'PATCH';
       const endpoint = operation === 'duplicate-rule' ? '/api/rules' : '/api/rules/r1';
       t.fail(method, endpoint, { error: 'Synthetic inventory action rejected' }, 422);
-      t.page.on('dialog', dialog => dialog.accept());
-      const invoke = () => operation === 'toggle-rule' ? act(t, operation, 'r1') : menu(t, 'rule', 'r1', operation);
-      await invoke(); assert.equal(t.state.rules.length, 1); assert.equal(t.state.rules[0].enabled, true); assert.deepEqual((await t.snapshot()).rules.map(rule => ({ id: rule.id, enabled: rule.enabled })), [{ id: 'r1', enabled: true }]); assert.equal(await t.page.locator('[data-act="edit-rule"]').count(), 1); assert.equal(await t.page.locator('[data-act="toggle-rule"][data-id="r1"]').getAttribute('aria-checked'), 'true'); assert.match((await t.snapshot()).toasts, /Synthetic inventory action rejected/);
+      const invoke = async () => { await menu(t, 'rule', 'r1', operation); if (operation === 'delete-rule') { await t.page.locator('[data-confirm-accept]').click(); await t.settle(); } };
+      await invoke(); assert.equal(t.state.rules.length, 1); assert.equal(t.state.rules[0].enabled, true); assert.deepEqual((await t.snapshot()).rules.map(rule => ({ id: rule.id, enabled: rule.enabled })), [{ id: 'r1', enabled: true }]); assert.equal(await t.page.locator('[data-act="menu-rule"]').count(), 1); assert.match(await t.page.locator('.row').innerText(), /Enabled/); assert.match((await t.snapshot()).toasts, /Synthetic inventory action rejected/);
       t.recover(method, endpoint); await invoke();
       if (operation === 'delete-rule') assert.equal(t.state.rules.length, 0);
       else if (operation === 'toggle-rule') assert.equal(t.state.rules[0].enabled, false);
       else assert.equal(t.state.rules.length, 2);
-      const current = await t.snapshot(); assert(current.dirty); assert.deepEqual(current.rules.map(rule => ({ id: rule.id, enabled: rule.enabled })), t.state.rules.map(rule => ({ id: rule.id, enabled: rule.enabled }))); assert.equal(await t.page.locator('[data-act="edit-rule"]').count(), t.state.rules.length);
+      const current = await t.snapshot(); assert(current.dirty); assert.deepEqual(current.rules.map(rule => ({ id: rule.id, enabled: rule.enabled })), t.state.rules.map(rule => ({ id: rule.id, enabled: rule.enabled }))); assert.equal(await t.page.locator('[data-act="menu-rule"]').count(), t.state.rules.length);
     }, { screen: 'rules', state: { rules: [rule('r1')] } });
     await tests.check('delete cancellation never sends DELETE', async t => {
-      t.page.on('dialog', dialog => dialog.dismiss()); await menu(t, 'rule', 'r1', 'delete-rule');
+      await menu(t, 'rule', 'r1', 'delete-rule'); assert.equal(await t.page.locator('[data-act="close-modal"][autofocus]').evaluate(el => el === document.activeElement), true); await t.page.locator('.modal-foot [data-act="close-modal"]').click();
       assert(!t.journal.some(entry => entry.method === 'DELETE')); assert.equal(t.state.rules.length, 1);
     }, { screen: 'rules', state: { rules: [rule('r1')] } });
     await tests.check('order boundaries, complete payload and failed-order rollback', async t => {
-      assert(await t.page.locator('[data-act="rule-up"][data-id="r1"]').isDisabled()); assert(await t.page.locator('[data-act="rule-down"][data-id="r2"]').isDisabled());
+      await act(t, 'menu-rule', 'r1'); assert(await t.page.locator('#row-menu [data-act="rule-up"]').isDisabled()); await t.page.keyboard.press('Escape'); await act(t, 'menu-rule', 'r2'); assert(await t.page.locator('#row-menu [data-act="rule-down"]').isDisabled()); await t.page.keyboard.press('Escape');
       t.fail('PUT', '/api/rules/order', { error: 'Synthetic order rejected' }, 503); await act(t, 'rule-down', 'r1');
-      assert.deepEqual(await t.page.locator('[data-act="edit-rule"]').evaluateAll(els => els.map(el => el.dataset.id)), ['r1', 'r2']);
+      assert.deepEqual(await t.page.locator('[data-act="menu-rule"]').evaluateAll(els => els.map(el => el.dataset.id)), ['r1', 'r2']);
       t.recover('PUT', '/api/rules/order'); await act(t, 'rule-down', 'r1'); assert.deepEqual(t.state.rules.map(r => r.id), ['r2', 'r1']);
       assert.deepEqual(t.journal.filter(entry => entry.key === 'PUT /api/rules/order').at(-1).body, { ids: ['r2', 'r1'] });
     }, { screen: 'rules', state: { rules: [rule('r1'), rule('r2', { priority: 1 })] } });

@@ -53,7 +53,7 @@ promising heap erasure or immunity to delayed cookie expiry. A dataset marker al
 does not prove visible rendering. Keep case-specific coverage and inconclusive
 observations explicit in the [completed specification](../../tasks/done/216-clear-ui-config-secrets.md).
 
-- Client inventory has exactly one Details entry per row. The unified dialog keeps
+- Client, tunnel and rule inventories each have exactly one trailing vertical-more menu per row. All operations live in the shared body-mounted menu; rule movement has disabled boundary states. Read-only state and configured routes remain visible. The unified dialog keeps
   name/enabled state and Internet routing immediately discoverable, with server-owned
   WireGuard configuration in a separate disclosure. Creation reveals that disclosure
   and its loading/ready/retry state without hiding the handoff below the first view.
@@ -137,12 +137,15 @@ observations explicit in the [completed specification](../../tasks/done/216-clea
 
 ## Rule editor integrity
 
-- The rule dialog reads Name, Clients, Resources, Action in one primary body scroller,
-  with a persistent Save/Cancel footer and Apply reminder. Ordering and DNS explanations
+- The rule dialog reads Name, Resources, Action, Clients in one primary body scroller.
+  Desktop resources sit beside one grouped outcome/client pane; the pane stays together
+  during long-source browsing, with a persistent Save/Cancel footer and Apply reminder.
+  Validation and server errors occupy an explicit row above Name; revealing errors
+  never moves identity below the resource/outcome workspace. Ordering and DNS explanations
   are optional help. Client search/count and separate disabled/whole-Internet status
   retain fully wrapping identities. Catalog and selected-source review are compact
-  disclosures; counts and unavailable-source retention warnings remain discoverable
-  when closed. Existing URL sources remain outside the catalog disclosures.
+  disclosures with six-row pages and search; hidden pages retain checked inputs. Counts
+  and unavailable-source retention warnings remain discoverable when closed. Existing URL sources remain outside the catalog disclosures.
 - Tunnel selection has a physically associated label. Advanced WARP controls are
   optional and open for existing chain references, including unavailable references;
   changing to Direct/Block still clears the saved chain through the existing payload.
@@ -197,3 +200,24 @@ observations, and expose runtime-resolver DNS separately. Transport remains unkn
 a successful HTTPS observation does not promise every protocol, client or pool member.
 Manual check completion carries the additive signals into current inventory under the
 existing session/interaction guards. ADR 0031 defines backend scope and freshness.
+
+## Unified visual system
+
+- The [design system](../../docs/ui-design-system.md) defines spacing, typography,
+  semantic status colors, 40-pixel regular controls and 44-pixel narrow/coarse-pointer
+  targets. Text and icon buttons share height; each vertical-more trigger has a square
+  hit area. Light and dark themes retain identical geometry.
+- Main content is bounded at 1240 pixels. Compact confirmations, regular editors and
+  wide workspaces use shared tiers. Dialog header/footer stay outside one primary
+  body scroller; small screens use nearly the full viewport without horizontal overflow.
+- Rule source, selected-source and client pages hide rows without deleting or filtering
+  saved selections. Search applies across all pages. All checked inputs remain part of
+  Save, including unavailable sources and hidden pages. Rule outcome and client scope
+  share one desktop pane, preserving the mobile semantic reading order.
+- Tunnel server details use search and one primary dialog scroller, with grouped
+  observed states. Pool rows never infer health for disabled or unmeasured servers.
+- Settings section navigation remains visible during body scrolling. Independent
+  section saves, retained drafts and secret/delivery boundaries remain unchanged.
+- Shared destructive confirmation identifies the target and focuses Cancel. Closing,
+  Escape, replacement and session dismissal cancel unconfirmed intent; confirmed
+  operations retain their existing single-flight and initiating-session checks.

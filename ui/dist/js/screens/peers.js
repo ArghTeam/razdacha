@@ -7,7 +7,7 @@ import { beginInventoryRead as beginRuleInventoryRead } from './rules.js';
 import {
   state, peerById, tunnelById, closeModal, toast, openModal, modalShell,
   currentModalRevision, isCurrentModal, onModalCleanup,
-  notImplemented, refresh, markDirty,
+  notImplemented, refresh, markDirty, openMenu,
 } from '../shell.js';
 import { $, esc, bytes, isOnline, download } from '../util.js';
 
@@ -52,12 +52,11 @@ export function view() {
         <div class="client-identity">
           <div class="client-name"><span class="dot ${on ? 'on' : 'off'}" aria-hidden="true"></span><h2>${esc(p.name)}</h2></div>
           <div class="mono row-meta">${esc(p.address)}</div>
-          <div class="row-meta">${activity}</div>
-          <div class="row-meta client-traffic">↓ ${bytes(p.rx_bytes)} · ↑ ${bytes(p.tx_bytes)}</div>
+          <div class="row-meta">${activity} <span class="client-traffic">· ↓ ${bytes(p.rx_bytes)} · ↑ ${bytes(p.tx_bytes)}</span></div>
         </div>
         <div class="client-route"><div class="client-label">Configured route</div>${routingSummary(p)}</div>
         <div class="row-actions client-actions">
-          <button class="btn btn-sm" data-act="peer-details" data-id="${esc(p.id)}" aria-label="Details for client ${esc(p.name)}">Details</button>
+          <button class="icon-btn more-btn" data-act="menu-peer" data-id="${esc(p.id)}" aria-label="Actions for client ${esc(p.name)}" aria-haspopup="menu" aria-expanded="false">⋮</button>
         </div>
       </article>`;
   }).join('');
@@ -481,7 +480,14 @@ async function copyClientConfig() {
 export const actions = {
   'add-peer': modalAddPeer,
   'create-peer': createPeer,
+  'menu-peer': (id, button) => openMenu(button, [
+    { act: 'peer-details', id, label: 'Settings' },
+    { act: 'peer-configuration', id, label: 'WireGuard configuration' },
+    { act: 'peer-delete-preview', id, label: 'Delete…', danger: true },
+  ]),
   'peer-details': id => modalPeerDetails(id),
+  'peer-configuration': id => modalPeerDetails(id, true),
+  'peer-delete-preview': id => { modalPeerDetails(id); inspectClientDelete(); },
   'save-client-details': saveClientDetails,
   'retry-client-tunnels': () => loadClientTunnels(),
   'retry-client-config': () => loadClientConfig(),
@@ -500,8 +506,8 @@ export const actions = {
 };
 
 function routingSummary(peer) {
-  if (!peer.egress_tunnel_id) return '<div class="client-route-name">Shared rules</div><div class="row-meta">Shared resource rules; unmatched traffic goes direct.</div>';
-  if (state.missing.has('tunnels') || state.missing.has('peer-tunnels')) return '<div class="client-route-name">Selected exit</div><div class="row-meta">Exit details unavailable. Open Details to retry.</div>';
+  if (!peer.egress_tunnel_id) return '<div class="client-route-name">Shared rules</div><div class="row-meta">Otherwise direct</div>';
+  if (state.missing.has('tunnels') || state.missing.has('peer-tunnels')) return '<div class="client-route-name">Selected exit</div><div class="row-meta">Exit details unavailable. Open settings to retry.</div>';
   const tunnel = tunnelById(peer.egress_tunnel_id);
   const unavailable = !tunnel || !tunnel.enabled || emptyPool(tunnel);
   return `<div class="client-route-name">Internet → ${esc(tunnel ? tunnel.name : 'Missing tunnel')}</div><div class="row-meta${unavailable ? ' client-route-blocked' : ''}">${unavailable ? 'Blocked target · no direct fallback' : 'IPv4 TCP/UDP + DNS · no direct fallback'}</div>`;

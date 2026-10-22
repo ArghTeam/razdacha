@@ -18,9 +18,9 @@ const { fixture, exampleTunnel, examplePool, syntheticRaw } = require('./tunnel-
     await t.invoke('add-tunnel');await t.page.locator('#t-name').fill(name);await t.page.locator('#t-raw').fill(syntheticRaw);await t.page.locator('#t-parse.ok').waitFor();
   };
   const startRow = async (t, action, id) => {
-    if(action==='delete-tunnel')t.page.once('dialog', dialog => dialog.accept());
+
     if(action==='refresh-pool-details'){await t.invoke('pool-details',id);await t.page.locator('#pool-details .parse-result').waitFor();}
-    return t.invoke(action,id);
+    const token=await t.invoke(action,id);if(action==='delete-tunnel')await t.page.locator('[data-confirm-accept]').click();return token;
   };
   try {
     await run('whole-app delayed Clients inventory cannot undo an accepted Tunnels toggle',async t=>{
@@ -40,7 +40,7 @@ const { fixture, exampleTunnel, examplePool, syntheticRaw } = require('./tunnel-
     },{application:true});
     await run('connected row button is restored after unrelated modal open and close',async t=>{
       const key='POST /api/tunnels/t1/check';t.holds.add(key);const token=await t.invoke('check-tunnel','t1');await t.waitHeld(key);await t.invoke('add-tunnel');await t.page.evaluate(()=>h.shell.closeModal());await t.reply(key,{error:'Obsolete check error'},500);await t.done(token);
-      assert.equal(await t.page.locator('[data-act="check-tunnel"][data-id="t1"]').isEnabled(),true);assert.equal((await t.state()).toasts,'');
+      await t.page.locator('[data-act="menu-tunnel"][data-id="t1"]').click();assert.equal(await t.page.locator('#row-menu [data-act="check-tunnel"]').isEnabled(),true);await t.page.keyboard.press('Escape');assert.equal((await t.state()).toasts,'');
     });
     await run('shared startup read token rejects a snapshot after accepted mutation',async t=>{
       await t.page.evaluate(async()=>{window.startupRead=h.tunnels.beginInventoryRead();window.startupSnapshot=await h.api.tunnels.list();});await t.invoke('toggle-tunnel','t1');await t.done();const accepted=await t.page.evaluate(()=>window.startupRead.accept(window.startupSnapshot));assert.equal(accepted,false);assert.equal((await t.state()).tunnels.find(item=>item.id==='t1').enabled,false);
@@ -112,7 +112,7 @@ const { fixture, exampleTunnel, examplePool, syntheticRaw } = require('./tunnel-
       assert.equal(state.dirty,['toggle-tunnel','delete-tunnel'].includes(action));
     });
     await run('row check is single-flight and releases its gate after error',async t=>{
-      const key='POST /api/tunnels/t1/check';t.holds.add(key);const token=await t.invoke('check-tunnel','t1');await t.waitHeld(key);await t.invoke('check-tunnel','t1');assert.equal(calls(t,key).length,1);await t.reply(key,{error:'Synthetic check failure'},500);await t.done(token);assert.equal(await t.page.locator('[data-act="check-tunnel"][data-id="t1"]').isEnabled(),true);
+      const key='POST /api/tunnels/t1/check';t.holds.add(key);const token=await t.invoke('check-tunnel','t1');await t.waitHeld(key);await t.invoke('check-tunnel','t1');assert.equal(calls(t,key).length,1);await t.reply(key,{error:'Synthetic check failure'},500);await t.done(token);await t.page.locator('[data-act="menu-tunnel"][data-id="t1"]').click();assert.equal(await t.page.locator('#row-menu [data-act="check-tunnel"]').isEnabled(),true);await t.page.keyboard.press('Escape');
       t.holds.delete(key);await t.invoke('check-tunnel','t1');await t.done();assert.equal(calls(t,key).length,2);assert.equal((await t.state()).tunnels.find(item=>item.id==='t1').status,'up');
     });
     await run('inventory coalesces unchanged loads and ignores a snapshot superseded by mutation',async t=>{

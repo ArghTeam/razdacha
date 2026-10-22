@@ -5,14 +5,14 @@
 import * as api from '../api.js';
 import {
   state, tunnelById, peerById, listTitle, toast, toastError,
-  openModal, closeModal, modalShell, openMenu, notImplemented, refresh, markDirty,
+  openModal, closeModal, modalShell, openMenu, confirmAction, notImplemented, refresh, markDirty,
   currentModalRevision, isCurrentModal,
 } from '../shell.js';
 import {
-  $, $$, esc, lines, badLines, validCidr, plural, since, stamp,
+  $, $$, esc, lines, badLines, validCidr, since, stamp,
 } from '../util.js';
 
-export const title = 'Правила';
+export const title = 'Rules';
 
 let rulesRevision = 0;
 const inventoryActions = new Map();
@@ -63,10 +63,10 @@ async function reloadAfterDuplicate(ctx) {
 
 const head = () => `
   <div class="screen-head">
-    <h1>Правила</h1>
+    <h1>Rules</h1>
     <div class="spacer"></div>
-    <button class="btn btn-primary" data-act="add-rule">+ Добавить</button>
-    <div class="screen-sub">Проверяются сверху вниз, первое совпадение выигрывает.</div>
+    <button class="btn btn-primary" data-act="add-rule">+ Add rule</button>
+    <div class="screen-sub">First matching shared rule wins. Whole-Internet client exits take precedence.</div>
   </div>`;
 
 /* --- мёртвая цель ---------------------------------------------------------
@@ -84,8 +84,8 @@ const head = () => `
     Ложных срабатываний быть не должно: `servers_alive` у пула бывает null,
     когда Clash API недоступен, и это «не знаем», а не «нет живых». */
 function tunnelTrouble(t) {
-  if (!t) return 'туннель удалён';
-  if (!t.enabled) return 'туннель выключен';
+  if (!t) return 'Missing tunnel';
+  if (!t.enabled) return 'Tunnel disabled';
   const pool = t.pool;
   if (pool && (pool.servers_total === 0 || pool.servers_alive === 0)) return 'Pool has no usable servers';
   return '';
@@ -112,13 +112,13 @@ function ruleTrouble(r) {
   const links = [{
     t: tunnelById(r.tunnel_id),
     dead: (why) => why,
-    silent: 'Канал не отвечает',
+    silent: 'No response from tunnel',
   }];
   if (r.via_tunnel_id) {
     links.push({
       t: tunnelById(r.via_tunnel_id),
-      dead: (why) => `второе звено цепи: ${why}`,
-      silent: 'Канал второго звена цепи не отвечает',
+      dead: (why) => `Second link: ${why}`,
+      silent: 'No response from second link',
     });
   }
   for (const link of links) {
@@ -138,25 +138,10 @@ function ruleTrouble(r) {
 function troubleNote(trouble) {
   if (!trouble) return '';
   if (trouble.level === 'dead') {
-    return `
-      <div class="rule-dead-note">
-        <span>⚠</span>
-        <span>Правило не работает: ${esc(trouble.text)}. Трафик по нему отбрасывается,
-        а не уходит напрямую — так утечка не подменяет туннель (ADR 0013).</span>
-      </div>`;
+    return `<div class="rule-dead-note"><span>⚠</span><span>${esc(trouble.text)} · Matching traffic blocked; no direct fallback.</span></div>`;
   }
-  /* Времени нет — так и пишем: выдуманная дата хуже её отсутствия. Пустым
-     `last_ok` выглядит и туннель, который не отвечал ни разу. */
-  const when = trouble.okAt
-    ? `Последний раз он отвечал ${esc(stamp(trouble.okAt))} — ${esc(since(trouble.okAt))}.`
-    : 'Когда он отвечал в последний раз, сказать нечем: удачных проверок по нему не записано.';
-  return `
-    <div class="rule-quiet-note">
-      <span>◌</span>
-      <span>${esc(trouble.text)}: последняя проверка туннеля до цели не дошла. ${when}
-      Правило при этом работает — трафик уходит в туннель и теряется уже там,
-      а не идёт напрямую и не отбрасывается.</span>
-    </div>`;
+  const when = trouble.okAt ? ` Last success ${esc(stamp(trouble.okAt))}.` : ' No successful observation recorded.';
+  return `<div class="rule-quiet-note"><span>◌</span><span>${esc(trouble.text)}.${when} Traffic still uses the tunnel; no direct fallback.</span></div>`;
 }
 
 /* --- состояние списков ----------------------------------------------------
@@ -166,9 +151,9 @@ function troubleNote(trouble) {
    «этот список ведёт сам sing-box, демон его не качает». */
 const LIST_STATE = {
   updated: { word: '', cls: '' },
-  failed: { word: 'не обновился', cls: 'list-bad' },
-  never: { word: 'ни разу не обновлялся', cls: 'list-cold' },
-  unknown: { word: 'состояние неизвестно', cls: 'list-cold' },
+  failed: { word: 'Refresh failed', cls: 'list-bad' },
+  never: { word: 'Never refreshed', cls: 'list-cold' },
+  unknown: { word: 'State unknown', cls: 'list-cold' },
   core: { word: '', cls: '' },
 };
 
@@ -184,7 +169,7 @@ function listStates(r) {
 /** Подпись состояния для чипа: коротко и без наведения. */
 function listMark(st) {
   if (!st) return '';
-  if (st.state === 'updated') return `обновлён ${since(st.updated_at)}`;
+  if (st.state === 'updated') return `Updated ${since(st.updated_at)}`;
   return LIST_STATE[st.state] ? LIST_STATE[st.state].word : '';
 }
 
@@ -193,16 +178,16 @@ function listHint(st, name) {
   if (!st) return '';
   switch (st.state) {
     case 'updated':
-      return `${name}: подсети обновлены ${stamp(st.updated_at)}`;
+      return `${name}: subnets updated ${stamp(st.updated_at)}`;
     case 'failed':
-      return `${name}: последняя попытка обновления не удалась — ${st.error}`
-        + (st.updated_at ? `. В деле версия от ${stamp(st.updated_at)}.` : '. Содержимого нет вовсе.');
+      return `${name}: last refresh failed — ${st.error}`
+        + (st.updated_at ? `. Using version from ${stamp(st.updated_at)}.` : '. No source content available.');
     case 'never':
-      return `${name}: демон ещё ни разу не обновлял этот список`;
+      return `${name}: source has never been refreshed`;
     case 'unknown':
-      return `${name}: планировщик списков не работает, состояние неизвестно`;
+      return `${name}: refresh scheduler unavailable; state unknown`;
     case 'core':
-      return `${name}: домены качает сам sing-box, у демона состояния по нему нет`;
+      return `${name}: runtime-managed domains; refresh state unavailable`;
     default:
       return '';
   }
@@ -273,7 +258,7 @@ export function view() {
     /* Цепь показывается целиком: из имени одного туннеля не видно, сколько за
        правилом прыжков, а второе звено меняет адрес, который увидит ресурс. */
     const via = r.via_tunnel_id
-      ? ` → ${esc((tunnelById(r.via_tunnel_id) || {}).name || 'туннель удалён')}`
+      ? ` → ${esc((tunnelById(r.via_tunnel_id) || {}).name || 'Missing tunnel')}`
       : '';
     /* Недоступная цель красится прямо в строке: правило с ней не течёт мимо
        туннеля, а отбрасывает трафик (ADR 0013), и снаружи это выглядит как
@@ -284,11 +269,11 @@ export function view() {
     const troubleMark = dead ? '⚠ ' : (trouble ? '◌ ' : '');
     const troubleTone = dead ? 'err' : (trouble ? 'warn' : 'accent');
     const dest = r.action === 'direct'
-      ? '<span class="badge">напрямую</span>'
+      ? '<span class="badge">Direct</span>'
       : r.action === 'block'
-        ? '<span class="badge err">блокировать</span>'
+        ? '<span class="badge err">Block</span>'
         : `<span class="badge ${troubleTone}">${troubleMark}→ ${
-          esc((tunnelById(r.tunnel_id) || {}).name || 'туннель удалён')}${via}</span>`;
+          esc((tunnelById(r.tunnel_id) || {}).name || 'Missing tunnel')}${via}</span>`;
 
     const states = listStates(r);
     const chip = (text, key, extra = '') =>
@@ -304,12 +289,13 @@ export function view() {
         hint ? ` title="${esc(hint)}"` : ''}>${esc(name)}${
         mark ? `<span class="chip-state">${esc(mark)}</span>` : ''}</span>`;
     };
-    const chips = [
+    const resourceChips = [
       ...(r.community_lists || []).map((k) => listChip(listTitle(k), k)),
       ...(r.domains || []).map((d) => chip(d, d)),
       ...(r.subnets || []).map((n) => chip(n, n)),
-      ...(r.remote_lists || []).map((url) => listChip('внешний список', url)),
-    ].join('');
+      ...(r.remote_lists || []).map((url) => listChip('URL source', url)),
+    ];
+    const chips = resourceChips.slice(0, 3).join('') + (resourceChips.length > 3 ? `<span class="chip">+${resourceChips.length - 3} more</span>` : '');
 
     /* Текст ошибки источника — строкой под чипами, а не только в подсказке:
        «почему правило перестало ловить» читается без наведения. */
@@ -320,15 +306,15 @@ export function view() {
         <span>${badLists.map((st) =>
     `${esc(st.key ? listTitle(st.key) : st.url)} — ${esc(st.error)}`).join('; ')}${
   badLists.some((st) => st.updated_at)
-    ? '. Правило работает на прошлой версии списка.'
-    : '. Содержимого нет вовсе — эти условия правило сейчас не ловит.'}</span>
+    ? '. The previous source version remains in use.'
+    : '. No source content is available; these conditions do not match traffic.'}</span>
       </div>` : '';
 
     const troubleLine = troubleNote(trouble);
 
     const scope = r.peer_scope === 'selected'
-      ? ((r.peer_ids || []).map((id) => (peerById(id) || {}).name || '?').join(', ') || 'No selected clients')
-      : 'все клиенты';
+      ? ((r.peer_ids || []).slice(0, 2).map((id) => (peerById(id) || {}).name || '?').join(', ') + ((r.peer_ids || []).length > 2 ? ` +${r.peer_ids.length - 2} more` : '') || 'No selected clients')
+      : 'All clients';
 
     const note = shadow.length ? `
       <div class="overlap-note">
@@ -342,29 +328,21 @@ export function view() {
     return `
       <div class="row${r.enabled ? '' : ' dim'}${dead ? ' rule-dead' : ''}${
   trouble && !dead ? ' rule-quiet' : ''}">
-        <div class="rule-order">
-          <button class="ord-btn" data-act="rule-up" data-id="${esc(r.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Move rule ${esc(r.name)} up">▲</button>
-          <button class="ord-btn" data-act="rule-down" data-id="${esc(r.id)}" ${i === state.rules.length - 1 ? 'disabled' : ''} aria-label="Move rule ${esc(r.name)} down">▼</button>
-        </div>
         <span class="rule-num">${i + 1}</span>
         <div class="row-main">
-          <div class="row-title">${esc(r.name)} ${dest}</div>
-          <div class="row-meta">${esc(scope)}${r.resolve_real_ip ? ' · реальный IP' : ''}</div>
-          <div class="chips">${chips || '<span class="chip">условий нет — правило не попадёт в конфиг</span>'}</div>
+          <div class="row-title">${esc(r.name)} ${dest} <span class="badge">${r.enabled ? 'Enabled' : 'Disabled'}</span></div>
+          <div class="row-meta">${esc(scope)}${r.resolve_real_ip ? ' · Real IP' : ''}</div>
+          <div class="chips">${chips || '<span class="chip">No resources · inactive</span>'}</div>
           ${r.inactive_reason === 'no_selected_peers' ? '<div class="hint">Inactive: assign clients, then explicitly enable and Apply.</div>' : ''}${troubleLine}${listNote}${note}
         </div>
         <div class="row-actions">
-          <button class="toggle" role="switch" aria-checked="${Boolean(r.enabled)}" data-act="toggle-rule" data-id="${esc(r.id)}" aria-label="Enable rule ${esc(r.name)}"></button>
-          <button class="btn btn-sm" data-act="edit-rule" data-id="${esc(r.id)}" aria-label="Edit rule ${esc(r.name)}">Изменить</button>
-          <div class="menu-wrap">
-            <button class="btn btn-sm btn-ghost" data-act="menu-rule" data-id="${esc(r.id)}" aria-label="Actions for rule ${esc(r.name)}" aria-haspopup="menu" aria-expanded="false">⋮</button>
-          </div>
+          <button class="icon-btn more-btn" data-act="menu-rule" data-id="${esc(r.id)}" aria-label="Actions for rule ${esc(r.name)}" aria-haspopup="menu" aria-expanded="false">⋮</button>
         </div>
       </div>`;
   }).join('');
 
   const listsNote = state.missing.has('community')
-    ? '<p class="screen-sub" style="margin-top:10px">Каталог готовых списков пока недоступен: GET /api/lists/community не реализован. Свои домены и подсети работают.</p>'
+    ? '<p class="screen-sub" style="margin-top:10px">Community catalog unavailable. Manual domains and subnets remain available.</p>'
     : '';
 
   return head() + probeView() + `
@@ -405,20 +383,15 @@ function emptyView() {
   if (!liveTunnels().length) {
     return `<div class="empty empty-start">${lead}
       <div class="empty-offer">
-        <div class="empty-offer-text">Направлять пока некуда: ни одного включённого туннеля.
-          Стартовый набор (${esc(names)}) можно собрать одной кнопкой, но сперва нужен туннель —
-          правило с выключенным туннелем не пускает трафик напрямую, а отбрасывает его.</div>
-        <button class="btn" data-act="go-tunnels">Перейти к туннелям</button>
+        <div class="empty-offer-text">Enable a tunnel before creating the starter rule for ${esc(names)}. Disabled exits reject matching traffic; they do not fall back to direct.</div>
+        <button class="btn" data-act="go-tunnels">Go to tunnels</button>
       </div></div>`;
   }
 
   return `<div class="empty empty-start">${lead}
     <div class="empty-offer">
-      <div class="empty-offer-text">Если начинать не с нуля: стартовый набор отправит в туннель
-        ${esc(names)}. Форма откроется заполненной — туннель выбираете вы, лишнее снимаете,
-        название меняете. Правило получится обычным: его можно выключить, поправить и удалить,
-        и в силу оно войдёт после «Применить».</div>
-      <button class="btn btn-primary" data-act="preset-rule">Собрать стартовое правило</button>
+      <div class="empty-offer-text">Start with ${esc(names)}. Review sources and choose an exit before saving. Apply activates the new rule.</div>
+      <button class="btn btn-primary" data-act="preset-rule">Create starter rule</button>
     </div></div>`;
 }
 
@@ -448,16 +421,13 @@ function probeView() {
         <label for="probe-domain">Shared rules: domain check</label>
         <input type="search" id="probe-domain" class="probe-input" autocomplete="off" spellcheck="false"
           placeholder="youtube.com" value="${esc(probe.domain)}" data-enter="probe-run"
-          aria-label="Домен для проверки">
+          aria-label="Domain to check">
         <button class="btn" data-act="probe-run" ${busy ? 'disabled' : ''}>${
-  probe.busy ? 'Спрашиваю…' : 'Куда уйдёт'}</button>
+  probe.busy ? 'Checking…' : 'Check route'}</button>
         <button class="btn" data-act="reach-run" ${busy ? 'disabled' : ''}>${
-  reach.busy ? 'Проверяю…' : 'Доступность напрямую'}</button>
+  reach.busy ? 'Checking…' : 'Check direct access'}</button>
       </div>
-      <div class="probe-hint"><b>Scope: shared rules.</b> Per-client whole-Internet exits are not evaluated here. <b>Куда уйдёт</b> — отвечает работающий sing-box: его правила
-        маршрутизации и его же резолвер; непримененные правки в ответ не попадают.
-        <b>Доступность напрямую</b> — демон сам идёт к домену с адреса сервера и говорит, открывается
-        ли тот в лоб или отдаёт геоблок (403/451, Cloudflare 1020).</div>
+      <details class="probe-hint"><summary>About these checks</summary><p><b>Scope: shared rules.</b> Per-client whole-Internet exits are not evaluated here. Route checks use active runtime rules and DNS. Direct access checks use the gateway's direct connection; saved changes are excluded until Apply.</p></details>
       ${probeResult()}
       ${reachResult()}
     </div>`;
@@ -476,7 +446,7 @@ function reachResult() {
     : p.class === 'unreachable' ? 'warn' : 'accent';
   const code = p.status ? ` <span class="mono">HTTP ${esc(String(p.status))}</span>` : '';
   return `<div class="probe-out">
-      <div class="probe-domain mono">${esc(p.domain)} — доступность напрямую${code}</div>
+      <div class="probe-domain mono">${esc(p.domain)} — direct access${code}</div>
       <div class="probe-verdict ${tone}">${esc(p.verdict)}</div>
     </div>`;
 }
@@ -495,8 +465,8 @@ function probeResult() {
      маршрутизации, а не поломка DNS. Причина приходит с сервера текстом и
      показывается как есть. */
   const noAddr = p.resolve_error
-    ? `<div class="probe-addr${p.refused ? ' refused' : ''}">адреса нет: ${esc(p.resolve_error)}</div>`
-    : '<div class="probe-addr">адреса нет: резолвер ядра ничего не вернул</div>';
+    ? `<div class="probe-addr${p.refused ? ' refused' : ''}">No address: ${esc(p.resolve_error)}</div>`
+    : '<div class="probe-addr">No address returned by runtime resolver</div>';
   const addrs = p.addresses && p.addresses.length
     ? `<div class="probe-addr mono">${esc(p.addresses.join(', '))}${p.fakeip ? ' — FakeIP' : ''}</div>`
     : noAddr;
@@ -623,25 +593,9 @@ function modalRule(id, seed = null) {
         <div class="rule-priority"><span>Priority ${position} of ${total} · first match wins</span>
           <details class="rule-help"><summary>Ordering help</summary>
             <p>Rules are checked from top to bottom for shared-rule clients. Earlier matches take precedence.
-              ${id ? 'Use the arrows in the rule inventory to change priority.' : 'New rules are added last; use the inventory arrows to move them after saving.'}
+              ${id ? 'Use Move up or Move down in the rule menu to change priority.' : 'New rules are added last; use the rule menu to move them after saving.'}
               Whole-Internet client exits take precedence over shared rules.</p>
           </details>
-        </div>
-      </section>
-
-      <section class="rule-section" aria-labelledby="r-clients-heading">
-        <h3 id="r-clients-heading">Clients</h3>
-        <fieldset class="rule-choices"><legend>Apply this shared rule to</legend>
-          <label class="radio-pill"><input type="radio" name="scope" value="all" ${r.peer_scope === 'selected' ? '' : 'checked'}> All clients</label>
-          <label class="radio-pill"><input type="radio" name="scope" value="selected" ${r.peer_scope === 'selected' ? 'checked' : ''}> Selected clients</label>
-        </fieldset>
-        <p class="hint">Whole-Internet exits override shared rules. Disabled clients do not gain access from this selection.</p>
-        ${orphan ? '<p class="rule-status">Inactive: no selected clients. Assignment keeps this rule disabled. Enable it explicitly in the rule inventory, then Apply.</p>' : ''}
-        <div id="r-peer-selection" ${r.peer_scope === 'selected' ? '' : 'hidden'}>
-          <div class="rule-list-tools"><label for="r-peer-q">Search clients</label><span id="r-peer-count" class="rule-count" aria-live="polite"></span></div>
-          <input type="search" class="rule-search" id="r-peer-q" placeholder="Client name" autocomplete="off">
-          <div class="list-grid rule-grid rule-peers" id="r-peers">${peersHtml}</div>
-          <p class="rule-none" id="r-peers-empty" ${state.peers.length ? 'hidden' : ''}>${state.peers.length ? 'No clients match this search.' : 'No clients available. Add a client before assigning this rule.'}</p>
         </div>
       </section>
 
@@ -662,7 +616,7 @@ function modalRule(id, seed = null) {
           <p class="rule-none" id="r-lists-empty" hidden>No sources match this search.</p>
         </details>
         ${(r.remote_lists || []).length ? `<div class="rule-remote"><h4>API-managed URL sources · ${r.remote_lists.length}</h4>
-          <p class="hint">Read-only here. Save preserves these sources; use the API to change them.</p>
+          <p class="hint">Read-only sources. Save preserves them unchanged.</p>
           <ul>${r.remote_lists.map((url) => `<li><code>${esc(url)}</code></li>`).join('')}</ul></div>` : ''}
         <div class="rule-pair rule-manual">
           <div class="field"><label for="r-domains">Domains</label>
@@ -681,6 +635,7 @@ function modalRule(id, seed = null) {
         </details>
       </section>
 
+      <aside class="rule-outcome" aria-label="Rule outcome and clients">
       <section class="rule-section rule-action" aria-labelledby="r-action-heading">
         <h3 id="r-action-heading">Action</h3>
         <fieldset class="rule-choices"><legend>For matching traffic</legend>
@@ -700,6 +655,23 @@ function modalRule(id, seed = null) {
         </details>` : ''}
         <div class="rule-overlap" id="r-overlap" hidden></div>
       </section>
+      <section class="rule-section rule-clients" aria-labelledby="r-clients-heading">
+        <h3 id="r-clients-heading">Clients</h3>
+        <fieldset class="rule-choices"><legend>Apply this shared rule to</legend>
+          <label class="radio-pill"><input type="radio" name="scope" value="all" ${r.peer_scope === 'selected' ? '' : 'checked'}> All clients</label>
+          <label class="radio-pill"><input type="radio" name="scope" value="selected" ${r.peer_scope === 'selected' ? 'checked' : ''}> Selected clients</label>
+        </fieldset>
+        <p class="hint">Whole-Internet exits override this rule. Disabled clients remain disabled.</p>
+        ${orphan ? '<p class="rule-status">Inactive: no selected clients. Assignment keeps this rule disabled. Enable it explicitly in the rule inventory, then Apply.</p>' : ''}
+        <div id="r-peer-selection" ${r.peer_scope === 'selected' ? '' : 'hidden'}>
+          <div class="rule-list-tools"><label for="r-peer-q">Search clients</label><span id="r-peer-count" class="rule-count" aria-live="polite"></span></div>
+          <input type="search" class="rule-search" id="r-peer-q" placeholder="Client name" autocomplete="off">
+          <div class="list-grid rule-grid rule-peers" id="r-peers">${peersHtml}</div>
+          <p class="rule-none" id="r-peers-empty" ${state.peers.length ? 'hidden' : ''}>${state.peers.length ? 'No clients match this search.' : 'No clients available. Add a client before assigning this rule.'}</p>
+        </div>
+      </section>
+
+      </aside>
     </div>`,
   `<span class="rule-save-note">Save records changes. Apply activates routing.</span>
     <button class="btn" data-act="close-modal">Cancel</button>
@@ -723,7 +695,7 @@ function modalRule(id, seed = null) {
       hint.textContent = trouble
         ? (trouble.level === 'dead' ? 'Target unavailable or disabled: matching traffic is blocked after Apply. There is no direct fallback.'
           : 'The last health check failed. Traffic still uses the tunnel; there is no direct fallback.')
-        : action === 'tunnel' ? 'Matching traffic uses this tunnel after Apply. Health does not prove client connectivity; there is no direct fallback.'
+        : action === 'tunnel' ? 'Uses this exit after Apply. No direct fallback; health does not prove client connectivity.'
           : action === 'direct' ? 'Matching traffic goes directly from this server, using its public IP.'
             : 'Matching connections are rejected. These resources will not open.';
       if (viaSel) {
@@ -737,17 +709,38 @@ function modalRule(id, seed = null) {
     viaSel?.addEventListener('change', syncAction);
     syncAction();
 
-    const filterRows = (query, list, empty) => {
-      const needle = query.value.trim().toLowerCase();
-      let visible = 0;
-      $$('.rule-item', list).forEach((row) => {
-        row.hidden = !row.dataset.title.includes(needle);
-        if (!row.hidden) visible++;
-      });
-      empty.hidden = visible > 0;
+    // Paging hides rows, never removes checked inputs or changes their saved authority.
+    const paginate = (list, query, empty, label) => {
+      const controls = document.createElement('div');
+      controls.className = 'rule-pagination';
+      controls.innerHTML = `<button type="button" class="btn" aria-label="Previous ${label} page">Previous</button><span role="status" aria-live="polite"></span><button type="button" class="btn" aria-label="Next ${label} page">Next</button>`;
+      list.after(controls);
+      const [previous, next] = controls.querySelectorAll('button');
+      previous.setAttribute('aria-controls', list.id);
+      next.setAttribute('aria-controls', list.id);
+      let page = 0;
+      const size = 6;
+      const update = () => {
+        const needle = query?.value.trim().toLowerCase() || '';
+        const rows = [...list.querySelectorAll('.rule-item, .rule-chip')];
+        const matches = rows.filter(row => !needle || row.dataset.title.includes(needle));
+        page = Math.max(0, Math.min(page, Math.ceil(matches.length / size) - 1));
+        const visible = new Set(matches.slice(page * size, (page + 1) * size));
+        for (const row of rows) row.hidden = !visible.has(row);
+        if (empty) empty.hidden = matches.length > 0;
+        controls.hidden = matches.length <= size;
+        controls.querySelector('span').textContent = `${page * size + 1}–${Math.min((page + 1) * size, matches.length)} of ${matches.length}`;
+        previous.disabled = page === 0;
+        next.disabled = (page + 1) * size >= matches.length;
+      };
+      previous.addEventListener('click', () => { page--; update(); });
+      next.addEventListener('click', () => { page++; update(); });
+      query?.addEventListener('input', () => { page = 0; update(); });
+      update();
+      return update;
     };
     const peerQuery = m.querySelector('#r-peer-q');
-    peerQuery.addEventListener('input', () => filterRows(peerQuery, m.querySelector('#r-peers'), m.querySelector('#r-peers-empty')));
+    paginate(m.querySelector('#r-peers'), peerQuery, m.querySelector('#r-peers-empty'), 'clients');
     const syncPeers = () => {
       m.querySelector('#r-peer-selection').hidden = m.querySelector('input[name="scope"]:checked').value !== 'selected';
       const selected = $$('input[name="peer"]:checked', m).map((element) => peerById(element.value)).filter(Boolean);
@@ -759,6 +752,7 @@ function modalRule(id, seed = null) {
     $$('input[name="scope"], input[name="peer"]', m).forEach((element) => element.addEventListener('change', syncPeers));
 
     const picked = m.querySelector('#r-picked');
+    const pagePicked = paginate(m.querySelector('#r-picked-chips'), null, null, 'selected sources');
     const renderPicked = () => {
       const selected = $$('input[name="list"]:checked', m).map((element) => element.value);
       const unavailable = selected.filter((key) => !catalogKeys.has(key));
@@ -768,6 +762,7 @@ function modalRule(id, seed = null) {
         `<button type="button" class="rule-chip" data-key="${esc(key)}" aria-label="Remove ${esc(listTitle(key))}">
           <span>${esc(listTitle(key))}${!catalogKeys.has(key) ? ' · catalog unavailable' : ''}</span><span aria-hidden="true">×</span></button>`).join('');
       m.querySelector('#r-catalog-count').textContent = `${selected.length} selected${unavailable.length ? ` · ${unavailable.length} unavailable` : ''}`;
+      pagePicked();
       const warning = m.querySelector('#r-unavailable-note');
       warning.hidden = !unavailable.length;
       warning.textContent = `${unavailable.length} selected source${unavailable.length === 1 ? ' is' : 's are'} absent from the catalog. Retained until explicitly removed; review selected sources to inspect them.`;
@@ -783,7 +778,7 @@ function modalRule(id, seed = null) {
       (picked.hidden ? m.querySelector('#r-catalog > summary') : picked.querySelector('summary')).focus();
     });
     const listQuery = m.querySelector('#r-list-q');
-    listQuery?.addEventListener('input', () => filterRows(listQuery, m.querySelector('#r-lists'), m.querySelector('#r-lists-empty')));
+    paginate(m.querySelector('#r-lists'), listQuery, m.querySelector('#r-lists-empty'), 'sources');
     $$('input[name="list"]', m).forEach((element) => element.addEventListener('change', () => { renderPicked(); renderOverlap(); }));
 
     function renderOverlap() {
@@ -904,7 +899,7 @@ async function saveRule(id) {
   } catch (err) {
     if (!currentSession() || !isCurrentModal(revision)) return;
     btn.disabled = false;
-    btn.textContent = 'Save';
+    btn.textContent = 'Save changes';
     report(`Rule could not be saved: ${err.message}. Your draft is preserved; correct the problem and retry.`);
   }
 }
@@ -943,11 +938,11 @@ export const actions = {
     const preset = presetLists();
     const target = liveTunnels()[0];
     if (!preset.length || !target) {
-      toast('Стартовый набор сейчас собрать не из чего', 'err');
+      toast('No starter sources are available', 'err');
       return;
     }
     modalRule(null, {
-      name: 'Стартовый набор',
+      name: 'Starter resources',
       tunnel_id: target.id,
       community_lists: preset.map((l) => l.key),
     });
@@ -975,11 +970,19 @@ export const actions = {
     } finally { finishInventoryAction(ctx); }
   },
 
-  'menu-rule': (id, btn) => openMenu(btn, [
-    { act: 'edit-rule', id, label: 'Изменить' },
-    { act: 'duplicate-rule', id, label: 'Дублировать' },
-    { act: 'delete-rule', id, label: 'Удалить', danger: true },
-  ]),
+  'menu-rule': (id, btn) => {
+    const rule = state.rules.find(item => item.id === id);
+    if (!rule) return;
+    const index = state.rules.indexOf(rule);
+    openMenu(btn, [
+      { act: 'edit-rule', id, label: 'Edit' },
+      { act: 'toggle-rule', id, label: rule.enabled ? 'Disable' : 'Enable' },
+      { act: 'duplicate-rule', id, label: 'Duplicate' },
+      { act: 'rule-up', id, label: 'Move up', disabled: index === 0 },
+      { act: 'rule-down', id, label: 'Move down', disabled: index === state.rules.length - 1 },
+      { act: 'delete-rule', id, label: 'Delete…', danger: true },
+    ]);
+  },
 
   'duplicate-rule': async (id) => {
     const rule = state.rules.find((item) => item.id === id);
@@ -1003,7 +1006,9 @@ export const actions = {
 
   'delete-rule': async (id) => {
     const rule = state.rules.find((item) => item.id === id);
-    if (!rule || !confirm(`Delete rule “${rule.name}”?`)) return;
+    if (!rule) return;
+    const currentSession = api.session.guard();
+    if (!await confirmAction('Delete rule', rule.name, 'This cannot be undone. Saved routing changes need Apply.') || !currentSession() || state.rules.find(item => item.id === id) !== rule) return;
     const ctx = beginInventoryAction(`rule:${id}`);
     if (!ctx) return;
     try {

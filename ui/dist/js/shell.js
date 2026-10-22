@@ -242,6 +242,23 @@ export function modalShell(title, body, foot) {
     <div class="modal-foot">${foot}</div>`;
 }
 
+/** In-app destructive confirmation; closing or replacement cancels pending intent. */
+export function confirmAction(title, identity, consequence) {
+  return new Promise(resolve => {
+    openModal(modalShell(title,
+      `<div class="confirm-content"><p>Delete <strong>${esc(identity)}</strong>?</p><p class="hint">${esc(consequence)}</p></div>`,
+      '<button class="btn" data-act="close-modal" autofocus>Cancel</button><button class="btn btn-danger" data-confirm-accept>Delete permanently</button>'), modal => {
+      const revision = currentModalRevision();
+      onModalCleanup(() => resolve(false));
+      modal.querySelector('[data-confirm-accept]').addEventListener('click', () => {
+        if (!isCurrentModal(revision)) return;
+        resolve(true);
+        closeModal();
+      }, { once: true });
+    });
+  });
+}
+
 /* --- меню «⋮» ------------------------------------------------------------- */
 
 /** Отступ меню от кнопки и от края экрана. */
@@ -264,7 +281,7 @@ export function openMenu(anchor, items) {
   anchor.setAttribute('aria-expanded', 'true');
   anchor.setAttribute('aria-controls', menu.id);
   menu.innerHTML = items.map((it) =>
-    `<button role="menuitem" tabindex="-1" data-act="${it.act}" data-id="${esc(it.id)}" class="${it.danger ? 'danger' : ''}">${esc(it.label)}</button>`).join('');
+    `<button role="menuitem" tabindex="-1" data-act="${it.act}" data-id="${esc(it.id)}" class="${it.danger ? 'danger' : ''}"${it.disabled ? ' disabled aria-disabled="true"' : ''}>${esc(it.label)}</button>`).join('');
   document.body.appendChild(menu);
   const origin = focusOrigin(anchor);
   const place = () => {
@@ -307,7 +324,7 @@ export function openMenu(anchor, items) {
   window.addEventListener('resize', place);
   menu.addEventListener('keydown', keydown);
   document.addEventListener('focusin', focusin);
-  const first = menu.querySelector('button');
+  const first = menu.querySelector('button:not(:disabled)');
   if (first) { first.tabIndex = 0; first.focus(); }
 }
 

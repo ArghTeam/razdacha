@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -18,10 +18,10 @@
       <span class="brand-mark" aria-hidden="true"></span>
       <span class="brand-name">razdacha</span>
     </div>
-    <p class="gate-sub">Панель закрыта паролем. Он выдан установщиком вместе с первым QR-кодом.</p>
+    <p class="gate-sub">Sign in with the panel password provided during setup.</p>
 
     <div class="field">
-      <label for="password">Пароль</label>
+      <label for="password">Password</label>
       <!-- method/action не заданы намеренно: отправка идёт только через fetch,
            поэтому пароль не может уехать в строку адреса и в историю браузера. -->
       <input type="password" id="password" name="password" autocomplete="current-password"
@@ -30,7 +30,7 @@
 
     <div class="gate-error" id="login-error" hidden></div>
 
-    <button class="btn btn-primary gate-submit" type="submit" id="login-submit">Войти</button>
+    <button class="btn btn-primary gate-submit" type="submit" id="login-submit">Sign in</button>
   </form>
 </section>
 
