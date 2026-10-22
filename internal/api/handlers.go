@@ -2,9 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/ArghTeam/razdacha/internal/store"
 )
 
 // routes собирает маршруты.
@@ -136,7 +139,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok, err := s.checkPassword(r, req.Password)
+	state, ok, err := s.checkPassword(r, req.Password)
 	if err != nil {
 		s.log.Error("проверка пароля", "ошибка", err)
 		writeError(w, s.log, http.StatusInternalServerError, codeInternal, "Внутренняя ошибка")
@@ -150,34 +153,34 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.throttle.success(key)
-	if err := s.issueSession(r.Context(), w); err != nil {
+	if err := s.issueSession(r.Context(), w, state); err != nil {
+		if errors.Is(err, store.ErrPasswordChanged) {
+			writeError(w, s.log, http.StatusUnauthorized, codeUnauthorized, "Password changed; sign in again")
+			return
+		}
 		s.log.Error("выдача сессии", "ошибка", err)
 		writeError(w, s.log, http.StatusInternalServerError, codeInternal, "Внутренняя ошибка")
 		return
 	}
+	s.throttle.success(key)
 	s.log.Info("вход в панель", "адрес", key)
 	writeJSON(w, s.log, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// checkPassword считает argon2id под семафором: параллельные проверки иначе
-// выедают память быстрее, чем блокировка успевает сработать.
-func (s *Server) checkPassword(r *http.Request, password string) (bool, error) {
-	encoded, err := s.store.PasswordHash(r.Context())
-	if err != nil {
-		return false, fmt.Errorf("чтение пароля панели: %w", err)
-	}
-
+// checkPassword limits concurrent Argon2 verification and captures its reset state.
+func (s *Server) checkPassword(r *http.Request, password string) (store.PasswordState, bool, error) {
 	select {
 	case s.verify <- struct{}{}:
 		defer func() { <-s.verify }()
 	case <-r.Context().Done():
-		return false, r.Context().Err()
+		return store.PasswordState{}, false, r.Context().Err()
 	}
-
-	// Испорченный хеш (ErrBadHash) — тоже ошибка, а не «неверный пароль»:
-	// пускать нельзя, но и списывать это на пользователя нельзя.
-	return VerifyPassword(encoded, password)
+	state, err := s.store.PasswordState(r.Context())
+	if err != nil {
+		return store.PasswordState{}, false, fmt.Errorf("read panel password: %w", err)
+	}
+	ok, err := VerifyPassword(state.Hash, password)
+	return state, ok, err
 }
 
 // handleLogout удаляет сессию и гасит cookie.

@@ -33,3 +33,5 @@ description: "SQLite: схема четырёх сущностей, миграц
 - `docs/02-data-model.md` — схема и обоснование решений по ней.
 
 - Peer egress references are nullable, transactionally validated and protected by FK RESTRICT. Disabled targets remain selected. API-style peer patches read/write only supplied fields transactionally so rename/toggle cannot erase a concurrent exit choice. Backups retain the choice; existing clients migrate to shared rules (ADR 0028).
+
+- Password reset atomically rotates a private random authentication generation and deletes sessions. Login captures hash and generation together after Argon2 admission, then inserts only if both still match in one SQLite statement. This prevents stale and same-hash/ABA verification from issuing sessions across independent connections/processes. Legacy hashes without a generation remain supported until reset; settings APIs neither expose nor overwrite authentication state. A reset after insertion revokes that session even if its cookie is delivered later. Already authorized requests are not retroactively canceled (#276, ADR 0009).
