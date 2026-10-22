@@ -12,7 +12,10 @@ automatic pool catalog fields in both database and committed-authority acceptanc
 Complete original raw authority/checksums remain private evidence, and every current
 native artifact is verified independently. Duplicate keys fail preflight; all other
 fields and JSON types remain strict. Daemon behavior and runtime config checks are
-unchanged. Historical failed-operation ledgers/snapshots are not rewritten.
+unchanged. Exact current generated-config hashing handles enabled-pool output only
+after strict authority acceptance; baseline reproducibility is a pre-stop gate and
+pre-start hashes remain pinned. Checker-pruned configs remain unsupported.
+Historical failed-operation ledgers/snapshots are not rewritten.
 **Validation:** Generation-shaped forward and rollback startup regressions, strict
 adversarial policy/list/native cases, original hash-only negative control, and Linux
 helper evidence/artifact tests. See [task 271](../../tasks/271-pool-authority-upgrade.md).

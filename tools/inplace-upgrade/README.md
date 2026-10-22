@@ -113,6 +113,21 @@ rewritten to normalize the baseline. Every current native artifact is independen
 verified on every proof. Duplicate JSON keys are refused during preflight before
 services stop. This does not approve pending Apply edits.
 
+The helper also hashes the exact `Generate`/`Marshal` result from committed policy
+and frozen list contents. Preflight refuses before stopping services unless this
+output exactly reproduces the installed baseline config, bounding generator and
+rollback compatibility for the actual snapshot. Setup and pre-start rollback checks
+retain the original config hash. After startup only, an allowed pool catalog refresh
+may change config bytes: actual config must exactly equal the current accepted
+generation's generated hash, after strict authority comparison. Arbitrary config
+changes remain rejected; no runtime config fields are ignored or normalized.
+
+Raw generation must reproduce the runtime config without checker-driven pool-member
+pruning (ADR 0019). A baseline produced by such pruning, unsupported generator changes
+or another config preparation step is outside this procedure and is refused during
+preflight. A later unprovable generated config remains a guarded recovery failure;
+this tool does not invent a broader exception to make the upgrade pass.
+
 This proof format requires the matching controller/helper pair. Do not replace a
 helper inside an old unfinished operation or reinterpret its historical ledger;
 complete any such recovery through its separately reviewed incident procedure.

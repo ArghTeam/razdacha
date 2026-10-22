@@ -59,11 +59,16 @@ def committed_generation():
     }
 
 
+def synthetic_generated_config(generation):
+    return json.dumps({'policy': generation['policy'], 'lists': generation['lists']}, sort_keys=True)
+
+
 def authority_evidence(generation):
     raw = json.dumps(generation, sort_keys=True)
     digest = hashlib.sha256(raw.encode()).hexdigest()
     return {'version': 4, 'sha256': digest, 'native_sources': 1,
-            'raw_sha256': digest, 'generation_raw': raw}
+            'raw_sha256': digest, 'generation_raw': raw,
+            'generated_config_sha256': hashlib.sha256(synthetic_generated_config(generation).encode()).hexdigest()}
 
 
 class FakeHost:
@@ -77,6 +82,7 @@ class FakeHost:
         self.fail_old_readiness = False
         self.fail_setup = False
         self.change_config = False
+        self.corrupt_started_config = False
         self.catalog_refresh = False
         self.fault_stop = False
 
@@ -175,6 +181,9 @@ class FakeHost:
                             tunnel['pool'] = [{'url': 'synthetic-refreshed-key'}]
                             tunnel['pool_updated_at'] = 'refreshed-time'
                     upgrade.private_json(path, generation)
+                    self.layout.path('/etc/sing-box/config.json').write_text(synthetic_generated_config(generation))
+                if self.corrupt_started_config and upgrade.db_state(self.layout.database)['installed'] == '1.1.0':
+                    self.layout.path('/etc/sing-box/config.json').write_text('arbitrary changed config')
 
 
 class Fixture(unittest.TestCase):
@@ -196,6 +205,7 @@ class Fixture(unittest.TestCase):
             path.write_text('1\n')
         database(self.layout.database)
         upgrade.private_json(self.layout.state / 'applied-network.json', committed_generation())
+        self.layout.path('/etc/sing-box/config.json').write_text(synthetic_generated_config(committed_generation()))
         self.layout.backup_parent.mkdir(parents=True)
         self.operation = self.layout.backup_parent / 'inplace-test-operation'
         self.operation.mkdir(mode=0o700)
@@ -223,6 +233,8 @@ class Fixture(unittest.TestCase):
         self.assertEqual(self.transaction.ledger['phase'], 'accepted')
         self.assertFalse(self.host.protected)
         self.assertNotEqual(self.transaction.ledger['authority']['sha256'], self.host.proof('authority')['sha256'])
+        self.assertNotEqual(self.transaction.ledger['config_sha256'], upgrade.sha(self.layout.path('/etc/sing-box/config.json')))
+        self.assertEqual(upgrade.sha(self.layout.path('/etc/sing-box/config.json')), self.host.proof('authority')['generated_config_sha256'])
         saved = Path(self.transaction.ledger['snapshot'][str(self.layout.state)])
         self.assertEqual(upgrade.db_state(saved / 'state.db')['installed'], '1.0.0')
         self.assertTrue((self.operation / 'status.json').stat().st_mode & 0o777 == 0o600)
@@ -274,6 +286,22 @@ class Fixture(unittest.TestCase):
                 finally:
                     fixture.doCleanups()
 
+    def test_incompatible_baseline_generator_is_refused_before_stop(self):
+        self.layout.path('/etc/sing-box/config.json').write_text('different generator or checker-pruned config')
+        with self.assertRaises(upgrade.Refused):
+            self.transaction.execute(self.manifest)
+        self.assertFalse(any(event[0] == 'stop' for event in self.host.events))
+
+    def test_arbitrary_post_start_config_is_rejected_despite_allowed_pool_refresh(self):
+        self.host.catalog_refresh = True
+        self.host.corrupt_started_config = True
+        with self.assertRaises(upgrade.Refused):
+            self.transaction.execute(self.manifest)
+        self.assertEqual(self.transaction.ledger['phase'], 'rolled-back')
+        actual = upgrade.sha(self.layout.path('/etc/sing-box/config.json'))
+        self.assertEqual(actual, self.host.proof('authority')['generated_config_sha256'])
+        self.assertFalse(self.host.protected)
+
     def test_checksum_failure_does_not_stop_services(self):
         self.manifest['archive_sha256'] = '0' * 64
         with self.assertRaises(upgrade.Refused):
@@ -313,7 +341,7 @@ class Fixture(unittest.TestCase):
             self.transaction.execute(self.manifest)
         self.assertEqual(self.transaction.ledger['phase'], 'rolled-back')
         self.assertNotIn(('ready', '1.1.0'), self.host.events)
-        self.assertEqual(self.layout.path('/etc/sing-box/config.json').read_text(), 'known committed config')
+        self.assertEqual(self.layout.path('/etc/sing-box/config.json').read_text(), synthetic_generated_config(committed_generation()))
 
     def test_failed_post_publication_readiness_guards_before_restoring(self):
         self.host.fail_readiness = True
@@ -336,6 +364,7 @@ class Fixture(unittest.TestCase):
         before = self.transaction.ledger['authority']
         after = self.host.proof('authority')
         self.assertNotEqual(before['sha256'], after['sha256'])
+        self.assertNotEqual(before['generated_config_sha256'], after['generated_config_sha256'])
         self.assertEqual(json.loads(before['generation_raw']), json.loads(baseline_raw))
         saved = Path(self.transaction.ledger['snapshot'][str(self.layout.state)])
         self.assertEqual((saved / 'applied-network.json').read_bytes(), baseline_raw)

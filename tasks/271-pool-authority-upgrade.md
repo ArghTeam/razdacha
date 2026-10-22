@@ -47,3 +47,26 @@ fields/types. Original evidence and historical snapshots are never mutated.
 - Focused Python matrix, Linux helper cross-build/static checks and independent
   review are required before delivery. No live connection/deployment result is
   asserted by this implementation record.
+
+## Enabled-pool runtime output boundary
+
+An enabled pool catalog refresh can legitimately change actual runtime config as
+well as committed authority. The helper therefore provides the exact hash of
+`Generate`/`Marshal` on the artifact-verified committed policy and frozen lists.
+Preflight requires that this generator reproduces baseline config bytes exactly;
+a mismatch fails before any stop. Setup/pre-start rollback still require the
+original baseline config hash. Post-start acceptance first compares strict authority
+with the paired-pool exception, then requires actual config to equal the current
+accepted generation's exact generated hash. This is not config normalization.
+
+Raw generation does not simulate ADR 0019 checker-driven pool-member pruning.
+Checker-pruned or otherwise unreproducible baselines are deliberately refused;
+post-start mismatches remain guarded failures rather than broadening proof scope.
+
+The focused matrix now contains 27 passing Python tests, including changed config
+from enabled-pool publication on forward/rollback, arbitrary config rejection and
+incompatible-baseline refusal before stop. The pure Linux helper adds an enabled
+pool regression whose published exact config hash changes with the synthetic pool
+endpoint and matches direct generation/marshal output. Native artifacts are still
+reverified on each call. Linux compilation/static checks pass; Linux execution and
+independent review remain final gates, with no host operations by the worker.

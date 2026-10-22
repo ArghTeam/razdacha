@@ -12,6 +12,7 @@ import (
 
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/networkstate"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -19,7 +20,7 @@ func TestAuthorityProofRetainsExactPrivateEvidence(t *testing.T) {
 	dir := t.TempDir()
 	gen := networkstate.Generation{
 		Kind: networkstate.CommittedKind, Version: 4,
-		Lists: map[string]lists.List{}, Policy: store.Snapshot{Tunnels: []store.Tunnel{{ID: "synthetic-pool", Source: store.SourcePool}}},
+		Lists: map[string]lists.List{}, Policy: store.Snapshot{Settings: store.DefaultSettings(), Tunnels: []store.Tunnel{{ID: "synthetic-pool", Source: store.SourcePool}}},
 	}
 	path := filepath.Join(dir, networkstate.CommittedFile)
 	if err := networkstate.Write(path, gen); err != nil {
@@ -68,7 +69,7 @@ func TestAuthorityProofRevalidatesCurrentNativeArtifactEveryTime(t *testing.T) {
 	if err := os.WriteFile(path, body, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	gen := networkstate.Generation{Kind: networkstate.CommittedKind, Version: 4, Lists: map[string]lists.List{
+	gen := networkstate.Generation{Kind: networkstate.CommittedKind, Version: 4, Policy: store.Snapshot{Settings: store.DefaultSettings()}, Lists: map[string]lists.List{
 		"synthetic-source": {
 			Native:  &lists.NativeArtifact{Version: lists.ProjectionVersion, Format: lists.FormatJSON, Hash: hash, Path: path},
 			Subnets: projection.Subnets, TransportSubnets: projection.TransportSubnets,
@@ -85,5 +86,47 @@ func TestAuthorityProofRevalidatesCurrentNativeArtifactEveryTime(t *testing.T) {
 	}
 	if _, err := authorityProof(dir); err == nil {
 		t.Fatal("current native artifact corruption accepted after previous successful proof")
+	}
+}
+
+func TestAuthorityGeneratedConfigTracksEnabledPoolExactly(t *testing.T) {
+	dir := t.TempDir()
+	gen := networkstate.Generation{
+		Kind: networkstate.CommittedKind, Version: 4,
+		Lists: map[string]lists.List{}, Policy: store.Snapshot{Settings: store.DefaultSettings(), Tunnels: []store.Tunnel{{
+			ID: "synthetic-pool", Name: "Synthetic pool", Source: store.SourcePool, Type: store.TunnelVLESS, Enabled: true,
+			Pool: []store.PoolServer{{URL: "vless://00000000-0000-0000-0000-000000000000@192.0.2.1:443?security=tls&sni=synthetic.example"}},
+		}}},
+	}
+	path := filepath.Join(dir, networkstate.CommittedFile)
+	if err := networkstate.Write(path, gen); err != nil {
+		t.Fatal(err)
+	}
+	first, err := authorityProof(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen.Policy.Tunnels[0].Pool[0].URL = "vless://00000000-0000-0000-0000-000000000000@192.0.2.2:443?security=tls&sni=synthetic.example"
+	if err := networkstate.Write(path, gen); err != nil {
+		t.Fatal(err)
+	}
+	second, err := authorityProof(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first["generated_config_sha256"] == second["generated_config_sha256"] {
+		t.Fatal("enabled pool catalog change did not change exact generated config proof")
+	}
+	config, err := singbox.Generate(gen.Policy, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := singbox.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(body)
+	if second["generated_config_sha256"] != hex.EncodeToString(digest[:]) {
+		t.Fatal("generated config proof differs from exact generation marshal")
 	}
 }

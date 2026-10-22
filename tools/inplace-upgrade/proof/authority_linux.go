@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/ArghTeam/razdacha/internal/networkstate"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 )
 
 // authorityProof retains exact private evidence as well as the previous canonical
@@ -44,6 +45,18 @@ func authorityProof(dir string) (map[string]any, error) {
 		}
 		count++
 	}
+	config, err := singbox.Generate(gen.Policy, func(url string) (singbox.PlainList, bool) {
+		list, ok := gen.Lists[url]
+		return singbox.PlainList{Domains: list.Domains, Subnets: list.Subnets, Native: list.Native}, ok
+	})
+	if err != nil {
+		return nil, fmt.Errorf("generate committed runtime config: %w", err)
+	}
+	configBytes, err := singbox.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("marshal committed runtime config: %w", err)
+	}
+	configHash := sha256.Sum256(configBytes)
 	encoded, err := json.Marshal(gen)
 	if err != nil {
 		return nil, err
@@ -67,7 +80,7 @@ func authorityProof(dir string) (map[string]any, error) {
 	return map[string]any{
 		"version": 4, "sha256": hex.EncodeToString(canonicalHash[:]),
 		"native_sources": count, "raw_sha256": hex.EncodeToString(rawHash[:]),
-		"generation_raw": string(raw),
+		"generation_raw": string(raw), "generated_config_sha256": hex.EncodeToString(configHash[:]),
 	}, nil
 }
 

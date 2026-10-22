@@ -223,7 +223,7 @@ def authority_generation(proof):
 def equal_authority(before, after):
     """Only paired source-pool catalog/time fields may change during recovery."""
     left, right = authority_generation(before), authority_generation(after)
-    evidence = {'sha256', 'raw_sha256', 'generation_raw'}
+    evidence = {'sha256', 'raw_sha256', 'generation_raw', 'generated_config_sha256'}
     def strict_json(value):
         return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
     require(strict_json({key: value for key, value in before.items() if key not in evidence})
@@ -252,6 +252,13 @@ def equal_authority(before, after):
                 current.pop(field, None)
     require(strict_json(left) == strict_json(right),
             'Committed authority changed outside paired pool catalog fields')
+
+
+def generated_config_sha256(proof):
+    value = proof.get('generated_config_sha256')
+    require(isinstance(value, str) and re.fullmatch('[a-f0-9]{64}', value),
+            'Missing exact generated runtime config proof')
+    return value
 
 
 def stopped_state_is_safe(properties, cgroup_pids, queued):
@@ -553,6 +560,8 @@ class Transaction:
                             manifest['schema'])
         authority = self.host.proof('authority')
         equal_authority(authority, authority)
+        require(sha(self.layout.path('/etc/sing-box/config.json')) == generated_config_sha256(authority),
+                'Helper generator does not reproduce baseline runtime config; transition unsupported')
         wireguard = self.host.proof('wireguard')
         size = sum(sum(item.get('size', 0) for item in (fingerprint(path) or {}).values())
                    for path in paths)
@@ -605,14 +614,17 @@ class Transaction:
         durable_object(snapshot)
         self.phase('snapshot-verified')
 
-    def verify_preservation(self):
+    def verify_preservation(self, after_start=False):
         equal_policy(self.ledger['baseline'], db_state(self.layout.database))
-        equal_authority(self.ledger['authority'], self.host.proof('authority'))
+        current_authority = self.host.proof('authority')
+        equal_authority(self.ledger['authority'], current_authority)
         require(self.host.proof('wireguard') == self.ledger['wireguard'], 'WireGuard identity changed')
         require(self.protected() == self.ledger['protected'], 'Protected TLS/nginx/unit files changed')
         require(sha(self.layout.runtime) == self.ledger['binary_hashes']['sing-box'], 'Pinned runtime changed')
-        require(sha(self.layout.path('/etc/sing-box/config.json')) == self.ledger['config_sha256'],
-                'Runtime configuration changed')
+        expected_config = (generated_config_sha256(current_authority) if after_start
+                           else self.ledger['config_sha256'])
+        require(sha(self.layout.path('/etc/sing-box/config.json')) == expected_config,
+                'Runtime configuration differs from its exact accepted generation')
         require(sha(self.layout.path('/usr/sbin/nginx')) == self.ledger['binary_hashes']['nginx'],
                 'Installed nginx executable changed')
         for setting in ('ip_forward', 'ip_nonlocal_bind'):
@@ -641,7 +653,7 @@ class Transaction:
         hashes['nginx'] = self.ledger['binary_hashes']['nginx']
         self.host.readiness(manifest['version'], manifest['commit'], manifest['runtime'],
                             hashes, manifest['schema'])
-        self.verify_preservation()
+        self.verify_preservation(after_start=True)
         self.phase('accepted')
 
     def prepare_recovery(self):
@@ -696,7 +708,7 @@ class Transaction:
         baseline = self.ledger['baseline_api']
         self.host.readiness(baseline['version'], baseline['commit'], self.ledger['manifest']['runtime'],
                             self.ledger['binary_hashes'], self.ledger['baseline']['schema'])
-        self.verify_preservation()
+        self.verify_preservation(after_start=True)
         self.phase('rolled-back')
 
     def execute(self, manifest):
