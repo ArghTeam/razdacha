@@ -150,3 +150,5 @@ to the ten-second runtime timer (twelve seconds total from local admission).
 The runtime timer may start near the HTTP deadline; releasing at ten seconds from
 local start could otherwise overlap a still-running resolver job. A regression
 checks that the original job identity remains retained beyond ten seconds.
+
+- MTU diagnostics validate the configured global value against `store.MinClientMTU`/`store.MaxClientMTU` (1280–1420), then compare the observed interface MTU to that value. A supported matching value is OK; invalid configuration or mismatch is error; absent/unreadable observations are unknown. This is configuration consistency, not an end-to-end PMTU/reachability measurement. The default remains 1280 (ADR 0004, #277).

@@ -22,10 +22,6 @@ const (
 	statusUnknown = "unknown"
 )
 
-// diagMTU — MTU клиентов и wg0 (ADR 0004). Расхождение — баг, а не настройка:
-// у клиента нет способа узнать, что сервер поднял интерфейс с другим MTU.
-const diagMTU = 1280
-
 // diagStaleFactor — во сколько интервалов обновления списки считаются
 // протухшими. Одного интервала мало: прогон занимает время, и проверка сразу
 // после срока показывала бы предупреждение на исправной системе.
@@ -611,42 +607,36 @@ func diagOIf(name string) string {
 	return name
 }
 
-// mtuCheck — 1280 и на wg0, и в том, что уходит клиентам (ADR 0004).
-//
-// Проверяются оба конца: одинаково неверны и интерфейс с чужим MTU, и
-// настройка, из которой клиентам выдаётся не 1280.
+// mtuCheck compares the observed interface MTU with the supported global setting.
+// This checks configuration consistency, not end-to-end path MTU or reachability.
 func mtuCheck(st netstack.DiagWGState, err error, settings store.Settings) check {
 	c := check{ID: "mtu", Title: "Path MTU"}
-
-	if settings.ClientMTU != diagMTU {
+	mtu := settings.ClientMTU
+	if mtu < store.MinClientMTU || mtu > store.MaxClientMTU {
 		c.Status = statusError
-		c.Detail = fmt.Sprintf("клиентам выдаётся MTU %d, ADR 0004 требует %d",
-			settings.ClientMTU, diagMTU)
+		c.Detail = fmt.Sprintf("Configured client MTU %d is outside the supported range %d–%d",
+			mtu, store.MinClientMTU, store.MaxClientMTU)
 		return c
 	}
 	if err != nil {
-		return diagUnknown(c,
-			fmt.Sprintf("клиентам выдаётся MTU %d; MTU интерфейса не прочитан", diagMTU), err)
+		return diagUnknown(c, fmt.Sprintf("Configured client MTU is %d; interface MTU could not be read", mtu), err)
 	}
-
 	name := st.Name
 	if name == "" {
 		name = netstack.DefaultWGInterface
 	}
 	if !st.Exists {
 		c.Status = statusUnknown
-		c.Detail = fmt.Sprintf("клиентам выдаётся MTU %d; интерфейса %s нет, сверять не с чем",
-			diagMTU, name)
+		c.Detail = fmt.Sprintf("Configured client MTU is %d; interface %s is absent", mtu, name)
 		return c
 	}
-	if st.MTU != diagMTU {
+	if st.MTU != mtu {
 		c.Status = statusError
-		c.Detail = fmt.Sprintf("MTU %s равен %d, клиентам выдаётся %d: пакеты будут рваться",
-			name, st.MTU, diagMTU)
+		c.Detail = fmt.Sprintf("Interface %s MTU is %d; client configurations use %d", name, st.MTU, mtu)
 		return c
 	}
 	c.Status = statusOK
-	c.Detail = fmt.Sprintf("%d и на %s, и в клиентских конфигах", diagMTU, name)
+	c.Detail = fmt.Sprintf("MTU %d matches on %s and generated client configurations", mtu, name)
 	return c
 }
 
