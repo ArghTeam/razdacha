@@ -54,3 +54,19 @@ output. An arbitrary concurrent config change cannot become a new trusted baseli
 - Existing raw-authority evidence, JSON strictness and native-corruption cases
   remain covered. Linux compilation/static checks and independent Linux execution
   and review are required before use; no host upgrade is claimed by this record.
+
+## Staging deployment validation
+
+The matching reviewed controller/helper completed an actual staging upgrade from
+`0.11.0-rc.3` to the checksum-verified published `0.11.0-rc.4` archive. Preflight
+passed before maintenance; a fresh stopped full snapshot preceded stock setup.
+The operation reached `accepted` and exited zero in 39.333 seconds. This duration
+is the controller runtime, not a claim of uninterrupted client connectivity.
+
+Independent Linux helper tests passed without skips. Actual daemon/runtime identity,
+DNS and trusted HTTPS readiness passed; the native ingress guard was absent afterward.
+Strict preservation checks retained keys, client/rule scope, activation, settings and
+protected files, permitting only the documented automatic pool catalog fields.
+The designated older installation was not accessed or changed during this work.
+Private snapshots and detailed evidence remain on staging; no private deployment
+addresses, credentials or raw configuration are included here.
