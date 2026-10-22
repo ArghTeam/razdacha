@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -14,7 +16,60 @@ import (
 // Ключ намеренно не входит в [Settings]: `SaveSettings` переписывает только свои
 // ключи, а `Settings` игнорирует чужие, поэтому сохранение настроек из UI не
 // затирает пароль и не выносит его хеш в JSON-ответ `GET /api/settings`.
-const keyPasswordHash = "auth_password_hash"
+const (
+	keyPasswordHash       = "auth_password_hash"
+	keyPasswordGeneration = "auth_password_generation"
+)
+
+// ErrPasswordChanged rejects verification that preceded a password reset.
+var ErrPasswordChanged = errors.New("password state changed")
+
+// PasswordState binds verification to one password-reset generation.
+// Its fields are private to authentication and must never be sent to clients.
+type PasswordState struct {
+	Hash       string
+	Generation string
+}
+
+// PasswordState reads the hash and reset generation in one SQLite snapshot.
+// Existing databases without a generation remain valid until their next reset.
+func (s *Store) PasswordState(ctx context.Context) (PasswordState, error) {
+	var state PasswordState
+	err := s.db.QueryRowContext(ctx, `SELECT value,
+ COALESCE((SELECT value FROM settings WHERE key = ?), '')
+ FROM settings WHERE key = ?`, keyPasswordGeneration, keyPasswordHash).Scan(&state.Hash, &state.Generation)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && state.Hash == "") {
+		return PasswordState{}, ErrNoPassword
+	}
+	if err != nil {
+		return PasswordState{}, fmt.Errorf("read password state: %w", err)
+	}
+	return state, nil
+}
+
+// CreateVerifiedSession atomically checks the verified password state and inserts
+// a session. SQLite serializes this write with password resets across processes.
+func (s *Store) CreateVerifiedSession(ctx context.Context, sess Session, state PasswordState) error {
+	if state.Hash == "" || sess.TokenHash == "" || !sess.ExpiresAt.After(sess.CreatedAt) {
+		return fmt.Errorf("%w: invalid verified session", ErrInvalid)
+	}
+	result, err := s.db.ExecContext(ctx, `INSERT INTO sessions (token_hash, created_at, expires_at)
+ SELECT ?, ?, ? WHERE
+ (SELECT value FROM settings WHERE key = ?) = ? AND
+ COALESCE((SELECT value FROM settings WHERE key = ?), '') = ?`,
+		sess.TokenHash, sess.CreatedAt.Unix(), sess.ExpiresAt.Unix(), keyPasswordHash, state.Hash, keyPasswordGeneration, state.Generation)
+	if err != nil {
+		return fmt.Errorf("create verified session: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count verified sessions: %w", err)
+	}
+	if n != 1 {
+		return ErrPasswordChanged
+	}
+	return nil
+}
 
 // ErrNoPassword — пароль панели не задан. Публичный режим этого не допускает
 // (ADR 0009): пустой и дефолтный пароль невозможны, демон не стартует.
@@ -52,12 +107,21 @@ func (s *Store) SetPasswordHash(ctx context.Context, encoded string) error {
 	if encoded == "" {
 		return fmt.Errorf("%w: пустой хеш пароля", ErrInvalid)
 	}
+	generation := make([]byte, 32)
+	if _, err := rand.Read(generation); err != nil {
+		return fmt.Errorf("generate password state: %w", err)
+	}
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO settings (key, value) VALUES (?, ?)
 			 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
 			keyPasswordHash, encoded); err != nil {
 			return fmt.Errorf("запись пароля панели: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`, keyPasswordGeneration, hex.EncodeToString(generation)); err != nil {
+			return fmt.Errorf("write password generation: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM sessions`); err != nil {
 			return fmt.Errorf("сброс сессий: %w", err)
