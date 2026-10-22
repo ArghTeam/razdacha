@@ -300,7 +300,7 @@ function fromHash() {
   state.screen = ORDER.includes(h) ? h : 'peers';
 }
 
-async function navigate() {
+async function navigate({ background = false } = {}) {
   if ($('#app').hidden) return;
   const currentSession = api.session.guard();
   const revision = ++navigationRevision;
@@ -316,6 +316,9 @@ async function navigate() {
     if (err.status === 401) return;
   }
   if (!currentSession() || revision !== navigationRevision || $('#app').hidden) return;
+  // Accepted background data may be fresh while its inventory controls are in use.
+  // Keep their DOM/focus until a later poll; deliberate navigation still renders.
+  if (background && (state.openMenu || modalOpen() || typing())) return;
   render();
 }
 
@@ -368,8 +371,8 @@ function typing() {
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
-    if (document.visibilityState === 'hidden' || modalOpen() || typing()) return;
-    navigate();
+    if (document.visibilityState === 'hidden' || modalOpen() || state.openMenu || typing()) return;
+    navigate({ background: true });
   }, 15000);
 }
 

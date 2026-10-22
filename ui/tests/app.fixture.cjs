@@ -189,6 +189,7 @@ async function appFixture(browser, options = {}) {
   async function logout() { if (await page.locator('#modal-backdrop').isVisible()) await page.keyboard.press('Escape'); await page.locator('#btn-logout').click(); await page.locator('#gate').waitFor({ state: 'visible' }); }
   async function snapshot() { return page.evaluate(async () => { const { state } = await import('/js/shell.js'); return { screen: state.screen, dirty: state.dirty, version: state.version, diag: state.diag, peers: state.peers, rules: state.rules, toasts: document.querySelector('#toasts').textContent, gate: !document.querySelector('#gate').hidden, modal: document.querySelector('#modal').textContent }; }); }
   function assertClean() { assert.deepEqual(unexpected.map(entry => `${entry.method} ${entry.url}`), []); assert.deepEqual(errors, []); }
+  if (options.beforeGoto) await options.beforeGoto(page);
   await page.goto(`${fixtureOrigin}/${options.screen ? '#' + options.screen : ''}`);
   if (options.readiness !== 'none') {
     await page.locator(options.readiness === 'login' || !state.authenticated ? '#gate' : '#app').waitFor({ state: 'visible' });
