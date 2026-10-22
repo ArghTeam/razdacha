@@ -201,6 +201,59 @@ def equal_policy(before, after):
             require(a == b, 'User policy changed')
 
 
+def authority_generation(proof):
+    raw = proof.get('generation_raw')
+    require(isinstance(raw, str) and hashlib.sha256(raw.encode()).hexdigest()
+            == proof.get('raw_sha256'), 'Missing or inconsistent private authority evidence')
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, 'Duplicate authority JSON key')
+            result[key] = value
+        return result
+    def invalid_constant(_value):
+        raise Refused('Invalid authority JSON number')
+    generation = json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
+    require(isinstance(generation, dict) and generation.get('kind') == 'committed'
+            and type(generation.get('version')) is int and generation['version'] == 4,
+            'Unsupported committed authority evidence')
+    return generation
+
+
+def equal_authority(before, after):
+    """Only paired source-pool catalog/time fields may change during recovery."""
+    left, right = authority_generation(before), authority_generation(after)
+    evidence = {'sha256', 'raw_sha256', 'generation_raw'}
+    def strict_json(value):
+        return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+    require(strict_json({key: value for key, value in before.items() if key not in evidence})
+            == strict_json({key: value for key, value in after.items() if key not in evidence}),
+            'Committed authority proof contract changed')
+    def tunnels(generation):
+        policy = generation.get('policy')
+        require(isinstance(policy, dict), 'Missing committed policy')
+        rows = policy.get('tunnels')
+        require(rows is None or isinstance(rows, list), 'Invalid committed tunnels')
+        result = {}
+        for row in rows or []:
+            require(isinstance(row, dict) and isinstance(row.get('id'), str)
+                    and row['id'] and row['id'] not in result,
+                    'Missing or duplicate committed tunnel identity')
+            result[row['id']] = row
+        return result
+    old, new = tunnels(left), tunnels(right)
+    require(old.keys() == new.keys(), 'Committed tunnel identity set changed')
+    for row_id, previous in old.items():
+        current = new[row_id]
+        require(previous.get('source') == current.get('source'), 'Committed tunnel source changed')
+        if previous.get('source') == current.get('source') == 'pool':
+            for field in ('pool', 'pool_updated_at'):
+                previous.pop(field, None)
+                current.pop(field, None)
+    require(strict_json(left) == strict_json(right),
+            'Committed authority changed outside paired pool catalog fields')
+
+
 def stopped_state_is_safe(properties, cgroup_pids, queued):
     return (properties.get('ActiveState') in ('inactive', 'failed')
             and properties.get('MainPID') == '0' and properties.get('ControlPID') == '0'
@@ -499,6 +552,7 @@ class Transaction:
         self.host.readiness(api['version'], api['commit'], manifest['runtime'], binary_hashes,
                             manifest['schema'])
         authority = self.host.proof('authority')
+        equal_authority(authority, authority)
         wireguard = self.host.proof('wireguard')
         size = sum(sum(item.get('size', 0) for item in (fingerprint(path) or {}).values())
                    for path in paths)
@@ -528,7 +582,7 @@ class Transaction:
         self.host.guard(True)
         equal_policy(self.ledger['baseline'], db_state(self.layout.database))
         require(self.protected() == self.ledger['protected'], 'Protected files changed before snapshot')
-        require(self.host.proof('authority') == self.ledger['authority'], 'Committed authority changed')
+        equal_authority(self.ledger['authority'], self.host.proof('authority'))
         snapshot = self.operation / 'snapshot'
         snapshot.mkdir(mode=0o700)
         roots = self.layout.trees + self.layout.protected + self.layout.binaries + [self.layout.runtime]
@@ -553,7 +607,7 @@ class Transaction:
 
     def verify_preservation(self):
         equal_policy(self.ledger['baseline'], db_state(self.layout.database))
-        require(self.host.proof('authority') == self.ledger['authority'], 'Committed authority changed')
+        equal_authority(self.ledger['authority'], self.host.proof('authority'))
         require(self.host.proof('wireguard') == self.ledger['wireguard'], 'WireGuard identity changed')
         require(self.protected() == self.ledger['protected'], 'Protected TLS/nginx/unit files changed')
         require(sha(self.layout.runtime) == self.ledger['binary_hashes']['sing-box'], 'Pinned runtime changed')

@@ -3,6 +3,20 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-10-22
+
+### #271 — startup pool catalogs in committed-authority proofs
+
+**Changed:** The operator uses paired tunnel ID/source comparison for the two
+automatic pool catalog fields in both database and committed-authority acceptance.
+Complete original raw authority/checksums remain private evidence, and every current
+native artifact is verified independently. Duplicate keys fail preflight; all other
+fields and JSON types remain strict. Daemon behavior and runtime config checks are
+unchanged. Historical failed-operation ledgers/snapshots are not rewritten.
+**Validation:** Generation-shaped forward and rollback startup regressions, strict
+adversarial policy/list/native cases, original hash-only negative control, and Linux
+helper evidence/artifact tests. See [task 271](../../tasks/271-pool-authority-upgrade.md).
+
 ## 2026-10-21
 
 ### #265 — bounded repeatable in-place operator transaction

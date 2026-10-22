@@ -36,6 +36,36 @@ def database(path):
     connection.close()
 
 
+def committed_generation():
+    return {
+        'kind': 'committed', 'version': 4,
+        'policy': {
+            'settings': {'server_private_key': 'synthetic-server-key', 'client_mtu': 1280},
+            'tunnels': [
+                {'id': 'exit', 'source': 'pool', 'name': 'Synthetic pool', 'enabled': True,
+                 'raw': 'synthetic-catalog', 'parsed': None,
+                 'pool': [{'url': 'synthetic-old-key'}], 'pool_updated_at': 'old-time'},
+                {'id': 'fixed', 'source': 'wgconf', 'enabled': True,
+                 'raw': 'synthetic-fixed-key', 'parsed': {'private_key': 'synthetic-fixed-key'}},
+            ],
+            'peers': [{'id': 'peer', 'private_key': 'synthetic-key', 'enabled': True,
+                       'egress_tunnel_id': 'exit'}],
+            'rules': [{'id': 'rule', 'action': 'tunnel', 'tunnel_id': 'exit', 'enabled': True}],
+        },
+        'lists': {'synthetic-source': {'Domains': ['example.test'], 'Subnets': ['198.51.100.0/24'],
+                    'native': {'projection_version': 2, 'format': 'json',
+                               'original_hash': 'a' * 64, 'original_path': '/synthetic/native/original.json',
+                               'dns_hash': 'b' * 64, 'dns_path': '/synthetic/native/dns.json'}}},
+    }
+
+
+def authority_evidence(generation):
+    raw = json.dumps(generation, sort_keys=True)
+    digest = hashlib.sha256(raw.encode()).hexdigest()
+    return {'version': 4, 'sha256': digest, 'native_sources': 1,
+            'raw_sha256': digest, 'generation_raw': raw}
+
+
 class FakeHost:
     def __init__(self, layout, operation, manifest):
         self.layout, self.operation, self.manifest = layout, operation, manifest
@@ -57,7 +87,7 @@ class FakeHost:
         if command == 'candidate':
             return {'runtime': '1.12.25'}
         if command == 'authority':
-            return {'version': 4, 'sha256': 'a' * 64, 'native_sources': 1}
+            return authority_evidence(upgrade.read_private(self.layout.state / 'applied-network.json'))
         if command == 'wireguard':
             return {'sha256': 'b' * 64, 'peers': 1}
         if command == 'backup':
@@ -138,6 +168,13 @@ class FakeHost:
                     connection.execute("UPDATE tunnels SET pool='new',pool_updated_at='new-time' WHERE source='pool'")
                     connection.commit()
                     connection.close()
+                    path = self.layout.state / 'applied-network.json'
+                    generation = upgrade.read_private(path)
+                    for tunnel in generation['policy']['tunnels']:
+                        if tunnel['source'] == 'pool':
+                            tunnel['pool'] = [{'url': 'synthetic-refreshed-key'}]
+                            tunnel['pool_updated_at'] = 'refreshed-time'
+                    upgrade.private_json(path, generation)
 
 
 class Fixture(unittest.TestCase):
@@ -158,6 +195,7 @@ class Fixture(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('1\n')
         database(self.layout.database)
+        upgrade.private_json(self.layout.state / 'applied-network.json', committed_generation())
         self.layout.backup_parent.mkdir(parents=True)
         self.operation = self.layout.backup_parent / 'inplace-test-operation'
         self.operation.mkdir(mode=0o700)
@@ -184,6 +222,7 @@ class Fixture(unittest.TestCase):
         self.transaction.execute(self.manifest)
         self.assertEqual(self.transaction.ledger['phase'], 'accepted')
         self.assertFalse(self.host.protected)
+        self.assertNotEqual(self.transaction.ledger['authority']['sha256'], self.host.proof('authority')['sha256'])
         saved = Path(self.transaction.ledger['snapshot'][str(self.layout.state)])
         self.assertEqual(upgrade.db_state(saved / 'state.db')['installed'], '1.0.0')
         self.assertTrue((self.operation / 'status.json').stat().st_mode & 0o777 == 0o600)
@@ -211,6 +250,29 @@ class Fixture(unittest.TestCase):
             self.transaction.execute(self.manifest)
         self.assertFalse(any(event[0] == 'stop' for event in self.host.events))
         self.assertFalse((self.root / 'escape').exists())
+
+    def test_duplicate_baseline_authority_is_rejected_before_stop_for_check_and_run(self):
+        for action in ('check', 'run'):
+            with self.subTest(action=action):
+                fixture = Fixture('test_success_keeps_policy_and_snapshot')
+                fixture.setUp()
+                try:
+                    original = fixture.host.proof
+                    def duplicate(command, *arguments):
+                        evidence = original(command, *arguments)
+                        if command == 'authority':
+                            raw = evidence['generation_raw']
+                            raw = raw[:-1] + ', "version": 4}'
+                            evidence.update(generation_raw=raw, raw_sha256=hashlib.sha256(raw.encode()).hexdigest())
+                        return evidence
+                    fixture.host.proof = duplicate
+                    operation = (fixture.transaction.preflight if action == 'check'
+                                 else fixture.transaction.execute)
+                    with self.assertRaises(upgrade.Refused):
+                        operation(fixture.manifest)
+                    self.assertFalse(any(event[0] == 'stop' for event in fixture.host.events))
+                finally:
+                    fixture.doCleanups()
 
     def test_checksum_failure_does_not_stop_services(self):
         self.manifest['archive_sha256'] = '0' * 64
@@ -263,6 +325,22 @@ class Fixture(unittest.TestCase):
         self.assertLess(following.index(('stop', 'razdachad')), following.index(('guard', True)))
         self.assertLess(following.index(('guard', True)), following.index(('stop', 'sing-box')))
 
+    def test_rollback_accepts_startup_pool_republication_and_preserves_raw_baseline(self):
+        baseline_raw = (self.layout.state / 'applied-network.json').read_bytes()
+        self.host.catalog_refresh = True
+        self.host.fail_readiness = True
+        with self.assertRaises(upgrade.Refused):
+            self.transaction.execute(self.manifest)
+        self.assertEqual(self.transaction.ledger['phase'], 'rolled-back')
+        self.assertFalse(self.host.protected)
+        before = self.transaction.ledger['authority']
+        after = self.host.proof('authority')
+        self.assertNotEqual(before['sha256'], after['sha256'])
+        self.assertEqual(json.loads(before['generation_raw']), json.loads(baseline_raw))
+        saved = Path(self.transaction.ledger['snapshot'][str(self.layout.state)])
+        self.assertEqual((saved / 'applied-network.json').read_bytes(), baseline_raw)
+        upgrade.equal_authority(before, after)
+
     def test_failed_rollback_retains_guard_and_recovery_phase(self):
         self.host.fail_readiness = True
         self.host.fail_old_readiness = True
@@ -308,6 +386,77 @@ class Fixture(unittest.TestCase):
 
 
 class PureTests(unittest.TestCase):
+    def test_authority_accepts_only_paired_pool_catalog_fields_without_mutating_evidence(self):
+        baseline = authority_evidence(committed_generation())
+        changed = committed_generation()
+        changed['policy']['tunnels'][0]['pool'] = [{'url': 'synthetic-new-key'}]
+        changed['policy']['tunnels'][0]['pool_updated_at'] = 'later'
+        after = authority_evidence(changed)
+        saved_before, saved_after = copy.deepcopy(baseline), copy.deepcopy(after)
+        upgrade.equal_authority(baseline, after)
+        self.assertEqual(baseline, saved_before)
+        self.assertEqual(after, saved_after)
+        # A new catalog may remove an optional pool field; all other fields remain strict.
+        del changed['policy']['tunnels'][0]['pool']
+        upgrade.equal_authority(baseline, authority_evidence(changed))
+
+    def test_authority_rejects_changed_policy_lists_and_native_authority(self):
+        baseline = authority_evidence(committed_generation())
+        cases = {
+            'server key': lambda g: g['policy']['settings'].update(server_private_key='changed'),
+            'tunnel key': lambda g: g['policy']['tunnels'][1].update(raw='changed'),
+            'pool raw source': lambda g: g['policy']['tunnels'][0].update(raw='changed'),
+            'pool parsed key': lambda g: g['policy']['tunnels'][0].update(parsed={'private_key':'changed'}),
+            'source transition': lambda g: g['policy']['tunnels'][0].update(source='json'),
+            'activation': lambda g: g['policy']['tunnels'][0].update(enabled=False),
+            'tunnel identity': lambda g: g['policy']['tunnels'][0].update(id='different'),
+            'duplicate identity': lambda g: g['policy']['tunnels'].append(copy.deepcopy(g['policy']['tunnels'][0])),
+            'tunnel order': lambda g: g['policy']['tunnels'].reverse(),
+            'peer key': lambda g: g['policy']['peers'][0].update(private_key='changed'),
+            'peer egress': lambda g: g['policy']['peers'][0].update(egress_tunnel_id='fixed'),
+            'peer activation': lambda g: g['policy']['peers'][0].update(enabled=False),
+            'rule': lambda g: g['policy']['rules'][0].update(action='direct'),
+            'list body': lambda g: g['lists']['synthetic-source'].update(Domains=['different.test']),
+            'list closure': lambda g: g['lists'].clear(),
+            'native original': lambda g: g['lists']['synthetic-source']['native'].update(original_hash='c'*64),
+            'native path': lambda g: g['lists']['synthetic-source']['native'].update(original_path='/synthetic/other'),
+            'native DNS': lambda g: g['lists']['synthetic-source']['native'].update(dns_hash='d'*64),
+            'native projection': lambda g: g['lists']['synthetic-source']['native'].update(projection_version=1),
+            'kind': lambda g: g.update(kind='bootstrap'),
+            'version': lambda g: g.update(version=3),
+            'unknown generation field': lambda g: g.update(future_authority='changed'),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name=name):
+                changed = committed_generation()
+                mutate(changed)
+                with self.assertRaises(upgrade.Refused):
+                    upgrade.equal_authority(baseline, authority_evidence(changed))
+        fixed = committed_generation()
+        changed = copy.deepcopy(fixed)
+        changed['policy']['tunnels'][1]['pool'] = [{'url':'must-not-be-ignored'}]
+        with self.assertRaises(upgrade.Refused):
+            upgrade.equal_authority(authority_evidence(fixed), authority_evidence(changed))
+
+    def test_unknown_authority_field_type_changes_are_rejected(self):
+        for old, new in ((True, 1), (1, 1.0), ({'value': True}, {'value': 1})):
+            with self.subTest(old=old, new=new):
+                before, after = committed_generation(), committed_generation()
+                before['future_field'], after['future_field'] = old, new
+                with self.assertRaises(upgrade.Refused):
+                    upgrade.equal_authority(authority_evidence(before), authority_evidence(after))
+
+    def test_authority_requires_current_complete_private_evidence(self):
+        before = authority_evidence(committed_generation())
+        for field in ('generation_raw', 'raw_sha256'):
+            broken = dict(before)
+            broken.pop(field)
+            with self.subTest(field=field), self.assertRaises(upgrade.Refused):
+                upgrade.equal_authority(before, broken)
+        broken = dict(before, generation_raw='{}')
+        with self.assertRaises(upgrade.Refused):
+            upgrade.equal_authority(before, broken)
+
     def test_failed_unit_without_processes_is_stopped(self):
         properties = {'ActiveState': 'failed', 'MainPID': '0', 'ControlPID': '0', 'Job': '0'}
         self.assertTrue(upgrade.stopped_state_is_safe(properties, [], False))

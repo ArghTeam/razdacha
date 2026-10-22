@@ -280,6 +280,13 @@ cross-host and schema/runtime-changing upgrades need a separate reviewed procedu
 See the linked runbook for exact input manifests, build/run/status/recovery commands,
 rollback limits and retained private snapshots/quarantines.
 
+Startup may republish automatic pool catalog/time fields. The operator compares
+matching tunnel IDs with `source=pool` on both sides and permits only `pool` and
+`pool_updated_at` to differ, including in committed authority. Complete raw private
+evidence is retained; kind/version, other policy fields, list/native authority and
+JSON scalar types remain strict. Native artifacts are verified again for each
+current proof. Historical operation records are never normalized or repurposed.
+
 ## Обновление
 
 ```sh

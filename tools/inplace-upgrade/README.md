@@ -104,7 +104,18 @@ recovery, accept only matching actual process/build/runtime/schema, real Clash/D
 HTTPS with existing certificate trust, unchanged protected files and absent guard.
 All user fields, keys, activation, peer egress and rule scopes compare strictly.
 Only `pool`/`pool_updated_at` on **paired `source=pool` rows** may refresh; the
-installed version is separately checked. This does not approve pending Apply edits.
+installed version is separately checked. The same paired-ID/source exception applies
+when startup republishes committed authority: only those two catalog fields may
+change. Kind/version, list closure/content, native artifact references and every
+other policy/unknown field remain strict, including JSON scalar types. Complete
+original raw authority and its checksum remain in private evidence; they are never
+rewritten to normalize the baseline. Every current native artifact is independently
+verified on every proof. Duplicate JSON keys are refused during preflight before
+services stop. This does not approve pending Apply edits.
+
+This proof format requires the matching controller/helper pair. Do not replace a
+helper inside an old unfinished operation or reinterpret its historical ledger;
+complete any such recovery through its separately reviewed incident procedure.
 
 Post-stop failure first stops the daemon and verifies protection before stopping
 runtime/restoring. Rollback prepares sibling copies from the full fresh snapshot,

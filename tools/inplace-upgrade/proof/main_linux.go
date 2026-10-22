@@ -23,7 +23,6 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl"
 
 	"github.com/ArghTeam/razdacha/internal/netstack"
-	"github.com/ArghTeam/razdacha/internal/networkstate"
 	"github.com/ArghTeam/razdacha/internal/packaging"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -117,33 +116,7 @@ func command(args []string) (any, error) {
 		if len(args) != 1 {
 			break
 		}
-		if _, err := os.Lstat(filepath.Join(stateDir, networkstate.BootstrapFile)); !errors.Is(err, os.ErrNotExist) {
-			return nil, errors.New("bootstrap authority is not supported")
-		}
-		gen, err := networkstate.Read(filepath.Join(stateDir, networkstate.CommittedFile), networkstate.CommittedKind)
-		if err != nil {
-			return nil, err
-		}
-		if gen.Version != 4 {
-			return nil, errors.New("only committed generation version four is supported")
-		}
-		nativeDir := filepath.Join(stateDir, "lists", "native")
-		count := 0
-		for _, list := range gen.Lists {
-			if list.Native == nil {
-				continue
-			}
-			if err := list.Native.Verify(nativeDir, list.Subnets, list.TransportSubnets); err != nil {
-				return nil, fmt.Errorf("verify native authority: %w", err)
-			}
-			count++
-		}
-		encoded, err := json.Marshal(gen)
-		if err != nil {
-			return nil, err
-		}
-		hash := sha256.Sum256(encoded)
-		return map[string]any{"version": 4, "sha256": hex.EncodeToString(hash[:]), "native_sources": count}, nil
+		return authorityProof(stateDir)
 	case "wireguard":
 		if len(args) != 1 {
 			break
