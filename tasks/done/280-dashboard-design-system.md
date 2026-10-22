@@ -89,8 +89,8 @@ The final staging candidate is **v0.11.0-rc.7**, commit
 `329257151a8bd1642ddef39f7b0bf98256f0e7f4701c8f58d0043adad55198b5`.
 The bounded upgrade check and run both completed with accepted strict preservation
 checks and a fresh full stopped snapshot retained privately. The daemon, sing-box and
-nginx are active; daemon/setup CLI and authenticated API report the expected release
-and commit. Schema is 12, sing-box runtime is 1.12.25, the native guard is absent with
+nginx are active; daemon/setup CLI and authenticated API report the expected release,
+and the authenticated API commit matches the release. Schema is 12, sing-box runtime is 1.12.25, the native guard is absent with
 the expected shape, and WireGuard peer identity matches its pre-upgrade digest.
 Interim rc.6 acceptance preceded the bounded polling follow-up; rc.7 is the final
 verified candidate. No release tag was rewritten.

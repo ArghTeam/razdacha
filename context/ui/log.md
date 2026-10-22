@@ -341,6 +341,30 @@ Design contract and synthetic browser acceptance live in docs/ui-design-system.m
 ui/tests/design-system.cjs. Validation details are recorded in the task and PR.
 
 
+## 2026-10-23 — Preserve row menus during background polling (#280)
+
+Read-only staging acceptance exposed a periodic refresh dismissing an open row menu.
+Polling now skips active menus, and an earlier in-flight background read retains its
+accepted inventory without replacing the menu's DOM/focus on completion. Later polls
+resume rendering after interaction ends. Explicit navigation, mutations and session
+expiry retain their existing cleanup and ordering semantics. Rule/tunnel toggles
+capture explicit menu intent so an accepted background snapshot cannot invert the
+advertised Enable/Disable action. Synthetic actual-router
+clock/held-response cases cover poll admission, late completion, natural pointer Edit,
+resumed refresh and intentional navigation/session dismissal.
+
+Implementation checkout: `.codex/worktrees/fix/280-stable-row-menus`; designated
+primary `/Users/romanzhigalkin/Web/razdacha`, remote `origin`, target `main`, freshly
+fetched base `7c2f8a0ed540fc688350c9d480f8f65c1c3706f6`. This record does not claim
+that the follow-up has been deployed or that browser checks verify VPN/media traffic.
+
+Validation: 12 focused polling/menu cases, 38 rule and 47 tunnel lifetime cases,
+16 rule operation cases, 17 whole-app integration cases, 28 shell/session cases,
+four runner checks, embedded Go UI checks and JavaScript/whitespace checks passed.
+These are synthetic frontend observations; hosted CI and primary-controlled release
+and staging acceptance remain separate gates.
+
+
 ## 2026-10-23 — Dashboard implementation acceptance (#280)
 
 [The completed implementation record](../../tasks/done/280-dashboard-design-system.md)
@@ -369,29 +393,7 @@ Edit passed. Settled 320/390-pixel header/footer/scroll-end checks passed.
 
 No persisted configuration writes or Apply occurred. Two pure parse previews and the
 owned logout were allowlisted; there were zero JavaScript errors. The owned session
-was confirmed revoked and its temporary authentication file deleted. Full operational
-identity, release checksum and limits are in the
+was confirmed revoked and its temporary authentication file deleted. Release identity,
+checksum and limits are in the
 [completed delivery record](../../tasks/done/280-dashboard-design-system.md#staging-acceptance).
 This is installed UI/API acceptance, not VPN/media end-to-end or no-outage evidence.
-## 2026-10-23 — Preserve row menus during background polling (#280)
-
-Read-only staging acceptance exposed a periodic refresh dismissing an open row menu.
-Polling now skips active menus, and an earlier in-flight background read retains its
-accepted inventory without replacing the menu's DOM/focus on completion. Later polls
-resume rendering after interaction ends. Explicit navigation, mutations and session
-expiry retain their existing cleanup and ordering semantics. Rule/tunnel toggles
-capture explicit menu intent so an accepted background snapshot cannot invert the
-advertised Enable/Disable action. Synthetic actual-router
-clock/held-response cases cover poll admission, late completion, natural pointer Edit,
-resumed refresh and intentional navigation/session dismissal.
-
-Implementation checkout: `.codex/worktrees/fix/280-stable-row-menus`; designated
-primary `/Users/romanzhigalkin/Web/razdacha`, remote `origin`, target `main`, freshly
-fetched base `7c2f8a0ed540fc688350c9d480f8f65c1c3706f6`. This record does not claim
-that the follow-up has been deployed or that browser checks verify VPN/media traffic.
-
-Validation: 12 focused polling/menu cases, 38 rule and 47 tunnel lifetime cases,
-16 rule operation cases, 17 whole-app integration cases, 28 shell/session cases,
-four runner checks, embedded Go UI checks and JavaScript/whitespace checks passed.
-These are synthetic frontend observations; hosted CI and primary-controlled release
-and staging acceptance remain separate gates.
