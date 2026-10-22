@@ -247,3 +247,29 @@ Implementation and verification record: [task 231](../../tasks/done/231-peer-egr
   despite caller/HTTP cancellation; fractional history cannot count repeatedly
   against second-precision persisted confirmations. Controlled pinned-runtime
   loopback tests verify TLS/API/12-second behavior, not actual WG or client policy.
+
+
+## 2026-10-23 — Password-state sessions and MTU diagnostics (#276, #277)
+
+[Password-state session issuance](../../tasks/done/276-password-session-state.md)
+merged in PR #278 (`af68bd8`). Password reset rotates a private generation and revokes
+sessions transactionally; a verified older, same-hash-reset or ABA state cannot issue
+a new session. Independent review and deterministic cross-connection authentication
+checks passed. Existing schema and already-authorized request semantics remain intact.
+
+[Configured MTU diagnostics](../../tasks/done/277-mtu-diagnostic-range.md) merged in
+PR #279 (`6ff099c`). Diagnostics compare valid configured values in 1280–1420 with
+observed interface MTU, reporting unknown when observation is unavailable. The 1280
+default and issued configurations remain unchanged. Independent review, focused tests
+and all six hosted checks passed for both PRs. Installed delivery is recorded separately.
+
+
+## 2026-10-23 — Staging delivery of #276 and #277
+
+Both fixes are included in verified staging v0.11.0-rc.7 (`2acb9d5adbeb`). The bounded
+upgrade check/run accepted preservation, services remained healthy after acceptance,
+and the authenticated API/CLI reported the expected release, schema 12 and sing-box
+1.12.25. A fresh stopped snapshot remains private. The shared
+[acceptance record](../../tasks/done/280-dashboard-design-system.md#staging-acceptance)
+separates installed operator/API/UI checks from the deterministic authentication/MTU
+test matrix; no live race replay or client/media end-to-end claim is made.
