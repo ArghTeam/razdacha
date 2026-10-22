@@ -104,7 +104,33 @@ recovery, accept only matching actual process/build/runtime/schema, real Clash/D
 HTTPS with existing certificate trust, unchanged protected files and absent guard.
 All user fields, keys, activation, peer egress and rule scopes compare strictly.
 Only `pool`/`pool_updated_at` on **paired `source=pool` rows** may refresh; the
-installed version is separately checked. This does not approve pending Apply edits.
+installed version is separately checked. The same paired-ID/source exception applies
+when startup republishes committed authority: only those two catalog fields may
+change. Kind/version, list closure/content, native artifact references and every
+other policy/unknown field remain strict, including JSON scalar types. Complete
+original raw authority and its checksum remain in private evidence; they are never
+rewritten to normalize the baseline. Every current native artifact is independently
+verified on every proof. Duplicate JSON keys are refused during preflight before
+services stop. This does not approve pending Apply edits.
+
+The helper also hashes the exact `Generate`/`Marshal` result from committed policy
+and frozen list contents. Preflight refuses before stopping services unless this
+output exactly reproduces the installed baseline config, bounding generator and
+rollback compatibility for the actual snapshot. Setup and pre-start rollback checks
+retain the original config hash. After startup only, an allowed pool catalog refresh
+may change config bytes: actual config must exactly equal the current accepted
+generation's generated hash, after strict authority comparison. Arbitrary config
+changes remain rejected; no runtime config fields are ignored or normalized.
+
+Raw generation must reproduce the runtime config without checker-driven pool-member
+pruning (ADR 0019). A baseline produced by such pruning, unsupported generator changes
+or another config preparation step is outside this procedure and is refused during
+preflight. A later unprovable generated config remains a guarded recovery failure;
+this tool does not invent a broader exception to make the upgrade pass.
+
+This proof format requires the matching controller/helper pair. Do not replace a
+helper inside an old unfinished operation or reinterpret its historical ledger;
+complete any such recovery through its separately reviewed incident procedure.
 
 Post-stop failure first stops the daemon and verifies protection before stopping
 runtime/restoring. Rollback prepares sibling copies from the full fresh snapshot,

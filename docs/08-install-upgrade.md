@@ -280,6 +280,19 @@ cross-host and schema/runtime-changing upgrades need a separate reviewed procedu
 See the linked runbook for exact input manifests, build/run/status/recovery commands,
 rollback limits and retained private snapshots/quarantines.
 
+Startup may republish automatic pool catalog/time fields. The operator compares
+matching tunnel IDs with `source=pool` on both sides and permits only `pool` and
+`pool_updated_at` to differ, including in committed authority. Complete raw private
+evidence is retained; kind/version, other policy fields, list/native authority and
+JSON scalar types remain strict. Native artifacts are verified again for each
+current proof. Historical operation records are never normalized or repurposed.
+The helper must exactly reproduce baseline config bytes during preflight or refuse
+before stopping services. Before startup the baseline config hash stays strict;
+after startup actual config must exactly match generation from accepted current
+authority. This permits only proven pool-driven output changes, without ignoring
+runtime config fields. Checker-pruned or otherwise unreproducible baseline configs
+are outside the accepted procedure; see the runbook's compatibility bounds.
+
 ## Обновление
 
 ```sh
