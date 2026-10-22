@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -538,28 +539,45 @@ func TestDiagForwardCheck(t *testing.T) {
 	}
 }
 
-// TestDiagMTUCheck — 1280 обязаны быть с обеих сторон (ADR 0004): расхождение
-// между интерфейсом и клиентским конфигом — ошибка, а не предупреждение.
+// TestDiagMTUCheck compares the observed interface with the supported setting.
 func TestDiagMTUCheck(t *testing.T) {
-	settings := store.DefaultSettings()
-	wrongClient := settings
-	wrongClient.ClientMTU = 1420
-
-	wrongLink := diagHealthyWG()
-	wrongLink.MTU = 1420
-
-	if c := mtuCheck(diagHealthyWG(), nil, settings); c.Status != statusOK {
-		t.Errorf("1280 с обеих сторон = %q (%s)", c.Status, c.Detail)
+	cases := []struct {
+		name       string
+		configured int
+		observed   int
+		exists     bool
+		err        error
+		want       string
+	}{
+		{"default minimum", 1280, 1280, true, nil, statusOK},
+		{"above minimum", 1281, 1281, true, nil, statusOK},
+		{"intermediate", 1400, 1400, true, nil, statusOK},
+		{"maximum", 1420, 1420, true, nil, statusOK},
+		{"below minimum", 1279, 1279, true, nil, statusError},
+		{"above maximum", 1421, 1421, true, nil, statusError},
+		{"zero", 0, 0, true, nil, statusError},
+		{"smaller observed", 1420, 1280, true, nil, statusError},
+		{"larger observed", 1280, 1420, true, nil, statusError},
+		{"invalid observation", 1400, 0, true, nil, statusError},
+		{"missing interface", 1400, 0, false, nil, statusUnknown},
+		{"unreadable interface", 1420, 0, false, errDiagNoSource, statusUnknown},
+		{"invalid setting without observation", 1279, 0, false, errDiagNoSource, statusError},
 	}
-	if c := mtuCheck(diagHealthyWG(), nil, wrongClient); c.Status != statusError {
-		t.Errorf("MTU клиентов 1420 = %q, ожидался error", c.Status)
-	}
-	if c := mtuCheck(wrongLink, nil, settings); c.Status != statusError {
-		t.Errorf("MTU wg0 1420 = %q, ожидался error", c.Status)
-	}
-	c := mtuCheck(netstack.DiagWGState{}, errDiagNoSource, settings)
-	if c.Status != statusUnknown || c.Detail == "" {
-		t.Errorf("без источника = %+v, ожидался объяснённый unknown", c)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			settings := store.DefaultSettings()
+			settings.ClientMTU = tc.configured
+			c := mtuCheck(netstack.DiagWGState{Exists: tc.exists, MTU: tc.observed}, tc.err, settings)
+			if c.Status != tc.want || c.Detail == "" {
+				t.Fatalf("check = %+v, want explained %s", c, tc.want)
+			}
+			if !strings.Contains(c.Detail, strconv.Itoa(tc.configured)) {
+				t.Fatalf("detail omits configured MTU: %s", c.Detail)
+			}
+			if tc.exists && c.Status == statusError && tc.configured >= store.MinClientMTU && tc.configured <= store.MaxClientMTU && !strings.Contains(c.Detail, strconv.Itoa(tc.observed)) {
+				t.Fatalf("detail omits observed MTU: %s", c.Detail)
+			}
+		})
 	}
 }
 
