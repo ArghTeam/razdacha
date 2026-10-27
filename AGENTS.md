@@ -153,6 +153,7 @@ curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install
 ```
 
 `RAZDACHA_PUBLIC=1` exposes the panel on all interfaces; `RAZDACHA_PUBLIC=0` restricts it
-to the VPN again. With no override, the saved database mode is retained; a fresh install
-is private. `--dry-run` performs preflight checks only. A `v*` tag triggers Linux
+to the VPN again. With no override, the saved database mode is retained; a genuinely
+fresh install defaults to password-authenticated public HTTPS so the panel is
+reachable before importing a VPN profile (ADR 0034). `--dry-run` performs preflight checks only. A `v*` tag triggers Linux
 amd64/arm64 archives, `install.sh` and checksums.

@@ -76,6 +76,13 @@ func chooseFreeStart(fresh bool, opts setupOptions, tty io.ReadWriter) (freeStar
 	if opts.freeStartSet || tty == nil {
 		return choice, nil
 	}
+	access := "The HTTPS panel is public and password-protected before VPN connection.\n"
+	if opts.publicSet && !opts.public {
+		access = "Private panel mode was explicitly selected; connect the VPN before opening it.\n"
+	}
+	if _, err := fmt.Fprint(tty, access); err != nil {
+		return freeStartChoice{}, err
+	}
 	if _, err := fmt.Fprint(tty, "Optional free start uses third-party exits without a usability guarantee.\nEnable free tunnels and selective starter rules for the first client? [y/N]: "); err != nil {
 		return freeStartChoice{}, err
 	}

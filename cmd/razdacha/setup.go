@@ -117,8 +117,7 @@ func parseSetupFlags(args []string) (setupOptions, error) {
 	flags.StringVar(&opts.daemon, "daemon", defaultDaemon, "путь к бинарнику демона для юнита systemd")
 	flags.StringVar(&opts.peerName, "peer", firstPeerName, "имя первого пира")
 	flags.BoolVar(&opts.public, "public", false,
-		"публичный режим панели: nginx слушает все интерфейсы (ADR 0009); "+
-			"-public=false выключает режим обратно")
+		"Public password-authenticated HTTPS panel; fresh installs default public, upgrades retain saved mode; --public=false selects VPN-only access")
 	flags.BoolVar(&opts.start, "start", true, "запускать сервисы через systemd")
 	flags.BoolVar(&opts.freeStart, "free-start", false, "Fresh installation only: enable third-party free tunnels and first-client starter rules")
 	flags.StringVar(&opts.freeCountry, "free-country", "auto", "Free-start exit country: Auto or one two-letter code")
@@ -142,6 +141,7 @@ func parseSetupFlags(args []string) (setupOptions, error) {
 	if err := freeStartEnvironment(&opts, os.LookupEnv); err != nil {
 		return setupOptions{}, err
 	}
+	panelModeEnvironment(&opts, os.LookupEnv)
 	return opts, nil
 }
 
@@ -170,6 +170,7 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 	if err != nil {
 		return summary{}, err
 	}
+	opts = effectivePanelOptions(fresh, opts)
 
 	// Резервная копия снимается до открытия БД: миграции накатываются в
 	// store.Open, и откатывать их нечем — восстановление это возврат файла.
@@ -433,7 +434,8 @@ type panelMode struct {
 //   - сохранённого нет — режим выводится из конфига nginx, который оставила
 //     предыдущая установка, и записывается: версии до 0.2.1 ключ не писали, и
 //     читать на обновлении с них больше неоткуда;
-//   - конфига нет вовсе — первая установка, приватный режим, как было всегда;
+//   - no configuration: retain the legacy private inference fallback; genuinely
+//     fresh setup supplies its explicit public default before this function;
 //   - конфиг есть, но не разобран — приватный режим, но в БД не пишется ничего
 //     и причина уходит в вывод: записать догадку хуже, чем спросить.
 //

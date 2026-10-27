@@ -5,7 +5,7 @@
 ```text
 Browser: static HTML/CSS/ES modules from ui/dist
               │ HTTPS
-nginx: 10.8.0.1:443 by default; all interfaces in public mode
+nginx: authenticated HTTPS on all interfaces for fresh setup; explicit private mode uses 10.8.0.1:443
               │ proxy_pass to 127.0.0.1:8080
 razdachad: Go daemon, root, systemd
     ├─ store       SQLite: peers, tunnels, rules, settings
@@ -85,9 +85,9 @@ systemd unit restricts capabilities to `CAP_NET_ADMIN`, `CAP_NET_RAW` and
 and `NoNewPrivileges=yes`, and allows writes to `/var/lib/razdacha`, `/etc/razdacha`
 and `/etc/sing-box`. See `internal/packaging/units.go` for the complete unit.
 
-nginx terminates TLS; the daemon only listens on loopback. Fresh installs expose nginx
-on the VPN address. `RAZDACHA_PUBLIC=1` opts into all-interface access,
-`RAZDACHA_PUBLIC=0` restores VPN-only access, and updates retain the saved mode without
+nginx terminates TLS; the daemon only listens on loopback. Fresh installs default to
+public authenticated HTTPS before VPN setup. `RAZDACHA_PUBLIC=1` selects all-interface access,
+`RAZDACHA_PUBLIC=0` explicitly selects VPN-only access, and updates retain the saved mode without
 an explicit override. Authentication is required in both modes: Argon2id password hash,
 session cookie and per-address failed-login throttling. The daemon refuses to start
 without a password. It trusts nginx client-address headers only from loopback requests.
@@ -96,8 +96,8 @@ The installer generates a **self-signed** ECDSA certificate using Go. There is n
 implemented Let's Encrypt/certbot or ACME flow; that part of the earlier access design
 has not been delivered. The certificate's SANs include the VPN address and, in public
 mode, the detected external address. The certificate lasts ten years; the key is `0600`
-and its directory `0700`. The installer creates the first peer and prints its QR code
-and the initial panel password.
+and its directory `0700`. The installer prints the external panel URL and initial
+password before the first peer's QR/configuration instructions (ADR 0034).
 
 ## Default addresses
 

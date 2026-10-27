@@ -20,7 +20,7 @@
 #   RAZDACHA_TELEGRAM_CHAT=…      идентификатор чата или канала для оповещений;
 #   RAZDACHA_PUBLIC=1             панель на всех интерфейсах (ADR 0009);
 #                                 0 выключает публичный режим обратно,
-#                                 не задана — режим остаётся прежним
+#                                 unset: fresh setup is public; updates retain saved mode
 #   RAZDACHA_PEER=имя             имя первого пира вместо client-1
 #   RAZDACHA_FREE_START=1         opt into free tunnels on a fresh installation
 #   RAZDACHA_FREE_COUNTRY=auto    Auto or one two-letter free-start exit country
@@ -425,7 +425,7 @@ razdacha — установщик селективного VPN-шлюза.
   RAZDACHA_TELEGRAM_TOKEN=…      токен бота @BotFather; пустой выключает оповещения
   RAZDACHA_TELEGRAM_CHAT=…       чат или канал для оповещений, например -1001234567890
   RAZDACHA_PUBLIC=1              панель на всех интерфейсах; 0 — обратно в VPN;
-                                 не задана — режим остаётся прежним
+                                 unset: fresh setup is public; updates retain saved mode
   RAZDACHA_PEER=имя              имя первого пира вместо client-1
   RAZDACHA_FREE_START=1          opt into free tunnels on a fresh installation
   RAZDACHA_FREE_COUNTRY=auto     Auto or one two-letter free-start exit country

@@ -47,3 +47,5 @@
 - [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.
 
 - [0033: Opt-in fresh-install free-start onboarding](0033-opt-in-free-start-onboarding.md) — experimental staging installation; supersedes 0032 installer deferral, with frozen source authority and first-client scope.
+
+- [0034: Fresh-install panel bootstrap](0034-fresh-panel-bootstrap.md) — public authenticated HTTPS before VPN setup for both installation choices; supersedes only the private fresh default, preserving explicit private and saved modes.

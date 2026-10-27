@@ -2,6 +2,15 @@
 
 ## 2026-10-27
 
+### #289 — Reachable panel bootstrap before VPN setup
+
+**Changed:** Any genuinely fresh setup defaults to persisted public authenticated
+HTTPS, for Free start and Skip alike; explicit private selection and existing
+saved modes remain authoritative. Direct CLI environment handling matches the
+installer's explicit panel controls. External URL/password precede client QR.
+**Beware:** TLS remains self-signed and password authentication remains required.
+Catalog query, tunnel/rule policy and guarded authority are unchanged (ADR 0034).
+
 ### #288 — Optional fresh-install CLI onboarding
 
 **New surface:** `/dev/tty` choice (default Skip), explicit `--free-start` and

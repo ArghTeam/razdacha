@@ -91,6 +91,21 @@ External-client traffic, large HTTP transfers and public UDP tests have not run.
 
 ## Optional fresh-install onboarding
 
+Every genuinely fresh installation defaults to the existing password-protected
+public HTTPS panel, whether Free start or Skip is selected. The external URL and
+generated password are printed before the client QR/configuration instructions,
+so panel access does not depend on an already imported VPN profile. TLS remains
+self-signed. Explicit `--public=false` or `RAZDACHA_PUBLIC=0` selects VPN-only
+access; existing installations retain their saved mode without explicit override.
+This bootstrap-access correction is specified in [ADR 0034](decisions/0034-fresh-panel-bootstrap.md).
+It does not change the catalog query, free-start choice or selected-client policy.
+
+Bootstrap-access evidence is separate: the existing `dc073b2` staging installation
+was corrected using supported `setup --public=true`. External HTTPS, rejection of
+unauthenticated protected API requests, password login and authenticated client
+listing were verified without a VPN. The new fresh default is regression-tested;
+upgrading that existing installation does not establish a fresh no-override install.
+
 Fresh interactive `razdacha setup` offers free tunnels or Skip using `/dev/tty`,
 so `curl | sh` does not consume the script as answers. Skip is the default; EOF
 or no terminal also skips. The prompt discloses third-party exits and no usability
