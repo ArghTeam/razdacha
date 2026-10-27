@@ -5,6 +5,7 @@ description: Static HTML/CSS/ES modules embedded from ui/dist; defaults instead 
 ---
 
 ## Invariants
+- Clients shows aggregate gateway received/sent traffic for current clients since interface start, alongside unchanged per-client rows. Each direction is unknown if any current client lacks a finite nonnegative numeric observation, or when no clients exist. Measured zero remains zero; counters are not lifetime history (#291).
 - Интерфейс — статика без сборщика в `ui/dist`, уезжает в бинарник через `go:embed`. Никакого npm и node в цепочке сборки демона.
 - Внешних ссылок в статике нет вовсе: ни CDN, ни шрифтов, ни картинок. Всё, что нужно панели, лежит рядом — иначе оно не попадёт в `go:embed`. Единственный внешний запрос — проверка свежего релиза у GitHub, и её делает **браузер**, а не демон: сервер наружу не ходит, панель работает и без исходящего интернета, а бейдж просто не появляется (#114).
 - Пустота не заполняется выдумкой: нет данных — так и говорим («не проверялся», «данные появятся позже»), а не показываем ноль.

@@ -1,5 +1,14 @@
 # Ui — log
 
+## 2026-10-28
+
+### #291 — Restore aggregate client traffic
+
+**Changed:** Reuse existing summary/stat components for gateway received/sent
+totals without removing per-client rows. Missing/invalid direction observations
+remain unknown; measured zero is preserved. Labels describe current-client and
+interface-reset scope rather than lifetime history.
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
