@@ -78,9 +78,23 @@ are expected for a changing free catalog. The original #286 target was
 unreachable; that historical attempt remains NOT RUN, not a passing deployment.
 Connection values, credentials, profiles and raw operator output remain private.
 
-Later documentation-only commits do not change the deployed code commit above;
-no rebuild or redeployment is implied by those evidence updates. Keep the PR
-draft until the remaining actual client/media checks are reviewed.
+The first-install evidence above belongs to code `dc073b2`; the later preserving
+upgrade below identifies the current validated candidate. Documentation-only
+commits do not rebuild or redeploy either candidate. Keep the PR draft until
+the remaining actual client/media checks are reviewed.
+
+At `2026-10-27T21:01:45Z`, the preserving upgrade to code
+`0fa13ea14799134161a1cdb64df221a77bc014a9`, version
+`v0.10.0-staging.289.0fa13ea`, passed. Uploaded binary hashes were verified;
+setup without panel flags preserved public mode, all three services and the
+original client profile. The version API matched code/installed version with
+`installed_match=true`. One client and its selected-scope starter rule remained.
+
+Direct external checks without VPN passed: HTTPS 200, protected API 401 before
+authentication, password login, and authenticated profile download matching the
+original private bytes. This establishes panel bootstrap access and preserving
+upgrade behavior. A fresh no-override reinstall was NOT RUN; the new fresh
+public default is covered by synthetic regressions. VPN/media remain NOT TESTED.
 
 Further transport-quality checks may use a separately reviewed isolated sidecar
 (HTTPS transfer larger than 64 KiB, public UDP DNS/STUN), alongside a dedicated

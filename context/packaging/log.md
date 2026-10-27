@@ -10,6 +10,15 @@ saved modes remain authoritative. Direct CLI environment handling matches the
 installer's explicit panel controls. External URL/password precede client QR.
 **Beware:** TLS remains self-signed and password authentication remains required.
 Catalog query, tunnel/rule policy and guarded authority are unchanged (ADR 0034).
+**Staging evidence:** At `2026-10-27T21:01:45Z`, preserving upgrade to code
+`0fa13ea` (`v0.10.0-staging.289.0fa13ea`) passed with verified binary hashes,
+exact API code/installed version match and unchanged profile, one client and
+selected-first-client rule. Setup without panel flags preserved public mode;
+all three services remained active. External HTTPS 200, protected API 401,
+password login and authenticated profile download matching private original
+bytes passed without VPN. Fresh no-override reinstall was NOT RUN; synthetic
+fresh-default/private/Skip tests passed. VPN/media remain NOT TESTED. Later
+documentation-only commits do not rebuild/redeploy that running code.
 
 ### #288 — Optional fresh-install CLI onboarding
 
