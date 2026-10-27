@@ -5,6 +5,7 @@ description: "SQLite: схема четырёх сущностей, миграц
 ---
 
 ## Invariants
+- Pool country policy conservatively applies to both normalized structured `PoolServer.Country` and existing title evidence; either blocked-country indication rejects the member. URI encryption remains authoritative and country unknown does not imply a location. No schema change, GeoIP dependency or built-in pool activation is introduced (ADR 0032).
 - Pre-migration `BackupAt` reads existing SQLite state without migrations or journal-mode changes. Its transaction includes committed WAL, preserves schema/installation metadata, and creates a standalone integrity-checked, synced `0600` snapshot. Exclusive reservation refuses existing files/symlinks; failures remove incomplete output. `InstalledVersionAt` uses the same read-only path and never creates an absent source.
 - `PRAGMA foreign_keys = ON` ставится в DSN и действует на каждом соединении: в SQLite внешние ключи выключены по умолчанию, без прагмы `ON DELETE RESTRICT` на `rules.tunnel_id` не работает.
 - Удаление туннеля, на который ссылается правило, отклоняется до обращения к БД и называет эти правила; схемный `RESTRICT` — вторая линия, а не единственная.

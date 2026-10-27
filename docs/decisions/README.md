@@ -43,3 +43,5 @@
 | [0030](0030-wireguard-parent-startup-alias.md) | Fixed WireGuard parent aliases avoid hostname chain startup locks | 2026-10-21 | accepted; clarifies 0012 |
 
 - [0031: Scoped tunnel observations](0031-scoped-tunnel-observations.md) — HTTPS, DNS, unknown transport and bounded probing.
+
+- [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.

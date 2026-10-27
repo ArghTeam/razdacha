@@ -3,6 +3,18 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-10-27
+
+### #286 — Experimental API catalog admission and shadow probe
+
+**Changed:** Exact official JSON API endpoints, one bounded batch and mirror retry,
+fragment-free API identity, structured/title country exclusions and credential-safe
+admission counts. Shared HTTP reads detect oversize bodies without unbounded drain.
+**New surface:** `cmd/razdacha-pool-probe`, ADR 0032 and the free-start prototype runbook.
+**Beware:** The built-in source stays igareck and disabled initially. Optional pinned
+checker use is Prepare-only; there is no installed-state or runtime mutation.
+Connectivity/media and designated staging validation remain NOT RUN.
+
 ## 2026-08-30
 
 ### #206, #208, #210 — razvedka: вход одиночным прогоном и первый живой запуск

@@ -1,5 +1,13 @@
 # Store — log
 
+## 2026-10-27
+
+### #286 — Structured pool country admission
+
+**Changed:** The shared country filter rejects either structured-country or title
+blocklist evidence. Unknown structured country retains the existing title check.
+**Beware:** No schema, built-in pool default or automatic activation changes (ADR 0032).
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
