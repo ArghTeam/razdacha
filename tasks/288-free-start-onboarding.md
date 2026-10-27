@@ -37,3 +37,27 @@ Absolute checkout and staging connection details remain private.
   lint, static builds and independent review precede staging deployment.
 - Report admission independently from health. Client, video/call and transport
   quality require actual staging evidence; never infer success from installation.
+
+## Staging validation evidence
+
+At `2026-10-27T20:03:46Z`, the primary operator confirmed the fresh deployment
+on the newly user-authorized staging target. Running source commit is
+`dc073b2f85a3e8d00b25a97838575b888aae4361`; version is
+`v0.10.0-staging.288.dc073b2`, with sing-box `1.12.25`. Uploaded binary hashes
+and authenticated HTTPS API version/commit assertions matched.
+
+Setup with `--free-start=true --free-country=auto` exited zero. Daemon, sing-box
+and nginx were active; committed authority existed and bootstrap authority was
+discarded. Exactly one client and one enabled selected-scope rule targeted only
+that client, with `russia_inside`, `meta`, `twitter`, `discord`. Runtime inventory
+had 96 pool members, with 38 reported alive and a current selection.
+
+The earlier reviewed shadow probe observed 100 items and 94 eligible. Installation
+performed a fresh fetch, so the count difference does not imply lost authority.
+The original #286 target was unreachable; this successful deployment uses the
+explicitly authorized replacement. No connection values or credentials are public.
+
+External-client traffic, media/video/call, large HTTP transfers and public UDP
+validation remain pending. Runtime health is not application usability evidence.
+Documentation-only evidence updates do not rebuild/redeploy the code commit above.
+Keep #286/#288 open and PR #287 draft until the remaining evidence is reviewed.

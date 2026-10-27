@@ -11,6 +11,13 @@ cancellation closes only the owned terminal and stops before acquisition.
 native/plain authority is shared by first configuration and bootstrap v4.
 **Beware:** Upgrades never prompt or mutate onboarding policy. Catalog admission
 is separate from runtime/client/media health. No direct/personal fallback.
+**Staging evidence:** At `2026-10-27T20:03:46Z`, reviewed running code `dc073b2`
+(`v0.10.0-staging.288.dc073b2`, sing-box `1.12.25`) completed explicit Auto opt-in
+with setup exit zero. All three services were active, committed authority existed
+and bootstrap authority was discarded. Authenticated API asserted the exact
+version/commit. One selected-first-client rule used the intended four sources.
+External-client/media/large HTTP/public UDP checks remain pending; later docs-only
+commits do not rebuild or redeploy that running code.
 
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->

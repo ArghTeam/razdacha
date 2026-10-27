@@ -12,6 +12,12 @@ through the canonical immutable cache before creating the database. The same
 verified source map feeds initial configuration and bootstrap v4 authority.
 **Beware:** Failed/stale starter sources abort retryably; API failure retains an
 empty unavailable pool. Skip/upgrade has no onboarding requests or fallback.
+**Staging evidence:** Reviewed code `dc073b2` completed guarded onboarding on the
+user-authorized replacement target. At `2026-10-27T20:03:46Z`, runtime inventory
+held 96 members, 38 reported alive and a current selection. The earlier shadow
+probe admitted 94 of 100 items; setup fetched a fresh changing catalog. These
+observations establish admission/runtime selection, not actual client/media or
+large-transfer/UDP success. The original unreachable #286 target remains historical.
 
 ### #286 — Experimental API catalog admission and shadow probe
 

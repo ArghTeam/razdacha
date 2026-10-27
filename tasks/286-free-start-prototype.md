@@ -4,6 +4,12 @@ tracker: "#286"
 ---
 # API-backed free-start pool prototype
 
+Follow-up status: [task 288](288-free-start-onboarding.md) adds user-authorized
+fresh-install onboarding and records successful guarded staging deployment of
+code commit `dc073b2`. The unreachable staging boundary below records the original
+prototype planning checkpoint; it is not the current replacement-target status.
+Actual client/media/large-transfer/UDP validation remains pending.
+
 ## Product intent
 
 Fresh installations will eventually offer an optional free start: enable free

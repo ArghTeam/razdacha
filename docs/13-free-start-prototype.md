@@ -58,23 +58,36 @@ always report `not_measured`; there is no TCP, UDP, download, call or video proo
 
 ## Staging evidence gate
 
-Status: catalog-only admission was observed on the newly designated staging host
-with the reviewed prototype: 100 source items, 94 eligible, one request. This is
-not connectivity or media evidence. Guarded onboarding validation remains pending.
-The previously designated staging host was unreachable; the user explicitly
-authorized the new target. Connection values remain private.
+Guarded fresh-install onboarding passed on the user-authorized replacement
+staging target. At `2026-10-27T20:03:46Z`, private operator evidence recorded:
 
-After independent review and restored staging access, record the exact commit,
-probe binary hash, selected checker hash/version, command flags and redacted JSON
-report. Verify installed configuration hash, service PID and database state are
-unchanged before and after. Keep connection details and before/after output in
-private operator evidence. Do not classify an unreachable host as a passing test.
+- Running code commit `dc073b2f85a3e8d00b25a97838575b888aae4361`, staging version
+  `v0.10.0-staging.288.dc073b2`, runtime sing-box `1.12.25`; uploaded binary hashes
+  were verified and authenticated HTTPS API version/commit assertions matched.
+- `setup --free-start=true --free-country=auto` exited successfully; daemon,
+  sing-box and nginx were active. Committed `applied-network.json` existed and
+  temporary bootstrap authority `bootstrap-network.json` was absent.
+- Exactly one client and one enabled rule, with selected scope restricted to
+  that first client. Sources were `russia_inside`, `meta`, `twitter`, `discord`.
+- Runtime pool inventory contained 96 members; runtime health reported 38 alive
+  and a current selection. These are runtime observations, not client/media proof.
 
-Only a separately reviewed isolated sidecar can establish candidate transport
-quality (HTTPS transfer larger than 64 KiB, public UDP DNS/STUN), followed by a
-dedicated staging client/control test and unavailable-pool rejection. Never feed
+The earlier shadow-only probe on this target observed 100 source items, 94
+eligible and one request. Fresh installation fetched again; different counts
+are expected for a changing free catalog. The original #286 target was
+unreachable; that historical attempt remains NOT RUN, not a passing deployment.
+Connection values, credentials, profiles and raw operator output remain private.
+
+Later documentation-only commits do not change the deployed code commit above;
+no rebuild or redeployment is implied by those evidence updates. Keep the PR
+draft until the remaining actual client/media checks are reviewed.
+
+Further transport-quality checks may use a separately reviewed isolated sidecar
+(HTTPS transfer larger than 64 KiB, public UDP DNS/STUN), alongside a dedicated
+staging client/control test and unavailable-pool rejection. Never feed
 provider credentials into the synthetic no-uplink connection-quality fixture.
 Video/call suitability remains unverified until actual client evidence is reviewed.
+External-client traffic, large HTTP transfers and public UDP tests have not run.
 
 ## Optional fresh-install onboarding
 
