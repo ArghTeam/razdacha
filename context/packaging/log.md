@@ -9,6 +9,17 @@ and freezes the disabled ordinary built-in pool with bootstrap policy. Default
 terminal questions are deferred to the authenticated browser wizard; explicit
 CLI/env automation still preacquires coherent authority and records owned rule IDs.
 **Beware:** Upgrades preserve clients, profiles, routing, password and marker state.
+**Live evidence:** Verified preserving upgrade to code `deb5924`
+(`v0.10.0-staging.290.deb5924`) passed at `2026-10-27T21:41:25Z` with uploaded
+hashes and exact API code/installed version match. All three services were active,
+profile/stable policy were preserved, and external authenticated read-only setup
+Apply/delivery/Finish/reopen passed without VPN. The user was left with pending
+read-only setup. No fresh reinstall or VPN/media usability proof is claimed;
+later documentation-only commits do not rebuild/redeploy that running code.
+**Real browser evidence:** A fresh external browser context logged in without VPN
+and automatically opened the pending web wizard. Closing with Later preserved
+pending state and exposed aggregate counters; no automatic policy writes, Apply
+or profile delivery occurred.
 
 ## 2026-10-27
 

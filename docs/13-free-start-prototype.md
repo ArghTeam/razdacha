@@ -96,6 +96,29 @@ original private bytes. This establishes panel bootstrap access and preserving
 upgrade behavior. A fresh no-override reinstall was NOT RUN; the new fresh
 public default is covered by synthetic regressions. VPN/media remain NOT TESTED.
 
+The current web candidate was validated at `2026-10-27T21:41:25Z`: running code
+`deb5924d2362beb301443f1afa042427c3312e8e`, version
+`v0.10.0-staging.290.deb5924`, verified uploaded hashes, exact authenticated
+version/commit and `installed_match=true`, all three services active and the
+original client profile unchanged after preserving upgrade.
+
+Without VPN, the real authenticated API path passed explicit legacy read-only
+reopen, Skip/keep-current configure, guarded Apply acceptance, existing profile
+download matching private original bytes, Finish, and explicit reopening for the
+user. Pending was false after Finish and true/read-only true/prepared false after
+the final reopen. Stable client/rule/tunnel fields remained equal and no objects
+were duplicated. The enabled pool reported 116 eligible candidates at observation;
+that changing inventory is not runtime/client/media proof. Fresh Free/DE remains
+synthetic-test evidence; this live flow preserved an already configured server.
+Documentation-only updates do not rebuild/redeploy the running web candidate.
+
+A fresh real headless browser context verified public password login without VPN
+automatically opens the pending three-step wizard, with existing-policy read-only
+text and Auto country. Later closed it and showed both aggregate traffic cards
+and the Setup entry. The observed network contained zero onboarding writes, zero
+Apply calls and zero profile loads; no private QR/profile was fetched. Pending
+remains true for the user. This is real UI/bootstrap evidence, not VPN/media proof.
+
 Further transport-quality checks may use a separately reviewed isolated sidecar
 (HTTPS transfer larger than 64 KiB, public UDP DNS/STUN), alongside a dedicated
 staging client/control test and unavailable-pool rejection. Never feed
