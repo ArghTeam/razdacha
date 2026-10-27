@@ -5,6 +5,14 @@
 
 ## 2026-10-27
 
+### #288 — Preacquire coherent free-start bootstrap sources
+
+**Changed:** Explicit fresh-install opt-in acquires the preset minus Google AI
+through the canonical immutable cache before creating the database. The same
+verified source map feeds initial configuration and bootstrap v4 authority.
+**Beware:** Failed/stale starter sources abort retryably; API failure retains an
+empty unavailable pool. Skip/upgrade has no onboarding requests or fallback.
+
 ### #286 — Experimental API catalog admission and shadow probe
 
 **Changed:** Exact official JSON API endpoints, one bounded batch and mirror retry,

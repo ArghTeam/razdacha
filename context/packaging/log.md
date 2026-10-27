@@ -1,5 +1,17 @@
 # Packaging — log
 
+## 2026-10-27
+
+### #288 — Optional fresh-install CLI onboarding
+
+**New surface:** `/dev/tty` choice (default Skip), explicit `--free-start` and
+`--free-country`, and matching environment controls. EOF/noTTY skips; signal
+cancellation closes only the owned terminal and stops before acquisition.
+**Changed:** All starter source acquisition precedes database creation; frozen
+native/plain authority is shared by first configuration and bootstrap v4.
+**Beware:** Upgrades never prompt or mutate onboarding policy. Catalog admission
+is separate from runtime/client/media health. No direct/personal fallback.
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 

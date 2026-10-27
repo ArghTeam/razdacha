@@ -5,6 +5,7 @@ description: загрузка и кэш .srs/plain-списков, распис�
 ---
 
 ## Invariants
+- Fresh-install free-start opt-in synchronously acquires every starter source through the existing Fetcher in canonical database-parent `lists`, before database creation. Source failure or stale fallback aborts retryably; exact verified contents feed first configuration and bootstrap v4 together. It uses one API batch, first-client-only preset minus Google AI and no personal/source fallback. Skip/upgrade makes no onboarding requests; ordinary igareck default is unchanged (ADR 0033).
 - Кэш пишется атомарно: тело целиком в память → проверка → временный файл рядом → `Sync` → `rename`. Битый, пустой и оборванный ответ валидный кэш не трогают.
 - Длина тела сверяется с `Content-Length` явно: `net/http` отдаёт `ErrUnexpectedEOF` не на всех видах обрыва, без сверки недокачанный список выглядит целым.
 - Неудачный прогон повторяется с нарастающей паузой (минута → 15 минут), а не через сутки: на свежем VPS сеть поднимается позже демона.

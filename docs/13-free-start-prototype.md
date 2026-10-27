@@ -1,10 +1,11 @@
 # Experimental free-start catalog probe
 
 This increment validates catalog admission and optional configuration acceptance.
-It does not enable free start, modify the installer or change the built-in
-igareck pool. The initial installation choice, starter rules and live validation
-are subsequent work ([task 286](../tasks/286-free-start-prototype.md),
-[ADR 0032](decisions/0032-api-pool-shadow-probe.md)).
+The operator probe does not enable free start or change installed state.
+Optional fresh-install CLI onboarding is now available for staging under
+[task 288](../tasks/288-free-start-onboarding.md) and
+[ADR 0033](decisions/0033-opt-in-free-start-onboarding.md). The ordinary built-in
+igareck default remains unchanged; actual service usability requires evidence.
 
 The source is the [TelegaVPN free-vpn-keys API](https://github.com/TelegaVPN/free-vpn-keys/blob/main/API.md),
 served by `https://vpnkeys.me/api/v1/keys` and
@@ -57,8 +58,11 @@ always report `not_measured`; there is no TCP, UDP, download, call or video proo
 
 ## Staging evidence gate
 
-Status: **NOT RUN — designated staging is unreachable.** No other host is an
-authorized substitute, and no production activation is part of this increment.
+Status: catalog-only admission was observed on the newly designated staging host
+with the reviewed prototype: 100 source items, 94 eligible, one request. This is
+not connectivity or media evidence. Guarded onboarding validation remains pending.
+The previously designated staging host was unreachable; the user explicitly
+authorized the new target. Connection values remain private.
 
 After independent review and restored staging access, record the exact commit,
 probe binary hash, selected checker hash/version, command flags and redacted JSON
@@ -70,4 +74,50 @@ Only a separately reviewed isolated sidecar can establish candidate transport
 quality (HTTPS transfer larger than 64 KiB, public UDP DNS/STUN), followed by a
 dedicated staging client/control test and unavailable-pool rejection. Never feed
 provider credentials into the synthetic no-uplink connection-quality fixture.
-Installer/onboarding behavior remains deferred until that evidence is reviewed.
+Video/call suitability remains unverified until actual client evidence is reviewed.
+
+## Optional fresh-install onboarding
+
+Fresh interactive `razdacha setup` offers free tunnels or Skip using `/dev/tty`,
+so `curl | sh` does not consume the script as answers. Skip is the default; EOF
+or no terminal also skips. The prompt discloses third-party exits and no usability
+guarantee. Auto is the default country; an explicit two-letter code is optional.
+
+For an unattended fresh installation:
+
+```sh
+razdacha setup --free-start=true --free-country=auto
+# The release installer inherits these environment values:
+RAZDACHA_FREE_START=1 RAZDACHA_FREE_COUNTRY=DE sh install.sh
+```
+
+`RAZDACHA_FREE_START` accepts true/false or 1/0; explicit flags override environment.
+`RAZDACHA_FREE_COUNTRY` only chooses a country and never enables the feature by
+itself. `--free-start=false` skips. Existing installations never prompt or fetch
+onboarding sources; an explicit enable or country request is rejected before
+opening/migrating/backing up the database. Remove onboarding flags/environment
+when updating. Existing pool/rules are never implicitly changed.
+
+Opt-in uses the one built-in pool at the bounded JSON API and one selective
+starter rule scoped only to the new first client. The rule uses the ordinary
+preset without `google_ai`: `russia_inside`, `meta`, `twitter`, `discord`.
+There is no catch-all, broad ASN list, personal tunnel or fallback. Other clients
+receive no implicit assignment. Skip retains today's disabled igareck behavior
+and performs no onboarding catalog/list requests.
+
+All starter sources are acquired synchronously with the existing Fetcher under
+the canonical database-parent `lists` cache, with immutable native originals/DNS
+projections. The overall acquisition deadline is two minutes and each source
+request is bounded at 15 seconds. Stale fallback is refused. Acquisition happens
+before database creation, so a transient source failure can be retried safely.
+The exact verified source map feeds both the first checked configuration and v4
+bootstrap seed, then the daemon's existing guarded recovery publishes it. Missing
+source contents never create a permissive empty-list bootstrap. Later setup
+failures preserve existing files/state for explicit recovery; retries do not
+reinterpret an existing database as a fresh opt-in.
+
+Catalog admission failure retains an enabled empty pool and starter policy;
+selected destinations reject until candidates become available. It never changes
+to direct routing or another source. Source/configuration failure stops setup
+before service startup or seed publication. Admission counts appear separately
+from runtime health; installation alone does not prove a working exit or media.

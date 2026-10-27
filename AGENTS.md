@@ -15,7 +15,9 @@ the deployed candidate version from the latest stable release number.
 One built-in pool rotates free igareck keys ([ADR 0018](docs/decisions/0018-unified-pool.md)).
 It excludes blocklisted countries (RU and BY by default) and keys without transport
 encryption ([ADR 0020](docs/decisions/0020-pool-country-blocklist.md)). It starts disabled;
-no catalog requests are made until enabled. Assign clients through peer-scoped rules.
+no catalog requests are made until enabled. Explicit fresh-install free-start
+onboarding may enable the API source and first-client starter rules (ADR 0033).
+Assign clients through peer-scoped rules.
 
 Tunnel health is checked on a schedule and persisted ([ADR 0011](docs/decisions/0011-tunnel-check-schedule.md)).
 Optional Telegram notifications confirm changes across three checks and start disabled.

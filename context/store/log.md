@@ -2,6 +2,13 @@
 
 ## 2026-10-27
 
+### #288 — Explicit fresh-install pool and selected first-client policy
+
+**Changed:** Fresh opt-in seeds the one built-in pool at the JSON API, enabled,
+and one starter rule scoped exclusively to the new first client.
+**Beware:** Existing installations reject explicit onboarding before database
+opening. Skip retains the ordinary disabled igareck default. No schema change.
+
 ### #286 — Structured pool country admission
 
 **Changed:** The shared country filter rejects either structured-country or title

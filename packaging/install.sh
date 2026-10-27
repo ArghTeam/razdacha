@@ -22,6 +22,8 @@
 #                                 0 выключает публичный режим обратно,
 #                                 не задана — режим остаётся прежним
 #   RAZDACHA_PEER=имя             имя первого пира вместо client-1
+#   RAZDACHA_FREE_START=1         opt into free tunnels on a fresh installation
+#   RAZDACHA_FREE_COUNTRY=auto    Auto or one two-letter free-start exit country
 #   RAZDACHA_ALLOW_UNSUPPORTED=1  не отказываться на дистрибутиве вне матрицы
 
 set -eu
@@ -425,6 +427,8 @@ razdacha — установщик селективного VPN-шлюза.
   RAZDACHA_PUBLIC=1              панель на всех интерфейсах; 0 — обратно в VPN;
                                  не задана — режим остаётся прежним
   RAZDACHA_PEER=имя              имя первого пира вместо client-1
+  RAZDACHA_FREE_START=1          opt into free tunnels on a fresh installation
+  RAZDACHA_FREE_COUNTRY=auto     Auto or one two-letter free-start exit country
   RAZDACHA_ALLOW_UNSUPPORTED=1   не отказываться на дистрибутиве вне матрицы
 HELP
 }

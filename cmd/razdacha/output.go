@@ -13,6 +13,7 @@ import (
 // пользователь увидит после `curl … | sh`, и собрать его целиком проще, чем
 // расставлять Printf между шагами. Заодно он проверяется тестом.
 type summary struct {
+	FreeStart string
 	// Fresh — первая установка. На обновлении QR и пароль не печатаются: пиры
 	// на месте, пароль знает пользователь.
 	Fresh bool
@@ -99,6 +100,10 @@ func (s summary) Render() (string, error) {
 	}
 	nl()
 
+	if s.FreeStart != "" {
+		line("%s", s.FreeStart)
+		nl()
+	}
 	if s.ClientConfig != "" {
 		line("Отсканируйте QR-код клиентом WireGuard:")
 		nl()

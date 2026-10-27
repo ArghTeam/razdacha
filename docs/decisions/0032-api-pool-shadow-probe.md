@@ -2,6 +2,9 @@
 
 Date: 2026-10-27. Status: experimental; clarifies 0015 and 0020.
 
+The installer deferral is superseded by [ADR 0033](0033-opt-in-free-start-onboarding.md).
+The operator probe remains shadow-only; its guarantees are unchanged.
+
 ## Context
 
 The provider has published a JSON API at `https://vpnkeys.me/api/v1/keys`
