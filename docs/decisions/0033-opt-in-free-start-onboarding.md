@@ -5,6 +5,10 @@ installer deferral in ADR 0032 and clarifies ADR 0014/0018 for explicit setup in
 
 ## Context
 
+The terminal-first interaction is superseded by
+[ADR 0035](0035-first-login-web-setup.md). Explicit CLI/env automation and its
+coherent bootstrap guarantees remain; default choices move to the authenticated web flow.
+
 The user authorized an actual fresh installation to test onboarding. A catalog
 probe alone cannot establish the proposed install-and-use experience. Existing
 installations and personal tunnels must remain isolated from this choice.

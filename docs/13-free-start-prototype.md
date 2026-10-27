@@ -120,10 +120,11 @@ unauthenticated protected API requests, password login and authenticated client
 listing were verified without a VPN. The new fresh default is regression-tested;
 upgrading that existing installation does not establish a fresh no-override install.
 
-Fresh interactive `razdacha setup` offers free tunnels or Skip using `/dev/tty`,
-so `curl | sh` does not consume the script as answers. Skip is the default; EOF
-or no terminal also skips. The prompt discloses third-party exits and no usability
-guarantee. Auto is the default country; an explicit two-letter code is optional.
+Fresh `razdacha setup` now defers default free-tunnel choices to the authenticated
+first-login web wizard (ADR 0035), instead of asking terminal questions. The
+installer prints public access/password and seeds pending metadata for the existing
+first client; no catalog is fetched until explicit opt-in. Explicit CLI/env
+automation below remains supported and its created starter policy is recognized.
 
 For an unattended fresh installation:
 
@@ -163,3 +164,56 @@ selected destinations reject until candidates become available. It never changes
 to direct routing or another source. Source/configuration failure stops setup
 before service startup or seed publication. Admission counts appear separately
 from runtime health; installation alone does not prove a working exit or media.
+
+## Authenticated web setup
+
+After login, genuinely fresh installations show three steps: choose Free/Skip
+and Auto/country, review and explicitly Apply, then show/download the existing
+first client's saved WireGuard profile and Finish. Selecting an option, opening,
+polling or closing the wizard does not change routing. Profile secrets load only
+on an explicit delivery action and are cleared with the modal. Setup can be
+reopened through the header's Setup button; completion is persisted server-side.
+Legacy installations without metadata are completed by default, regardless of
+their client count. Explicit authenticated reopening changes metadata only.
+
+Reopened legacy installations with existing rules/personal setup are read-only:
+the wizard keeps current policy and delivers the selected existing profile. It
+does not adopt a rule by name, duplicate clients/rules, change a shared pool's
+country or silently disable existing exits. Editable fresh setup tracks the exact
+owned starter rule, verifies its full scope/destinations and rejects extra shared
+references. Skip preserves existing configured policy.
+
+Configure checks that unrelated edits are not pending and transactionally pins
+the expected routing fingerprint. Apply checks that same intent under the daemon
+gate before ordinary guarded publication. Fingerprints ignore only refreshable
+pool inventory, never routing, manual-tunnel credentials or source country. Changed unrelated
+policy produces conflict rather than being silently applied. A failed Apply keeps
+choices for retry; while prepared intent is pending, the choice stays locked.
+Closing an in-flight explicit operation does not undo already saved intent;
+reopening resumes it rather than starting a duplicate operation.
+
+The daemon's existing source Manager acquires missing starter artifacts on explicit
+Apply, with a 20-second acquisition budget inside a 45-second request context,
+below the HTTP server write timeout. Cancellation is checked before publication.
+Missing/invalid native authority never bypasses guarded checks. Source failures
+remain retryable and Finish requires accepted, still-current applied policy.
+Config acceptance still does not prove application usability.
+An accepted enabled pool with no candidates is explicitly identified in the final
+step: assigned resources reject until the built-in pool is refreshed, without
+direct fallback. Redacted current inventory is distinguished from runtime health.
+
+Authenticated endpoints: `GET /api/onboarding` and
+`POST /api/onboarding/{reopen,configure,apply,finish}`. Only mode/country and an
+optional existing client selection are accepted as setup intent; catalog URLs are
+owned by the server. Responses exclude internal fingerprints, keys and diagnostics.
+No credential or host value belongs in public evidence.
+
+## Aggregate client traffic
+
+Clients again shows gateway received/sent totals for current clients since the
+gateway interface started. Each direction is Unknown if any current client has
+missing, invalid or negative observations; measured zero remains zero. Per-client
+rows remain present and apply the same unknown-data rule. This is interface-reset
+scope, not lifetime history. The separate `56e8bcb` staging restoration was verified
+at `2026-10-27T21:19:12Z`: preserving setup upgrade, active services, exact version,
+unchanged profile, served aggregate cards and numeric API counter observations.

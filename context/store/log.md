@@ -1,5 +1,15 @@
 # Store — log
 
+## 2026-10-28
+
+### #290 — Persisted setup intent and ownership
+
+**Changed:** Private key/value onboarding metadata, legacy-completed default,
+metadata-only reopen and transactionally scoped starter policy. Prepared routing
+fingerprints reject unrelated edits; completion requires current accepted Apply.
+**Beware:** No name-based rule adoption or duplicate clients; existing configured
+legacy policy is read-only. Pool refresh inventory is excluded from policy hashes.
+
 ## 2026-10-27
 
 ### #288 — Explicit fresh-install pool and selected first-client policy

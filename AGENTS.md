@@ -17,6 +17,8 @@ It excludes blocklisted countries (RU and BY by default) and keys without transp
 encryption ([ADR 0020](docs/decisions/0020-pool-country-blocklist.md)). It starts disabled;
 no catalog requests are made until enabled. Explicit fresh-install free-start
 onboarding may enable the API source and first-client starter rules (ADR 0033).
+The default first-run choice is now an authenticated web wizard with persisted
+pending state; explicit CLI/env automation remains supported (ADR 0035).
 Assign clients through peer-scoped rules.
 
 Tunnel health is checked on a schedule and persisted ([ADR 0011](docs/decisions/0011-tunnel-check-schedule.md)).

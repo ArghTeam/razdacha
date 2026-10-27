@@ -1,5 +1,15 @@
 # Packaging — log
 
+## 2026-10-28
+
+### #290 — Defer default setup choices to first web login
+
+**Changed:** Fresh setup creates pending metadata for its existing initial client
+and freezes the disabled ordinary built-in pool with bootstrap policy. Default
+terminal questions are deferred to the authenticated browser wizard; explicit
+CLI/env automation still preacquires coherent authority and records owned rule IDs.
+**Beware:** Upgrades preserve clients, profiles, routing, password and marker state.
+
 ## 2026-10-27
 
 ### #289 — Reachable panel bootstrap before VPN setup

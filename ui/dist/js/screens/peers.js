@@ -52,7 +52,7 @@ export function view() {
         <div class="client-identity">
           <div class="client-name"><span class="dot ${on ? 'on' : 'off'}" aria-hidden="true"></span><h2>${esc(p.name)}</h2></div>
           <div class="mono row-meta">${esc(p.address)}</div>
-          <div class="row-meta">${activity} <span class="client-traffic">· ↓ ${bytes(p.rx_bytes)} · ↑ ${bytes(p.tx_bytes)}</span></div>
+          <div class="row-meta">${activity} <span class="client-traffic">· ↓ ${observedTraffic(p.rx_bytes)} · ↑ ${observedTraffic(p.tx_bytes)}</span></div>
         </div>
         <div class="client-route"><div class="client-label">Configured route</div>${routingSummary(p)}</div>
         <div class="row-actions client-actions">
@@ -79,8 +79,10 @@ export function view() {
       <span>Saved routes need Apply. Device access can change during synchronization before Apply.${state.dirty ? ' Unapplied changes exist.' : ''}</span>
     </div>
     <div class="card client-inventory">${rows || '<div class="empty"><strong>No clients yet</strong><p>Add a device to create its WireGuard configuration, then choose its route.</p><button class="btn" data-act="add-peer">Add client</button></div>'}</div>
-    <p class="screen-sub" style="margin-top:10px">Traffic counters are measured since the gateway interface started.</p>`;
+    `;
 }
+
+const observedTraffic = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? bytes(value) : 'Unknown';
 
 export function aggregateTraffic(peers, key) {
   if (!peers.length) return null;

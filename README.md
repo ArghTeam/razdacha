@@ -47,6 +47,11 @@ Skip lets you configure personal tunnels through the panel. Ordinary pool activa
 excluding RU/BY by default and keys without transport encryption. Configure tunnels and
 rules in the panel; the starter rule preset is offered for explicit acceptance.
 
+Fresh installations open a guided web setup after password login: choose optional
+free tunnels or keep current policy, review and explicitly Apply, then show/download
+the initial client's saved profile and Finish. Setup can be reopened from the header;
+upgrades preserve existing clients, routing and completion state.
+
 Download a full backup from the panel or schedule encrypted Telegram delivery.
 `razdacha restore <file>` restores peer keys as well as settings, so issued client
 configurations keep working. Remove the installation with `razdacha uninstall`.

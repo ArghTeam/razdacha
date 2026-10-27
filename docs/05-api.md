@@ -1,5 +1,25 @@
 # API
 
+## Authenticated first-login setup (ADR 0035)
+
+| Endpoint | Explicit effect |
+| --- | --- |
+| `GET /api/onboarding` | Read pending/completed status, initial client identity and redacted pool inventory; no source fetch or policy mutation |
+| `POST /api/onboarding/reopen` | Mark setup pending for its existing initial client; optional `peer_id` selects an existing client for legacy setup; no routing change |
+| `POST /api/onboarding/configure` | Accept `mode` (`free`/`skip`) and `country` (`AUTO` or an allowed two-letter code); server owns catalog URLs and transactionally pins scoped setup intent |
+| `POST /api/onboarding/apply` | Compare prepared routing fingerprint and publish only that current intent through the daemon's guarded gate |
+| `POST /api/onboarding/finish` | Complete metadata only after accepted, still-current Apply |
+
+Absent legacy metadata means completed. Reopening configured legacy policy is
+read-only; Skip preserves it. Unrelated pending edits return conflict instead of
+being applied incidentally. Responses omit private profiles, provider URIs, raw
+diagnostics and internal fingerprints. `candidate_count`, `pool_enabled` and
+`catalog_outcome` describe current built-in inventory, not measured connectivity.
+An enabled empty pool reports `no_candidates`: assigned resources reject without
+direct fallback. Existing authenticated client config delivery remains separate.
+Requests are bounded at 45 seconds, including at most 20 seconds of missing-source
+acquisition before ordinary checked/guarded publication. Failure remains retryable.
+
 REST поверх HTTP. Демон слушает `127.0.0.1:8080`, снаружи
 его закрывает nginx ([ADR 0008](decisions/0008-nginx-before-panel.md)). Панель доступна
 из интернета, поэтому доступ закрыт паролем и сессией

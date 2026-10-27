@@ -25,6 +25,7 @@ async function fixture(browser, options = {}) {
     if (holds.has(key)) { assert(!held.has(key), `Unexpected concurrent ${key}`); held.set(key, route); return; }
     if (overrides.has(key)) { const value = overrides.get(key); return json(route, value.body, value.status); }
     if (url.pathname === '/api/session') return json(route, { authenticated });
+    if (key === 'GET /api/onboarding') return json(route, { pending: false });
     if (url.pathname === '/api/logout') { authenticated = false; return json(route, {}); }
     if (url.pathname === '/api/login') { authenticated = true; return json(route, {}); }
     if (key === 'GET /api/peers') return json(route, peers);

@@ -17,6 +17,11 @@ const { fixture, examplePeer } = require('./client.fixture.cjs');
         assert.equal(await t.page.locator('[data-traffic="received"]').textContent(), received, name);
         assert.equal(await t.page.locator('[data-traffic="sent"]').textContent(), sent, name);
         assert.equal(await t.page.locator('.client-row').count(), peers.length, name);
+        const rows = await t.page.locator('.client-traffic').allTextContents();
+        for (let i = 0; i < peers.length; i++) {
+          if ([peers[i].rx_bytes, peers[i].tx_bytes].some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) assert(rows[i].includes('Unknown'), `${name}: missing per-client observation shown as zero`);
+        }
+        assert.equal(await t.page.evaluate(async () => (await import('/js/screens/peers.js')).aggregateTraffic([], 'rx_bytes')), null);
         assert(await t.page.getByText('Current clients since the gateway interface started;', { exact: false }).isVisible());
       } finally { await t.page.close(); }
     }

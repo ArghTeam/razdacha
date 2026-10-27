@@ -91,7 +91,8 @@ func runSetup(ctx context.Context, args []string) error {
 		return err
 	}
 	opts.color = isTerminal(os.Stdout)
-	opts.prompt = true
+	// Interactive free-tunnel selection now belongs to the authenticated web flow.
+	opts.prompt = false
 
 	// Вывод печатается и при неудаче запуска сервисов. Пароль панели
 	// сгенерирован и лежит в БД одним лишь хешем: не напечатав его здесь, мы
@@ -256,6 +257,28 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 				return summary{}, err
 			}
 			log.Info("Free-start catalog admission", "catalog_valid", preparedFree.observation.CatalogValid, "items", preparedFree.observation.CatalogItems, "eligible", len(preparedFree.members), "connectivity", "not_measured")
+		}
+		if !choice.enabled {
+			if _, err := st.EnsureBuiltinPool(ctx, lists.BuiltinPoolCatalogURL, store.TunnelVLESS); err != nil {
+				return summary{}, err
+			}
+		}
+		ownedRule := ""
+		if choice.enabled {
+			rules, err := st.Rules(ctx)
+			if err != nil {
+				return summary{}, err
+			}
+			if len(rules) == 1 {
+				ownedRule = rules[0].ID
+			}
+		}
+		country := choice.country
+		if country == "" {
+			country = "AUTO"
+		}
+		if err := st.InitOnboarding(ctx, peer.ID, ownedRule, country); err != nil {
+			return summary{}, err
 		}
 	}
 
