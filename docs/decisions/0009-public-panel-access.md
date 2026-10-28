@@ -4,6 +4,10 @@
 
 ## Контекст
 
+The private fresh-install default is superseded by
+[ADR 0034](0034-fresh-panel-bootstrap.md). Existing saved modes and explicit
+private selection remain authoritative; authentication is unchanged.
+
 Решение [0001](0001-gateway-not-desktop.md) сделало панель доступной только из VPN, а
 [0008](0008-nginx-before-panel.md) закрепило это в реализации: nginx слушает адрес `wg0`,
 демон — loopback. Аутентификации нет вовсе, её роль играет сам факт наличия рабочего

@@ -1,5 +1,15 @@
 # Singbox — log
 
+## 2026-10-27
+
+### #286 — Private shadow-only configuration probe
+
+**New surface:** The experimental operator probe uses an explicitly selected,
+SHA-256 identified executable copy and `Applier.Prepare` over synthetic defaults.
+**Beware:** No Commit/Reload, installed configuration/database reads or service
+startup. Checker diagnostics are private; rejection fails the whole candidate.
+Catalog/config acceptance does not establish connectivity or media suitability.
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 

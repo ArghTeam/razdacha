@@ -58,6 +58,9 @@ func (f PoolFilter) Allows(s PoolServer) bool { return f.Exclusion(s) == "" }
 // Страна проверяется первой: она же и есть причина, ради которой решение принималось,
 // и в панели про российскую ноду без TLS честнее сказать про страну.
 func (f PoolFilter) Exclusion(s PoolServer) string {
+	if code := f.blockedCountry(strings.ToUpper(strings.TrimSpace(s.Country))); code != "" {
+		return poolReasonCountry + code
+	}
 	if code := f.blockedCountry(s.Title); code != "" {
 		return poolReasonCountry + code
 	}

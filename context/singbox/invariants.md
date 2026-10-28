@@ -5,6 +5,7 @@ description: генерация option.Options из состояния БД, п�
 ---
 
 ## Invariants
+- The experimental pool probe checks only an ordinary generated synthetic snapshot through `Applier.Prepare`, using a copied explicit checker binary identified by SHA-256. It never calls Commit/Reload or opens installed state; rejected checker output is discarded and the whole candidate fails rather than silently hiding removed members. A config check is not connectivity evidence (ADR 0032).
 - WireGuard из `.conf` разбирается в `option.Endpoint{Type: "wireguard"}` с `System: false` и пустым `Name`; `bind_interface` не используется (ADR 0002).
 - Структуры sing-box сериализуются через `MarshalJSONContext`: обычный `json.Marshal` теряет содержимое `Options`.
 - Невалидный ввод возвращает ошибку на русском, пригодную для показа как есть; паника недопустима даже на обрезанном URL и битом base64.

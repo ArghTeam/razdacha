@@ -4,6 +4,9 @@
 
 ## Контекст
 
+Endpoint retirement is clarified by [ADR 0032](0032-api-pool-shadow-probe.md):
+the new exact JSON API path is distinct from the historical HTML catalog.
+
 [ADR 0010](0010-tunnel-pool-urltest.md) описал туннель-пул: демон обходит каталог
 бесплатных ключей, складывает их в один `urltest` под тегом туннеля и держится за живой.
 Каталог был один — `https://vpnkeys.me/protocol/vless`, и протокол пула считался vless

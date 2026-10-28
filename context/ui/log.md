@@ -1,5 +1,49 @@
 # Ui — log
 
+## 2026-10-28
+
+### #292 — Explicitly adopt our verified staging starter for editable setup
+
+**Operational change:** Independently reviewed private helper validation and
+explicit adoption changed only ownership metadata for our exact one-client,
+one-starter-rule, one-built-in-pool staging policy. Database/committed routing
+fingerprints were unchanged; setup is now pending/editable with Auto. Generic
+configured legacy/custom policy remains read-only and Configure/Apply guards remain.
+**Real browser evidence:** Free enabled, Skip disabled country, Free enabled Auto,
+DE appeared in Review, Back stayed editable, draft reset to Auto before Later.
+Only login was posted; zero configure/Apply/profile loads. No service restart,
+app rebuild or deployment; running code remains `deb5924`. Old open modal context
+requires reopening. Earlier #290 read-only proof remains historical evidence.
+
+### #290 — Actual first-login web setup
+
+**New surface:** Persisted pending choice/review/explicit Apply/profile/finish modal
+with a header reopen entry, using existing controls, QR and authenticated download.
+**Changed:** Session/modal/navigation guards protect new drafts from delayed setup
+responses; cleanup clears private profile/QR/blob copies. Failed intent stays retryable.
+**Beware:** No automatic route changes, no application-usability promise and no
+legacy rule adoption. Per-client missing traffic now remains Unknown, like aggregates.
+**Live evidence:** At `2026-10-27T21:41:25Z`, running code `deb5924` passed the
+external authenticated API sequence through read-only keep-current setup, guarded
+Apply, unchanged existing profile delivery, Finish and reopen left pending for the
+user. Stable routing/client objects were preserved without duplication. Fresh
+Free/DE was verified synthetically; actual VPN/media remain NOT TESTED.
+**Real browser evidence:** Public HTTPS password login without VPN automatically
+opened pending three-step read-only setup with Auto. Later exposed both aggregate
+cards and Setup entry; observed zero onboarding writes/Apply/profile loads. No
+private QR/profile was fetched and pending was left true for the user.
+
+### #291 — Restore aggregate client traffic
+
+**Changed:** Reuse existing summary/stat components for gateway received/sent
+totals without removing per-client rows. Missing/invalid direction observations
+remain unknown; measured zero is preserved. Labels describe current-client and
+interface-reset scope rather than lifetime history.
+**Live evidence:** The separate `56e8bcb` preserving deployment passed at
+`2026-10-27T21:19:12Z`: exact authenticated version, active services, unchanged
+profile, served aggregate cards and numeric client counter observations. This
+does not claim a live connected client or lifetime traffic history.
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 

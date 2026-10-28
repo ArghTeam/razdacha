@@ -355,6 +355,21 @@ pre.pane {
 .stat-label { font-size: var(--text-label); color: var(--fg-dim); }
 .stat-value { font-size: 19px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 
+/* First-login setup reuses the panel's modal and field system. */
+.setup-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); list-style: none; padding: 0; gap: 12px; margin: 0 0 24px; }
+.setup-steps li { color: var(--fg-dim); border-top: 2px solid var(--line); padding-top: 8px; font-size: var(--text-label); }
+.setup-steps li[aria-current] { color: var(--fg); border-color: var(--accent); font-weight: 650; }
+.setup-steps span { display: block; margin-bottom: 4px; }
+.setup-choices { border: 0; padding: 0; margin: 20px 0; }
+.setup-choices legend { font-weight: 650; margin-bottom: 8px; }
+.setup-choices label { display: block; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; }
+.setup-choices .hint { display: block; margin: 4px 0 0 24px; }
+.setup-review { display: grid; grid-template-columns: minmax(60px, 1fr) minmax(0, 2fr); gap: 12px; }
+.setup-review dt { color: var(--fg-dim); }
+.setup-review dd { margin: 0; overflow-wrap: anywhere; }
+.setup-profile { margin-top: 16px; }
+.setup-profile canvas { display: block; max-width: 100%; height: auto; }
+
 /* --- модальные окна --- */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 40;

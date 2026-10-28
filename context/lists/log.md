@@ -3,6 +3,32 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-10-27
+
+### #288 — Preacquire coherent free-start bootstrap sources
+
+**Changed:** Explicit fresh-install opt-in acquires the preset minus Google AI
+through the canonical immutable cache before creating the database. The same
+verified source map feeds initial configuration and bootstrap v4 authority.
+**Beware:** Failed/stale starter sources abort retryably; API failure retains an
+empty unavailable pool. Skip/upgrade has no onboarding requests or fallback.
+**Staging evidence:** Reviewed code `dc073b2` completed guarded onboarding on the
+user-authorized replacement target. At `2026-10-27T20:03:46Z`, runtime inventory
+held 96 members, 38 reported alive and a current selection. The earlier shadow
+probe admitted 94 of 100 items; setup fetched a fresh changing catalog. These
+observations establish admission/runtime selection, not actual client/media or
+large-transfer/UDP success. The original unreachable #286 target remains historical.
+
+### #286 — Experimental API catalog admission and shadow probe
+
+**Changed:** Exact official JSON API endpoints, one bounded batch and mirror retry,
+fragment-free API identity, structured/title country exclusions and credential-safe
+admission counts. Shared HTTP reads detect oversize bodies without unbounded drain.
+**New surface:** `cmd/razdacha-pool-probe`, ADR 0032 and the free-start prototype runbook.
+**Beware:** The built-in source stays igareck and disabled initially. Optional pinned
+checker use is Prepare-only; there is no installed-state or runtime mutation.
+Connectivity/media and designated staging validation remain NOT RUN.
+
 ## 2026-08-30
 
 ### #206, #208, #210 — razvedka: вход одиночным прогоном и первый живой запуск

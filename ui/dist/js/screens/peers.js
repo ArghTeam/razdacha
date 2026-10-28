@@ -52,7 +52,7 @@ export function view() {
         <div class="client-identity">
           <div class="client-name"><span class="dot ${on ? 'on' : 'off'}" aria-hidden="true"></span><h2>${esc(p.name)}</h2></div>
           <div class="mono row-meta">${esc(p.address)}</div>
-          <div class="row-meta">${activity} <span class="client-traffic">· ↓ ${bytes(p.rx_bytes)} · ↑ ${bytes(p.tx_bytes)}</span></div>
+          <div class="row-meta">${activity} <span class="client-traffic">· ↓ ${observedTraffic(p.rx_bytes)} · ↑ ${observedTraffic(p.tx_bytes)}</span></div>
         </div>
         <div class="client-route"><div class="client-label">Configured route</div>${routingSummary(p)}</div>
         <div class="row-actions client-actions">
@@ -61,7 +61,14 @@ export function view() {
       </article>`;
   }).join('');
 
+  const received = aggregateTraffic(state.peers, 'rx_bytes');
+  const sent = aggregateTraffic(state.peers, 'tx_bytes');
   return head() + `
+    <section class="summary" aria-label="Aggregate client traffic">
+      <div class="stat"><div class="stat-label">Gateway received</div><div class="stat-value" data-traffic="received">${received === null ? 'Unknown' : bytes(received)}</div></div>
+      <div class="stat"><div class="stat-label">Gateway sent</div><div class="stat-value" data-traffic="sent">${sent === null ? 'Unknown' : bytes(sent)}</div></div>
+    </section>
+    <p class="screen-sub">Current clients since the gateway interface started; resets with the interface. Missing observations are unknown.</p>
     <div class="client-overview" aria-label="Client inventory summary">
       <span><strong>${state.peers.length}</strong> clients</span>
       <span><strong>${online}</strong> connected</span>
@@ -72,7 +79,21 @@ export function view() {
       <span>Saved routes need Apply. Device access can change during synchronization before Apply.${state.dirty ? ' Unapplied changes exist.' : ''}</span>
     </div>
     <div class="card client-inventory">${rows || '<div class="empty"><strong>No clients yet</strong><p>Add a device to create its WireGuard configuration, then choose its route.</p><button class="btn" data-act="add-peer">Add client</button></div>'}</div>
-    <p class="screen-sub" style="margin-top:10px">Traffic counters are measured since the gateway interface started.</p>`;
+    `;
+}
+
+const observedTraffic = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? bytes(value) : 'Unknown';
+
+export function aggregateTraffic(peers, key) {
+  if (!peers.length) return null;
+  let total = 0;
+  for (const peer of peers) {
+    const value = peer[key];
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
+    total += value;
+    if (!Number.isFinite(total)) return null;
+  }
+  return total;
 }
 
 const head = () => `

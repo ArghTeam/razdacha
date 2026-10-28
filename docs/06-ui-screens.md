@@ -388,8 +388,12 @@ from the delivery chat ([ADR 0016](decisions/0016-backup-full-and-encrypted.md))
   достаточен, хранение временных рядов тянет за собой отдельную подсистему.
 - Редактор JSON-конфига sing-box в UI — только просмотр. Кто умеет править — правит
   через `raw` туннеля.
-- Мастер первичной настройки. Установщик доводит систему до рабочего состояния сам,
-  визарду нечего спрашивать.
+
+## First-login setup (ADR 0035)
+
+The earlier no-wizard restriction is superseded. Authenticated setup now guides
+choice/review/guarded Apply, existing client delivery, persistent completion and
+explicit reopening. The ordinary four-tab panel remains.
 
 ## Deleted-client rules (ADR 0026)
 

@@ -43,3 +43,11 @@
 | [0030](0030-wireguard-parent-startup-alias.md) | Fixed WireGuard parent aliases avoid hostname chain startup locks | 2026-10-21 | accepted; clarifies 0012 |
 
 - [0031: Scoped tunnel observations](0031-scoped-tunnel-observations.md) — HTTPS, DNS, unknown transport and bounded probing.
+
+- [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.
+
+- [0033: Opt-in fresh-install free-start onboarding](0033-opt-in-free-start-onboarding.md) — experimental staging installation; supersedes 0032 installer deferral, with frozen source authority and first-client scope.
+
+- [0034: Fresh-install panel bootstrap](0034-fresh-panel-bootstrap.md) — public authenticated HTTPS before VPN setup for both installation choices; supersedes only the private fresh default, preserving explicit private and saved modes.
+
+- [0035: Authenticated first-login web setup](0035-first-login-web-setup.md) — persisted wizard, explicit guarded Apply, ownership/conflict checks, existing client delivery and honest aggregate counters; supersedes terminal-first/no-wizard assumptions.

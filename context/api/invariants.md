@@ -5,6 +5,7 @@ description: REST, встроенная SPA, диагностика и клие�
 ---
 
 ## Invariants
+- First-login setup endpoints require the ordinary authenticated session and daemon OnboardingApplier gate; no API-only fallback publisher exists. GET is read-only and responses omit internal fingerprints/profile secrets. Configure owns source URLs, rejects unrelated pending edits and unsafe shared/legacy policy changes; Apply checks the stored intent under the same guarded publication lock, Finish verifies current accepted policy, Reopen changes metadata only. A 45-second request context and 20-second missing-source acquisition budget remain below the HTTP write timeout; cancellation is checked before publication. Generic errors never echo provider/checker secrets (ADR 0035).
 - HTTP-сервер панели слушает `127.0.0.1:8080` и никогда не адрес wg0: наружу его открывает nginx (ADR 0008). Адрес проверяется на старте, не-loopback — выход с кодом 2.
 - TLS терминируется на nginx; демон говорит по обычному HTTP и не знает про сертификаты. Реальный адрес клиента приходит в `X-Real-IP`/`X-Forwarded-For`, схема — в `X-Forwarded-Proto`.
 - Живого канала (WebSocket) нет и не обещается: панель работает опросом REST. Проброс `Upgrade`/`Connection` и `proxy_http_version 1.1` в конфиге nginx оставлены как задел и закреплены тестом в слое packaging — они ничего не стоят, но их отсутствие сломало бы канал молча, если он появится.

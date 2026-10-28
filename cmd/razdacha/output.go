@@ -13,6 +13,7 @@ import (
 // пользователь увидит после `curl … | sh`, и собрать его целиком проще, чем
 // расставлять Printf между шагами. Заодно он проверяется тестом.
 type summary struct {
+	FreeStart string
 	// Fresh — первая установка. На обновлении QR и пароль не печатаются: пиры
 	// на месте, пароль знает пользователь.
 	Fresh bool
@@ -99,23 +100,10 @@ func (s summary) Render() (string, error) {
 	}
 	nl()
 
-	if s.ClientConfig != "" {
-		line("Отсканируйте QR-код клиентом WireGuard:")
-		nl()
-		code, err := qr.Terminal(s.ClientConfig, s.Color)
-		if err != nil {
-			return "", fmt.Errorf("QR-код конфига пира %s: %w", s.PeerName, err)
-		}
-		for _, l := range strings.Split(strings.TrimSuffix(code, "\n"), "\n") {
-			b.WriteString("  " + l + "\n")
-		}
+	if s.FreeStart != "" {
+		line("%s", s.FreeStart)
 		nl()
 	}
-	if s.PeerConfig != "" {
-		line("Или скачайте конфиг:  %s", s.PeerConfig)
-		nl()
-	}
-
 	// В публичном режиме первым называется внешний адрес: это тот, по которому
 	// человек реально попадает на панель без VPN. `10.8.0.1` печатается вторым
 	// и с пометкой — он работает только для тех, кто уже подключён (issue #60,
@@ -178,6 +166,23 @@ func (s summary) Render() (string, error) {
 
 	line("Сертификат самоподписанный — браузер предупредит при первом заходе.")
 	nl()
+
+	if s.ClientConfig != "" {
+		line("Отсканируйте QR-код клиентом WireGuard:")
+		nl()
+		code, err := qr.Terminal(s.ClientConfig, s.Color)
+		if err != nil {
+			return "", fmt.Errorf("QR-код конфига пира %s: %w", s.PeerName, err)
+		}
+		for _, l := range strings.Split(strings.TrimSuffix(code, "\n"), "\n") {
+			b.WriteString("  " + l + "\n")
+		}
+		nl()
+	}
+	if s.PeerConfig != "" {
+		line("Или скачайте конфиг:  %s", s.PeerConfig)
+		nl()
+	}
 
 	// Последняя строка обязательна: у большинства облачных провайдеров есть
 	// внешняя группа безопасности, о которой мы ничего не знаем. Это самая
