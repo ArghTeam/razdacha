@@ -2,6 +2,25 @@
 
 ## 2026-10-28
 
+### #293 — Preserving upgrade of the configured RAC gateway
+
+**Evidence:** The private candidate `0.11.0-rc.8.rac.deb5924d2362`, built from
+reviewed source `deb5924d2362`, passed the distinct protected in-place transaction
+from `0.11.0-rc.7`. Exact input hashes, actual configuration reproduction, pinned
+runtime and a verified full snapshot preceded replacement. The ledger accepted
+with no recovery required; the full snapshot is retained privately.
+**Preserved:** Schema 12, runtime `1.12.25`, protected policy/keys/authentication/
+password/panel mode and 11 clients, 9 rules and 8 tunnels. Only installed version
+and permitted paired pool inventory refresh differed. No onboarding activation
+or adoption occurred. At `2026-10-28T11:26:30Z`, external API identity/login and
+clean policy state passed; all three services were active. Independent external
+browser checks without VPN showed 11 rows, aggregate cards and Setup, with no
+automatic wizard, QR, policy writes or profile loads.
+**Limits:** Private candidate, not a published release or merge; VPN/media remain
+untested. The previous disposable staging target is retired: retain its historical
+evidence but never contact it again. This documentation-only update changes no
+running code. See [task 293](../../tasks/293-rac-preserving-upgrade.md).
+
 ### #290 — Defer default setup choices to first web login
 
 **Changed:** Fresh setup creates pending metadata for its existing initial client

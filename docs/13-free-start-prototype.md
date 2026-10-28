@@ -58,6 +58,26 @@ always report `not_measured`; there is no TCP, UDP, download, call or video proo
 
 ## Staging evidence gate
 
+The previous disposable onboarding staging target is **retired** and must not be
+contacted again. Its following records remain historical evidence only. The
+current configured-gateway validation is the preserving RAC upgrade recorded in
+[task 293](../tasks/293-rac-preserving-upgrade.md), not a fresh installation.
+
+At `2026-10-28T11:26:30Z`, the private exact-source candidate
+`0.11.0-rc.8.rac.deb5924d2362` passed protected in-place upgrade from
+`0.11.0-rc.7`, with verified inputs, full snapshot retained and operation accepted
+without recovery required. All 11 clients, 9 rules and 8 tunnels, protected policy,
+keys, password, authentication and panel mode were preserved; only installed
+version and permitted paired pool-inventory refresh differed. Schema 12 and
+sing-box `1.12.25` remained unchanged. No onboarding activation/adoption occurred.
+External API checks confirmed exact version/commit, installed match, clean policy,
+no pending onboarding and successful login; all three services were active.
+Independent public-browser checks without VPN showed 11 client rows, aggregate
+cards and Setup, with no automatic onboarding, QR, writes beyond login or profile
+loads. This is a private reviewed-source deployment, not a published release or
+merge; VPN/media remain untested. Running source remains `deb5924d2362`, regardless
+of later documentation-only HEAD commits; this evidence update needs no rebuild.
+
 Guarded fresh-install onboarding passed on the user-authorized replacement
 staging target. At `2026-10-27T20:03:46Z`, private operator evidence recorded:
 
