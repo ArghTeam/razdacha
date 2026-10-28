@@ -2,6 +2,19 @@
 
 ## 2026-10-28
 
+### #292 — Explicitly adopt our verified staging starter for editable setup
+
+**Operational change:** Independently reviewed private helper validation and
+explicit adoption changed only ownership metadata for our exact one-client,
+one-starter-rule, one-built-in-pool staging policy. Database/committed routing
+fingerprints were unchanged; setup is now pending/editable with Auto. Generic
+configured legacy/custom policy remains read-only and Configure/Apply guards remain.
+**Real browser evidence:** Free enabled, Skip disabled country, Free enabled Auto,
+DE appeared in Review, Back stayed editable, draft reset to Auto before Later.
+Only login was posted; zero configure/Apply/profile loads. No service restart,
+app rebuild or deployment; running code remains `deb5924`. Old open modal context
+requires reopening. Earlier #290 read-only proof remains historical evidence.
+
 ### #290 — Actual first-login web setup
 
 **New surface:** Persisted pending choice/review/explicit Apply/profile/finish modal

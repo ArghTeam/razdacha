@@ -119,6 +119,22 @@ and the Setup entry. The observed network contained zero onboarding writes, zero
 Apply calls and zero profile loads; no private QR/profile was fetched. Pending
 remains true for the user. This is real UI/bootstrap evidence, not VPN/media proof.
 
+The earlier read-only result above is historical. Under explicit user authorization
+in [task 292](../tasks/292-owned-staging-onboarding.md), an independently reviewed
+private operator helper adopted ownership metadata for our exact verified single
+client/rule/built-in-pool starter. Validation-only and explicit-adoption executions
+passed, with unchanged database/committed policy fingerprints. Only onboarding
+metadata changed: current staging setup is pending/editable with Auto country.
+Generic configured legacy/custom policy remains read-only, and normal owned-rule,
+shared-reference and fingerprint validation still protects Configure/Apply.
+
+Actual browser clicking confirmed Free enabled, Skip disabling country, Free
+enabling Auto, DE reflected in Review, editable Back, and a reset-to-Auto draft
+before Later. Only login was posted; no configure, Apply or profile load occurred.
+No service restart, application rebuild or deployment was needed. Running code
+remains `deb5924`; current open modals require reload/reopen to read new metadata.
+This operational correction does not establish VPN/media usability.
+
 Further transport-quality checks may use a separately reviewed isolated sidecar
 (HTTPS transfer larger than 64 KiB, public UDP DNS/STUN), alongside a dedicated
 staging client/control test and unavailable-pool rejection. Never feed
