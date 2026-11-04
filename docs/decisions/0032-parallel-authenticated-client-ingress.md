@@ -91,8 +91,11 @@ must not take the existing no-restart fast path when runtime authentication diff
 
 Boot and independent `sing-box.service` starts must establish the guard before
 loading a saved public listener. This requires packaging integration for both the
-generated service and a drop-in for a distribution-provided unit, without replacing
-unowned package files. Avoid a dependency cycle with the daemon's runtime restart.
+generated service and a drop-in for a distribution-provided unit, without editing
+unowned package files. The managed drop-in resets ExecStart to the installer-selected
+runtime binary and one explicit managed config/work directory; the helper and runtime
+must consume exactly the same bytes. Conflicting existing later command/guard
+overrides are refused before unit changes, while harmless resource settings remain. Avoid a dependency cycle with the daemon's runtime restart.
 An authoritative endpoint manifest and its failure behavior must be proven before
 enablement: missing or corrupt authority cannot permit a stale listener to start.
 Reset, uninstall and recovery must handle both guard branches deliberately.

@@ -164,10 +164,10 @@ func TestIngressGuardDropInSupportsPackagedRuntime(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(vendor), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(vendor, []byte("vendor fixture"), 0o644); err != nil {
+	if err := os.WriteFile(vendor, []byte("[Service]\nExecStart=/usr/bin/sing-box -C /unowned/config-directory -c /unowned/alternate.json run\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); err != nil {
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(u.Path(SingboxUnit + ".d/50-razdacha-ingress.conf"))
@@ -178,10 +178,103 @@ func TestIngressGuardDropInSupportsPackagedRuntime(t *testing.T) {
 		t.Fatal("missing independent pre-start hook")
 	}
 	unchanged, err := os.ReadFile(vendor)
-	if err != nil || string(unchanged) != "vendor fixture" {
+	if err != nil || string(unchanged) != "[Service]\nExecStart=/usr/bin/sing-box -C /unowned/config-directory -c /unowned/alternate.json run\n" {
 		t.Fatal("vendor unit was modified")
 	}
-	if _, err := u.EnsureSingboxIngressGuard("/bad path", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrBadConfig) {
+	if !strings.Contains(string(data), "ExecStart=\nExecStart=/usr/bin/sing-box -D /var/lib/sing-box run -c /etc/sing-box/config.json\n") {
+		t.Fatal("vendor directory/alternate config invocation was not neutralized")
+	}
+	if strings.Count(string(data), "ExecStart=") != 2 || strings.Count(string(data), " run -c ") != 1 {
+		t.Fatal("runtime invocation is not one explicit managed command")
+	}
+	if strings.Contains(string(data), " -C ") {
+		t.Fatal("managed runtime can load unapproved directory configs")
+	}
+	if changed, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); err != nil || changed {
+		t.Fatal("managed drop-in is not idempotent", err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/bad runtime", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrBadConfig) {
+		t.Fatal("unsafe runtime path accepted")
+	}
+	if err := os.WriteFile(u.Path(SingboxUnit+".d/50-razdacha-ingress.conf"), []byte("foreign fixture"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrForeignConfig) {
+		t.Fatal("foreign drop-in overwritten", err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/bad path", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrBadConfig) {
 		t.Fatal("unsafe unit argument accepted")
+	}
+}
+
+func TestManagedIngressRejectsConflictingLaterDropInsBeforeWriting(t *testing.T) {
+	for _, scope := range []string{"sing-box.service.d", "sing-.service.d", "service.d"} {
+		for _, directive := range []string{"ExecStart=", "ExecStart=/foreign/runtime -C /foreign/config run", "ExecStartPre=", "ExecStartPre=/foreign/mutate-config"} {
+			t.Run(scope+"/"+directive, func(t *testing.T) {
+				root := t.TempDir()
+				u := &UnitInstaller{Root: root}
+				path := filepath.Join(root, "etc/systemd/system", scope, "90-local.conf")
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				body := "[Service]\n" + directive + "\n"
+				if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrForeignConfig) {
+					t.Fatal("conflicting override allowed", err)
+				}
+				if _, err := os.Stat(u.Path(SingboxUnit + ".d/50-razdacha-ingress.conf")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("preflight wrote managed drop-in")
+				}
+				got, err := os.ReadFile(path)
+				if err != nil || string(got) != body {
+					t.Fatal("preflight changed foreign override")
+				}
+			})
+		}
+	}
+}
+
+func TestManagedIngressPreservesHarmlessLaterDropIns(t *testing.T) {
+	root := t.TempDir()
+	u := &UnitInstaller{Root: root}
+	path := u.Path(SingboxUnit + ".d/90-limits.conf")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "# ExecStart=/comment\n[Unit]\nDescription=ExecStartPre=not-a-service-directive\n[Service]\nLimitNOFILE=65536\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); err != nil {
+		t.Fatal("harmless drop-in blocked", err)
+	}
+}
+
+func TestManagedIngressDetectsLogicalLinesAndHigherPrioritySameName(t *testing.T) {
+	for _, name := range []string{"90-local.conf", "50-razdacha-ingress.conf"} {
+		for _, body := range []string{
+			"[Service]\nExecStart \\\n =/foreign/runtime -C /unowned/config run\n",
+			"[Service]\nExecStartPre \\\n# intervening comment\n =\n",
+		} {
+			t.Run(name+"/"+body, func(t *testing.T) {
+				root := t.TempDir()
+				u := &UnitInstaller{Root: root}
+				path := filepath.Join(root, "run/systemd/system.control/sing-box.service.d", name)
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrForeignConfig) {
+					t.Fatal("logical-line or same-name override bypassed managed source", err)
+				}
+				if _, err := os.Stat(u.Path(SingboxUnit + ".d/50-razdacha-ingress.conf")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("preflight wrote managed drop-in")
+				}
+			})
+		}
 	}
 }

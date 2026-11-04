@@ -638,7 +638,10 @@ and client admission require explicit Apply. Existing WG profiles keep their key
 and addresses.
 
 The managed runtime drop-in invokes the one-shot ingress guard before every
-sing-box start, including a vendor unit. The helper requires private approved
+sing-box start, including a vendor unit. Its owned drop-in resets the runtime
+command to the installer-selected binary and one explicit managed config, preserving
+the vendor file. Existing later overrides of that command or guard are refused before
+unit writes; harmless resource settings are retained. The helper requires private approved
 config/hash/endpoint safety authority and performs no database or API access.
 Publication never holds its short safety lock across a runtime restart. Current
 and candidate endpoints remain protected until durable committed authority and

@@ -226,3 +226,12 @@ restore/startup wrapper address them with regressions. Low-level full peer write
 now reject public transport lifecycle changes; gated patches remain authoritative.
 An independently guarded runtime start appears pending/guarded and forces checked
 repair even for identical bytes. Final CI and coordinator review precede merge.
+
+The final packaging review found that a vendor `-C` directory/alternate config
+invocation could escape the helper's single-file authority. The managed drop-in
+now resets ExecStart to the installer-selected binary and exactly one owned config
+and work directory, preserving vendor bytes. Preflight refuses existing later
+command/guard overrides before unit writes while retaining harmless limits. Tests
+cover vendor `-C`/alternate `-c`, a single reset/replacement command, idempotence,
+path validation, foreign drop-in preservation and conflicting local overrides.
+The runtime/profile compiler and frozen proof fixture sources are unchanged.
