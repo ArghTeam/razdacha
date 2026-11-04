@@ -34,8 +34,12 @@ daemon publication gate; no lock is held across a runtime restart.
 The new kernel table affects local INPUT TCP endpoints only. The WG guard, routing
 table, forwarded traffic and unrelated ports remain outside its ownership. IPv6
 wildcard coverage is conservative; malformed endpoint plans fail before mutation.
-Legacy compatibility accepts explicitly private DNS/loopback TProxy shapes and
-never removes an existing barrier when authority is absent.
+Legacy compatibility accepts exact `dns-in` direct DNS on port 53 with an explicit
+unicast IPv4 bind, including existing CGNAT/public WG address ranges; TProxy and
+controllers remain loopback-scoped. Wildcards, multicast, limited broadcast, zones
+and unknown names are rejected. The startup helper relies on owner-controlled
+configuration rather than a live WG interface or DB and never removes an existing
+barrier when authority is absent.
 
 Local tests cover ambiguous/corrupt authority, unsafe files/parents, canonical
 endpoint union/coverage, exact checked bytes, unsafe legacy listeners, failed
@@ -60,3 +64,16 @@ Raw evidence stays private; no existing provider tunnel was changed or probed.
 This is not proof of full product Apply/recovery, service boot ordering, credential
 revocation, existing WG coexistence or an external REALITY client connection.
 Those remain required by the umbrella implementation before public exposure.
+
+
+## Legacy address compatibility correction
+
+Backend integration review identified that the existing WG address contract accepts
+CGNAT and public IPv4 ranges; `netip.Addr.IsPrivate` alone would reject valid saved
+DNS binds during unconditional startup checking. The compatibility predicate now
+preserves every explicit unicast IPv4 DNS bind for the exact legacy tag/type/port,
+while refusing wildcard, multicast, limited broadcast, zones and unsupported names.
+Tests cover CGNAT/public acceptance, unsafe address rejection, the exact DNS identity
+and port, and startup without clearing an existing barrier. Public REALITY listeners
+still require exact-hash authority and complete guard coverage. This correction
+changes no live host or tunnel and does not depend on a pre-existing `wg0`.

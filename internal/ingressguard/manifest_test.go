@@ -185,6 +185,44 @@ func TestConfigClosureAndExactAuthority(t *testing.T) {
 	}
 }
 
+func TestLegacyDNSPreservesSupportedWGAddressRanges(t *testing.T) {
+	for _, address := range []string{"10.8.0.1", "100.64.0.1", "198.51.100.1", "169.254.0.1", "127.0.0.1"} {
+		t.Run(address, func(t *testing.T) {
+			config := strings.Replace(legacyConfig, "10.8.0.1", address, 1)
+			endpoints, err := ConfigEndpoints([]byte(config))
+			if err != nil || len(endpoints) != 0 {
+				t.Fatal("supported explicit WG DNS address rejected", err)
+			}
+			directory := privateDirectory(t)
+			configPath, manifestPath := filepath.Join(directory, "config.json"), filepath.Join(directory, "ingress.json")
+			writeTest(t, configPath, config)
+			called := false
+			if err := Startup(configPath, manifestPath, func([]Endpoint) error { called = true; return nil }); err != nil {
+				t.Fatal("legacy startup rejected supported WG DNS address", err)
+			}
+			if called {
+				t.Fatal("legacy DNS compatibility changed an existing barrier")
+			}
+		})
+	}
+	for _, address := range []string{"0.0.0.0", "224.0.0.1", "239.255.255.255", "255.255.255.255", "::", "::1", "::ffff:100.64.0.1", "fe80::1%wg0", "gateway.example", ""} {
+		t.Run("reject/"+address, func(t *testing.T) {
+			config := strings.Replace(legacyConfig, "10.8.0.1", address, 1)
+			if _, err := ConfigEndpoints([]byte(config)); err == nil {
+				t.Fatal("unsafe or unsupported legacy DNS address accepted")
+			}
+		})
+	}
+	for _, config := range []string{
+		strings.Replace(legacyConfig, `"tag":"dns-in"`, `"tag":"other"`, 1),
+		strings.Replace(legacyConfig, `"listen_port":53`, `"listen_port":5300`, 1),
+	} {
+		if _, err := ConfigEndpoints([]byte(config)); err == nil {
+			t.Fatal("legacy DNS exception widened beyond its exact identity and port")
+		}
+	}
+}
+
 func TestStartupFailsClosedAndPreservesLegacyBarrier(t *testing.T) {
 	directory := privateDirectory(t)
 	config, authority := filepath.Join(directory, "config.json"), filepath.Join(directory, "ingress.json")

@@ -27,9 +27,13 @@ endpoint coverage, persists `Guarded=true`, and only then calls the installer. A
 failed installer retains guarded intent. Guarded intent is not kernel attestation;
 the controller must also retain uncertainty and close ingress on release failure.
 
-Missing authority is accepted only for the checked legacy listener shape: private
-`dns-in` direct DNS on port 53 and loopback `tproxy-in`, with loopback controllers.
-Unknown inbounds, public legacy listeners and public controllers are refused. A
+Missing authority is accepted only for the checked legacy listener shape: exact
+`dns-in` direct DNS on port 53 bound to an explicit unicast IPv4 address, plus
+loopback `tproxy-in` and loopback controllers. DNS preserves the existing WG address
+contract, including CGNAT and public ranges: the helper uses owner-controlled config
+without querying a live `wg0` or DB before startup. Wildcards, multicast, limited
+broadcast, zones, non-IPv4 DNS and unknown names are refused. Unknown inbounds and
+public TProxy/controller listeners remain refused. A
 legacy startup does not invoke the installer or clear a pre-existing barrier.
 Supported VLESS listeners require TLS and REALITY and always require authority.
 This inspection complements, rather than replaces, the pinned runtime's full check.
