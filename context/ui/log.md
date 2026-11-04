@@ -1,5 +1,16 @@
 # Ui — log
 
+## 2026-11-04
+
+### #297 — RAC-only client transport composition
+
+**Changed:** Retained candidate unknown-aware WG aggregates and the reviewed
+REALITY profile/session lifecycle. Totals and row counters explicitly cover WG;
+Reality-only rows have no reserved WG address or fabricated traffic. Added mixed
+transport regressions and explicit completed-onboarding responses to strict
+application fixtures after relogin.
+**Beware:** Synthetic browser coverage is not deployed client or DPI proof.
+
 ## 2026-10-28
 
 ### #290 — Actual first-login web setup

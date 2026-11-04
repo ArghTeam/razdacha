@@ -1,5 +1,15 @@
 # Store — log
 
+## 2026-11-04
+
+### #297 — RAC-only canonical onboarding authority
+
+**Changed:** Transaction-local onboarding policy reads share the ordinary complete
+Snapshot reader, including opaque REALITY identity/admission authority. Enabled
+and retained-disabled identities no longer create false fingerprint conflicts.
+**Beware:** UUIDs/private identity remain live-only; this adds no authentication
+restore source and does not merge candidate onboarding into main.
+
 ## 2026-10-28
 
 ### #290 — Persisted setup intent and ownership

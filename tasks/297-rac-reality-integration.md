@@ -23,8 +23,10 @@ must never be merged into main.
 - Integration branch: `epic/297-rac-reality-integration`.
 - Exact recorded deployed RAC candidate source:
   `deb5924d2362beb301443f1afa042427c3312e8e`.
-- Reviewed UI source: `eef576b1b3b814b27faf73f821b7f3a055d9c051`.
-- Approved backend source: `c5bfa11fa577463392095476037f824e94303e8b`.
+- Reviewed UI source: `eef576b1b3b814b27faf73f821b7f3a055d9c051`, plus copy-only
+  `e90db78bd1ffa210b81a569c2260bf131cf414ff`.
+- Approved backend source: `c5bfa11fa577463392095476037f824e94303e8b`, plus
+  import-only Linux lint correction `c850fb433a32df6a9da732faa6dbdfe3123e5544`.
 - Final fresh merged main is pending primary approval.
 
 The installed RAC binary did not include VCS build metadata. Its recorded source
@@ -85,3 +87,15 @@ transaction-local onboarding reads now share the complete Snapshot reader,
 including non-secret Reality identity/admission authority; Configure/Finish also
 refuse an independently guarded public ingress under their existing lock. Focused
 regressions exercise enabled/retained identities and successful checked repair.
+
+## Local verification progress
+
+The complete Go suite, vet, pinned sing-box matcher module and pinned linter for
+both Darwin and Linux passed on the composed source. Focused onboarding authority
+and public-guard repair regressions passed. The first full browser run exposed a
+strict rule-action fixture missing the candidate's authenticated onboarding-status
+request after relogin; explicit `pending:false` responses now preserve that known
+application contract in rule/tunnel fixtures. This changes no product behavior.
+The complete 18-suite browser runner is rerun after that fixture correction.
+Final main synchronization, source review and artifact/version approval remain
+separate gates. No live host, provider, tunnel or deployment proof is claimed.

@@ -4,7 +4,11 @@
 
 Selective VPN gateway for Debian/Ubuntu. Standard WireGuard clients send traffic to
 `wg0`; selected resources go through configured tunnels and everything else directly.
-No additional client software is required.
+Standard WG clients need no additional software. Optional VLESS + REALITY ingress
+uses compatible client software, independent credentials and the same client policy
+([main-line ADR 0032](docs/decisions/0032-parallel-authenticated-client-ingress.md)).
+This RAC-only integration branch also preserves the recorded candidate onboarding
+and traffic features; it must not be merged into main.
 
 The latest stable daemon release is **v0.10.0** (2026-08-21). This repository also
 contains **razvedka 0.3.0**, a Chrome DevTools extension developed after that release.
@@ -128,7 +132,7 @@ under GPL-2.0-or-later ([ADR 0007](docs/decisions/0007-license-gplv2.md)).
   Supported native sources use immutable local original/DNS artifacts (ADR 0025).
   Bounded positive TCP/UDP and destination-port address branches use separate
   transport interception (ADR 0029); unsupported mixed/context predicates fail
-  before acceptance. Projection v2 and generation v4 pin transport authority;
+  before acceptance. Projection v2 pins transport interception; generation v5 adds client ingress admission;
   supported older projection authority retains legacy verification.
 - Publish plain-list policy through the serialized guarded generation protocol ([ADR 0023](docs/decisions/0023-coherent-network-generation.md)): prepare/check first, guard client ingress, reconcile WG/route/runtime/nft, persist authority, discard bootstrap authority, release last. Post-guard failure remains closed; recovery never restores live peers/authentication. Peer allocation shares the gate and reserves committed addresses. Native JSON/SRS share this protocol through daemon-owned immutable artifacts (ADR 0025). Active artifact corruption closes ingress; legacy v1 native authority requires guarded administrator recovery.
 

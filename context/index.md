@@ -21,3 +21,14 @@ credentials outside committed routing authority and extends guarded publication 
 public listeners. The task distinguishes the earlier handwritten capability proof
 from generated-policy, full-client-profile and deployment validation; no general
 DPI resistance or untested application compatibility is implied.
+
+## RAC-only integration source
+
+This branch preserves the independently deployed candidate's free-start wizard,
+fresh panel bootstrap and measured WG aggregate traffic alongside main's REALITY
+implementation. It is not a proposal to publish those candidate-only features to
+main. The [integration record](../tasks/297-rac-reality-integration.md) identifies
+the source commits, canonical onboarding authority and WG-only counter semantics.
+Both historical decisions numbered 0032 retain their full filenames and source
+lineage in the decision index. Host deployment, rollback and client connectivity
+evidence are separate from this local source composition.

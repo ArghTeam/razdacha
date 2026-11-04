@@ -1,5 +1,15 @@
 # Api — log
 
+## 2026-11-04
+
+### #297 — RAC-only guarded onboarding completion
+
+**Changed:** Configure/Finish include public-manifest uncertainty under their
+existing publication lock. Independent runtime guard intent must receive checked
+Apply repair before the wizard can claim coherent completion.
+**Beware:** These are candidate composition changes; source tests do not establish
+a deployed restart, tunnel behavior or external REALITY client connection.
+
 ## 2026-10-28
 
 ### #290 — Authenticated guarded setup API
