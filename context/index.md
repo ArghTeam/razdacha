@@ -13,3 +13,9 @@ Current layer descriptions are maintained alongside each layer's invariants.
 The independently versioned [razvedka extension](../tools/razvedka/README.md) lives outside
 the daemon build. Its current single-page entry is specified in
 [ADR 0022](../docs/decisions/0022-single-run-entry.md).
+
+The [parallel client ingress proposal](../docs/decisions/0032-parallel-authenticated-client-ingress.md)
+and [task #297](../tasks/297-alternative-ingress.md) describe a planned optional VLESS +
+REALITY input. They do not change the current WireGuard-only client ingress invariants.
+The [bounded runtime proof](https://github.com/ArghTeam/razdacha/pull/299) validates
+engine identity hooks with handwritten policy; product integration remains open.
