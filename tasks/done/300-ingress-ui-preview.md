@@ -2,7 +2,7 @@
 type: task
 tracker: "#300"
 title: Parallel client connection interface preview
-status: review
+status: complete
 ---
 
 # Parallel client connection interface preview
@@ -23,7 +23,7 @@ blue accent, control geometry and shared client identity.
   Apply simulates activation. Key-management confirmation describes reconciliation
   and possible interruption of other connections.
 - All content and profiles are synthetic English examples. No backend request,
-  real credential, server action, new public listener or deployment is included.
+  real credential, application mutation or transport listener is included.
 
 ## Checkout
 
@@ -35,8 +35,8 @@ branch `feat/300-ingress-ui-preview`.
 
 ## Review surface
 
-[Preview](../designs/reality-ingress/index.html) and
-[viewing instructions](../designs/reality-ingress/README.md).
+[Preview](../../designs/reality-ingress/index.html) and
+[viewing instructions](../../designs/reality-ingress/README.md).
 
 The page opens directly through `file://` or a loopback static server. UI state is
 memory-only and resets on reload. Local Chromium checks passed for file-open behavior, independent transport choices,
@@ -46,5 +46,8 @@ restoration, Escape cleanup, Network persistence, and
 Independent design evaluation passed after two bounded revisions. The final
 evaluation verified pending key semantics, modal cleanup and focus restoration,
 file-open behavior, responsive geometry and unchanged visual direction. The user
-review remains open; this is not a product or server acceptance claim.
+accepted the preview and authorized merging it and serving the static page on the
+designated staging gateway. Design/review delivery is complete; static deployment
+and its postflight checks remain the primary operator's next action. No product
+transport or server acceptance is claimed.
 No product behavior or maintained runtime invariant changes.

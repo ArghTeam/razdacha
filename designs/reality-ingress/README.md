@@ -20,3 +20,24 @@ and the parallel-ingress work in [issue #297](https://github.com/ArghTeam/razdac
 It does not implement the product transport, authentication, policy generation,
 revocation, recovery or DPI resistance. Current embedded UI/runtime invariants
 are unchanged. The example TCP port 8443 is not a finalized default.
+
+
+## Authorized static staging delivery
+
+The user accepted this preview and authorized static delivery at `/preview/reality/`
+on the designated staging gateway. Deployment and postflight checks are pending;
+this record does not claim that the page is already served there.
+
+1. Use the existing HTTPS nginx server and a dedicated static-page location. Keep
+   the main panel and API routes unchanged; serve only the synthetic preview file.
+2. Retain a fresh private copy and identity of the original nginx configuration,
+   and verify the uploaded page against the reviewed source hash.
+3. Run `nginx -t` before a graceful nginx reload. On validation or reload failure,
+   restore the original configuration and verify it before retrying.
+4. Check the preview response/content, existing panel/API behavior and service
+   health. Record redacted results in the task issue after deployment.
+
+This delivery changes no application binary, application configuration, client
+policy, network rules, WireGuard service or REALITY listener. Production is outside
+the authorized deployment scope. Keep operational connection details and raw
+configuration backups private.

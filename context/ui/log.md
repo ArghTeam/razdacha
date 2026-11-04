@@ -410,4 +410,7 @@ profile delivery distinguishes unsaved drafts and pending Apply.
 Current embedded UI and runtime invariants are unchanged. This is a visual proposal,
 not product ingress, revocation or recovery implementation. Local browser checks and independent design evaluation passed, including pending
 key-action wording and opener restoration. The
-[preview task](../../tasks/300-ingress-ui-preview.md) records scope and user-review status.
+[completed preview task](../../tasks/done/300-ingress-ui-preview.md) records scope and acceptance.
+The user accepted the standalone interface and authorized a separate static
+staging delivery under `/preview/reality/`. Deployment/postflight remains pending
+the primary operator; the main panel, API and transport services stay unchanged.
