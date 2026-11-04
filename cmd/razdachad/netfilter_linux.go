@@ -5,11 +5,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/ArghTeam/razdacha/internal/singbox"
 	"log/slog"
 
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
