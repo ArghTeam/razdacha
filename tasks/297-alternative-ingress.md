@@ -32,12 +32,25 @@ Operational connection details, credentials and raw output remain private.
 
 Preserve unrelated primary edits. Fetch again before new implementation branches.
 
-On 2026-11-04 the designated staging HTTPS panel returned 200 with successful TLS
-verification, and `/api/version` returned authenticated-access-required (401).
-This proves HTTP service reachability, not the running application version or
-tunnel health. SSH inventory is pending confirmed access parameters and host-key
-identity. No authenticated runtime inventory, consistent backup, rollback rehearsal
-or staging mutation has been completed for this task.
+At initial design capture on 2026-11-04, the designated staging HTTPS panel returned
+200 with successful TLS verification, and `/api/version` required authentication
+(401). That observation established HTTP reachability only; SSH inventory, backup
+and runtime experiments had not yet been completed.
+
+Subsequent authorized SSH inventory confirmed the installed sing-box 1.12.25. A fresh
+stopped snapshot passed private file-restoration and standalone SQLite integrity
+checks at schema 12. After restart and the experiment, all peer, rule, tunnel, setting
+and registration rows and daemon/runtime/configuration bytes matched the snapshot
+exactly. All three services were active, and panel HTTPS returned 200 with valid TLS.
+This is file-level recovery evidence, not functional daemon rollback proof.
+
+The independently reviewed [capability proof in PR #299](https://github.com/ArghTeam/razdacha/pull/299)
+passed twelve subtests and the top-level REALITY test in an isolated Linux network
+and mount namespace. Handwritten runtime rules preserved TCP/UDP route and DNS
+identity for two users sharing a source address and rejected invalid credentials.
+The experiment opened no public listener. Product-generated policy, private/IPv6
+boundaries, guarded revocation, startup/recovery and WG coexistence remain unproven;
+ADR 0032 remains proposed and the implementation stages below remain open.
 
 Repository baseline evidence:
 
@@ -67,7 +80,9 @@ Repository baseline evidence:
    prove REALITY handshake, TCP and UDP proxy identity, route/DNS `auth_user`
    propagation, same-NAT client isolation, private/IPv6 rejection and active-session
    termination by guarded restart. Keep actual credentials out of logs. A failed
-   capability proof revises the proposal before feature implementation.
+   capability proof revises the proposal before feature implementation. PR #299
+   completes the bounded engine identity/handshake checks only; it does not complete
+   the protection, guarded restart or product-integration checks in this gate.
 3. **Authority and lifecycle foundation.** Implement schema/credential storage,
    committed admission/live-auth intersection, authority versioning, global and
    per-client enablement, serialized revocation, persistent endpoint guards and
