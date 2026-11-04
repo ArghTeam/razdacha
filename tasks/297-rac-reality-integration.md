@@ -28,7 +28,9 @@ must never be merged into main.
 - Final approved backend source: `5ec522bdacf3151962516f68ee1371885257ed97`,
   including `c5bfa11fa577463392095476037f824e94303e8b` and import-only Linux lint
   correction `c850fb433a32df6a9da732faa6dbdfe3123e5544`.
-- Final fresh merged main is pending primary approval.
+- Final functional main source: freshly fetched
+  `4eef6024cbc3e15ff22562b65c97b04c75d31133`, approved by the primary.
+  Later test-only main changes are outside this artifact freeze.
 
 The installed RAC binary did not include VCS build metadata. Its recorded source
 relationship is deployment provenance, not self-attestation from that binary.
@@ -117,3 +119,20 @@ that the saved onboarding-state row is absent, so this generic lineage edge does
 not affect the designated RAC deployment. That inventory involved no metadata
 writes and is not deployment or functional rollback proof. Main has no candidate
 onboarding metadata, so this limitation is outside the main feature scope.
+
+## Final functional source freeze
+
+The final functional main merge changes only the clarified handshake-target help
+copy plus its UI task/log records. Candidate WG counters and both onboarding
+adaptations are preserved. The ingress guard, managed unit/preflight implementation,
+private config reader, REALITY compiler/client profile, publication controller and
+credential/restore files match the approved functional main bytes. Syntax/embed
+checks validate the copy-only merge; prior unchanged functional suites are not
+repeated solely for that wording.
+
+Versioned binaries and build evidence are written outside the worktree after the
+final source commit. Their manifest records the full source SHA, linker version/
+commit, static Linux target settings, checksums and Go build information. A local
+metadata probe must distinguish linker/API values from potentially misleading
+worktree VCS metadata; it is not a deployed Linux daemon or network test. No source
+changes are permitted after the artifact version/hash freeze.
