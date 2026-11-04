@@ -70,3 +70,11 @@ old/new endpoint transitions, unrelated listeners, invalid mutation preservation
 address scope and release. IPv6 wire checks explicitly skip if IPv6 loopback is
 unavailable. This fixture is not a real provider, external client or DPI test and
 does not establish daemon publication, boot integration or authentication recovery.
+
+
+On 2026-11-04 the primary operator's reviewed isolated Linux execution passed,
+including IPv4 and IPv6 checks, in 1.69 seconds. Existing service main PIDs and
+configuration/runtime hashes stayed unchanged; the owned test cgroup was removed.
+The [foundation record](../../tasks/297-ingress-safety-foundation.md) pins the
+source/executable identity and scope. This is bounded kernel-barrier evidence, not
+live application Apply, boot integration, authentication or REALITY-client proof.
