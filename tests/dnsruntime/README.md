@@ -66,3 +66,45 @@ pure AND/NOT, regex empty-domain behavior and false address expressions.
 `TestNativeUnsafeRuntimePredicatesRejected` proves mixed-AND, source-scope and
 negated-domain hazards and a noncanonical compiled SRS marker/Dump discrepancy.
 Native empty/missing sources are compile-time refusals, not successful wire cases.
+
+## Authenticated REALITY capability proof
+
+`TestRealityIngressIdentity` is an opt-in capability fixture for
+[task #297](../../tasks/297-reality-runtime-proof.md). It uses a supplied sing-box
+**1.12.25** executable, generated disposable X25519 keys/UUIDs, a local TLS 1.3
+ECDSA/X25519 handshake target, and loopback-only client/server listeners. It never
+loads installed configuration or calls systemctl. Private fixture files are mode
+0600 under temporary directories; failure diagnostics redact UUID/key-shaped values.
+
+```sh
+RAZDACHA_REALITY_TEST=1 RAZDACHA_TEST_SINGBOX=/absolute/path/to/sing-box \
+  go test -mod=readonly -run '^TestRealityIngressIdentity$' -count=1 -v -timeout=90s
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+  go test -mod=readonly -c -o /private/tmp/razdacha-reality-proof.test
+```
+
+The executable must include `with_utls`; the Go test binary itself needs no extra
+build tags. Verify the executable's trusted source/hash separately: its version
+string is a compatibility check, not executable attestation. The fixture is skipped
+unless explicitly enabled. Normal local execution creates only loopback sockets.
+
+For a Linux staging run, an independent reviewer must approve the fixture first.
+Use a bounded supervisor/process group in fresh network and mount namespaces, as
+required by the staging runbook. Before `unshare`, privately capture the caller's
+`/proc/self/ns/net` symlink and pass it as `RAZDACHA_REALITY_PARENT_NETNS`. The
+fixture refuses matching namespaces and requires that the new namespace contain
+only `lo` before bringing that interface up through netlink. The supervisor owns
+cleanup on abrupt test timeout; ordinary test cleanup stops and reaps child runtimes.
+Keep installed runtime state hidden and supply the executable explicitly. Do not
+expose any fixture listener publicly or use real client/tunnel keys.
+
+The fixture checks two named users from the same loopback source, different TCP/UDP
+sinks and DNS answers after hijack, unknown UUID/unnamed-user/plaintext/wrong-key
+rejection, working fallback observers remaining unused, and closure of a positively
+established TCP flow when the server process exits. This proves engine hooks using
+handwritten fixture policy, not integration with the product generator, publication
+guards, persistent authorization/revocation, WG coexistence, restoration or any
+particular client/router application. Negative sink observations cover the bounded
+fixture window; this is not a packet-capture proof of universal absence of leaks.
+No external network, DPI resistance, IPv6/private-destination protection, throughput
+or arbitrary UDP application/WebRTC behavior is established by this fixture.
