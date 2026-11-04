@@ -229,14 +229,13 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	if err := ctx.Err(); err != nil {
 		return res, fmt.Errorf("clients remain guarded: %w", err)
 	}
-	if err := n.guard(false); err != nil {
-		return res, fmt.Errorf("clients remain guarded: release ingress guard: %w", err)
-	}
 	if g.store != nil {
 		if err := g.releasePublic(candidate); err != nil {
 			_ = n.guard(true)
 			return res, fmt.Errorf("clients remain guarded: release public ingress: %w", err)
 		}
+	} else if err := n.guard(false); err != nil {
+		return res, fmt.Errorf("clients remain guarded: release ingress guard: %w", err)
 	}
 	n.uncertain = false
 	res.NftSubnets = &count

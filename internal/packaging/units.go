@@ -276,6 +276,6 @@ func (u *UnitInstaller) EnsureSingboxIngressGuard(daemon, runtimeBinary, config,
 	if err := u.CheckSingboxIngressOverrides(); err != nil {
 		return false, err
 	}
-	content := fmt.Sprintf("%s\n[Service]\nExecStart=\nExecStart=%s -D %s run -c %s\nExecStartPre=+%s --guard-ingress --guard-config %s --guard-manifest %s\n", marker, runtimeBinary, SingboxWorkDir, config, daemon, config, manifest)
+	content := fmt.Sprintf("%s\n[Service]\nExecReload=\nExecStart=\nExecStart=%s -D %s run -c %s\nExecStartPre=+%s --guard-ingress --guard-config %s --guard-manifest %s\n", marker, runtimeBinary, SingboxWorkDir, config, daemon, config, manifest)
 	return u.writeUnit(SingboxUnit+".d/"+ingressDropIn, content)
 }

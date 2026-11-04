@@ -209,7 +209,7 @@ func TestIngressGuardDropInSupportsPackagedRuntime(t *testing.T) {
 
 func TestManagedIngressRejectsConflictingLaterDropInsBeforeWriting(t *testing.T) {
 	for _, scope := range []string{"sing-box.service.d", "sing-.service.d", "service.d"} {
-		for _, directive := range []string{"ExecStart=", "ExecStart=/foreign/runtime -C /foreign/config run", "ExecStartPre=", "ExecStartPre=/foreign/mutate-config"} {
+		for _, directive := range []string{"ExecStart=", "ExecStart=/foreign/runtime -C /foreign/config run", "ExecStartPre=", "ExecStartPre=/foreign/mutate-config", "ExecReload=/foreign/reload"} {
 			t.Run(scope+"/"+directive, func(t *testing.T) {
 				root := t.TempDir()
 				u := &UnitInstaller{Root: root}
@@ -276,5 +276,222 @@ func TestManagedIngressDetectsLogicalLinesAndHigherPrioritySameName(t *testing.T
 				}
 			})
 		}
+	}
+}
+
+func TestManagedIngressRejectsRemappedAuthorityInBaseAndEveryDropIn(t *testing.T) {
+	directives := []string{"RootDirectory", "RootImage", "RootMStack", "BindPaths", "BindReadOnlyPaths", "TemporaryFileSystem", "MountImages", "ExtensionImages", "ExtensionDirectories"}
+	for _, location := range []string{
+		"usr/lib/systemd/system/sing-box.service",
+		"etc/systemd/system/sing-box.service",
+		"etc/systemd/system/sing-box.service.d/10-early.conf",
+		"run/systemd/system/sing-box.service.d/90-local.conf",
+		"usr/lib/systemd/system/service.d/10-vendor.conf",
+		"etc/systemd/system/sing-.service.d/10-prefix.conf",
+	} {
+		for _, directive := range directives {
+			t.Run(location+"/"+directive, func(t *testing.T) {
+				root := t.TempDir()
+				u := &UnitInstaller{Root: root}
+				path := filepath.Join(root, location)
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				body := "[Service]\n" + directive + "=/alternate/config:/etc/sing-box/config.json /alternate/manifest:/var/lib/razdacha/public-ingress.json\n"
+				if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrForeignConfig) {
+					t.Fatal("remapped authority accepted", err)
+				}
+				if _, err := os.Stat(u.Path(SingboxUnit + ".d/50-razdacha-ingress.conf")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("preflight wrote managed drop-in")
+				}
+				got, err := os.ReadFile(path)
+				if err != nil || string(got) != body {
+					t.Fatal("preflight changed foreign unit")
+				}
+			})
+		}
+	}
+}
+
+func TestManagedIngressPreservesHostViewReadOnlyHardeningAndEmptyRemaps(t *testing.T) {
+	root := t.TempDir()
+	u := &UnitInstaller{Root: root}
+	path := filepath.Join(root, "usr/lib/systemd/system/sing-box.service")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "[Service]\nExecStart=/vendor/runtime -C /vendor/config run\nProtectSystem=strict\nReadOnlyPaths=/etc/sing-box\nReadWritePaths=/var/lib/sing-box\nLimitNOFILE=65536\nRootDirectory=\nRootImage=\nBindReadOnlyPaths=\nTemporaryFileSystem=\nExtensionDirectories=\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); err != nil {
+		t.Fatal("same-byte hardening was refused", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != body {
+		t.Fatal("vendor hardening changed")
+	}
+}
+
+func TestManagedIngressRejectsContinuedEarlyFilesystemRemap(t *testing.T) {
+	root := t.TempDir()
+	u := &UnitInstaller{Root: root}
+	path := u.Path(SingboxUnit + ".d/10-early.conf")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "[Service]\nBindReadOnlyPaths \\\n# intervening comment\n =/alternate/config:/etc/sing-box/config.json\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrForeignConfig) {
+		t.Fatal("continued filesystem remap accepted", err)
+	}
+}
+
+func TestManagedIngressRejectsNonHostNetworkInBaseAndAllDropIns(t *testing.T) {
+	for _, location := range []string{"usr/lib/systemd/system/sing-box.service", "etc/systemd/system/sing-box.service.d/10-early.conf", "run/systemd/system/service.d/90-local.conf"} {
+		for _, body := range []string{"[Service]\nNetworkNamespacePath=/run/netns/alternate\n", "[Service]\nPrivateNetwork=yes\n", "[Service]\nPrivateNetwork=1\n", "[Unit]\nJoinsNamespaceOf=alternate.service\n"} {
+			t.Run(location+"/"+body, func(t *testing.T) {
+				root := t.TempDir()
+				u := &UnitInstaller{Root: root}
+				path := filepath.Join(root, location)
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrForeignConfig) {
+					t.Fatal("non-host network allowed", err)
+				}
+				if _, err := os.Stat(u.Path(SingboxUnit + ".d/50-razdacha-ingress.conf")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("network preflight wrote managed files")
+				}
+			})
+		}
+	}
+}
+
+func TestManagedIngressAllowsHostNetworkResetsAndFilters(t *testing.T) {
+	for _, value := range []string{"", "0", "no", "false", "off"} {
+		t.Run(value, func(t *testing.T) {
+			root := t.TempDir()
+			u := &UnitInstaller{Root: root}
+			path := u.Path(SingboxUnit + ".d/10-local.conf")
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			body := "[Unit]\nJoinsNamespaceOf=\n[Service]\nPrivateNetwork=" + value + "\nNetworkNamespacePath=\nRestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK AF_UNIX\nIPAddressDeny=10.0.0.0/8\n"
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); err != nil {
+				t.Fatal("host-network filtering blocked", err)
+			}
+		})
+	}
+}
+
+func TestManagedIngressRejectsPostStartHooksAndClearsReload(t *testing.T) {
+	for _, location := range []string{"usr/lib/systemd/system/sing-box.service", "etc/systemd/system/sing-box.service.d/10-early.conf", "etc/systemd/system/sing-box.service.d/90-local.conf"} {
+		t.Run(location, func(t *testing.T) {
+			root := t.TempDir()
+			u := &UnitInstaller{Root: root}
+			path := filepath.Join(root, location)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("[Service]\nExecStartPost=/foreign/restore-config\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrForeignConfig) {
+				t.Fatal("post-start rewrite allowed", err)
+			}
+		})
+	}
+	root := t.TempDir()
+	u := &UnitInstaller{Root: root}
+	path := filepath.Join(root, "usr/lib/systemd/system/sing-box.service")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("[Service]\nExecReload=/bin/kill -HUP $MAINPID\nExecStartPost=\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(u.Path(SingboxUnit + ".d/50-razdacha-ingress.conf"))
+	if err != nil || !strings.Contains(string(content), "[Service]\nExecReload=\n") {
+		t.Fatal("independent reload can bypass startup guard", err)
+	}
+}
+
+func TestManagedIngressRefusesUninspectedLegacyIncludes(t *testing.T) {
+	root := t.TempDir()
+	u := &UnitInstaller{Root: root}
+	path := filepath.Join(root, "usr/lib/systemd/system/sing-box.service")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(".include /foreign/remapped-service.conf\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrForeignConfig) {
+		t.Fatal("uninspected fragment delegation allowed", err)
+	}
+}
+
+func TestManagedIngressRefusesOtherServiceNameAliases(t *testing.T) {
+	root := t.TempDir()
+	u := &UnitInstaller{Root: root}
+	alias := u.Path(SingboxUnit)
+	target := filepath.Join(root, "usr/lib/systemd/system/alternate.service")
+	for _, path := range []string{alias, target} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(target, []byte("[Service]\nExecStart=/vendor/runtime\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, alias); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrForeignConfig) {
+		t.Fatal("uninspected canonical service scopes allowed", err)
+	}
+}
+
+func TestManagedIngressPreservesSameNameDistributionUnitSymlinks(t *testing.T) {
+	root := t.TempDir()
+	u := &UnitInstaller{Root: root}
+	alias := u.Path(SingboxUnit)
+	target := filepath.Join(root, "usr/lib/systemd/system", SingboxUnit)
+	for _, path := range []string{alias, target} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := "[Service]\nExecStart=/vendor/runtime -C /vendor/config run\nProtectSystem=strict\n"
+	if err := os.WriteFile(target, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, alias); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/usr/bin/sing-box", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); err != nil {
+		t.Fatal("same-name distribution link refused", err)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil || string(got) != body {
+		t.Fatal("distribution unit changed")
+	}
+	if info, err := os.Lstat(alias); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("distribution symlink changed")
 	}
 }

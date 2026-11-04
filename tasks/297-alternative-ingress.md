@@ -235,3 +235,23 @@ command/guard overrides before unit writes while retaining harmless limits. Test
 cover vendor `-C`/alternate `-c`, a single reset/replacement command, idempotence,
 path validation, foreign drop-in preservation and conflicting local overrides.
 The runtime/profile compiler and frozen proof fixture sources are unchanged.
+
+Further independent review tightened two authority boundaries. Setup now rejects
+filesystem byte remaps and non-host network namespace declarations across base/
+vendor units and every applicable drop-in, independent of command precedence.
+The managed drop-in clears reload hooks and nonempty post-start hooks are refused.
+Ordinary read-only hardening, filters, empty resets and limits remain supported.
+Release privately rereads exact candidate bytes under the safety lock before
+narrowing the union manifest or releasing WG/public barriers; a reloader restoring
+old approved bytes is tested to retain both guards and refuse profile delivery.
+The narrow controlled reader shares existing private/no-symlink checks. The frozen
+real-runtime profile/compiler fixtures remain unchanged; these are publication/
+packaging regression tests rather than new runtime capability claims.
+
+The supported static service contract additionally refuses legacy unit includes
+and alternate service-name aliases; same-name distribution links remain valid.
+Docs scope private/admin destination rejection to authenticated proxy flows and
+record native unauthenticated REALITY relay to the fixed explicit handshake
+target. The selected target must intentionally expose public TLS; a loopback or
+private address reaching that public service is permitted, while administrative,
+controller and intranet-only targets are excluded.

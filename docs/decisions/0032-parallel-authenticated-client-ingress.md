@@ -197,3 +197,36 @@ downgrade requires a compatible pre-upgrade backup and guarded recovery.
 The task records generated-runtime, independent-review and staging evidence
 separately. Only demonstrated client/runtime compatibility is claimed; public
 listener enablement does not claim resistance to every DPI or IP block.
+
+The supported managed service must share the host file and network views used by
+the controller and privileged pre-start helper. Setup refuses nonempty root/bind/
+tmpfs/image/extension remappings, non-host network namespace declarations and
+post-start hooks in base/vendor fragments or any applicable drop-in. Same-byte
+read-only restrictions and ordinary filters/limits remain supported. The drop-in
+clears vendor reload hooks and later reload overrides are refused. This is a
+bounded supported-service contract, not a general systemd configuration evaluator.
+
+Union hash approval is temporary startup safety authority, not permission to
+release an old generation. Before narrowing coverage or releasing either guard,
+the controller privately rereads exact runtime config bytes under the same safety
+lock and requires equality with the checked candidate. An earlier pre-start hook
+may run, but restoring old approved bytes makes publication fail closed. Post-start
+hooks are unsupported because they could hide such a restore from the reread.
+Systemd filesystem/root and executable-prefix behavior is documented in
+[systemd.exec](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
+and [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html).
+
+### Native handshake fallback exception
+
+The pinned REALITY implementation may relay unauthenticated TLS to the fixed,
+explicit handshake host:port before authenticated proxy routing begins. The
+private/admin/IPv6 destination restrictions above govern authenticated proxy
+flows, not this native fixed-target handshake fallback. The selected handshake
+service must intentionally be public TLS exposure. A loopback/private address is
+valid when it reaches an already-public TLS service; an admin/controller or
+intranet-only target must never be selected. The fallback grants no arbitrary
+destination choice but deliberately exposes that one configured target.
+
+Legacy unit includes and aliases to differently named services are unsupported
+because they introduce uninspected fragment/drop-in sources. Ordinary same-name
+distribution unit symlinks are retained.

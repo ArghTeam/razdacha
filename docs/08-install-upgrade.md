@@ -659,3 +659,20 @@ coverage before service/file changes: disable Reality and Apply first. The expli
 `--reset-network` command retains the public safety manifest/barrier around saved
 listeners. An older binary rejects schema 13/authority v5; rollback needs the
 compatible pre-upgrade database backup and deliberate guarded recovery.
+
+The managed runtime requires the host filesystem and network namespaces. Setup
+refuses unit/drop-in root images, bind/tmpfs/extension remappings, alternate network
+namespaces and post-start hooks, preserving foreign files. Ordinary ProtectSystem,
+read-only restrictions, filters and limits remain supported. Vendor reload hooks
+are cleared; the supported lifecycle uses the guarded restart path. Before final
+release the controller checks that exact candidate bytes still occupy the private
+config path. An earlier pre-start config rewrite leaves both paths guarded and
+requires recovery instead of publishing a stale runtime.
+
+Choose the handshake host:port as an intentionally public TLS service. REALITY's
+native unauthenticated handshake fallback can relay to that fixed endpoint before
+authenticated proxy rules. Loopback/private addresses may reach an already-public
+TLS endpoint, but an admin/controller or intranet-only service must never be used.
+Private destination rejection protects authenticated proxy flows and does not
+remove this deliberate fixed-target fallback. Legacy unit includes and alternate
+service-name aliases are refused; normal same-name distribution links are allowed.

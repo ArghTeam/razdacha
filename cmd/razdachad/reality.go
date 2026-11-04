@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -102,6 +103,14 @@ func (g *applyGate) publicGuard(e []ingressguard.Endpoint, on bool) error {
 
 func (g *applyGate) releasePublic(candidate []byte) error {
 	return ingressguard.WithLock(g.manifestPath(), func() error {
+		current, err := ingressguard.ReadConfig(g.configPath())
+		if err != nil {
+			return fmt.Errorf("verify checked runtime bytes before release: %w", err)
+		}
+		if !bytes.Equal(current, candidate) {
+			return errors.New("runtime configuration changed after its checked restart; clients remain guarded")
+		}
+
 		e, err := ingressguard.ConfigEndpoints(candidate)
 		if err != nil {
 			return err
@@ -110,12 +119,15 @@ func (g *applyGate) releasePublic(candidate []byte) error {
 		if err := ingressguard.Write(g.manifestPath(), m); err != nil {
 			return err
 		}
+		if err := g.network.guard(false); err != nil {
+			return errors.Join(err, g.network.guard(true))
+		}
 		if err := g.publicGuard(e, false); err != nil {
-			return err
+			return errors.Join(err, g.network.guard(true), g.publicGuard(e, true))
 		}
 		m.Guarded = false
 		if err := ingressguard.Write(g.manifestPath(), m); err != nil {
-			return errors.Join(err, g.publicGuard(e, true))
+			return errors.Join(err, g.network.guard(true), g.publicGuard(e, true))
 		}
 		return nil
 	})

@@ -65,3 +65,5 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 - Authority version 5 and schema 13 prevent silent downgrade. Rollback requires a compatible pre-upgrade backup and deliberate guarded recovery; an older daemon must not consume current authority or credentials.
 
 - The shared saved-ingress guard accepts a genuinely fresh target only when both config and manifest are absent. Restore uses this same production wrapper; single orphan, malformed or unapproved public artifacts still refuse replacement. Legacy DNS acceptance is explicitly scoped to preserve supported WG resolver addresses, not inferred from a live wg0 interface at boot.
+
+- The supported runtime unit shares the controller/helper's host filesystem and network namespaces. Nonempty root/bind/tmpfs/image/extension remappings in any base or applicable drop-in, non-host network namespace declarations and post-start hooks are refused before unit writes. Ordinary same-byte read-only hardening, network filters and limits remain supported. The owned drop-in clears vendor reload commands; later reload overrides are refused, so independent reload cannot bypass the startup guard.

@@ -290,3 +290,91 @@ func TestRealityDeliveryUsesCommittedEndpointDespiteSavedDraft(t *testing.T) {
 		t.Fatal("draft endpoint escaped full profile delivery")
 	}
 }
+
+func TestRealityReleaseRefusesOldApprovedConfigRestoredByPreStartHook(t *testing.T) {
+	f := newRealityGateFixture(t)
+	ctx := context.Background()
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	old, err := ingressguard.ReadConfig(f.g.configPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldManifest, err := ingressguard.Read(f.g.manifestPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := f.st.RealityRuntime(ctx, f.g.base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldUUID := live.Users[0].UUID
+	f.g.inner.Reloader = reloaderFunc(func(context.Context) error {
+		if !f.closed || !f.wgClosed {
+			t.Fatal("restart began without both barriers")
+		}
+		if err := os.WriteFile(f.g.configPath(), old, 0o600); err != nil {
+			return err
+		}
+		if err := ingressguard.Startup(f.g.configPath(), f.g.manifestPath(), func([]ingressguard.Endpoint) error { f.closed = true; return nil }); err != nil {
+			return err
+		}
+		f.loaded = old
+		return nil
+	})
+	if _, err := f.g.RotateReality(ctx, f.st, f.p.ID, f.p.RealityRevision); !errors.Is(err, api.ErrNetworkGuarded) {
+		t.Fatal("stale approved runtime config released", err)
+	}
+	if !f.closed || !f.wgClosed {
+		t.Fatal("stale configuration opened an ingress")
+	}
+	manifest, err := ingressguard.Read(f.g.manifestPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !manifest.Guarded || len(manifest.ConfigHashes) != 2 || len(manifest.Endpoints) != len(oldManifest.Endpoints) {
+		t.Fatal("failed release narrowed union safety authority")
+	}
+	if _, err := f.g.RealityConfig(ctx, f.st, f.p.ID); !errors.Is(err, api.ErrNetworkGuarded) {
+		t.Fatal("stale runtime profile became available")
+	}
+	if !strings.Contains(string(f.loaded), oldUUID) {
+		t.Fatal("fixture did not load the old authorized config")
+	}
+}
+
+func TestRealityPartialGuardReleaseFailureReclosesBothPaths(t *testing.T) {
+	for _, at := range []string{"wireguard", "public"} {
+		t.Run(at, func(t *testing.T) {
+			f := newRealityGateFixture(t)
+			ctx := context.Background()
+			if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+				t.Fatal(err)
+			}
+			f.g.network.guard = func(on bool) error {
+				f.wgClosed = on
+				if !on && at == "wireguard" {
+					return errors.New("synthetic partial WG release")
+				}
+				return nil
+			}
+			f.g.network.publicGuard = func(_ []ingressguard.Endpoint, on bool) error {
+				f.closed = on
+				if !on && at == "public" {
+					return errors.New("synthetic partial public release")
+				}
+				return nil
+			}
+			if _, err := f.g.ApplyCurrent(ctx, f.st); err == nil {
+				t.Fatal("partial release claimed success")
+			}
+			if !f.closed || !f.wgClosed {
+				t.Fatal("partial release left a path open")
+			}
+			if status := f.g.RealityStatus(ctx, f.st, f.p); status != "guarded" {
+				t.Fatal("partial release uncertainty hidden", status)
+			}
+		})
+	}
+}
