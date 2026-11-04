@@ -1043,3 +1043,22 @@ body { padding-bottom: calc(var(--apply-height, 0px) + 16px); }
 .rule-pagination > span { text-align: center; font-size: var(--text-small); color: var(--fg-dim); }
 .rule-pagination .btn { font-size: var(--text-small); }
 @media (max-width: 620px) { .rule-pagination { flex-wrap: wrap; } }
+
+
+/* Independent client transports reuse the existing editor and control geometry. */
+.client-method-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; border: 0; padding: 0; margin: 0 0 12px; min-width: 0; }
+.client-method-choices legend { padding: 0 0 10px; }
+.client-profile-methods { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.client-profile-methods [aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg-elev)); }
+.client-disclosure > summary .client-config-heading { display: inline; margin: 0; font-size: inherit; font-weight: inherit; color: inherit; }
+.client-reality-management { margin: 12px 0 0; }
+.client-reality-management > summary { padding: 10px 0; font-size: var(--text-small); cursor: pointer; }
+.client-reality-management > .client-small { margin-bottom: 12px; }
+#client-reality-confirmation { margin-top: 12px; padding: 12px; border-left: 3px solid var(--err); background: var(--bg-sunken); }
+.settings-reality { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 20px; }
+.settings-reality h4 { margin: 0 0 12px; font-size: var(--text-section); }
+.settings-reality details > summary { cursor: pointer; font-size: var(--text-small); padding: 10px 0; }
+.settings-reality-identity { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: var(--text-label); }
+.settings-reality-identity dt { color: var(--fg-dim); }
+.settings-reality-identity dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 620px) { .client-method-choices { grid-template-columns: minmax(0, 1fr); } }

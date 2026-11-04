@@ -444,3 +444,42 @@ The first location attempt was rejected and rolled back before a corrected attem
 passed. The [delivery record](../../tasks/done/300-ingress-ui-preview.md#static-staging-acceptance)
 retains that qualification and private-backup/postflight bounds. Current embedded
 UI/runtime invariants remain unchanged; this is not functional REALITY ingress.
+
+
+## 2026-11-04 — #297 authenticated Reality client workflow
+
+The embedded client editor now offers independent WireGuard and Reality methods
+within the existing four-screen shell, sharing identity and routing. The Network
+settings section persists public Reality configuration through its existing save
+boundary. Server status gates actual authenticated VLESS profile delivery after
+Apply. Text, QR, copy and download use the returned URI and existing guarded
+modal/session lifetime. Revision-based credential replacement clears old copies,
+retains reconciliation failures and requires fresh status after uncertain outcomes.
+WireGuard profiles retain legacy defaults; addresses and observations explicitly
+describe WireGuard, with no fabricated Reality connection state. The
+[implementation task](../../tasks/297-reality-ui.md) records synthetic acceptance
+and the boundary between browser behavior and actual runtime connectivity.
+
+
+### Independent review correction: recovery survives client dialogs
+
+The review reproduced ambiguous rotation failures being lost after dialog dismissal
+or replacement. Recovery state now belongs to each client and initiating session,
+blocks reads while pending, invalidates any current same-client delivery on failure,
+and survives reopening until a fresh explicit authoritative reload. Mutation epochs
+and recovery identity reject pre-mutation reloads; old-login failures remain silent.
+Four additional browser cases cover failure before/after reopening, stale reload
+ordering and previous-login isolation. No runtime/server actions were involved.
+
+
+### Durable revocation failures and actual sing-box client download
+
+Recovery now also covers Reality-affecting peer enabled/method saves, deletion and
+global Reality settings writes: errors may follow durable revocation. Global
+mutations invalidate all profile admission/response epochs; explicit fresh
+peers/settings reload recovers, and an absent deleted peer removes its stale row.
+The optional authenticated sing-box JSON download uses the real additive endpoint
+on demand with URI-equivalent secret lifetime/revision/mutation guards. URI help
+now explicitly requires app TUN and DNS proxy setup. Full JSON includes those
+routes, but UI/browser checks make no claim that a real TUN client has run. Legacy
+WireGuard defaults and profile delivery remain covered by existing regressions.

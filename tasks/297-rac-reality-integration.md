@@ -55,3 +55,20 @@ suite, vet, pinned lint, static Linux amd64/arm64 builds and all discovered brow
 suites, including onboarding, aggregate traffic and REALITY coverage. Do not build
 final sandbox artifacts until the primary approves the final tree/version. Record
 conflict resolutions and final verification below before review.
+
+## Rollback limitation
+
+The earlier sandbox backup was checked for file integrity only. It is not a
+functional boot or network rollback rehearsal. A deployment rollback must restore
+the schema-12 daemon, runtime, generated configuration, SQLite state and committed
+authority together; main's new schema 13/authority 5 must not be opened by the old
+daemon. Existing WireGuard keys, client records and outgoing tunnel data must be
+preserved. No rollback or host operation has been performed by this task.
+
+## Composition record
+
+The exact recorded RAC candidate merged with only an ADR-index conflict. Both
+0032 files are retained and the RAC index labels their independent lineages.
+The frozen UI merge required composing the peer inventory: retained candidate
+unknown-aware WG aggregate counters and REALITY method/status/profile lifetimes,
+with explicit WG-only aggregate semantics and mixed-transport regressions.

@@ -7,6 +7,8 @@ const { fixture, examplePeer } = require('./client.fixture.cjs');
   try {
     for (const [name, peers, received, sent] of [
       ['measured', [{ ...examplePeer, rx_bytes: 1024, tx_bytes: 2048 }, { ...examplePeer, id: 'other', rx_bytes: 1024, tx_bytes: 1024 }], '2.0 KiB', '3.0 KiB'],
+      ['mixed transports', [{ ...examplePeer, rx_bytes: 1024, tx_bytes: 2048 }, { ...examplePeer, id: 'reality-only', wireguard_enabled: false, reality_enabled: true, rx_bytes: 1000000, tx_bytes: 2000000 }], '1.0 KiB', '2.0 KiB'],
+      ['Reality only', [{ ...examplePeer, wireguard_enabled: false, reality_enabled: true, rx_bytes: 1000000, tx_bytes: 2000000 }], 'Unknown', 'Unknown'],
       ['zero', [{ ...examplePeer, rx_bytes: 0, tx_bytes: 0 }], '0 B', '0 B'],
       ['missing', [{ ...examplePeer, rx_bytes: null, tx_bytes: 1024 }], 'Unknown', '1.0 KiB'],
       ['invalid', [{ ...examplePeer, rx_bytes: '1024', tx_bytes: -1 }], 'Unknown', 'Unknown'],
@@ -18,8 +20,10 @@ const { fixture, examplePeer } = require('./client.fixture.cjs');
         assert.equal(await t.page.locator('[data-traffic="sent"]').textContent(), sent, name);
         assert.equal(await t.page.locator('.client-row').count(), peers.length, name);
         const rows = await t.page.locator('.client-traffic').allTextContents();
-        for (let i = 0; i < peers.length; i++) {
-          if ([peers[i].rx_bytes, peers[i].tx_bytes].some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) assert(rows[i].includes('Unknown'), `${name}: missing per-client observation shown as zero`);
+        const measured = peers.filter(peer => peer.wireguard_enabled !== false);
+        assert.equal(rows.length, measured.length, `${name}: only WG rows have traffic observations`);
+        for (let i = 0; i < measured.length; i++) {
+          if ([measured[i].rx_bytes, measured[i].tx_bytes].some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) assert(rows[i].includes('Unknown'), `${name}: missing per-client observation shown as zero`);
         }
         assert.equal(await t.page.evaluate(async () => (await import('/js/screens/peers.js')).aggregateTraffic([], 'rx_bytes')), null);
         assert(await t.page.getByText('Current clients since the gateway interface started;', { exact: false }).isVisible());

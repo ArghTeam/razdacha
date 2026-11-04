@@ -150,7 +150,7 @@ export const session = {
 
 export const peers = {
   list: () => get('/api/peers'),
-  create: (name) => post('/api/peers', { name }),
+  create: (name, connections = {}) => post('/api/peers', { name, ...connections }),
   update: (id, patchBody) => patch(`/api/peers/${encodeURIComponent(id)}`, patchBody),
   remove: (id) => del(`/api/peers/${encodeURIComponent(id)}`),
   /** Клиентский .conf — text/plain. Собирает его демон: публичного ключа
@@ -158,6 +158,10 @@ export const peers = {
       файла приходит оттуда же, в `Content-Disposition`. Возвращает
       `{ text, filename }`. */
   config: (id) => get(`/api/peers/${encodeURIComponent(id)}/config`, { expect: 'file' }),
+  // REALITY credentials are disclosed only by this authenticated delivery endpoint.
+  realityClientConfig: (id) => get(`/api/peers/${encodeURIComponent(id)}/reality-client-config`, { expect: 'file' }),
+  realityConfig: (id) => get(`/api/peers/${encodeURIComponent(id)}/reality-config`, { expect: 'file' }),
+  rotateReality: (id, revision) => post(`/api/peers/${encodeURIComponent(id)}/reality/rotate`, { expected_revision: revision }),
 };
 
 /* --- Оповещения -----------------------------------------------------------
