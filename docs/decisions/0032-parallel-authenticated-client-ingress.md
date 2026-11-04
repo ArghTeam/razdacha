@@ -1,14 +1,14 @@
 # 0032. Parallel authenticated client ingress
 
-Date: 2026-11-04 · Status: **proposed** · Tracker: [#297](https://github.com/ArghTeam/razdacha/issues/297)
+Date: 2026-11-04 · Status: **accepted** · Tracker: [#297](https://github.com/ArghTeam/razdacha/issues/297)
 
 ## Context
 
-An optional VLESS + REALITY TCP listener would complement standard WireGuard when
-its UDP transport is blocked. This is a proposal, not implemented or deployed
-behavior, and promises no particular DPI or IP-block resistance. It addresses the
+An optional VLESS + REALITY TCP listener complements standard WireGuard when
+its UDP transport is blocked. It defaults disabled and promises no particular
+DPI or IP-block resistance. It addresses the
 client-to-gateway path; outgoing tunnels remain a separate choice.
-No decision is superseded by this proposal. Acceptance would extend the incoming
+No decision is superseded. This decision extends the incoming
 transport boundary of ADR 0001 and the contracts in ADRs 0005, 0009, 0013, 0016,
 0023, 0024, 0025, 0026, 0028 and 0029. Historical implementation and validation
 records remain unchanged.
@@ -16,7 +16,7 @@ records remain unchanged.
 The pinned sing-box version is 1.12.25. Current policy uses WG peer addresses and
 the persistent guard covers only `wg0`; both boundaries need extension.
 
-## Proposed decision
+## Decision
 
 ### One client identity, independent credentials
 

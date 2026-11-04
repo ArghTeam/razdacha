@@ -145,8 +145,9 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 		}
 		a.Reality = live
 	}
+	publicUncertain := g.store != nil && g.publicGuarded()
 	var prepared *singbox.Prepared
-	if n.uncertain {
+	if n.uncertain || publicUncertain {
 		prepared, err = a.PrepareRecovery(ctx, snap)
 	} else {
 		prepared, err = a.Prepare(ctx, snap)
@@ -156,7 +157,7 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	}
 	defer prepared.Close()
 	changedGeneration := !reflect.DeepEqual(g.base, snap) || !reflect.DeepEqual(n.contents, selected)
-	needRestart := n.uncertain || prepared.Changed() || changedGeneration
+	needRestart := n.uncertain || publicUncertain || prepared.Changed() || changedGeneration
 	if !repair && !needRestart {
 		res, err := prepared.Commit(ctx, false)
 		count := len(generationSubnets(snap, selected)) + len(generationTransportSubnets(snap, selected))
@@ -287,7 +288,7 @@ func (g *applyGate) networkStatus() error {
 	if !g.network.initialized {
 		return fmt.Errorf("%w: %w", api.ErrNetworkGuarded, errNoAppliedGeneration)
 	}
-	if g.network.uncertain {
+	if g.network.uncertain || (g.store != nil && g.publicGuarded()) {
 		return fmt.Errorf("%w: retry Apply to recover a coherent generation", api.ErrNetworkGuarded)
 	}
 	return nil
@@ -373,7 +374,7 @@ func (g *applyGate) Pending(ctx context.Context, st *store.Store) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	if !g.network.initialized || g.network.uncertain {
+	if !g.network.initialized || g.network.uncertain || (g.store != nil && g.publicGuarded()) {
 		return true, nil
 	}
 	// Publication and recovery retain JSON-round-tripped policy. Compare the

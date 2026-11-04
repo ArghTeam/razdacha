@@ -13,6 +13,7 @@ import (
 	"github.com/ArghTeam/razdacha/internal/api"
 	"github.com/ArghTeam/razdacha/internal/ingressguard"
 	"github.com/ArghTeam/razdacha/internal/netstack"
+	"github.com/ArghTeam/razdacha/internal/packaging"
 	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
@@ -310,12 +311,7 @@ func probePublicPort(endpoint ingressguard.Endpoint) error {
 // guardSavedPublic runs independently of database state and publication locks.
 // A genuinely fresh installation has neither artifact; any orphan fails closed.
 func guardSavedPublic(configPath, manifestPath string) error {
-	if _, err := os.Lstat(configPath); errors.Is(err, os.ErrNotExist) {
-		if _, e := os.Lstat(manifestPath); errors.Is(e, os.ErrNotExist) {
-			return nil
-		}
-	}
-	return ingressguard.Startup(configPath, manifestPath, func(e []ingressguard.Endpoint) error { return netstack.SetPublicClientGuard(e, true) })
+	return packaging.GuardSavedIngress(configPath, manifestPath, func(e []ingressguard.Endpoint) error { return netstack.SetPublicClientGuard(e, true) })
 }
 
 func (g *applyGate) RealityClientConfig(ctx context.Context, st *store.Store, id string) ([]byte, error) {

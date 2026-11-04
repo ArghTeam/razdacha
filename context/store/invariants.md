@@ -42,3 +42,5 @@ description: "SQLite: схема четырёх сущностей, миграц
 - Private singleton REALITY identity and per-peer UUID tables are separate from policy authority. Snapshots contain opaque identity/admission IDs and revisions only; live credentials are intersected with committed admissions under the publication gate. No background refresh admits a new or rotated credential.
 - Peer/global Reality disable atomically replaces live bearers and advances revisions; delete cascades private credentials. Rotation requires a current positive revision (`ErrConflict` on stale requests). Re-enable requires explicit Apply.
 - Full backups include private credentials. Normal CLI restore deletes Reality credentials and server identity and switches Reality off before replacing live state; WG keys/addresses remain unchanged. Explicit reconfiguration creates new credentials and requires profile reissue. Ordinary migration/upgrade never resets identity.
+
+- Legacy full `UpdatePeer` rejects transport/global-enable changes when Reality is present, requiring the gated patch path. Ordinary rename/egress updates and WG-only full writes retain compatibility.

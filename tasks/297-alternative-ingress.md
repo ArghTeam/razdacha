@@ -2,13 +2,13 @@
 type: task
 tracker: "#297"
 title: Parallel VLESS REALITY client ingress
-status: design
+status: in-progress
 ---
 
 # Parallel VLESS REALITY client ingress
 
 Tracker: [#297](https://github.com/ArghTeam/razdacha/issues/297).
-Architecture: [proposed ADR 0032](../docs/decisions/0032-parallel-authenticated-client-ingress.md).
+Architecture: [ADR 0032](../docs/decisions/0032-parallel-authenticated-client-ingress.md).
 
 ## Scope
 
@@ -187,3 +187,42 @@ checked complete JSON profile. Running the delivered TUN profile itself is a
 separate namespace proof; it is not implied by this pass. Later fixture additions
 add unavailable-exit DNS assertions and bounded per-client cleanup and need their
 own execution record.
+
+### Delivered complete client proof (2026-11-04)
+
+The coordinator independently reviewed and ran `TestRealityCompleteClientWire`
+in a fresh outer namespace plus an anonymous client namespace with a veth path.
+The exact delivered typed TUN JSON ran in sing-box 1.12.25 and passed in 1.45s:
+controlled physical DNS/HTTP/IPv6 baselines, proxied HTTP source, gateway DNS
+sentinel, IPv6/AAAA rejection and no direct HTTP/DNS fallback after the owned
+server stopped. The supervisor exposed only `/dev/net/tun` under a 384 MiB cap;
+operator routes, installed binaries/configs and existing service PIDs were unchanged.
+Frozen binary SHA256:
+`3c9f68875aa8d7d0994a23e752b72ae9fef04e340cec61cc1ab26f504dc736c4`;
+full-client fixture source SHA256:
+`aae7cebbaa4488fb378effb25907680c2738514d3372353b1ad28ca69aa02a5c`.
+This demonstrates the pinned Linux sing-box application, not untested third-party
+client imports or native macOS/Android TUN routing.
+
+### Extended generated-policy proof (2026-11-04)
+
+The coordinator reran the independently reviewed extended fixture after bounded
+per-client cleanup and explicit unavailable-exit DNS assertions. It passed in
+24.57s with the same frozen binary as the complete-client proof above. Product
+fixture source SHA256:
+`b3f2f3585a9e4bba288caa99fb72a434cef229e288b41ad27aaf74486a76a1eb`.
+Both same-source client subtests passed TCP/UDP/native/shared/DNS policy, private
+resolution and mapped-address rejection, healthy exit/DNS/FakeIP behavior,
+revocation/restart and unavailable-exit data/DNS rejection. The private bounded
+supervisor left no fixture/cgroup processes and verified installed daemon, runtime,
+config and existing service identities unchanged. This is synthetic isolated
+Linux evidence; it does not claim application compatibility beyond pinned sing-box
+1.12.25, provider/DPI resistance, performance measurements or a live deployment.
+
+Independent review identified two compatibility regressions: legacy CGNAT/public
+WG resolver addresses and a fresh restore target with neither safety artifact.
+Foundation strict explicit-unicast legacy recognition and the shared both-absent
+restore/startup wrapper address them with regressions. Low-level full peer writes
+now reject public transport lifecycle changes; gated patches remain authoritative.
+An independently guarded runtime start appears pending/guarded and forces checked
+repair even for identical bytes. Final CI and coordinator review precede merge.

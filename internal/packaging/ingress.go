@@ -45,3 +45,19 @@ func CheckIngressUninstall(root string) error {
 	}
 	return nil
 }
+
+// GuardSavedIngress accepts a genuinely fresh target only when both safety
+// artifacts are absent. Existing/orphan artifacts retain Startup's strict checks.
+func GuardSavedIngress(configPath, manifestPath string, install func([]ingressguard.Endpoint) error) error {
+	for _, path := range []string{configPath, manifestPath} {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return errors.New("ingress safety paths must be clean and absolute")
+		}
+	}
+	_, configErr := os.Lstat(configPath)
+	_, manifestErr := os.Lstat(manifestPath)
+	if errors.Is(configErr, os.ErrNotExist) && errors.Is(manifestErr, os.ErrNotExist) {
+		return nil
+	}
+	return ingressguard.Startup(configPath, manifestPath, install)
+}

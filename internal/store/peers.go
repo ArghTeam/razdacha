@@ -99,7 +99,21 @@ func (s *Store) UpdatePeer(ctx context.Context, p Peer) error {
 		return fmt.Errorf("%w: у обновляемого пира пустой идентификатор", ErrInvalid)
 	}
 
-	return s.tx(ctx, func(tx *sql.Tx) error { return updatePeer(ctx, tx, p) })
+	// Full replacement is retained for legacy callers. Public-auth changes must
+	// pass through the daemon gate and transactionally reconciled PatchPeer path.
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		old, err := scanPeer(tx.QueryRowContext(ctx, `SELECT `+peerColumns+` FROM peers WHERE id=?`, p.ID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if (old.RealityEnabled || p.RealityEnabled) && (old.RealityEnabled != p.RealityEnabled || old.Enabled != p.Enabled || old.WireGuardDisabled != p.WireGuardDisabled) {
+			return fmt.Errorf("%w: Reality transport changes require gated peer patch", ErrInvalid)
+		}
+		return updatePeer(ctx, tx, p)
+	})
 }
 
 func updatePeer(ctx context.Context, tx *sql.Tx, p Peer) error {

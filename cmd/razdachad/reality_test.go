@@ -191,3 +191,102 @@ func TestRealityDraftDoesNotActivateOnBackgroundRefresh(t *testing.T) {
 		t.Fatal(status)
 	}
 }
+
+func TestConcurrentRealityRotationAndApplyNeverRestoreOldBearer(t *testing.T) {
+	f := newRealityGateFixture(t)
+	ctx := context.Background()
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	live, err := f.st.RealityRuntime(ctx, f.g.base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := live.Users[0].UUID
+	results := make(chan error, 2)
+	start := make(chan struct{})
+	for range 2 {
+		go func() { <-start; _, err := f.g.RotateReality(ctx, f.st, f.p.ID, f.p.RealityRevision); results <- err }()
+	}
+	applied := make(chan error, 1)
+	go func() { <-start; _, err := f.g.ApplyCurrent(ctx, f.st); applied <- err }()
+	close(start)
+	success, conflict := 0, 0
+	for range 2 {
+		err := <-results
+		switch {
+		case err == nil:
+			success++
+		case errors.Is(err, store.ErrConflict):
+			conflict++
+		default:
+			t.Fatal(err)
+		}
+	}
+	if err := <-applied; err != nil {
+		t.Fatal(err)
+	}
+	if success != 1 || conflict != 1 {
+		t.Fatal("revision race was not serialized", success, conflict)
+	}
+	if strings.Contains(string(f.loaded), old) {
+		t.Fatal("concurrent Apply restored old bearer")
+	}
+}
+
+func TestIndependentRuntimeGuardRequiresCheckedRepair(t *testing.T) {
+	f := newRealityGateFixture(t)
+	ctx := context.Background()
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	before := f.reloads
+	if err := ingressguard.Startup(f.g.configPath(), f.g.manifestPath(), func([]ingressguard.Endpoint) error { f.closed = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := f.g.Pending(ctx, f.st); err != nil || !pending {
+		t.Fatal("independent runtime guard was hidden from Apply status", err)
+	}
+	if err := f.g.networkStatus(); !errors.Is(err, api.ErrNetworkGuarded) {
+		t.Fatal("independent runtime guard was hidden from diagnostics")
+	}
+	result, err := f.g.ApplyCurrent(ctx, f.st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Reloaded || f.reloads != before+1 || f.closed || f.wgClosed {
+		t.Fatal("byte-identical safety repair skipped checked restart")
+	}
+}
+
+func TestRealityDeliveryUsesCommittedEndpointDespiteSavedDraft(t *testing.T) {
+	f := newRealityGateFixture(t)
+	ctx := context.Background()
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	next, err := f.st.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next.EndpointHost = "draft.fixture.example"
+	next.RealityListenPort = 9443
+	next.RealityServerName = "draft-sni.fixture.example"
+	if err := f.g.SaveSettings(ctx, f.st, next); err != nil {
+		t.Fatal(err)
+	}
+	uri, err := f.g.RealityConfig(ctx, f.st, f.p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(uri, "draft") || !strings.Contains(uri, "gateway.fixture.example:8443") {
+		t.Fatal("draft endpoint escaped profile delivery")
+	}
+	profile, err := f.g.RealityClientConfig(ctx, f.st, f.p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(profile), "draft") {
+		t.Fatal("draft endpoint escaped full profile delivery")
+	}
+}

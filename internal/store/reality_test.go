@@ -133,3 +133,38 @@ func TestRestoreInvalidatesOnlyRealityIdentity(t *testing.T) {
 		t.Fatal("explicit reconfiguration reused cloned identity")
 	}
 }
+
+func TestLegacyFullPeerUpdateCannotBypassRealityLifecycle(t *testing.T) {
+	ctx := context.Background()
+	st := openAt(t, t.TempDir()+"/state.db")
+	p := samplePeer("Client", "10.8.0.2")
+	p.RealityEnabled = true
+	p, err := st.CreatePeer(ctx, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []func(*Peer){func(p *Peer) { p.RealityEnabled = false }, func(p *Peer) { p.Enabled = false }, func(p *Peer) { p.WireGuardDisabled = true }} {
+		next := p
+		change(&next)
+		if err := st.UpdatePeer(ctx, next); !errors.Is(err, ErrInvalid) {
+			t.Fatal("full update bypassed public auth lifecycle", err)
+		}
+	}
+	got, err := st.Peer(ctx, p.ID)
+	if err != nil || got.RealityRevision != p.RealityRevision || !got.RealityEnabled || !got.Enabled {
+		t.Fatal("rejected full write changed authentication")
+	}
+	p.Name = "Renamed"
+	if err := st.UpdatePeer(ctx, p); err != nil {
+		t.Fatal("ordinary rename was blocked", err)
+	}
+	legacy := samplePeer("Legacy", "10.8.0.3")
+	legacy, err = st.CreatePeer(ctx, legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.Enabled = false
+	if err := st.UpdatePeer(ctx, legacy); err != nil {
+		t.Fatal("legacy WG-only write changed behavior", err)
+	}
+}

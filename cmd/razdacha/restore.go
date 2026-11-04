@@ -58,14 +58,7 @@ func runRestore(ctx context.Context, args []string) error {
 	opts.stdin = os.Stdin
 	if opts.root == "" {
 		opts.closeIngress = func() error {
-			if err := installClientGuard(); err != nil {
-				return err
-			}
-			path, err := filepath.Abs(opts.dbPath)
-			if err != nil {
-				return err
-			}
-			return ingressguard.Startup(singbox.DefaultConfigPath, filepath.Join(filepath.Dir(path), "public-ingress.json"), func(e []ingressguard.Endpoint) error { return netstack.SetPublicClientGuard(e, true) })
+			return closeRestoreIngress(opts.dbPath, singbox.DefaultConfigPath, installClientGuard, func(e []ingressguard.Endpoint) error { return netstack.SetPublicClientGuard(e, true) })
 		}
 	}
 	return restore(ctx, opts)
