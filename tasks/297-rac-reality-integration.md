@@ -101,6 +101,8 @@ The complete 18-suite browser runner passed after that fixture correction, inclu
 all 36 REALITY cases, candidate onboarding and mixed-transport WG aggregates.
 Static Linux amd64 and arm64 daemon/CLI compile checks passed with CGO disabled;
 verification binaries were discarded rather than versioned as deployment artifacts.
+The final restore-only follow-up passed targeted store/CLI restore regressions;
+unchanged browser suites were not repeated solely for that SQL change.
 Final main synchronization, source review and artifact/version approval remain
 separate gates. No live host, provider, tunnel or deployment proof is claimed.
 
