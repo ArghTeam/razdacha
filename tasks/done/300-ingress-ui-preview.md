@@ -51,3 +51,33 @@ designated staging gateway. Design/review delivery is complete; static deploymen
 and its postflight checks remain the primary operator's next action. No product
 transport or server acceptance is claimed.
 No product behavior or maintained runtime invariant changes.
+
+
+## Static staging acceptance
+
+PR #301 merged at `414108c88c1e78e6aea8c52a8d10912c974b6638`. The primary
+checkout was fast-forwarded to the fresh `origin/main` at that commit before delivery;
+existing local edits were preserved. This acceptance adds a static preview at
+`/preview/reality/` on the designated staging gateway, not product functionality.
+
+Public and loopback HTTPS returned 200 with valid TLS and exact reviewed HTML
+SHA-256 `4d86988ea4fd15328d22d16acd884ee8548c7cf4e14cdc821a7e0db92bf9e806`.
+Responses carried no-store/noindex protections and a CSP with `connect-src 'none'`.
+The existing panel body remained identical with HTTP 200; the unauthenticated API
+retained its expected 401 response. All three service main PIDs stayed unchanged.
+Only nginx was gracefully reloaded; application services were not restarted.
+
+A fresh private nginx configuration backup and consistent SQLite backup were retained.
+Strict comparison preserved all peer, rule, tunnel, setting and registration rows,
+plus daemon/runtime/configuration bytes. No application or network-policy mutation
+occurred. The first location attempt returned 500 because alias processing appended
+an index path. Exact-body verification refused that attempt; rollback restored the
+original nginx configuration and all three services remained active. A reviewed
+literal-root/try-files correction passed the second delivery attempt.
+
+Public Chromium postflight passed exact-content/CSP checks, independent WG/Reality
+selection, unsaved profile-delivery blocking, settled Escape/profile cleanup,
+Network settings and 390-pixel mobile layout without overflow. There were no API or
+external requests or page errors. Screenshots and raw evidence remain private.
+The interface is synthetic and nonfunctional; production was outside the scope.
+This does not prove transport operation, real clients, revocation or DPI resistance.

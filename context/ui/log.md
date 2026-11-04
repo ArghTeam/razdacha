@@ -414,3 +414,15 @@ key-action wording and opener restoration. The
 The user accepted the standalone interface and authorized a separate static
 staging delivery under `/preview/reality/`. Deployment/postflight remains pending
 the primary operator; the main panel, API and transport services stay unchanged.
+
+
+## 2026-11-04 — #300 static preview delivered to staging
+
+The accepted standalone preview is served under `/preview/reality/` on designated
+staging. Public/loopback HTTPS and browser postflight passed with exact source identity,
+no external/API requests and no changed application state. A graceful nginx reload
+preserved service process identities; the main panel/API retained their responses.
+The first location attempt was rejected and rolled back before a corrected attempt
+passed. The [delivery record](../../tasks/done/300-ingress-ui-preview.md#static-staging-acceptance)
+retains that qualification and private-backup/postflight bounds. Current embedded
+UI/runtime invariants remain unchanged; this is not functional REALITY ingress.
