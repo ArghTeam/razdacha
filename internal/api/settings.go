@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -17,19 +18,26 @@ import (
 // изменению не подлежит, но клиентскому конфигу необходим, а больше его взять
 // неоткуда; поле только на чтение и `null`, пока интерфейс не поднят.
 type settingsResponse struct {
-	WGListenPort        int     `json:"wg_listen_port"`
-	WGPool              string  `json:"wg_pool"`
-	WGServerAddress     string  `json:"wg_server_address"`
-	EndpointHost        string  `json:"endpoint_host"`
-	ClientMTU           int     `json:"client_mtu"`
-	DNSUpstream         string  `json:"dns_upstream"`
-	DNSType             string  `json:"dns_type"`
-	WANInterface        string  `json:"wan_interface"`
-	ListUpdateInterval  int     `json:"list_update_interval"`
-	PoolUpdateInterval  int     `json:"pool_update_interval"`
-	TunnelCheckInterval int     `json:"tunnel_check_interval"`
-	LogLevel            string  `json:"log_level"`
-	ServerPublicKey     *string `json:"server_public_key"`
+	RealityEnabled         bool    `json:"reality_enabled"`
+	RealityListenPort      int     `json:"reality_listen_port"`
+	RealityServerName      string  `json:"reality_server_name"`
+	RealityHandshakeServer string  `json:"reality_handshake_server"`
+	RealityHandshakePort   int     `json:"reality_handshake_port"`
+	RealityPublicKey       string  `json:"reality_public_key"`
+	RealityShortID         string  `json:"reality_short_id"`
+	WGListenPort           int     `json:"wg_listen_port"`
+	WGPool                 string  `json:"wg_pool"`
+	WGServerAddress        string  `json:"wg_server_address"`
+	EndpointHost           string  `json:"endpoint_host"`
+	ClientMTU              int     `json:"client_mtu"`
+	DNSUpstream            string  `json:"dns_upstream"`
+	DNSType                string  `json:"dns_type"`
+	WANInterface           string  `json:"wan_interface"`
+	ListUpdateInterval     int     `json:"list_update_interval"`
+	PoolUpdateInterval     int     `json:"pool_update_interval"`
+	TunnelCheckInterval    int     `json:"tunnel_check_interval"`
+	LogLevel               string  `json:"log_level"`
+	ServerPublicKey        *string `json:"server_public_key"`
 
 	// PoolCountryBlocklist — ISO-коды стран, ноды которых не берутся в пул
 	// (ADR 0020). Всегда массив, пустой означает «не отбраковывать по стране».
@@ -42,6 +50,12 @@ type settingsResponse struct {
 
 func newSettingsResponse(v store.Settings, serverKey string) settingsResponse {
 	out := settingsResponse{
+		RealityEnabled:         v.RealityEnabled,
+		RealityListenPort:      v.RealityListenPort,
+		RealityServerName:      v.RealityServerName,
+		RealityHandshakeServer: v.RealityHandshakeServer,
+		RealityHandshakePort:   v.RealityHandshakePort,
+
 		WGListenPort:        v.WGListenPort,
 		WGPool:              v.WGPool,
 		WGServerAddress:     v.WGServerAddress,
@@ -67,6 +81,12 @@ func newSettingsResponse(v store.Settings, serverKey string) settingsResponse {
 // settingsRequest — тело `PATCH /api/settings`. Указатели отличают «не прислали»
 // от «прислали пустое»: обнулять MTU молчанием нельзя.
 type settingsRequest struct {
+	RealityEnabled         *bool   `json:"reality_enabled"`
+	RealityListenPort      *int    `json:"reality_listen_port"`
+	RealityServerName      *string `json:"reality_server_name"`
+	RealityHandshakeServer *string `json:"reality_handshake_server"`
+	RealityHandshakePort   *int    `json:"reality_handshake_port"`
+
 	WGListenPort        *int    `json:"wg_listen_port"`
 	WGPool              *string `json:"wg_pool"`
 	WGServerAddress     *string `json:"wg_server_address"`
@@ -87,6 +107,22 @@ type settingsRequest struct {
 
 // apply накладывает присланные поля на текущие настройки.
 func (req settingsRequest) apply(v store.Settings) store.Settings {
+	if req.RealityEnabled != nil {
+		v.RealityEnabled = *req.RealityEnabled
+	}
+	if req.RealityListenPort != nil {
+		v.RealityListenPort = *req.RealityListenPort
+	}
+	if req.RealityServerName != nil {
+		v.RealityServerName = *req.RealityServerName
+	}
+	if req.RealityHandshakeServer != nil {
+		v.RealityHandshakeServer = *req.RealityHandshakeServer
+	}
+	if req.RealityHandshakePort != nil {
+		v.RealityHandshakePort = *req.RealityHandshakePort
+	}
+
 	if req.WGListenPort != nil {
 		v.WGListenPort = *req.WGListenPort
 	}
@@ -156,7 +192,12 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, s.log, http.StatusInternalServerError, codeInternal, "Внутренняя ошибка")
 		return
 	}
-	writeJSON(w, s.log, http.StatusOK, newSettingsResponse(v, key))
+	out := newSettingsResponse(v, key)
+	if identity, err := s.store.RealityIdentity(r.Context()); err == nil && identity != nil {
+		out.RealityPublicKey = identity.PublicKey
+		out.RealityShortID = identity.ShortID
+	}
+	writeJSON(w, s.log, http.StatusOK, out)
 }
 
 // handleUpdateSettings — `PATCH /api/settings`.
@@ -172,7 +213,11 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	next := req.apply(current)
-	if err := s.store.SaveSettings(r.Context(), next); err != nil {
+	save := s.store.SaveSettings
+	if publisher, ok := s.applier.(RealityPublisher); ok {
+		save = func(ctx context.Context, v store.Settings) error { return publisher.SaveSettings(ctx, s.store, v) }
+	}
+	if err := save(r.Context(), next); err != nil {
 		s.storeError(w, err, "Настройки не найдены")
 		return
 	}
@@ -184,6 +229,10 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out := newSettingsResponse(next, key)
+	if identity, err := s.store.RealityIdentity(r.Context()); err == nil && identity != nil {
+		out.RealityPublicKey = identity.PublicKey
+		out.RealityShortID = identity.ShortID
+	}
 	out.RequiresClientReconfig = requiresClientReconfig(current, next)
 	writeJSON(w, s.log, http.StatusOK, out)
 }

@@ -35,3 +35,14 @@ description: "SQLite: схема четырёх сущностей, миграц
 - Peer egress references are nullable, transactionally validated and protected by FK RESTRICT. Disabled targets remain selected. API-style peer patches read/write only supplied fields transactionally so rename/toggle cannot erase a concurrent exit choice. Backups retain the choice; existing clients migrate to shared rules (ADR 0028).
 
 - Password reset atomically rotates a private random authentication generation and deletes sessions. Login captures hash and generation together after Argon2 admission, then inserts only if both still match in one SQLite statement. This prevents stale and same-hash/ABA verification from issuing sessions across independent connections/processes. Legacy hashes without a generation remain supported until reset; settings APIs neither expose nor overwrite authentication state. A reset after insertion revokes that session even if its cookie is delivered later. Already authorized requests are not retroactively canceled (#276, ADR 0009).
+
+## Parallel client ingress (ADR 0032)
+
+- Migration 13 is additive. Legacy peers retain WireGuard through an internal default-false `wireguard_disabled`; Reality defaults off. An enabled peer needs at least one method. Existing WG keys/addresses are preserved.
+- Private singleton REALITY identity and per-peer UUID tables are separate from policy authority. Snapshots contain opaque identity/admission IDs and revisions only; live credentials are intersected with committed admissions under the publication gate. No background refresh admits a new or rotated credential.
+- Peer/global Reality disable atomically replaces live bearers and advances revisions; delete cascades private credentials. Rotation requires a current positive revision (`ErrConflict` on stale requests). Re-enable requires explicit Apply.
+- Full backups include private credentials. Normal CLI restore deletes Reality credentials and server identity and switches Reality off before replacing live state; WG keys/addresses remain unchanged. Explicit reconfiguration creates new credentials and requires profile reissue. Ordinary migration/upgrade never resets identity.
+
+- Legacy full `UpdatePeer` rejects transport/global-enable changes when Reality is present, requiring the gated patch path. Ordinary rename/egress updates and WG-only full writes retain compatibility.
+
+- Restore disables the global peer flag only when its WG method is disabled as Reality is stripped. Such clients remain editable while disabled and require explicit method selection plus configuration/Apply; every WG-enabled peer retains its enabled flag, keys and address.
