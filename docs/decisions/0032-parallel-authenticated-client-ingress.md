@@ -67,10 +67,10 @@ policy; do not claim to identify every DoH request.
 
 Kernel restrictions attached to `wg0` do not protect a direct proxy inbound. Add
 VLESS-scoped equivalents for IPv6 rejection and existing DNS safety restrictions,
-including the destination-port 853 policy. Explicitly reject private, loopback,
+including the destination-port 853 policy. Authenticated proxy flows reject private, loopback,
 link-local and other protected destinations before ordinary direct fallback, both
 for IP-literal destinations and after hostname resolution. The gateway DNS service
-is an explicit narrow exception. The listener must not grant access to gateway
+is an explicit narrow exception. Authenticated proxy flows must not grant access to gateway
 administration, the runtime controller or other host services. Alternative ingress
 does not implicitly inherit WG access to the private panel.
 

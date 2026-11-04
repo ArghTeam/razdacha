@@ -256,7 +256,7 @@ func invalidateReality(ctx context.Context, tx *sql.Tx, peerID string) error {
 // public identity. WireGuard keys and addresses are preserved unchanged.
 func (s *Store) ResetRealityAfterRestore(ctx context.Context) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		for _, query := range []string{`DELETE FROM reality_credentials`, `DELETE FROM reality_identity`, `UPDATE peers SET reality_enabled=0,reality_credential_id='',reality_revision=0`, `INSERT INTO settings(key,value) VALUES('reality_enabled','false') ON CONFLICT(key) DO UPDATE SET value=excluded.value`} {
+		for _, query := range []string{`DELETE FROM reality_credentials`, `DELETE FROM reality_identity`, `UPDATE peers SET enabled=CASE WHEN wireguard_disabled=1 THEN 0 ELSE enabled END,reality_enabled=0,reality_credential_id='',reality_revision=0`, `INSERT INTO settings(key,value) VALUES('reality_enabled','false') ON CONFLICT(key) DO UPDATE SET value=excluded.value`} {
 			if _, err := tx.ExecContext(ctx, query); err != nil {
 				return fmt.Errorf("invalidate restored REALITY identity: %w", err)
 			}

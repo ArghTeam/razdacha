@@ -44,3 +44,5 @@ description: "SQLite: схема четырёх сущностей, миграц
 - Full backups include private credentials. Normal CLI restore deletes Reality credentials and server identity and switches Reality off before replacing live state; WG keys/addresses remain unchanged. Explicit reconfiguration creates new credentials and requires profile reissue. Ordinary migration/upgrade never resets identity.
 
 - Legacy full `UpdatePeer` rejects transport/global-enable changes when Reality is present, requiring the gated patch path. Ordinary rename/egress updates and WG-only full writes retain compatibility.
+
+- Restore disables the global peer flag only when its WG method is disabled as Reality is stripped. Such clients remain editable while disabled and require explicit method selection plus configuration/Apply; every WG-enabled peer retains its enabled flag, keys and address.

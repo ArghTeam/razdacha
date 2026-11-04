@@ -255,3 +255,9 @@ record native unauthenticated REALITY relay to the fixed explicit handshake
 target. The selected target must intentionally expose public TLS; a loopback or
 private address reaching that public service is permitted, while administrative,
 controller and intranet-only targets are excluded.
+
+Restore invariant follow-up: stripping Reality also disables peers with their WG
+method disabled, avoiding an enabled client with no methods. Disabled records
+remain editable; enabling without selecting a method is rejected. WG-enabled
+client flags/keys/addresses remain unchanged. A focused synthetic regression
+covers this state and confirms saved method intent cannot activate cleared auth.
