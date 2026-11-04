@@ -252,7 +252,12 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   copies before reconciliation. A failed operation may have revoked the credential:
   the panel blocks another profile until explicit status reload, preserves the
   server error and never invents successful revocation or a guarded response.
-  Status reload cannot overwrite drafts or accepted intervening writes.
+  Pending/uncertain recovery belongs to the client and initiating session, surviving
+  close/replacement/reopen; reopened dialogs cannot fetch a profile while replacement
+  is pending. Failures invalidate the current same-client dialog even when the
+  initiating dialog is gone. Prior-session completions cannot poison a new login.
+  Only a fresh explicit authoritative reload clears uncertainty; pre-mutation reads
+  cannot clear a newer recovery record or overwrite drafts/intervening writes.
 - Inventory addresses, handshakes and counters describe WireGuard only. Reality-only
   clients hide the reserved WireGuard address and counters; Reality availability is
   distinct from connection activity, which the server does not currently measure.

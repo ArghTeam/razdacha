@@ -441,3 +441,14 @@ WireGuard profiles retain legacy defaults; addresses and observations explicitly
 describe WireGuard, with no fabricated Reality connection state. The
 [implementation task](../../tasks/297-reality-ui.md) records synthetic acceptance
 and the boundary between browser behavior and actual runtime connectivity.
+
+
+### Independent review correction: recovery survives client dialogs
+
+The review reproduced ambiguous rotation failures being lost after dialog dismissal
+or replacement. Recovery state now belongs to each client and initiating session,
+blocks reads while pending, invalidates any current same-client delivery on failure,
+and survives reopening until a fresh explicit authoritative reload. Mutation epochs
+and recovery identity reject pre-mutation reloads; old-login failures remain silent.
+Four additional browser cases cover failure before/after reopening, stale reload
+ordering and previous-login isolation. No runtime/server actions were involved.

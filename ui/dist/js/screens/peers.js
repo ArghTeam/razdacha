@@ -47,7 +47,7 @@ export function view() {
   const rows = state.peers.map((p) => {
     const on = wireGuardEnabled(p) && isOnline(p);
     const activity = p.enabled === false ? 'Disabled' : !wireGuardEnabled(p) ? 'WireGuard disabled' : on ? 'WireGuard connected' : p.last_handshake && Number.isFinite(Date.parse(p.last_handshake)) ? `WireGuard handshake ${new Date(p.last_handshake).toLocaleString('en-GB')}` : 'No WireGuard handshake yet';
-    const reality = realityEnabled(p) ? `<div class="row-meta">${esc(realityStatusText(p))}</div>` : '';
+    const reality = realityEnabled(p) ? `<div class="row-meta">${esc(realityRecoveryMessage(p.id) || realityStatusText(p))}</div>` : '';
     return `
       <article class="row client-row${p.enabled === false ? ' dim' : ''}" aria-label="Client ${esc(p.name)}">
         <div class="client-identity">
@@ -87,6 +87,18 @@ const head = () => `
 let editor = null;
 const emptyPool = tunnel => tunnel?.source === 'pool' && (tunnel.pool?.servers_total === 0 || tunnel.pool?.servers_alive === 0);
 const writes = new Map();
+// Ambiguous credential changes outlive a dialog, but never the initiating login.
+const realityRecoveries = new Map();
+function realityRecovery(id) {
+  const recovery = realityRecoveries.get(id);
+  if (recovery && !recovery.currentSession()) { realityRecoveries.delete(id); return null; }
+  return recovery || null;
+}
+function realityRecoveryMessage(id) {
+  const recovery = realityRecovery(id);
+  return recovery?.pending ? 'Reality key replacement is still reconciling. Wait before requesting another profile.'
+    : recovery?.uncertain ? recovery.error : '';
+}
 const wireGuardEnabled = peer => peer?.wireguard_enabled !== false;
 const realityEnabled = peer => peer?.reality_enabled === true;
 const peerBaseline = peer => ({
@@ -109,7 +121,7 @@ function realityStatusText(peer) {
 
 function profileAvailable(ctx) {
   const peer = peerById(ctx.id);
-  return ctx.profileMethod !== 'reality' || !ctx.profileUncertain && realityStatus(peer) === 'available' && peer?.reality_revision === ctx.configRealityRevision;
+  return ctx.profileMethod !== 'reality' || !realityRecovery(ctx.id) && realityStatus(peer) === 'available' && peer?.reality_revision === ctx.configRealityRevision;
 }
 
 function current(ctx) {
@@ -291,7 +303,7 @@ function syncDetails(ctx) {
   note.hidden = !ctx.configReady || !profileDraft;
   note.textContent = values.name !== ctx.baseline.name ? 'Save the name change before copying or downloading.' : 'Save connection changes before copying or downloading.';
   const peer = peerById(ctx.id);
-  modal.querySelector('#client-reality-status').textContent = ctx.profileUncertain ? 'Reality state needs a refresh after the incomplete operation.' : realityStatusText(peer);
+  modal.querySelector('#client-reality-status').textContent = realityRecoveryMessage(ctx.id) || realityStatusText(peer);
   modal.querySelector('#client-config-heading').textContent = ctx.profileMethod === 'wg' ? 'WireGuard configuration' : 'Reality profile';
   modal.querySelector('#client-profile-help').textContent = ctx.profileMethod === 'wg' ? 'Scan with WireGuard or use the saved configuration.' : 'Import this profile into a compatible VLESS + REALITY app. Keep client DNS inside the connection.';
   modal.querySelector('[data-act="download-conf"]').textContent = ctx.profileMethod === 'wg' ? 'Download .conf' : 'Download profile';
@@ -301,7 +313,7 @@ function syncDetails(ctx) {
     control.disabled = ctx.saving || ctx.rotating || (method === 'wg' ? !ctx.baseline.wireguard_enabled : !ctx.baseline.reality_enabled);
   }
   modal.querySelector('.client-reality-management').hidden = ctx.profileMethod !== 'reality' || !ctx.baseline.reality_enabled;
-  modal.querySelector('[data-act="inspect-reality-rotation"]').disabled = ctx.saving || ctx.rotating || ctx.deleting || ctx.profileUncertain || profileDraft || !Number.isInteger(peer?.reality_revision) || peer.reality_revision < 1;
+  modal.querySelector('[data-act="inspect-reality-rotation"]').disabled = ctx.saving || ctx.rotating || ctx.deleting || realityRecovery(ctx.id) || profileDraft || !Number.isInteger(peer?.reality_revision) || peer.reality_revision < 1;
   if (transportDraft && (ctx.configReady || ctx.configPending)) clearClientConfig(ctx);
   if (transportDraft) message(modal.querySelector('#client-config-status'), 'Save connection changes before requesting a profile.');
   modal.querySelectorAll('#client-name, #client-enabled, #client-wireguard, #client-reality, [name="client-route-mode"], #client-target').forEach(control => { control.disabled = ctx.saving || ctx.rotating; });
@@ -362,7 +374,7 @@ async function loadClientConfig(ctx = editor) {
   const status = ctx.modal.querySelector('#client-config-status');
   if (method === 'wg' && !wireGuardEnabled(peer)) { message(status, 'WireGuard is disabled for this client.', 'err'); return; }
   if (method === 'reality' && realityStatus(peer) !== 'available') { message(status, realityStatusText(peer), realityStatus(peer) === 'guarded' ? 'err' : ''); return; }
-  if (method === 'reality' && ctx.profileUncertain) { message(status, 'Reload Reality status before requesting another profile.', 'err'); return; }
+  if (method === 'reality' && realityRecovery(ctx.id)) { message(status, realityRecoveryMessage(ctx.id), 'err'); return; }
   if (Object.keys(changes(ctx)).some(key => ['enabled', 'wireguard_enabled', 'reality_enabled'].includes(key))) { message(status, 'Save connection changes before requesting a profile.'); return; }
   const generation = ctx.configGeneration, realityRevision = peer?.reality_revision;
   const savedName = peerById(ctx.id)?.name || ctx.baseline.name;
@@ -576,7 +588,7 @@ function selectClientProfile(method) {
 
 function inspectRealityRotation() {
   const ctx = editor, peer = ctx && peerById(ctx.id);
-  if (!ctx || !current(ctx) || ctx.saving || ctx.deleting || ctx.rotating || ctx.profileUncertain || !Number.isInteger(peer?.reality_revision) || peer.reality_revision < 1) return;
+  if (!ctx || !current(ctx) || ctx.saving || ctx.deleting || ctx.rotating || realityRecovery(ctx.id) || !Number.isInteger(peer?.reality_revision) || peer.reality_revision < 1) return;
   if (Object.keys(changes(ctx)).length) { message(ctx.modal.querySelector('#client-reality-rotation-status'), 'Save or discard edits before replacing a key.', 'err'); return; }
   ctx.rotationRevision = peer.reality_revision;
   ctx.modal.querySelector('#client-reality-confirmation').hidden = false;
@@ -585,11 +597,14 @@ function inspectRealityRotation() {
 
 async function rotateReality() {
   const ctx = editor, peer = ctx && peerById(ctx.id);
-  if (!ctx || !current(ctx) || ctx.saving || ctx.deleting || ctx.rotating || ctx.profileUncertain || ctx.modal.querySelector('#client-reality-confirmation').hidden || !Number.isInteger(peer?.reality_revision) || peer.reality_revision < 1) return;
+  if (!ctx || !current(ctx) || ctx.saving || ctx.deleting || ctx.rotating || realityRecovery(ctx.id) || ctx.modal.querySelector('#client-reality-confirmation').hidden || !Number.isInteger(peer?.reality_revision) || peer.reality_revision < 1) return;
   if (Object.keys(changes(ctx)).length) return;
   const revision = ctx.rotationRevision;
   if (!Number.isInteger(revision) || revision < 1) return;
   ctx.rotating = true;
+  const recovery = { currentSession: ctx.currentSession, pending: true, uncertain: false, error: '' };
+  realityRecoveries.set(ctx.id, recovery);
+  inventoryRevision++;
   clearClientConfig(ctx);
   const status = ctx.modal.querySelector('#client-reality-rotation-status');
   message(status, 'Reconciling revoked access. Existing connections may be interrupted…');
@@ -605,7 +620,9 @@ async function rotateReality() {
   try {
     const updated = await pending;
     if (!ctx.currentSession()) return;
-    if (updated?.id === ctx.id && peerById(ctx.id)) Object.assign(peerById(ctx.id), updated);
+    if (updated?.id !== ctx.id || !Number.isInteger(updated.reality_revision) || updated.reality_revision <= revision || !['pending', 'guarded'].includes(updated.reality_profile_status)) throw new Error('The server did not confirm the replacement credential state.');
+    if (peerById(ctx.id)) Object.assign(peerById(ctx.id), updated);
+    if (realityRecoveries.get(ctx.id) === recovery) realityRecoveries.delete(ctx.id);
     inventoryRevision++;
     markDirty(); refresh();
     if (editor?.id === ctx.id && current(editor)) clearClientConfig(editor);
@@ -613,15 +630,23 @@ async function rotateReality() {
     ctx.modal.querySelector('#client-reality-confirmation').hidden = true;
     message(status, realityStatusText(peerById(ctx.id)) + ' The previous profile must not be reused.');
   } catch (err) {
-    if (!current(ctx)) return;
-    // A failed reconciliation can still have durably revoked the old credential.
-    // Keep all delivered copies cleared and obtain fresh status before retrying.
-    ctx.profileUncertain = true;
-    message(status, `${err.message || 'Key replacement did not finish.'} Old access may already be revoked. Reload this client before retrying.`, 'err');
-    ctx.modal.querySelector('#client-reality-confirmation').hidden = true;
+    if (!ctx.currentSession()) return;
+    // The backend may have durably revoked access before its reconciliation failed.
+    recovery.pending = false;
+    recovery.uncertain = true;
+    recovery.error = `${err.message || 'Key replacement did not finish.'} Old access may already be revoked. Reload Reality status before retrying.`;
+    inventoryRevision++;
+    const active = editor?.id === ctx.id && current(editor) ? editor : null;
+    if (active) {
+      clearClientConfig(active);
+      active.modal.querySelector('#client-reality-confirmation').hidden = true;
+      message(active.modal.querySelector('#client-reality-rotation-status'), recovery.error, 'err');
+    }
   } finally {
     if (writes.get(ctx.id) === entry) writes.delete(ctx.id);
+    recovery.pending = false;
     ctx.rotating = false;
+    if (editor?.id === ctx.id && current(editor)) syncDetails(editor);
     if (current(ctx)) {
       ctx.modal.querySelectorAll('#client-reality-confirmation button').forEach(button => { button.disabled = false; });
       syncDetails(ctx);
@@ -631,21 +656,22 @@ async function rotateReality() {
 
 async function refreshRealityStatus() {
   const ctx = editor;
-  if (!ctx || !current(ctx) || ctx.saving || ctx.rotating || ctx.refreshing) return;
+  if (!ctx || !current(ctx) || ctx.saving || ctx.rotating || ctx.refreshing || realityRecovery(ctx.id)?.pending) return;
   const status = ctx.modal.querySelector('#client-reality-rotation-status');
   if (Object.keys(changes(ctx)).length) { message(status, 'Save or discard edits before reloading this client.', 'err'); return; }
   ctx.refreshing = true;
-  const revision = inventoryRevision;
+  const revision = inventoryRevision, recovery = realityRecovery(ctx.id);
   clearClientConfig(ctx);
   message(status, 'Loading current Reality status…');
   try {
     const peers = await api.peers.list();
     if (!current(ctx)) return;
-    if (revision !== inventoryRevision || Object.keys(changes(ctx)).length) { message(status, 'Client changed while loading. Your edits are retained; save or discard them before retrying.', 'err'); return; }
+    if (revision !== inventoryRevision || recovery !== realityRecovery(ctx.id) || Object.keys(changes(ctx)).length) { message(status, 'Client changed while loading. Your edits are retained; save or discard them before retrying.', 'err'); return; }
     const peer = peers.find(item => item.id === ctx.id);
     if (!peer) { message(status, 'This client no longer exists. Close the dialog and reload clients.', 'err'); return; }
     const stored = peerById(ctx.id);
     if (stored) Object.assign(stored, peer);
+    if (realityRecoveries.get(ctx.id) === recovery) realityRecoveries.delete(ctx.id);
     inventoryRevision++;
     refresh();
     modalPeerDetails(ctx.id, true, 'reality');

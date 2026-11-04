@@ -110,6 +110,39 @@ const dual = { ...examplePeer, wireguard_enabled: true, reality_enabled: true, r
       await t.page.getByText('Reality access changed while loading. Reload its status before requesting another profile.', { exact: true }).waitFor();
       assert.equal((await t.state()).conf, '');
     }, { peers: [{ ...dual, wireguard_enabled: false }] });
+    for (const failureAfterReopen of [true, false]) await check(async t => {
+      await t.open(); await t.readyConfig(); const key = 'POST /api/peers/example/reality/rotate'; t.holds.add(key);
+      await t.invoke('inspect-reality-rotation'); await t.done(); await t.invoke('confirm-reality-rotation'); await t.waitHeld(key);
+      await t.page.evaluate(() => { window.rotationPromise = window.actionPromise; });
+      if (failureAfterReopen) {
+        await t.page.keyboard.press('Escape'); await t.open(); await t.expand();
+        assert.equal((await t.state()).conf, ''); assert.match(await t.page.locator('#client-config-status').textContent(), /still reconciling/);
+        assert.equal(t.calls.filter(c => c.key.endsWith('/reality-config')).length, 1);
+      }
+      await t.reply(key, { error: 'Ingress reconciliation failed after revocation' }, 503); await t.page.evaluate(() => window.rotationPromise);
+      if (!failureAfterReopen) { await t.page.keyboard.press('Escape'); await t.open(); await t.expand(); }
+      assert.equal((await t.state()).conf, ''); assert.equal(await t.page.locator('[data-act="copy-client-config"]').isDisabled(), true);
+      assert.match(await t.page.locator('#client-reality-status').textContent(), /may already be revoked/);
+      await t.invoke('retry-client-config'); await t.done(); assert.equal(t.calls.filter(c => c.key.endsWith('/reality-config')).length, 1);
+      t.setPeer({ id: 'example', reality_revision: 4, reality_profile_status: 'guarded' });
+      await t.invoke('refresh-reality-status'); await t.done(); assert.match(await t.page.locator('#client-reality-status').textContent(), /guarded/);
+    }, { peers: [{ ...dual, wireguard_enabled: false }] });
+    await check(async t => {
+      await t.open(); await t.readyConfig(); const read = 'GET /api/peers', rotate = 'POST /api/peers/example/reality/rotate'; t.holds.add(read); t.holds.add(rotate);
+      await t.invoke('refresh-reality-status'); await t.waitHeld(read); await t.page.evaluate(() => { window.statusPromise = window.actionPromise; });
+      await t.invoke('inspect-reality-rotation'); await t.done(); await t.invoke('confirm-reality-rotation'); await t.waitHeld(rotate);
+      await t.reply(rotate, { error: 'Reconciliation unavailable' }, 503); await t.done();
+      await t.reply(read, [{ ...dual, wireguard_enabled: false }]); await t.page.evaluate(() => window.statusPromise);
+      assert.equal((await t.state()).conf, ''); assert.match(await t.page.locator('#client-reality-status').textContent(), /may already be revoked/);
+      await t.page.keyboard.press('Escape'); await t.open(); await t.expand(); assert.equal((await t.state()).conf, '');
+    }, { peers: [{ ...dual, wireguard_enabled: false }] });
+    await check(async t => {
+      await t.open(); await t.readyConfig(); const key = 'POST /api/peers/example/reality/rotate'; t.holds.add(key);
+      await t.invoke('inspect-reality-rotation'); await t.done(); await t.invoke('confirm-reality-rotation'); await t.waitHeld(key);
+      await t.page.evaluate(() => { window.rotationPromise = window.actionPromise; }); await t.relogin(); await t.open(); await t.readyConfig();
+      await t.reply(key, { error: 'Previous login failure' }, 503); await t.page.evaluate(() => window.rotationPromise);
+      assert.equal((await t.state()).conf, t.realityURI); assert.equal(await t.page.locator('[data-act="copy-client-config"]').isDisabled(), false);
+    }, { peers: [{ ...dual, wireguard_enabled: false }] });
     for (const width of [320, 390, 1440]) await check(async t => {
       await t.open(); await t.readyConfig(); await t.page.locator('[data-act="select-client-reality"]').focus(); await t.page.keyboard.press('Enter');
       await t.page.waitForFunction(() => document.querySelector('#modal').dataset.conf?.startsWith('vless://'));

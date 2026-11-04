@@ -54,3 +54,17 @@ acceptance, not proof of server revocation, network transport or provider connec
 
 Backend contract integration will be verified again after its reviewed changes reach
 `origin/main`; this frontend branch will merge the fresh target before final delivery.
+
+
+## Independent review correction
+
+A P2 review reproduction showed that modal-local rotation uncertainty could disappear
+on dismissal or replacement. The fix retains pending/uncertain state per client and
+initiating session, blocks reopened profile reads while pending, clears any current
+same-client delivery on ambiguous failure, and requires a fresh explicit authoritative
+reload to recover. Rotation starts/completions invalidate older inventory/status
+reads. Previous-login completions cannot affect the new session.
+
+The Reality suite now has 24 cases, adding both failure/reopen orderings, stale reload
+rejection and old-session isolation. Client detail/action regressions are rerun for
+the correction; maintained context reflects the corrected lifetime.
