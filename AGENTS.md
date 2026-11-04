@@ -15,7 +15,11 @@ the deployed candidate version from the latest stable release number.
 One built-in pool rotates free igareck keys ([ADR 0018](docs/decisions/0018-unified-pool.md)).
 It excludes blocklisted countries (RU and BY by default) and keys without transport
 encryption ([ADR 0020](docs/decisions/0020-pool-country-blocklist.md)). It starts disabled;
-no catalog requests are made until enabled. Assign clients through peer-scoped rules.
+no catalog requests are made until enabled. Explicit fresh-install free-start
+onboarding may enable the API source and first-client starter rules (ADR 0033).
+The default first-run choice is now an authenticated web wizard with persisted
+pending state; explicit CLI/env automation remains supported (ADR 0035).
+Assign clients through peer-scoped rules.
 
 Tunnel health is checked on a schedule and persisted ([ADR 0011](docs/decisions/0011-tunnel-check-schedule.md)).
 Optional Telegram notifications confirm changes across three checks and start disabled.
@@ -151,6 +155,7 @@ curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install
 ```
 
 `RAZDACHA_PUBLIC=1` exposes the panel on all interfaces; `RAZDACHA_PUBLIC=0` restricts it
-to the VPN again. With no override, the saved database mode is retained; a fresh install
-is private. `--dry-run` performs preflight checks only. A `v*` tag triggers Linux
+to the VPN again. With no override, the saved database mode is retained; a genuinely
+fresh install defaults to password-authenticated public HTTPS so the panel is
+reachable before importing a VPN profile (ADR 0034). `--dry-run` performs preflight checks only. A `v*` tag triggers Linux
 amd64/arm64 archives, `install.sh` and checksums.

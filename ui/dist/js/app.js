@@ -16,6 +16,7 @@ import * as tunnelsScreen from './screens/tunnels.js';
 import * as rulesScreen from './screens/rules.js';
 import * as diagScreen from './screens/diag.js';
 import * as settingsScreen from './screens/settings.js';
+import * as onboarding from './onboarding.js';
 
 const SCREENS = {
   peers: peersScreen,
@@ -34,6 +35,7 @@ const ACTIONS = Object.assign(
   rulesScreen.actions,
   diagScreen.actions,
   settingsScreen.actions,
+  onboarding.actions,
   { 'close-modal': closeModal },
 );
 
@@ -301,6 +303,7 @@ function fromHash() {
 }
 
 async function navigate({ background = false } = {}) {
+  if (!background) onboarding.navigationChanged();
   if ($('#app').hidden) return;
   const currentSession = api.session.guard();
   const revision = ++navigationRevision;
@@ -400,6 +403,7 @@ async function start() {
   if (!currentSession()) return;
   checkFreshness();
   startPolling();
+  await onboarding.maybePending();
 }
 
 async function boot() {

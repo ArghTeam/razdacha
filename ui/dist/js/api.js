@@ -375,6 +375,14 @@ export const apply = {
   status: () => get('/api/apply/status'),
 };
 
+export const onboarding = {
+  get: () => get('/api/onboarding'),
+  reopen: (peerId = '') => post('/api/onboarding/reopen', { peer_id: peerId }),
+  configure: (mode, country) => post('/api/onboarding/configure', { mode, country }),
+  apply: () => post('/api/onboarding/apply', {}),
+  finish: () => post('/api/onboarding/finish', {}),
+};
+
 /** Есть ли непримененные изменения. Имя поля в docs/05-api.md не закреплено,
     поэтому принимаются все правдоподобные — расхождение чинится здесь одной строкой. */
 export function isDirty(status) {

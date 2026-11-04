@@ -1,5 +1,52 @@
 # Packaging — log
 
+## 2026-10-28
+
+### #290 — Defer default setup choices to first web login
+
+**Changed:** Fresh setup creates pending metadata for its existing initial client
+and freezes the disabled ordinary built-in pool with bootstrap policy. Default
+terminal questions are deferred to the authenticated browser wizard; explicit
+CLI/env automation still preacquires coherent authority and records owned rule IDs.
+**Beware:** Upgrades preserve clients, profiles, routing, password and marker state.
+
+## 2026-10-27
+
+### #289 — Reachable panel bootstrap before VPN setup
+
+**Changed:** Any genuinely fresh setup defaults to persisted public authenticated
+HTTPS, for Free start and Skip alike; explicit private selection and existing
+saved modes remain authoritative. Direct CLI environment handling matches the
+installer's explicit panel controls. External URL/password precede client QR.
+**Beware:** TLS remains self-signed and password authentication remains required.
+Catalog query, tunnel/rule policy and guarded authority are unchanged (ADR 0034).
+**Staging evidence:** At `2026-10-27T21:01:45Z`, preserving upgrade to code
+`0fa13ea` (`v0.10.0-staging.289.0fa13ea`) passed with verified binary hashes,
+exact API code/installed version match and unchanged profile, one client and
+selected-first-client rule. Setup without panel flags preserved public mode;
+all three services remained active. External HTTPS 200, protected API 401,
+password login and authenticated profile download matching private original
+bytes passed without VPN. Fresh no-override reinstall was NOT RUN; synthetic
+fresh-default/private/Skip tests passed. VPN/media remain NOT TESTED. Later
+documentation-only commits do not rebuild/redeploy that running code.
+
+### #288 — Optional fresh-install CLI onboarding
+
+**New surface:** `/dev/tty` choice (default Skip), explicit `--free-start` and
+`--free-country`, and matching environment controls. EOF/noTTY skips; signal
+cancellation closes only the owned terminal and stops before acquisition.
+**Changed:** All starter source acquisition precedes database creation; frozen
+native/plain authority is shared by first configuration and bootstrap v4.
+**Beware:** Upgrades never prompt or mutate onboarding policy. Catalog admission
+is separate from runtime/client/media health. No direct/personal fallback.
+**Staging evidence:** At `2026-10-27T20:03:46Z`, reviewed running code `dc073b2`
+(`v0.10.0-staging.288.dc073b2`, sing-box `1.12.25`) completed explicit Auto opt-in
+with setup exit zero. All three services were active, committed authority existed
+and bootstrap authority was discarded. Authenticated API asserted the exact
+version/commit. One selected-first-client rule used the intended four sources.
+External-client/media/large HTTP/public UDP checks remain pending; later docs-only
+commits do not rebuild or redeploy that running code.
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 

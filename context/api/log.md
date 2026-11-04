@@ -1,5 +1,15 @@
 # Api — log
 
+## 2026-10-28
+
+### #290 — Authenticated guarded setup API
+
+**New surface:** Read-only setup status plus explicit reopen/configure/apply/finish.
+**Changed:** The existing daemon publication gate validates prepared fingerprints,
+loads missing canonical sources under a bounded request and checks cancellation
+before publication. Generic failures preserve retry intent without secret output.
+**Beware:** Reopening changes metadata only; legacy configured policy is read-only.
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 

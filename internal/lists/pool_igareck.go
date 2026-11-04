@@ -15,6 +15,8 @@ import (
 // одним списком, без страны. geo-IP убран вместе со страновыми пулами — единый пул
 // страну выхода не различает.
 const (
+	// BuiltinPoolCatalogURL remains the disabled default when web setup is skipped.
+	BuiltinPoolCatalogURL = "https://raw.githack.com/igareck/vpn-configs-for-russia/main/"
 	// igareckPrimaryHost — основное зеркало, CDN поверх репозитория. Оно же стоит в
 	// [igareckCatalogURL] демона, по нему и выбирается драйвер.
 	igareckPrimaryHost = "raw.githack.com"

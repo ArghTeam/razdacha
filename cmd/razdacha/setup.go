@@ -69,8 +69,14 @@ type setupOptions struct {
 	public    bool
 	publicSet bool
 
-	start bool
-	color bool
+	start          bool
+	color          bool
+	freeStart      bool
+	freeStartSet   bool
+	freeCountry    string
+	freeCountrySet bool
+	prompt         bool
+	freeClient     lists.HTTPDoer
 }
 
 // runSetup — фаза изменений и фаза вывода из docs/08-install-upgrade.md.
@@ -85,6 +91,8 @@ func runSetup(ctx context.Context, args []string) error {
 		return err
 	}
 	opts.color = isTerminal(os.Stdout)
+	// Interactive free-tunnel selection now belongs to the authenticated web flow.
+	opts.prompt = false
 
 	// Вывод печатается и при неудаче запуска сервисов. Пароль панели
 	// сгенерирован и лежит в БД одним лишь хешем: не напечатав его здесь, мы
@@ -110,9 +118,10 @@ func parseSetupFlags(args []string) (setupOptions, error) {
 	flags.StringVar(&opts.daemon, "daemon", defaultDaemon, "путь к бинарнику демона для юнита systemd")
 	flags.StringVar(&opts.peerName, "peer", firstPeerName, "имя первого пира")
 	flags.BoolVar(&opts.public, "public", false,
-		"публичный режим панели: nginx слушает все интерфейсы (ADR 0009); "+
-			"-public=false выключает режим обратно")
+		"Public password-authenticated HTTPS panel; fresh installs default public, upgrades retain saved mode; --public=false selects VPN-only access")
 	flags.BoolVar(&opts.start, "start", true, "запускать сервисы через systemd")
+	flags.BoolVar(&opts.freeStart, "free-start", false, "Fresh installation only: enable third-party free tunnels and first-client starter rules")
+	flags.StringVar(&opts.freeCountry, "free-country", "auto", "Free-start exit country: Auto or one two-letter code")
 	if err := flags.Parse(args); err != nil {
 		return setupOptions{}, err
 	}
@@ -120,10 +129,20 @@ func parseSetupFlags(args []string) (setupOptions, error) {
 	// умолчанию и явное `-public=false` неразличимы, а решают они разное —
 	// «оставь как было» против «выключи».
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "free-start" {
+			opts.freeStartSet = true
+		}
+		if f.Name == "free-country" {
+			opts.freeCountrySet = true
+		}
 		if f.Name == "public" {
 			opts.publicSet = true
 		}
 	})
+	if err := freeStartEnvironment(&opts, os.LookupEnv); err != nil {
+		return setupOptions{}, err
+	}
+	panelModeEnvironment(&opts, os.LookupEnv)
 	return opts, nil
 }
 
@@ -144,6 +163,15 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 			return summary{}, err
 		}
 	}
+	choice, err := selectFreeStart(ctx, fresh, opts)
+	if err != nil {
+		return summary{}, err
+	}
+	preparedFree, err := prepareFreeStart(ctx, choice, dbPath, opts.freeClient)
+	if err != nil {
+		return summary{}, err
+	}
+	opts = effectivePanelOptions(fresh, opts)
 
 	// Резервная копия снимается до открытия БД: миграции накатываются в
 	// store.Open, и откатывать их нечем — восстановление это возврат файла.
@@ -224,6 +252,34 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		if err != nil {
 			return summary{}, err
 		}
+		if choice.enabled {
+			if err := installFreeStart(ctx, st, peer, preparedFree); err != nil {
+				return summary{}, err
+			}
+			log.Info("Free-start catalog admission", "catalog_valid", preparedFree.observation.CatalogValid, "items", preparedFree.observation.CatalogItems, "eligible", len(preparedFree.members), "connectivity", "not_measured")
+		}
+		if !choice.enabled {
+			if _, err := st.EnsureBuiltinPool(ctx, lists.BuiltinPoolCatalogURL, store.TunnelVLESS); err != nil {
+				return summary{}, err
+			}
+		}
+		ownedRule := ""
+		if choice.enabled {
+			rules, err := st.Rules(ctx)
+			if err != nil {
+				return summary{}, err
+			}
+			if len(rules) == 1 {
+				ownedRule = rules[0].ID
+			}
+		}
+		country := choice.country
+		if country == "" {
+			country = "AUTO"
+		}
+		if err := st.InitOnboarding(ctx, peer.ID, ownedRule, country); err != nil {
+			return summary{}, err
+		}
 	}
 
 	// Версия записывается последней из того, что трогает БД: по ней назовётся
@@ -234,7 +290,7 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 	}
 
 	if fresh {
-		if err := writeFirstSingboxConfig(ctx, opts.root, sb.Path, st, log); err != nil {
+		if err := writeFirstSingboxConfig(ctx, opts.root, sb.Path, st, log, preparedFree.contents, dbPath); err != nil {
 			return summary{}, err
 		}
 	} else if _, err := os.Stat(filepath.Join(opts.root, singbox.DefaultConfigPath)); err != nil {
@@ -247,7 +303,10 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 			return summary{}, err
 		}
 		// This seed is explicit installer intent, not a claim of a live publication.
-		seed := networkstate.Generation{Version: 4, Kind: networkstate.BootstrapKind, Policy: snap, Lists: map[string]lists.List{}}
+		if err := verifySetupLists(snap, preparedFree.contents, dbPath); err != nil {
+			return summary{}, err
+		}
+		seed := networkstate.Generation{Version: 4, Kind: networkstate.BootstrapKind, Policy: snap, Lists: preparedFree.contents}
 		if err := networkstate.Write(filepath.Join(filepath.Dir(dbPath), networkstate.BootstrapFile), seed); err != nil {
 			return summary{}, err
 		}
@@ -264,6 +323,12 @@ func setup(ctx context.Context, opts setupOptions) (summary, error) {
 		PanelModeInferred: mode.Inferred,
 		PanelModeUnknown:  mode.Undetermined,
 		Color:             opts.color,
+	}
+	if choice.enabled {
+		out.FreeStart = fmt.Sprintf("Free start enabled for the first client; country %s, %d catalog candidates admitted. Connectivity and media are not verified.", choice.country, len(preparedFree.members))
+		if len(preparedFree.members) == 0 {
+			out.FreeStart += " No eligible candidates: selected resources reject until the pool recovers."
+		}
 	}
 	// ExternalPanelURL — адрес, по которому панель отвечает снаружи VPN. Берём
 	// адрес, уже определённый для SAN сертификата (Installer.certIPs), а не
@@ -392,7 +457,8 @@ type panelMode struct {
 //   - сохранённого нет — режим выводится из конфига nginx, который оставила
 //     предыдущая установка, и записывается: версии до 0.2.1 ключ не писали, и
 //     читать на обновлении с них больше неоткуда;
-//   - конфига нет вовсе — первая установка, приватный режим, как было всегда;
+//   - no configuration: retain the legacy private inference fallback; genuinely
+//     fresh setup supplies its explicit public default before this function;
 //   - конфиг есть, но не разобран — приватный режим, но в БД не пишется ничего
 //     и причина уходит в вывод: записать догадку хуже, чем спросить.
 //
@@ -470,14 +536,16 @@ func ensureSingbox(ctx context.Context, root string, log *slog.Logger) (packagin
 // Reload здесь заведомо не нужен и был бы вреден: юнит sing-box ещё не
 // установлен, а `systemctl reload-or-restart` на несуществующем юните — ошибка.
 // Дальше конфиг пересобирает демон по `POST /api/apply`, уже со штатным reload.
-func writeFirstSingboxConfig(ctx context.Context, root, binary string, st *store.Store,
-	log *slog.Logger,
-) error {
+func writeFirstSingboxConfig(ctx context.Context, root, binary string, st *store.Store, log *slog.Logger, contents map[string]lists.List, dbPath string) error {
 	snap, err := st.Snapshot(ctx)
 	if err != nil {
 		return err
 	}
+	if err := verifySetupLists(snap, contents, dbPath); err != nil {
+		return err
+	}
 	applier := &singbox.Applier{
+		PlainLists: frozenSetupLists(contents),
 		ConfigPath: filepath.Join(root, singbox.DefaultConfigPath),
 		Checker:    singbox.BinaryChecker{Binary: binary},
 		Reloader:   noopReloader{},

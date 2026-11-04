@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, '../dist');
 const origin = 'http://127.0.0.1:43189';
 const defaultState = {
   authenticated: true,
+  onboarding: { pending: false },
   settings: { wg_listen_port: 51820, dns_upstream: '1.1.1.1', list_update_interval: 86400, pool_update_interval: 3600, tunnel_check_interval: 120, client_mtu: 1280, wg_pool: '192.0.2.0/24', wg_server_address: '192.0.2.1', endpoint_host: 'gateway.example' },
   peers: [{ id: 'example', name: 'Example client', address: '192.0.2.2', enabled: true }],
   tunnels: [{ id: 'exit', name: 'Example exit', type: 'socks', enabled: true }],
@@ -26,6 +27,11 @@ function createAppModel(overrides = {}) {
   function reply(entry) {
     const { key, pathname, url } = entry;
     if (key === 'GET /api/session') return json({ authenticated: state.authenticated });
+    if (key === 'GET /api/onboarding') return json(state.onboarding);
+    if (key === 'POST /api/onboarding/reopen') { if (!state.onboarding.pending) { state.onboarding.prepared = false; state.onboarding.applied = false; } state.onboarding.pending = true; state.onboarding.peer_id ||= state.peers[0]?.id; return json(state.onboarding); }
+    if (key === 'POST /api/onboarding/configure') { Object.assign(state.onboarding, entry.body, { prepared: true, applied: false }); state.dirty = true; return json(state.onboarding); }
+    if (key === 'POST /api/onboarding/apply') { state.onboarding.applied = true; state.dirty = false; return json({ configuration: 'accepted', connectivity: 'not_verified' }); }
+    if (key === 'POST /api/onboarding/finish') { state.onboarding.pending = false; return json({ completed: true }); }
     if (key === 'POST /api/login') { state.authenticated = true; return json({}); }
     if (key === 'POST /api/logout') { state.authenticated = false; return json({}); }
     if (key === 'GET /api/settings') return json(state.settings);

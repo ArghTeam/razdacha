@@ -4,6 +4,10 @@
 
 ## Контекст
 
+The no-primary-wizard restriction is superseded by
+[ADR 0035](0035-first-login-web-setup.md). Ordinary preset behavior remains unchanged;
+authenticated first-login setup requires explicit configuration and guarded Apply.
+
 После установки экран правил пуст. Пользователь, ещё не знающий словаря продукта
 («список», «туннель», «действие»), должен с нуля решить, что уходит в обход, — при том
 что каталог готовых списков уже наполнен: 24 сервиса в `internal/lists/catalog.go`, от

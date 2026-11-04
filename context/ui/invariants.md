@@ -5,6 +5,8 @@ description: Static HTML/CSS/ES modules embedded from ui/dist; defaults instead 
 ---
 
 ## Invariants
+- Authenticated first login opens setup only from a persisted pending marker, never peer count. The modal guides choice/review/explicit Apply/existing profile delivery/Finish, with a header reopen entry. No mount/selection/poll changes routes. Legacy configured policy is read-only; failed prepared intent retains its choices for retry. Session/modal/navigation guards prevent delayed responses from replacing newer work. QR/private profile copies and download blobs are scoped to modal cleanup. An accepted enabled pool with zero candidates explicitly warns that assigned resources reject until refreshed, without direct fallback; inventory is not runtime health. The existing four-tab panel and design system remain (ADR 0035).
+- Clients shows aggregate gateway received/sent traffic for current clients since interface start, alongside unchanged per-client rows. Each direction is unknown if any current client lacks a finite nonnegative numeric observation, or when no clients exist. Measured zero remains zero; counters are not lifetime history (#291).
 - Интерфейс — статика без сборщика в `ui/dist`, уезжает в бинарник через `go:embed`. Никакого npm и node в цепочке сборки демона.
 - Внешних ссылок в статике нет вовсе: ни CDN, ни шрифтов, ни картинок. Всё, что нужно панели, лежит рядом — иначе оно не попадёт в `go:embed`. Единственный внешний запрос — проверка свежего релиза у GitHub, и её делает **браузер**, а не демон: сервер наружу не ходит, панель работает и без исходящего интернета, а бейдж просто не появляется (#114).
 - Пустота не заполняется выдумкой: нет данных — так и говорим («не проверялся», «данные появятся позже»), а не показываем ноль.

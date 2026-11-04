@@ -1,5 +1,30 @@
 # Store — log
 
+## 2026-10-28
+
+### #290 — Persisted setup intent and ownership
+
+**Changed:** Private key/value onboarding metadata, legacy-completed default,
+metadata-only reopen and transactionally scoped starter policy. Prepared routing
+fingerprints reject unrelated edits; completion requires current accepted Apply.
+**Beware:** No name-based rule adoption or duplicate clients; existing configured
+legacy policy is read-only. Pool refresh inventory is excluded from policy hashes.
+
+## 2026-10-27
+
+### #288 — Explicit fresh-install pool and selected first-client policy
+
+**Changed:** Fresh opt-in seeds the one built-in pool at the JSON API, enabled,
+and one starter rule scoped exclusively to the new first client.
+**Beware:** Existing installations reject explicit onboarding before database
+opening. Skip retains the ordinary disabled igareck default. No schema change.
+
+### #286 — Structured pool country admission
+
+**Changed:** The shared country filter rejects either structured-country or title
+blocklist evidence. Unknown structured country retains the existing title check.
+**Beware:** No schema, built-in pool default or automatic activation changes (ADR 0032).
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 

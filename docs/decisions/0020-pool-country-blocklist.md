@@ -5,6 +5,9 @@
 
 ## Контекст
 
+Structured country admission is clarified by [ADR 0032](0032-api-pool-shadow-probe.md):
+either structured country or title can exclude a member; URI encryption remains authoritative.
+
 [ADR 0018](0018-unified-pool.md) сделал встроенный пул одним и страноагностичным:
 драйвер igareck отдаёт «всё, что дал источник», `PoolServer.Country` не заполняется,
 а выбор выхода целиком отдан `urltest` — быстрейшему живому ключу (ADR 0010).

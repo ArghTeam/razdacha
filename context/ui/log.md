@@ -1,5 +1,23 @@
 # Ui — log
 
+## 2026-10-28
+
+### #290 — Actual first-login web setup
+
+**New surface:** Persisted pending choice/review/explicit Apply/profile/finish modal
+with a header reopen entry, using existing controls, QR and authenticated download.
+**Changed:** Session/modal/navigation guards protect new drafts from delayed setup
+responses; cleanup clears private profile/QR/blob copies. Failed intent stays retryable.
+**Beware:** No automatic route changes, no application-usability promise and no
+legacy rule adoption. Per-client missing traffic now remains Unknown, like aggregates.
+
+### #291 — Restore aggregate client traffic
+
+**Changed:** Reuse existing summary/stat components for gateway received/sent
+totals without removing per-client rows. Missing/invalid direction observations
+remain unknown; measured zero is preserved. Labels describe current-client and
+interface-reset scope rather than lifetime history.
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
