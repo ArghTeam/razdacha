@@ -150,24 +150,30 @@ type Rule struct {
 // Peer — клиентское устройство. Приватный и pre-shared ключи хранятся, чтобы конфиг
 // можно было перевыдать; отсюда права 0600 на файл БД.
 type Peer struct {
-	EgressTunnelID *string   `json:"egress_tunnel_id"`
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	PublicKey      string    `json:"public_key"`
-	PrivateKey     string    `json:"private_key"`
-	PresharedKey   string    `json:"preshared_key"`
-	Address        string    `json:"address"`
-	Enabled        bool      `json:"enabled"`
-	CreatedAt      time.Time `json:"created_at"`
+	WireGuardDisabled   bool      `json:"wireguard_disabled,omitempty"`
+	RealityEnabled      bool      `json:"reality_enabled,omitempty"`
+	RealityCredentialID string    `json:"reality_credential_id,omitempty"`
+	RealityRevision     int       `json:"reality_revision,omitempty"`
+	EgressTunnelID      *string   `json:"egress_tunnel_id"`
+	ID                  string    `json:"id"`
+	Name                string    `json:"name"`
+	PublicKey           string    `json:"public_key"`
+	PrivateKey          string    `json:"private_key"`
+	PresharedKey        string    `json:"preshared_key"`
+	Address             string    `json:"address"`
+	Enabled             bool      `json:"enabled"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 // Snapshot — полное состояние демона на один момент времени. Конфиг sing-box
 // генерируется целиком из него, поэтому снимок читается в одной транзакции.
 type Snapshot struct {
-	Settings Settings `json:"settings"`
-	Tunnels  []Tunnel `json:"tunnels"`
-	Rules    []Rule   `json:"rules"`
-	Peers    []Peer   `json:"peers"`
+	RealityIdentityID string             `json:"reality_identity_id,omitempty"`
+	RealityAdmissions []RealityAdmission `json:"reality_admissions,omitempty"`
+	Settings          Settings           `json:"settings"`
+	Tunnels           []Tunnel           `json:"tunnels"`
+	Rules             []Rule             `json:"rules"`
+	Peers             []Peer             `json:"peers"`
 }
 
 // validate проверяет туннель до записи в БД.
@@ -326,6 +332,9 @@ func (r *Rule) validate() error {
 
 // validate проверяет пира до записи в БД.
 func (p *Peer) validate() error {
+	if p.Enabled && p.WireGuardDisabled && !p.RealityEnabled {
+		return fmt.Errorf("%w: an enabled client requires at least one connection method", ErrInvalid)
+	}
 	if p.Name == "" {
 		return fmt.Errorf("%w: у пира пустое имя", ErrInvalid)
 	}

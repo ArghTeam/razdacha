@@ -5,9 +5,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -55,6 +57,10 @@ func startNetfilter(ctx context.Context) (netfilter, error) {
 // маршрутизации и таблицу 105. Интерфейс wg0 не трогается — он переживает
 // сброс, иначе клиенты теряют связь из-за диагностической команды.
 func resetNetfilter() error {
+	if err := guardSavedPublic(singbox.DefaultConfigPath, "/var/lib/razdacha/public-ingress.json"); err != nil {
+		return fmt.Errorf("retain public ingress safety during reset: %w", err)
+	}
+	slog.Info("Public ingress guard and manifest are retained; disable Reality and Apply before removing its safety hook")
 	nft, err := netstack.NewNft()
 	if err != nil {
 		return fmt.Errorf("подключение к nftables: %w", err)

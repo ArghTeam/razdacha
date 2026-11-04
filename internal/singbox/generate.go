@@ -77,6 +77,15 @@ func Generate(snap store.Snapshot, plain PlainLists) (option.Options, error) {
 // Диагностика собирается тем же проходом, что и конфиг: отдельная функция,
 // повторяющая условия генератора, разъехалась бы с ним молча.
 func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []RuleDiag, error) {
+	if snap.Settings.RealityEnabled {
+		return option.Options{}, nil, fmt.Errorf("REALITY generation requires live authentication context")
+	}
+	return GeneratePolicyWithDiag(snap, plain)
+}
+
+// GeneratePolicyWithDiag inspects shared policy without emitting a public listener.
+// Publication must use GenerateWithReality when alternative ingress is enabled.
+func GeneratePolicyWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []RuleDiag, error) {
 	tunnels := make(map[string]store.Tunnel, len(snap.Tunnels))
 	for _, t := range snap.Tunnels {
 		tunnels[t.ID] = t

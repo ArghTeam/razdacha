@@ -196,3 +196,7 @@ The older installation remained untouched. This proves the bounded staging updat
 not zero outage or every application's connectivity. See the completed
 [authority](../../tasks/done/271-pool-authority-upgrade.md) and
 [checked-upgrade](../../tasks/done/273-checked-pool-upgrade.md) records.
+
+## 2026-11-04 — #297 parallel authenticated client ingress
+
+Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The packaging invariants record final behavior; this entry does not claim deployment or general DPI resistance.

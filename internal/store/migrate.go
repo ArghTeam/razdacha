@@ -189,6 +189,15 @@ ALTER TABLE tunnels ADD COLUMN country TEXT NOT NULL DEFAULT '';
 		stmts: `ALTER TABLE peers ADD COLUMN egress_tunnel_id TEXT REFERENCES tunnels(id) ON DELETE RESTRICT;
 CREATE INDEX peers_egress_tunnel ON peers(egress_tunnel_id);`,
 	},
+	{
+		version: 13,
+		stmts: `ALTER TABLE peers ADD COLUMN wireguard_disabled BOOLEAN NOT NULL DEFAULT 0;
+ALTER TABLE peers ADD COLUMN reality_enabled BOOLEAN NOT NULL DEFAULT 0;
+ALTER TABLE peers ADD COLUMN reality_credential_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE peers ADD COLUMN reality_revision INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE reality_identity (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), identity_id TEXT NOT NULL UNIQUE, private_key TEXT NOT NULL, short_id TEXT NOT NULL);
+CREATE TABLE reality_credentials (peer_id TEXT PRIMARY KEY REFERENCES peers(id) ON DELETE CASCADE, credential_id TEXT NOT NULL UNIQUE, revision INTEGER NOT NULL, uuid TEXT NOT NULL UNIQUE);`,
+	},
 }
 
 // schemaVersion — версия схемы, которую ожидает этот код.

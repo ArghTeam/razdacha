@@ -2,13 +2,13 @@
 type: task
 tracker: "#297"
 title: Parallel VLESS REALITY client ingress
-status: design
+status: in-progress
 ---
 
 # Parallel VLESS REALITY client ingress
 
 Tracker: [#297](https://github.com/ArghTeam/razdacha/issues/297).
-Architecture: [proposed ADR 0032](../docs/decisions/0032-parallel-authenticated-client-ingress.md).
+Architecture: [ADR 0032](../docs/decisions/0032-parallel-authenticated-client-ingress.md).
 
 ## Scope
 
@@ -134,3 +134,130 @@ For this docs-only PR check links, symbols and `git diff --check`; Go behavior i
 unchanged. Review identity, DNS and startup boundaries independently. The context
 index links the proposal without changing current invariants. Implementation PRs
 must update affected layer context/invariants with final behavior and evidence limits.
+
+
+## Implementation contract
+
+The application implementation adds independent WG/REALITY transport admission,
+private live credentials and a version-5 policy authority. Server keys and UUIDs
+are not stored in policy generations. Every publication resolves committed
+admission against current live credentials under the existing gate. Public ingress
+is guarded across checked restart, durable authority and startup. Existing outgoing
+tunnel definitions, keys and enablement are outside the change/test scope.
+
+## Backend implementation and verification boundary
+
+Implementation branch `feat/297-reality-ingress` starts from verified
+`origin/main` `fc0965eb0a9cf9ef9ebf5b9bd0f718536559fc3a` in
+`/Users/romanzhigalkin/Web/razdacha/.codex/worktrees/feat-297-reality-ingress`.
+The designated primary remains `/Users/romanzhigalkin/Web/razdacha`; remote is
+`origin`, target is `main`. Foundation helpers were consumed through merge commits;
+no rebases or primary synchronization were performed by the backend worker.
+
+Implemented: additive private credentials and transport flags; v5 committed
+admission; authenticated no-store URI/full JSON delivery; dedicated REALITY inbound
+and authenticated source policy; DNS/whole-exit/native projection preservation;
+IPv6/private/gateway rejection; union endpoint manifest/guard publication and
+pre-start hook; serialized active-flow revocation through checked restart; restore
+identity reset and uninstall refusal. Existing outgoing tunnel records/selection,
+WG keys and addresses are not rewritten.
+
+Verification includes ordinary Go tests, credential history/restore/API privacy,
+guard/restart/recovery/port collision failures, and a generated-config Linux fixture
+using only synthetic owned TLS/DNS/SOCKS/echo services in a fresh network namespace.
+The fixture covers two same-source users with TCP/UDP/native-selected/shared/DNS,
+private/resolved/mapped destinations, checked client profile, healthy and unavailable
+whole exits, cached FakeIP, session closure and stale credentials after restart.
+Runtime execution, independent review and staging evidence must be recorded before
+claiming those checks passed or broad application compatibility. The earlier PR299
+capability proof remains a separate historical handwritten-policy result.
+
+### Generated product proof (2026-11-04)
+
+The coordinator ran the independently reviewed frozen generated-product fixture in
+an isolated Linux network/mount namespace under a 384 MiB memory limit. It passed
+in 24.76 seconds using sing-box 1.12.25. Installed daemon/runtime/config hashes and
+existing service process identities remained unchanged; no provider was contacted.
+Frozen test binary SHA256:
+`e5e6abc2efd442186177840a8efe869c18c6d7c032d9553be9361f1b8a87d2f0`;
+frozen product fixture source SHA256:
+`1b99cb16691a97645b675717d3acd87213b2d442bdbe013b9ee8403035a560f5`.
+This proves generated server policy with isolated proxy wrapper clients and a
+checked complete JSON profile. Running the delivered TUN profile itself is a
+separate namespace proof; it is not implied by this pass. Later fixture additions
+add unavailable-exit DNS assertions and bounded per-client cleanup and need their
+own execution record.
+
+### Delivered complete client proof (2026-11-04)
+
+The coordinator independently reviewed and ran `TestRealityCompleteClientWire`
+in a fresh outer namespace plus an anonymous client namespace with a veth path.
+The exact delivered typed TUN JSON ran in sing-box 1.12.25 and passed in 1.45s:
+controlled physical DNS/HTTP/IPv6 baselines, proxied HTTP source, gateway DNS
+sentinel, IPv6/AAAA rejection and no direct HTTP/DNS fallback after the owned
+server stopped. The supervisor exposed only `/dev/net/tun` under a 384 MiB cap;
+operator routes, installed binaries/configs and existing service PIDs were unchanged.
+Frozen binary SHA256:
+`3c9f68875aa8d7d0994a23e752b72ae9fef04e340cec61cc1ab26f504dc736c4`;
+full-client fixture source SHA256:
+`aae7cebbaa4488fb378effb25907680c2738514d3372353b1ad28ca69aa02a5c`.
+This demonstrates the pinned Linux sing-box application, not untested third-party
+client imports or native macOS/Android TUN routing.
+
+### Extended generated-policy proof (2026-11-04)
+
+The coordinator reran the independently reviewed extended fixture after bounded
+per-client cleanup and explicit unavailable-exit DNS assertions. It passed in
+24.57s with the same frozen binary as the complete-client proof above. Product
+fixture source SHA256:
+`b3f2f3585a9e4bba288caa99fb72a434cef229e288b41ad27aaf74486a76a1eb`.
+Both same-source client subtests passed TCP/UDP/native/shared/DNS policy, private
+resolution and mapped-address rejection, healthy exit/DNS/FakeIP behavior,
+revocation/restart and unavailable-exit data/DNS rejection. The private bounded
+supervisor left no fixture/cgroup processes and verified installed daemon, runtime,
+config and existing service identities unchanged. This is synthetic isolated
+Linux evidence; it does not claim application compatibility beyond pinned sing-box
+1.12.25, provider/DPI resistance, performance measurements or a live deployment.
+
+Independent review identified two compatibility regressions: legacy CGNAT/public
+WG resolver addresses and a fresh restore target with neither safety artifact.
+Foundation strict explicit-unicast legacy recognition and the shared both-absent
+restore/startup wrapper address them with regressions. Low-level full peer writes
+now reject public transport lifecycle changes; gated patches remain authoritative.
+An independently guarded runtime start appears pending/guarded and forces checked
+repair even for identical bytes. Final CI and coordinator review precede merge.
+
+The final packaging review found that a vendor `-C` directory/alternate config
+invocation could escape the helper's single-file authority. The managed drop-in
+now resets ExecStart to the installer-selected binary and exactly one owned config
+and work directory, preserving vendor bytes. Preflight refuses existing later
+command/guard overrides before unit writes while retaining harmless limits. Tests
+cover vendor `-C`/alternate `-c`, a single reset/replacement command, idempotence,
+path validation, foreign drop-in preservation and conflicting local overrides.
+The runtime/profile compiler and frozen proof fixture sources are unchanged.
+
+Further independent review tightened two authority boundaries. Setup now rejects
+filesystem byte remaps and non-host network namespace declarations across base/
+vendor units and every applicable drop-in, independent of command precedence.
+The managed drop-in clears reload hooks and nonempty post-start hooks are refused.
+Ordinary read-only hardening, filters, empty resets and limits remain supported.
+Release privately rereads exact candidate bytes under the safety lock before
+narrowing the union manifest or releasing WG/public barriers; a reloader restoring
+old approved bytes is tested to retain both guards and refuse profile delivery.
+The narrow controlled reader shares existing private/no-symlink checks. The frozen
+real-runtime profile/compiler fixtures remain unchanged; these are publication/
+packaging regression tests rather than new runtime capability claims.
+
+The supported static service contract additionally refuses legacy unit includes
+and alternate service-name aliases; same-name distribution links remain valid.
+Docs scope private/admin destination rejection to authenticated proxy flows and
+record native unauthenticated REALITY relay to the fixed explicit handshake
+target. The selected target must intentionally expose public TLS; a loopback or
+private address reaching that public service is permitted, while administrative,
+controller and intranet-only targets are excluded.
+
+Restore invariant follow-up: stripping Reality also disables peers with their WG
+method disabled, avoiding an enabled client with no methods. Disabled records
+remain editable; enabling without selecting a method is rejected. WG-enabled
+client flags/keys/addresses remain unchanged. A focused synthetic regression
+covers this state and confirms saved method intent cannot activate cleared auth.

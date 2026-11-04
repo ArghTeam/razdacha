@@ -38,6 +38,10 @@ func (s *Server) storeError(w http.ResponseWriter, err error, notFound string) {
 		writeError(w, s.log, http.StatusNotFound, codeNotFound, notFound)
 	case errors.Is(err, store.ErrInUse):
 		writeError(w, s.log, http.StatusConflict, codeConflict, userMessage(err, store.ErrInUse))
+	case errors.Is(err, store.ErrConflict):
+		writeError(w, s.log, http.StatusConflict, codeConflict, "Credential revision changed; refresh the client")
+	case errors.Is(err, ErrNetworkGuarded):
+		writeError(w, s.log, http.StatusServiceUnavailable, codeNotReady, "Client ingress is guarded; apply or recover network policy")
 	case errors.Is(err, store.ErrInvalid):
 		writeError(w, s.log, http.StatusBadRequest, codeBadRequest, userMessage(err, store.ErrInvalid))
 	default:
