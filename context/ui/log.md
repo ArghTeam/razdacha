@@ -397,3 +397,20 @@ was confirmed revoked and its temporary authentication file deleted. Release ide
 checksum and limits are in the
 [completed delivery record](../../tasks/done/280-dashboard-design-system.md#staging-acceptance).
 This is installed UI/API acceptance, not VPN/media end-to-end or no-outage evidence.
+
+
+## 2026-11-04 — #300 parallel connection interface preview
+
+A standalone [interface preview](../../designs/reality-ingress/index.html) proposes
+optional Reality alongside WireGuard within the existing client dialog and Network
+settings. It uses synthetic English examples, local-only state and no backend calls.
+Transport selections remain independent and share one client identity/routing choice;
+profile delivery distinguishes unsaved drafts and pending Apply.
+
+Current embedded UI and runtime invariants are unchanged. This is a visual proposal,
+not product ingress, revocation or recovery implementation. Local browser checks and independent design evaluation passed, including pending
+key-action wording and opener restoration. The
+[completed preview task](../../tasks/done/300-ingress-ui-preview.md) records scope and acceptance.
+The user accepted the standalone interface and authorized a separate static
+staging delivery under `/preview/reality/`. Deployment/postflight remains pending
+the primary operator; the main panel, API and transport services stay unchanged.
