@@ -264,3 +264,24 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
 - Synthetic browser fixtures exercise the actual embedded modules without contacting
   any daemon, provider or tunnel. Frontend checks do not establish real transport
   connectivity, DNS behavior, server revocation or ingress guard correctness.
+
+
+### Durable access mutations and full client JSON
+
+- Reality-affecting peer method/enabled saves, peer deletion, and global Reality
+  settings writes can durably revoke credentials before returning an error. Their
+  session-bound pending/uncertain records survive dialogs just like rotation. A
+  failed response never restores cached profile admission. Explicit fresh status
+  reload fetches authoritative peers and, for a global failure, settings; an absent
+  deleted peer is removed and its stale dialog closes. Unrelated rename and legacy
+  WireGuard-only save behavior remains unchanged. Global mutations invalidate all
+  Reality delivery epochs and older status/inventory reads.
+- The optional sing-box download fetches the actual authenticated, no-store JSON
+  endpoint only on demand. Contents stay out of persistent panel state. Download
+  creation checks method, saved draft, modal/session, credential revision and access
+  mutation epoch; close, logout, replacement, rename and revocation invalidate late
+  responses. Existing object URL cleanup applies. The URI remains available as a
+  separate import option and requires app TUN and DNS-through-connection setup; URI
+  import alone cannot enforce DNS capture. The server-generated JSON includes TUN
+  and DNS routing. Browser regressions validate delivery/lifetime, not actual TUN
+  startup, operating-system routing, DNS capture or end-to-end client connectivity.

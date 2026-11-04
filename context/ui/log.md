@@ -452,3 +452,16 @@ and survives reopening until a fresh explicit authoritative reload. Mutation epo
 and recovery identity reject pre-mutation reloads; old-login failures remain silent.
 Four additional browser cases cover failure before/after reopening, stale reload
 ordering and previous-login isolation. No runtime/server actions were involved.
+
+
+### Durable revocation failures and actual sing-box client download
+
+Recovery now also covers Reality-affecting peer enabled/method saves, deletion and
+global Reality settings writes: errors may follow durable revocation. Global
+mutations invalidate all profile admission/response epochs; explicit fresh
+peers/settings reload recovers, and an absent deleted peer removes its stale row.
+The optional authenticated sing-box JSON download uses the real additive endpoint
+on demand with URI-equivalent secret lifetime/revision/mutation guards. URI help
+now explicitly requires app TUN and DNS proxy setup. Full JSON includes those
+routes, but UI/browser checks make no claim that a real TUN client has run. Legacy
+WireGuard defaults and profile delivery remain covered by existing regressions.

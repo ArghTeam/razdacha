@@ -31,6 +31,7 @@ async function fixture(browser, options = {}) {
     if (url.pathname === '/api/login') { authenticated = true; return json(route, {}); }
     if (key === 'GET /api/peers') return json(route, peers);
     if (key === 'POST /api/peers') { const p = { ...examplePeer, id: 'created', ...request.postDataJSON() }; if (p.reality_enabled) Object.assign(p, { reality_profile_status: 'pending', reality_revision: 1 }); peers.push(p); return json(route, p); }
+    if (url.pathname.endsWith('/reality-client-config')) return route.fulfill({ contentType: 'application/json', headers: { 'Content-Disposition': 'attachment; filename="razdacha-reality.json"', 'Cache-Control': 'no-store' }, body: JSON.stringify({ dns: { servers: [{ address: '10.8.0.1' }] }, inbounds: [{ type: 'tun' }], outbounds: [{ type: 'vless' }] }) });
     if (url.pathname.endsWith('/reality-config')) {
       const p = peers.find(p => p.id === url.pathname.split('/')[3]);
       if (!p?.enabled || !p.reality_enabled || p.reality_profile_status !== 'available') return json(route, { error: 'Apply saved Reality settings before requesting a profile', code: 'not_ready' }, 409);
@@ -79,6 +80,6 @@ async function fixture(browser, options = {}) {
   const readyConfig = async () => { if (!await page.locator('#client-configuration').getAttribute('open').then(x => x !== null)) await expand(); await page.locator('#client-config-result').waitFor({ state: 'visible' }); };
   const replace = () => page.evaluate(async () => { const s = await import('/js/shell.js'); s.openModal(s.modalShell('Replacement', '<p>Keep this interaction</p>', '')); });
   const relogin = async () => { if (await page.locator('#modal-backdrop').isVisible()) await page.keyboard.press('Escape'); await page.locator('#btn-logout').click(); await page.locator('#gate').waitFor({ state: 'visible' }); await page.fill('#password', 'synthetic'); await page.locator('#login-submit').click(); await page.locator('.client-row').first().waitFor(); await page.evaluate(() => document.querySelector('#toasts').replaceChildren()); };
-  return { page, holds, held, calls, overrides, invoke, state, reply, replyConfig, done, open, expand, readyConfig, replace, relogin, waitHeld, setTunnels: value => { tunnels = value; }, setPeer: value => { const p = peers.find(p => p.id === value.id); if (p) Object.assign(p, value); }, realityURI };
+  return { page, holds, held, calls, overrides, invoke, state, reply, replyConfig, done, open, expand, readyConfig, replace, relogin, waitHeld, setTunnels: value => { tunnels = value; }, setPeers: value => { peers = value; }, setPeer: value => { const p = peers.find(p => p.id === value.id); if (p) Object.assign(p, value); }, realityURI };
 }
 module.exports = { fixture, examplePeer, exampleTunnels, config, root, origin };

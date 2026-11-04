@@ -159,6 +159,7 @@ export const peers = {
       `{ text, filename }`. */
   config: (id) => get(`/api/peers/${encodeURIComponent(id)}/config`, { expect: 'file' }),
   // REALITY credentials are disclosed only by this authenticated delivery endpoint.
+  realityClientConfig: (id) => get(`/api/peers/${encodeURIComponent(id)}/reality-client-config`, { expect: 'file' }),
   realityConfig: (id) => get(`/api/peers/${encodeURIComponent(id)}/reality-config`, { expect: 'file' }),
   rotateReality: (id, revision) => post(`/api/peers/${encodeURIComponent(id)}/reality/rotate`, { expected_revision: revision }),
 };

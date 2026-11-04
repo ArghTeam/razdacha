@@ -68,3 +68,31 @@ reads. Previous-login completions cannot affect the new session.
 The Reality suite now has 24 cases, adding both failure/reopen orderings, stale reload
 rejection and old-session isolation. Client detail/action regressions are rerun for
 the correction; maintained context reflects the corrected lifetime.
+
+
+## Durable mutation and JSON delivery completion
+
+The backend contract permits durable revocation before a failing response for
+Reality-affecting peer enabled/method writes, peer deletion and global Reality
+settings writes. The panel now retains pending/uncertain recovery for these paths
+across dialog lifetimes and rejects older inventory/status/profile responses.
+Explicit authoritative peers/settings reload recovers; a deleted peer absent from
+that result is removed and its stale dialog closes. Ordinary rename and legacy
+WG-only behavior remain covered.
+
+`GET /api/peers/{id}/reality-client-config` supplies an actual authenticated no-store
+full sing-box JSON attachment. The optional download fetches only on demand and
+checks draft, modal/session, credential revision and mutation epoch before creating
+a blob. URI help requires app TUN and DNS-through-proxy configuration; the JSON
+contains those routes. Frontend evidence establishes actual API delivery and secret
+lifetime only; an operating-system TUN/client connectivity run remains separate.
+
+The final focused Reality suite passes 36 cases, including durable peer-save/delete
+and global failure reopen paths, absent deleted-client recovery, stale pre-global
+reload rejection, actual on-demand JSON attachment delivery and late JSON refusal
+after close, dirty edit, rotation or logout. Static syntax, embedded UI checks and
+legacy client details/actions remain required alongside the full browser runner.
+
+All 16 browser suites passed after the durable-mutation/JSON additions. The final
+focused suite adds explicit Network recovery and stale recovery-after-client-write
+coverage. Final syntax and whitespace checks pass; `go test ./ui` passes.

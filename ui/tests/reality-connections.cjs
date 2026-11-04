@@ -143,6 +143,78 @@ const dual = { ...examplePeer, wireguard_enabled: true, reality_enabled: true, r
       await t.reply(key, { error: 'Previous login failure' }, 503); await t.page.evaluate(() => window.rotationPromise);
       assert.equal((await t.state()).conf, t.realityURI); assert.equal(await t.page.locator('[data-act="copy-client-config"]').isDisabled(), false);
     }, { peers: [{ ...dual, wireguard_enabled: false }] });
+    for (const field of ['#client-enabled', '#client-reality']) await check(async t => {
+      await t.open(); await t.readyConfig(); const key = 'PATCH /api/peers/example'; t.holds.add(key);
+      await t.page.uncheck(field); await t.invoke('save-client-details'); await t.waitHeld(key); await t.page.evaluate(() => { window.savePromise = window.actionPromise; });
+      await t.page.keyboard.press('Escape'); await t.open(); await t.expand(); assert.equal((await t.state()).conf, '');
+      await t.reply(key, { error: 'Revocation persisted; reconciliation failed' }, 503); await t.page.evaluate(() => window.savePromise);
+      assert.match(await t.page.locator('#client-reality-status').textContent(), /may already be revoked/);
+      await t.page.keyboard.press('Escape'); await t.open(); await t.expand(); assert.equal((await t.state()).conf, '');
+    }, { peers: [dual] });
+    await check(async t => {
+      await t.open(); await t.readyConfig(); const key = 'DELETE /api/peers/example'; t.holds.add(key);
+      await t.invoke('inspect-client-delete'); await t.done(); await t.invoke('confirm-client-delete'); await t.waitHeld(key); await t.page.evaluate(() => { window.deletePromise = window.actionPromise; });
+      await t.page.keyboard.press('Escape'); await t.open(); await t.expand();
+      t.setPeers([]); await t.reply(key, { error: 'Deletion persisted; reconciliation failed' }, 503); await t.page.evaluate(() => window.deletePromise);
+      assert.equal((await t.state()).conf, ''); await t.invoke('refresh-reality-status'); await t.done();
+      assert.equal((await t.state()).peers.length, 0); assert.equal((await t.state()).modal, '');
+    }, { peers: [{ ...dual, wireguard_enabled: false }] });
+    await check(async t => {
+      await t.page.locator('#btn-settings').click(); await t.page.uncheck('#s-reality-on'); const key = 'PATCH /api/settings'; t.holds.add(key);
+      await t.page.locator('#settings-network [type="submit"]').click(); await t.waitHeld(key);
+      await t.page.keyboard.press('Escape'); await t.open(); await t.expand(); assert.equal((await t.state()).conf, '');
+      await t.reply(key, { error: 'Global revocation persisted; reconciliation failed' }, 503);
+      await t.page.waitForFunction(() => document.querySelector('#client-reality-status').textContent.includes('could not be confirmed'));
+      await t.page.keyboard.press('Escape'); await t.open(); await t.expand(); assert.equal((await t.state()).conf, '');
+      t.setPeer({ id: 'example', reality_profile_status: 'guarded' }); await t.invoke('refresh-reality-status'); await t.done();
+      assert.match(await t.page.locator('#client-reality-status').textContent(), /guarded/);
+    }, { peers: [{ ...dual, wireguard_enabled: false }], settings: { reality_enabled: true, reality_server_name: 'tls.example', reality_handshake_server: 'tls.example' } });
+    await check(async t => {
+      await t.open(); await t.readyConfig(); assert.equal(t.calls.filter(c => c.key.endsWith('/reality-client-config')).length, 0);
+      const event = t.page.waitForEvent('download'); await t.page.locator('[data-act="download-reality-json"]').click();
+      const downloaded = await event; assert.equal(downloaded.suggestedFilename(), 'razdacha-reality.json');
+      const data = JSON.parse(require('node:fs').readFileSync(await downloaded.path(), 'utf8'));
+      assert.equal(data.inbounds[0].type, 'tun'); assert.equal(data.dns.servers[0].address, '10.8.0.1');
+      assert.equal((await t.state()).conf, t.realityURI);
+    }, { peers: [{ ...dual, wireguard_enabled: false }] });
+    for (const cancel of ['close', 'dirty', 'rotate', 'session']) await check(async t => {
+      await t.open(); await t.readyConfig(); const key = 'GET /api/peers/example/reality-client-config'; t.holds.add(key); const downloads = [];
+      t.page.on('download', item => downloads.push(item)); await t.invoke('download-reality-json'); await t.waitHeld(key); await t.page.evaluate(() => { window.jsonPromise = window.actionPromise; });
+      if (cancel === 'close') await t.page.keyboard.press('Escape');
+      else if (cancel === 'dirty') await t.page.fill('#client-name', 'Unsaved name');
+      else if (cancel === 'session') await t.relogin();
+      else { await t.invoke('inspect-reality-rotation'); await t.done(); await t.invoke('confirm-reality-rotation'); await t.done(); }
+      await t.reply(key, { inbounds: [{ type: 'tun' }], outbounds: [{ type: 'vless' }] }); await t.page.evaluate(() => window.jsonPromise);
+      assert.equal(downloads.length, 0);
+    }, { peers: [{ ...dual, wireguard_enabled: false }] });
+    await check(async t => {
+      await t.open(); await t.readyConfig(); const key = 'GET /api/peers'; t.holds.add(key);
+      await t.invoke('refresh-reality-status'); await t.waitHeld(key); await t.page.evaluate(() => { window.oldStatusPromise = window.actionPromise; });
+      await t.page.evaluate(async () => { (await import('/js/screens/settings.js')).modalSettings(); });
+      t.overrides.set('PATCH /api/settings', { status: 503, body: { error: 'Global revocation incomplete' } });
+      await t.page.uncheck('#s-reality-on'); await t.page.locator('#settings-network [type="submit"]').click();
+      await t.page.getByText(/Save could not be confirmed/).waitFor(); await t.page.keyboard.press('Escape'); await t.open(); await t.expand();
+      await t.reply(key, [{ ...dual, wireguard_enabled: false }]); await t.page.evaluate(() => window.oldStatusPromise);
+      assert.equal((await t.state()).conf, ''); assert.match(await t.page.locator('#client-reality-status').textContent(), /could not be confirmed/);
+    }, { peers: [{ ...dual, wireguard_enabled: false }], settings: { reality_enabled: true, reality_server_name: 'tls.example', reality_handshake_server: 'tls.example' } });
+    await check(async t => {
+      t.overrides.set('PATCH /api/settings', { status: 503, body: { error: 'Global reconciliation failed' } });
+      await t.page.locator('#btn-settings').click(); await t.page.uncheck('#s-reality-on'); await t.page.locator('#settings-network [type="submit"]').click();
+      await t.page.getByText(/Save could not be confirmed/).waitFor(); t.setPeer({ id: 'example', reality_profile_status: 'guarded' });
+      await t.page.locator('#s-reality-reload').click(); await t.page.getByText(/Saved Network settings reloaded/).waitFor();
+      await t.page.keyboard.press('Escape'); await t.open(); await t.expand(); assert.equal((await t.state()).conf, ''); assert.match(await t.page.locator('#client-reality-status').textContent(), /guarded/);
+    }, { peers: [{ ...dual, wireguard_enabled: false }], settings: { reality_enabled: true, reality_server_name: 'tls.example', reality_handshake_server: 'tls.example' } });
+    await check(async t => {
+      await t.open(); const write = 'PATCH /api/peers/example'; t.holds.add(write); await t.page.fill('#client-name', 'Newer saved name');
+      await t.invoke('save-client-details'); await t.waitHeld(write); await t.page.evaluate(() => { window.namePromise = window.actionPromise; });
+      await t.page.evaluate(async () => { (await import('/js/screens/settings.js')).modalSettings(); });
+      t.overrides.set('PATCH /api/settings', { status: 503, body: { error: 'Global reconciliation failed' } });
+      await t.page.uncheck('#s-reality-on'); await t.page.locator('#settings-network [type="submit"]').click(); await t.page.getByText(/Save could not be confirmed/).waitFor();
+      const read = 'GET /api/peers'; t.holds.add(read); await t.page.locator('#s-reality-reload').click(); await t.waitHeld(read);
+      await t.reply(write, { ...dual, name: 'Newer saved name' }); await t.page.evaluate(() => window.namePromise);
+      await t.reply(read, [dual]); await t.page.getByText('Settings or clients changed while loading. Retry the explicit reload.', { exact: true }).waitFor();
+      assert.equal((await t.state()).peers[0].name, 'Newer saved name');
+    }, { peers: [dual], settings: { reality_enabled: true, reality_server_name: 'tls.example', reality_handshake_server: 'tls.example' } });
     for (const width of [320, 390, 1440]) await check(async t => {
       await t.open(); await t.readyConfig(); await t.page.locator('[data-act="select-client-reality"]').focus(); await t.page.keyboard.press('Enter');
       await t.page.waitForFunction(() => document.querySelector('#modal').dataset.conf?.startsWith('vless://'));

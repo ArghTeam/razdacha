@@ -1,5 +1,6 @@
 // Each section owns one save boundary and modal-local drafts.
 import * as api from '../api.js';
+import { realityStateRevision, realitySettingsRecovery, beginRealitySettingsMutation, finishRealitySettingsMutation, clearRealitySettingsRecovery } from './peers.js';
 import { state, openModal, modalShell, notice, markDirty, applyDocTitle,
   currentModalRevision, isCurrentModal, onModalCleanup } from '../shell.js';
 import { esc, intervalSeconds } from '../util.js';
@@ -49,7 +50,7 @@ export function modalSettings() {
   ${field('s-mtu', 'Client MTU', `type="number" required min="1280" max="1420" step="1" value="${esc(s.client_mtu)}"`, 'Default: 1280. Change only when your network requires it.')}
   ${field('s-dns', 'DNS upstream', `type="text" required value="${esc(s.dns_upstream)}"`)}</div>
   <section class="settings-reality" aria-labelledby="settings-reality-heading"><h4 id="settings-reality-heading">Alternative connection</h4><label class="settings-check" for="s-reality-on"><input id="s-reality-on" type="checkbox"${s.reality_enabled ? ' checked' : ''}> Enable VLESS + REALITY over TCP</label><p class="hint">Existing WireGuard profiles stay valid. Clients need a compatible app. New access becomes available after Apply; reconciliation may briefly interrupt other connections.</p>
-  <div id="s-reality-fields">${field('s-reality-port', 'Reality TCP port', `type="number" min="1" max="65535" step="1" value="${esc(s.reality_listen_port ?? 8443)}"`, 'Use a dedicated TCP port. The panel port is unchanged.')}
+  <p id="s-reality-recovery" class="hint"></p><button type="button" class="btn" id="s-reality-reload">Reload saved Network settings (discard Network edits)</button><div id="s-reality-fields">${field('s-reality-port', 'Reality TCP port', `type="number" min="1" max="65535" step="1" value="${esc(s.reality_listen_port ?? 8443)}"`, 'Use a dedicated TCP port. The panel port is unchanged.')}
   <details id="s-reality-advanced"><summary>Advanced Reality settings</summary><div class="two-col">${field('s-reality-name', 'Server name', `type="text" value="${esc(s.reality_server_name || '')}"`, 'TLS server name used by compatible clients.')}${field('s-reality-target', 'Handshake server', `type="text" value="${esc(s.reality_handshake_server || '')}"`, 'A suitable TLS endpoint selected by the administrator.')}${field('s-reality-target-port', 'Handshake TCP port', `type="number" min="1" max="65535" step="1" value="${esc(s.reality_handshake_port ?? 443)}"`)}</div></details><dl class="settings-reality-identity"><dt>Public key</dt><dd id="s-reality-public-key" class="mono">${esc(s.reality_public_key || 'Generated when Reality is configured.')}</dd><dt>Short ID</dt><dd id="s-reality-short-id" class="mono">${esc(s.reality_short_id || 'Not configured')}</dd></dl><p class="hint">The gateway keeps its private identity. Client credentials are available only in each client's connection profile.</p></div></section>`)}
   ${section('Schedules', 'Timers use saved intervals automatically. Use Apply to also update the active configuration record.', `${select('s-int', 'List refresh', options(listIntervals, intervalSeconds(s.list_update_interval)))}${select('s-pool', 'Pool catalog refresh', options(poolIntervals, s.pool_update_interval || 3600), 'Minimum: 30 minutes. Used when the built-in pool is enabled.')}${select('s-check', 'Tunnel health checks', options(checkIntervals, s.tunnel_check_interval || 120), 'Notifications confirm changes across three checks.')}`)}
   ${section('Telegram', 'The shared delivery channel for notifications and encrypted backups. Saving takes effect immediately.', `<p class="hint">Create a bot with @BotFather, add it to your chat and enter the chat ID.</p>${field('s-ntf-chat', 'Chat ID', 'type="text" autocomplete="off"', 'For example: -1001234567890.')}${field('s-ntf-token', 'Bot token', 'type="password" autocomplete="new-password"', '<span id="s-ntf-secret">Loading saved token status…</span> Leave empty to keep the saved token.')}<label class="settings-check" for="s-ntf-on"><input type="checkbox" id="s-ntf-on"> Send tunnel notifications</label><p class="hint">Test sends a message with saved Telegram settings, even when notifications are off. Save edits first.</p>`, '<button type="button" class="btn" data-delivery="telegram">Test saved channel</button>')}
@@ -90,6 +91,8 @@ function mount(modal) {
   }
   function remember(form) { saved.set(form, values(form)); update(form); }
   function syncReality() {
+    $('#s-reality-recovery').textContent = realitySettingsRecovery()?.error || (realitySettingsRecovery()?.pending ? 'Reality access is reconciling. Profile delivery is paused.' : '');
+    $('#s-reality-reload').hidden = !realitySettingsRecovery();
     const enabled = $('#s-reality-on').checked;
     $('#s-reality-fields').hidden = !enabled;
     for (const id of ['s-reality-port', 's-reality-name', 's-reality-target', 's-reality-target-port']) {
@@ -202,10 +205,14 @@ function mount(modal) {
     if (form.dataset.busy === 'true') return;
     const body = payload(form); if (!body) return;
     const kind = form.dataset.section;
+    const affectsReality = kind === 'network' && Object.keys(body).some(key => key.startsWith('reality_'));
+    if (affectsReality && realitySettingsRecovery()) { status(form, 'Reload saved Network settings before another Reality change.', 'err'); return; }
+    const recovery = affectsReality ? beginRealitySettingsMutation() : null;
     busy(form, true); status(form, 'Waiting to save this section…');
     try {
       const res = await enqueueSave(() => kind === 'telegram' ? api.notify.save(body) : kind === 'backup' ? api.backup.save(body) : api.settings.update(body), sameSession, () => { if (current()) status(form, 'Saving this section…'); });
       if (!sameSession()) return;
+      if (recovery) finishRealitySettingsMutation(recovery);
       if (kind === 'network' || kind === 'schedules') {
         const confirmed = Object.fromEntries(Object.keys(sectionFields[kind]).map(key => [key, res?.[key] ?? body[key] ?? baseline[kind][key]]));
         state.settings = { ...state.settings, ...confirmed };
@@ -230,7 +237,7 @@ function mount(modal) {
       baseline[kind] = readSection(kind);
       remember(form);
       status(form, kind === 'network' ? `Network saved. Use Apply in the panel to activate changes.${res?.requires_client_reconfig ? ' Download and redistribute updated client configurations.' : ''}` : `${names.find(name => name.toLowerCase() === kind)} saved.${kind === 'schedules' ? ' Timers update automatically. Use Apply to update the active configuration record.' : ' No Apply is needed.'}`, 'ok');
-    } catch (err) { if (current()) status(form, `Save could not be confirmed: ${err.message}. Your draft is retained. This request did not save other sections.`, 'err'); }
+    } catch (err) { if (recovery) finishRealitySettingsMutation(recovery, err); if (current()) { syncReality(); status(form, `Save could not be confirmed: ${err.message}. Your draft is retained. This request did not save other sections.`, 'err'); } }
     finally { if (current()) busy(form, false); }
   }
   function backupHistory(cfg) {
@@ -261,6 +268,27 @@ function mount(modal) {
       if (current()) busy(form, false);
     }
   }
+  $('#s-reality-reload').addEventListener('click', async () => {
+    const form = $('#settings-network'), recovery = realitySettingsRecovery(), revision = realityStateRevision();
+    if (!current() || recovery?.pending || form.dataset.busy === 'true') return;
+    busy(form, true);
+    try {
+      const [saved, peers] = await Promise.all([api.settings.get(), api.peers.list()]);
+      if (!current()) return;
+      if (realitySettingsRecovery() !== recovery || revision !== realityStateRevision()) { status(form, 'Settings or clients changed while loading. Retry the explicit reload.', 'err'); return; }
+      state.settings = { ...state.settings, ...saved };
+      state.peers = peers;
+      for (const [key, id] of Object.entries(sectionFields.network)) {
+        const input = $(`#${id}`), value = saved[key] ?? baseline.network[key];
+        if (input.type === 'checkbox') input.checked = Boolean(value); else input.value = value;
+      }
+      $('#s-reality-public-key').textContent = saved.reality_public_key || 'Generated when Reality is configured.';
+      $('#s-reality-short-id').textContent = saved.reality_short_id || 'Not configured';
+      baseline.network = readSection('network'); clearRealitySettingsRecovery(recovery); syncReality(); remember(form);
+      status(form, 'Saved Network settings reloaded. Apply pending configuration before new profile delivery.');
+    } catch (err) { if (current()) status(form, err.message || 'Could not reload saved Network settings.', 'err'); }
+    finally { if (current()) busy(form, false); }
+  });
   load('telegram'); load('backup');
 }
 export const actions = {};
