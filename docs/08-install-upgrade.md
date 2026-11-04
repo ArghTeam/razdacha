@@ -678,3 +678,8 @@ TLS endpoint, but an admin/controller or intranet-only service must never be use
 Private destination rejection protects authenticated proxy flows and does not
 remove this deliberate fixed-target fallback. Legacy unit includes and alternate
 service-name aliases are refused; normal same-name distribution links are allowed.
+
+Reality-only restored clients are disabled while their removed credentials are
+reissued. They remain editable; choose a method explicitly and configure/Apply
+before reconnecting. WG-enabled clients retain their enabled flags, keys and
+addresses, including clients that were already disabled.

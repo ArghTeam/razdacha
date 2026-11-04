@@ -48,6 +48,8 @@ description: "SQLite: схема четырёх сущностей, миграц
 
 - Legacy full `UpdatePeer` rejects transport/global-enable changes when Reality is present, requiring the gated patch path. Ordinary rename/egress updates and WG-only full writes retain compatibility.
 
+- Restore disables the global peer flag only when its WG method is disabled as Reality is stripped. Such clients remain editable while disabled and require explicit method selection plus configuration/Apply; every WG-enabled peer retains its enabled flag, keys and address.
+
 ## RAC-only onboarding composition
 
 Onboarding fingerprints share the ordinary transaction-local complete Snapshot
