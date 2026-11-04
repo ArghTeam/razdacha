@@ -80,8 +80,11 @@ verified that no owned processes/cgroup remained, the installed runtime was unch
 and the temporary fixture directory was removed. Every listener was local to the
 disposable namespace. The fixture opened no public listener and changed no installed
 application service or configuration. Raw output and supervisor/runtime identities
-remain private; final policy/service verification and evidence review belong to the
-primary operator.
+remain private. Final post-proof verification matched every snapshot peer, rule,
+tunnel, setting and registration row and the daemon/runtime/configuration bytes
+exactly. All three services were active; panel HTTPS returned 200 with valid TLS.
+Both refused-attempt and successful-attempt temporary fixture directories were absent.
+Independent final evidence review remains a PR-readiness gate.
 The first local exploratory run failed because the synthetic TLS target used an
 Ed25519 certificate incompatible with the chosen browser fingerprint. Using an
 ECDSA P-256 certificate and X25519 key exchange corrected the fixture; no runtime
