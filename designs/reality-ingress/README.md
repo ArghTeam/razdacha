@@ -25,8 +25,11 @@ are unchanged. The example TCP port 8443 is not a finalized default.
 ## Authorized static staging delivery
 
 The user accepted this preview and authorized static delivery at `/preview/reality/`
-on the designated staging gateway. Deployment and postflight checks are pending;
-this record does not claim that the page is already served there.
+on the designated staging gateway. Static delivery and public HTTPS/browser
+postflight passed on 2026-11-04. The served HTML matched the reviewed source; the
+main panel, API and existing application state remained unchanged. See the
+[delivery record](../../tasks/done/300-ingress-ui-preview.md#static-staging-acceptance)
+and [issue #300](https://github.com/ArghTeam/razdacha/issues/300) for scope and limits.
 
 1. Use the existing HTTPS nginx server and a dedicated static-page location. Keep
    the main panel and API routes unchanged; serve only the synthetic preview file.
