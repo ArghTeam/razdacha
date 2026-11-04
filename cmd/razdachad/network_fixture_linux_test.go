@@ -152,6 +152,9 @@ func wireTopology(t *testing.T) (netns.NsHandle, netns.NsHandle) {
 
 func wireRole(t *testing.T) bool {
 	switch os.Getenv("RAZDACHA_WIRE_ROLE") {
+	case "reality-coexist-client":
+		realityCoexistClient(t)
+		return true
 	case "enter":
 		runtime.LockOSThread()
 		wireMust(t, unix.Setns(3, unix.CLONE_NEWNET))
@@ -792,6 +795,8 @@ func TestNetworkGenerationWire(t *testing.T) {
 		wireMust(t, unix.Mount("tmpfs", "/run", "tmpfs", 0, "size=1m"))
 	}
 	switch {
+	case os.Getenv("RAZDACHA_WIRE_REALITY_COEXIST") == "1":
+		realityCoexistExercise(t)
 	case wireQualityEnabled():
 		peerEgressWireExercise(t)
 	case os.Getenv("RAZDACHA_WIRE_TRANSPORT") != "":
