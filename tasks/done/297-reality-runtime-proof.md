@@ -2,7 +2,7 @@
 type: task
 tracker: "#297"
 title: Pinned REALITY authenticated-ingress capability proof
-status: in-progress
+status: complete
 ---
 
 # Pinned REALITY authenticated-ingress capability proof
@@ -84,7 +84,9 @@ remain private. Final post-proof verification matched every snapshot peer, rule,
 tunnel, setting and registration row and the daemon/runtime/configuration bytes
 exactly. All three services were active; panel HTTPS returned 200 with valid TLS.
 Both refused-attempt and successful-attempt temporary fixture directories were absent.
-Independent final evidence review remains a PR-readiness gate.
+Independent final source, supervisor and evidence review completed with no material
+findings. This completes the bounded capability proof, not umbrella issue #297 or
+the product ingress implementation.
 The first local exploratory run failed because the synthetic TLS target used an
 Ed25519 certificate incompatible with the chosen browser fingerprint. Using an
 ECDSA P-256 certificate and X25519 key exchange corrected the fixture; no runtime
@@ -101,5 +103,5 @@ the external client path or resistance to DPI. No current runtime invariant chan
 the maintained nested-module README documents the new test and its limitations.
 
 Run commands and namespace requirements are in the
-[runtime README](../tests/dnsruntime/README.md#authenticated-reality-capability-proof).
+[runtime README](../../tests/dnsruntime/README.md#authenticated-reality-capability-proof).
 Merge, release and deployment remain separate from successful fixture execution.

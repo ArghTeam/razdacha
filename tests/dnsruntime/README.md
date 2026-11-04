@@ -70,7 +70,8 @@ Native empty/missing sources are compile-time refusals, not successful wire case
 ## Authenticated REALITY capability proof
 
 `TestRealityIngressIdentity` is an opt-in capability fixture for
-[task #297](../../tasks/297-reality-runtime-proof.md). It uses a supplied sing-box
+[completed proof record](../../tasks/done/297-reality-runtime-proof.md) for issue #297.
+It uses a supplied sing-box
 **1.12.25** executable, generated disposable X25519 keys/UUIDs, a local TLS 1.3
 ECDSA/X25519 handshake target, and loopback-only client/server listeners. It never
 loads installed configuration or calls systemctl. Private fixture files are mode
