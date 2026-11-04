@@ -34,21 +34,46 @@ daemon publication gate; no lock is held across a runtime restart.
 The new kernel table affects local INPUT TCP endpoints only. The WG guard, routing
 table, forwarded traffic and unrelated ports remain outside its ownership. IPv6
 wildcard coverage is conservative; malformed endpoint plans fail before mutation.
-Legacy compatibility accepts explicitly private DNS/loopback TProxy shapes and
-never removes an existing barrier when authority is absent.
+Legacy compatibility accepts exact `dns-in` direct DNS on port 53 with an explicit
+unicast IPv4 bind, including existing CGNAT/public WG address ranges; TProxy and
+controllers remain loopback-scoped. Wildcards, multicast, limited broadcast, zones
+and unknown names are rejected. The startup helper relies on owner-controlled
+configuration rather than a live WG interface or DB and never removes an existing
+barrier when authority is absent.
 
 Local tests cover ambiguous/corrupt authority, unsafe files/parents, canonical
 endpoint union/coverage, exact checked bytes, unsafe legacy listeners, failed
 installer behavior and serialized startup/controller transactions. Relevant race
-checks and the repository suite are run before delivery. A static Linux test binary
-is supplied to the primary operator for reviewed isolated namespace execution;
-no host access, live tunnel probe or deployed-source change is part of this slice.
+checks, the repository suite, static checks and diff whitespace checks passed. A
+static Linux test binary was supplied to the primary operator for independently
+reviewed isolated namespace execution. No live tunnel probe or application
+deployment is part of this foundation slice.
 
-The opt-in kernel fixture proves bounded new/established connection blocking,
-old/new port union, unrelated listener survival, invalid-plan preservation and
-release inside its own namespace. IPv6 wire evidence is conditional on loopback
-availability. Until its actual execution is recorded, Linux wire results are pending.
+The primary operator ran the reviewed opt-in kernel fixture on designated staging
+on 2026-11-04. It passed in 1.69 seconds, including IPv4 and IPv6 rather than an
+IPv6 skip. The test exercised bounded new/established connection blocking, old/new
+port union, unrelated listener survival, invalid-plan preservation, address scope
+and release inside fresh network/mount namespaces. The static test executable
+SHA-256 was `0c5d1d544c9882155e7a71337e4a799de0cf3114ae42658152ddca39e644cd15`;
+source commit `428bf05b852e0b28ccaa93e49f7c928518642e18` differs from initial
+`2ee135d40cc15a7fa3b54fd587eb62cc6d2e9485` only by two reviewed lint/style fixes.
+The executable hash stayed unchanged. Existing application/runtime/nginx main PIDs,
+configuration and runtime hashes were unchanged, and the owned cgroup was removed.
+Raw evidence stays private; no existing provider tunnel was changed or probed.
 
 This is not proof of full product Apply/recovery, service boot ordering, credential
 revocation, existing WG coexistence or an external REALITY client connection.
 Those remain required by the umbrella implementation before public exposure.
+
+
+## Legacy address compatibility correction
+
+Backend integration review identified that the existing WG address contract accepts
+CGNAT and public IPv4 ranges; `netip.Addr.IsPrivate` alone would reject valid saved
+DNS binds during unconditional startup checking. The compatibility predicate now
+preserves every explicit unicast IPv4 DNS bind for the exact legacy tag/type/port,
+while refusing wildcard, multicast, limited broadcast, zones and unsupported names.
+Tests cover CGNAT/public acceptance, unsafe address rejection, the exact DNS identity
+and port, and startup without clearing an existing barrier. Public REALITY listeners
+still require exact-hash authority and complete guard coverage. This correction
+changes no live host or tunnel and does not depend on a pre-existing `wg0`.

@@ -8,8 +8,9 @@ import (
 	"os"
 )
 
-// ConfigEndpoints identifies all supported client listeners. Legacy DNS/TProxy
-// listeners must remain explicitly private; unknown inbound types fail closed.
+// ConfigEndpoints identifies all supported client listeners. Legacy DNS binds an
+// explicit IPv4 address; TProxy and controllers remain loopback-scoped. Unknown
+// inbound types fail closed.
 // This is not a replacement for sing-box check or authentication generation.
 func ConfigEndpoints(config []byte) ([]Endpoint, error) {
 	if len(config) == 0 || len(config) > maxConfigBytes {
@@ -48,8 +49,8 @@ func ConfigEndpoints(config []byte) ([]Endpoint, error) {
 		address, parseErr := netip.ParseAddr(inbound.Listen)
 		switch inbound.Type {
 		case "direct":
-			if inbound.Tag != "dns-in" || inbound.ListenPort != 53 || parseErr != nil || address.Zone() != "" || (!address.IsPrivate() && !address.IsLoopback()) || address.IsUnspecified() {
-				return nil, errors.New("legacy DNS listener must be private and explicitly scoped")
+			if inbound.Tag != "dns-in" || inbound.ListenPort != 53 || parseErr != nil || !legacyDNSAddress(address) {
+				return nil, errors.New("legacy DNS listener must bind an explicit unicast IPv4 address on port 53")
 			}
 		case "tproxy":
 			if inbound.Tag != "tproxy-in" || inbound.ListenPort == 0 || parseErr != nil || address.Zone() != "" || !address.IsLoopback() {
@@ -65,6 +66,14 @@ func ConfigEndpoints(config []byte) ([]Endpoint, error) {
 		}
 	}
 	return NormalizeEndpoints(endpoints)
+}
+
+// The existing WG address contract includes CGNAT and public IPv4 ranges. The
+// startup helper cannot depend on a live wg0 or DB before service startup; only
+// the exact legacy DNS identity from owner-controlled config gets this exception.
+func legacyDNSAddress(address netip.Addr) bool {
+	return address.Is4() && address.Zone() == "" && !address.IsUnspecified() &&
+		!address.IsMulticast() && address != netip.AddrFrom4([4]byte{255, 255, 255, 255})
 }
 
 func privateControllers(experimental map[string]json.RawMessage) error {
