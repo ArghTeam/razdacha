@@ -50,8 +50,11 @@ Local validation with Go 1.25.8 passed:
   ELF test executable for independent reviewed namespace execution.
 - `git diff --check` passed.
 
-Independent review and staging execution are pending. These local results do not
-authorize an exposed listener or product deployment.
+Independent preexecution review approved the bounded fixture and supervisor. The
+review found a nonblocking stream-framing weakness in the original TCP sink; both
+requests and responses now use delimiters, with bounded TCP request reads. The
+targeted race check passed again and the reviewer approved the corrected source.
+These results do not authorize an exposed listener or product deployment.
 
 The primary operator completed a fresh stopped staging snapshot, a separate
 file-restoration rehearsal and SQLite integrity validation at schema 12. After
@@ -60,6 +63,25 @@ configuration bytes matched exactly; all three services were active and HTTPS
 returned 200. Two earlier refused snapshot attempts were preserved privately.
 This is file-level restoration evidence, not a live restore or functional rollback
 proof, and it does not establish alternative-ingress readiness.
+
+## Controlled Linux execution
+
+On 2026-11-04, the primary operator ran frozen source `a526d8a` with static test
+artifact SHA256 `af0437b9cbd1d435ec181f6d61ad489b457d929f87ae33213490cd19c3560d6d`
+against the installed pinned 1.12.25 runtime. The first launch was refused before
+the executable started because its initial temporary filesystem was mounted
+`noexec`: zero subtests ran. Cleanup left no owned processes and the installed
+runtime was unchanged. This was an infrastructure refusal, not a capability failure.
+
+After the supervisor's execution-filesystem preflight was corrected and independently
+reviewed, a fresh private network/mount namespace run passed all twelve subtests
+and the top-level test in 11.71 seconds, with supervisor exit 0. The supervisor
+verified that no owned processes/cgroup remained, the installed runtime was unchanged,
+and the temporary fixture directory was removed. Every listener was local to the
+disposable namespace. The fixture opened no public listener and changed no installed
+application service or configuration. Raw output and supervisor/runtime identities
+remain private; final policy/service verification and evidence review belong to the
+primary operator.
 The first local exploratory run failed because the synthetic TLS target used an
 Ed25519 certificate incompatible with the chosen browser fingerprint. Using an
 ECDSA P-256 certificate and X25519 key exchange corrected the fixture; no runtime

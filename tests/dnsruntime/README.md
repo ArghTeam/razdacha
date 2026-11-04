@@ -108,3 +108,10 @@ particular client/router application. Negative sink observations cover the bound
 fixture window; this is not a packet-capture proof of universal absence of leaks.
 No external network, DPI resistance, IPv6/private-destination protection, throughput
 or arbitrary UDP application/WebRTC behavior is established by this fixture.
+
+Controlled Linux validation of source `a526d8a` passed all twelve subtests and the
+top-level test against the pinned runtime in fresh private network/mount namespaces.
+The supervisor verified process/cgroup cleanup, temporary-directory removal and an
+unchanged installed runtime. An earlier `noexec` startup refusal ran zero subtests
+and is recorded separately in the task; it is not capability evidence. This run
+exposed no public listener and did not modify installed application services.
