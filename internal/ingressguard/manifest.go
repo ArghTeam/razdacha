@@ -171,7 +171,7 @@ func controlledParent(path string, private bool) error {
 		if current == directory && (owner.Uid != uint32(os.Geteuid()) || (private && info.Mode().Perm() != 0o700)) {
 			return errors.New("public ingress directory must be private and owner-controlled")
 		}
-		if info.Mode().Perm()&0o022 != 0 && !(info.Mode()&os.ModeSticky != 0 && owner.Uid == 0) {
+		if info.Mode().Perm()&0o022 != 0 && (info.Mode()&os.ModeSticky == 0 || owner.Uid != 0) {
 			return errors.New("public ingress path has a writable ancestor")
 		}
 		if current == string(filepath.Separator) {
