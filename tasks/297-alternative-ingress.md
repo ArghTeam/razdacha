@@ -134,3 +134,40 @@ For this docs-only PR check links, symbols and `git diff --check`; Go behavior i
 unchanged. Review identity, DNS and startup boundaries independently. The context
 index links the proposal without changing current invariants. Implementation PRs
 must update affected layer context/invariants with final behavior and evidence limits.
+
+
+## Implementation contract
+
+The application implementation adds independent WG/REALITY transport admission,
+private live credentials and a version-5 policy authority. Server keys and UUIDs
+are not stored in policy generations. Every publication resolves committed
+admission against current live credentials under the existing gate. Public ingress
+is guarded across checked restart, durable authority and startup. Existing outgoing
+tunnel definitions, keys and enablement are outside the change/test scope.
+
+## Backend implementation and verification boundary
+
+Implementation branch `feat/297-reality-ingress` starts from verified
+`origin/main` `fc0965eb0a9cf9ef9ebf5b9bd0f718536559fc3a` in
+`/Users/romanzhigalkin/Web/razdacha/.codex/worktrees/feat-297-reality-ingress`.
+The designated primary remains `/Users/romanzhigalkin/Web/razdacha`; remote is
+`origin`, target is `main`. Foundation helpers were consumed through merge commits;
+no rebases or primary synchronization were performed by the backend worker.
+
+Implemented: additive private credentials and transport flags; v5 committed
+admission; authenticated no-store URI/full JSON delivery; dedicated REALITY inbound
+and authenticated source policy; DNS/whole-exit/native projection preservation;
+IPv6/private/gateway rejection; union endpoint manifest/guard publication and
+pre-start hook; serialized active-flow revocation through checked restart; restore
+identity reset and uninstall refusal. Existing outgoing tunnel records/selection,
+WG keys and addresses are not rewritten.
+
+Verification includes ordinary Go tests, credential history/restore/API privacy,
+guard/restart/recovery/port collision failures, and a generated-config Linux fixture
+using only synthetic owned TLS/DNS/SOCKS/echo services in a fresh network namespace.
+The fixture covers two same-source users with TCP/UDP/native-selected/shared/DNS,
+private/resolved/mapped destinations, checked client profile, healthy and unavailable
+whole exits, cached FakeIP, session closure and stale credentials after restart.
+Runtime execution, independent review and staging evidence must be recorded before
+claiming those checks passed or broad application compatibility. The earlier PR299
+capability proof remains a separate historical handwritten-policy result.

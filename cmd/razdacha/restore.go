@@ -10,8 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ArghTeam/razdacha/internal/ingressguard"
+	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/networkstate"
 	"github.com/ArghTeam/razdacha/internal/packaging"
+	"github.com/ArghTeam/razdacha/internal/singbox"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -54,7 +57,16 @@ func runRestore(ctx context.Context, args []string) error {
 	opts.unitActive = daemonActive
 	opts.stdin = os.Stdin
 	if opts.root == "" {
-		opts.closeIngress = installClientGuard
+		opts.closeIngress = func() error {
+			if err := installClientGuard(); err != nil {
+				return err
+			}
+			path, err := filepath.Abs(opts.dbPath)
+			if err != nil {
+				return err
+			}
+			return ingressguard.Startup(singbox.DefaultConfigPath, filepath.Join(filepath.Dir(path), "public-ingress.json"), func(e []ingressguard.Endpoint) error { return netstack.SetPublicClientGuard(e, true) })
+		}
 	}
 	return restore(ctx, opts)
 }
@@ -143,6 +155,10 @@ func restore(ctx context.Context, opts restoreOptions) error {
 	st, err := store.Open(ctx, staged)
 	if err != nil {
 		return fmt.Errorf("копия %s не принята: %w", opts.file, err)
+	}
+	if err := st.ResetRealityAfterRestore(ctx); err != nil {
+		_ = st.Close()
+		return err
 	}
 	after, err := store.StateSummaryAt(ctx, staged)
 	if cerr := st.Close(); cerr != nil && err == nil {

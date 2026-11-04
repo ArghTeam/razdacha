@@ -156,3 +156,32 @@ func TestRemoveUnits(t *testing.T) {
 		t.Fatalf("повторное снятие: %v %v", removed, err)
 	}
 }
+
+func TestIngressGuardDropInSupportsPackagedRuntime(t *testing.T) {
+	root := t.TempDir()
+	u := &UnitInstaller{Root: root, PackagedDirs: []string{"/usr/lib/systemd/system"}}
+	vendor := filepath.Join(root, "usr/lib/systemd/system/sing-box.service")
+	if err := os.MkdirAll(filepath.Dir(vendor), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(vendor, []byte("vendor fixture"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(u.Path(SingboxUnit + ".d/50-razdacha-ingress.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "ExecStartPre=+/usr/local/bin/razdachad --guard-ingress") || !strings.Contains(string(data), "--guard-manifest /var/lib/razdacha/public-ingress.json") {
+		t.Fatal("missing independent pre-start hook")
+	}
+	unchanged, err := os.ReadFile(vendor)
+	if err != nil || string(unchanged) != "vendor fixture" {
+		t.Fatal("vendor unit was modified")
+	}
+	if _, err := u.EnsureSingboxIngressGuard("/bad path", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); !errors.Is(err, ErrBadConfig) {
+		t.Fatal("unsafe unit argument accepted")
+	}
+}

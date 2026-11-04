@@ -22,7 +22,19 @@ func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
 			return err
 		}
 		snap.Peers, err = peers(ctx, tx)
-		return err
+		if err != nil {
+			return err
+		}
+		err = tx.QueryRowContext(ctx, `SELECT identity_id FROM reality_identity WHERE singleton=1`).Scan(&snap.RealityIdentityID)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		for _, p := range snap.Peers {
+			if p.RealityEnabled && p.RealityCredentialID != "" {
+				snap.RealityAdmissions = append(snap.RealityAdmissions, RealityAdmission{PeerID: p.ID, CredentialID: p.RealityCredentialID, Revision: p.RealityRevision})
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return Snapshot{}, err

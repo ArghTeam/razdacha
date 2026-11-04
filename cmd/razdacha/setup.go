@@ -513,6 +513,9 @@ func writeUnits(opts setupOptions, singboxBinary string, log *slog.Logger) error
 	case err != nil:
 		return err
 	}
+	if _, err := u.EnsureSingboxIngressGuard(opts.daemon, configPath, "/var/lib/razdacha/public-ingress.json"); err != nil {
+		return err
+	}
 	// Рабочий каталог рантайма создаём сами: без него юнит падает на старте, а
 	// пакет его не создаёт, если рантайм положили мы.
 	workDir := filepath.Join(opts.root, packaging.SingboxWorkDir)

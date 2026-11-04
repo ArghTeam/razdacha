@@ -55,3 +55,11 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 - `internal/packaging/sysctl.go` — drop-in с параметрами ядра и их применение.
 
 - Native artifact history is excluded from database backups. Restore invalidates routing authority and requires supported sources to be fetched and explicitly applied again; it never reopens references to absent blobs. In-place startup with legacy v1 native authority preserves committed WG administrative settings but keeps client ingress guarded until explicit Apply. Corrupt v2 authority/artifacts stay guarded. Safe cross-host migration remains #217 (ADR 0025).
+
+## Public ingress lifecycle (ADR 0032)
+
+- A managed `sing-box.service.d/50-razdacha-ingress.conf` pre-start hook applies to both generated and vendor units without replacing vendor directives. It invokes `razdachad --guard-ingress` using only private safety files and netlink; it never opens/migrates the database, calls the API or waits on the publication mutex. No manifest/file lock spans a runtime restart.
+- Legacy WG-only saved configs retain their explicit startup compatibility path. Public listener startup requires approved exact config hashes and endpoint coverage in the private manifest; malformed/orphan authority fails closed.
+- CLI restore closes public and WG ingress before replacing state, invalidates routing authority, clears cloned Reality identity/credentials and requires explicit Apply plus fresh profiles. Existing WG identity is preserved.
+- Uninstall first refuses active or uncertain saved public listeners/coverage, before stopping services or deleting files: disable Reality and Apply first. Explicit daemon network reset keeps the public safety manifest and closed barrier; it cannot remove the pre-start protection around a saved public listener.
+- Authority version 5 and schema 13 prevent silent downgrade. Rollback requires a compatible pre-upgrade backup and deliberate guarded recovery; an older daemon must not consume current authority or credentials.

@@ -147,3 +147,50 @@ Implementation spans store, generator, netstack, authority, lifecycle, packaging
 API and panel. The [task specification](../../tasks/297-alternative-ingress.md)
 requires runtime proof, independent review and staging validation before enablement.
 This proposal grants no merge, release or production access.
+
+## Implementation contract
+
+The implementation adds schema 13 and authority envelope 5 without changing the
+pinned runtime or outgoing tunnel generation. Legacy WireGuard enablement uses an
+internal default-false disable flag; Reality starts off globally and per client.
+Server X25519 private identity and random per-client UUIDs remain in separate
+private tables. Committed policy contains opaque IDs/revisions only; every prepare
+and recovery loads current live authentication under the serialized gate.
+
+Equivalent scoped source branches preserve WG-inbound/address OR dedicated
+Reality-inbound/auth-user semantics without conflating source and destination OR
+fields. Route and DNS variants share the same selected-client mapping.
+Whole-client resolution precedes shared rules and private destination rejection
+follows resolution, before any final dial.
+
+A private `public-ingress.json` manifest contains exact current/candidate config
+hashes and union endpoint coverage. A separate early INPUT TCP guard protects
+established and new sessions. The pre-start helper and publication controller use
+short shared file locks only around manifest/kernel steps; no lock spans service
+restart. Daemon startup guards saved public listeners before network setup. New
+ports receive a safe bind collision preflight before any guard/config mutation.
+
+Revocation closes both paths before durable auth mutation and uses checked shared
+runtime restart before success. Failure retains revoked state and closed ingress;
+a response can fail after mutation, so clients refresh status before retrying.
+Peer/global disable replaces UUIDs and advances revision atomically. Historical
+policy cannot restore them, and re-enable requires explicit Apply. Ordinary WG
+enable/delete synchronization keeps its existing ten-second behavior.
+
+The URI endpoint is an authenticated no-store outbound-only import. A second
+authenticated no-store endpoint returns a complete typed sing-box TUN profile with
+DNS through the gateway proxy, local bootstrap confined to the gateway hostname,
+proxy-only final routing, both default families captured and IPv6 rejected locally.
+Its virtual IPv6 capture address is not IPv6 Internet service. URI-only applications
+must enable equivalent TUN/DNS capture; arbitrary DoH detection is not promised.
+
+Restore invalidates cloned Reality identity/credentials, disables that transport
+and requires reconfiguration/profile reissue while preserving WG identity.
+Uninstall refuses active or uncertain public listener authority before changing
+services/files; first disable Reality and Apply. Explicit reset retains the public
+safety barrier and manifest. Older binaries reject schema/authority versions; a
+downgrade requires a compatible pre-upgrade backup and guarded recovery.
+
+The task records generated-runtime, independent-review and staging evidence
+separately. Only demonstrated client/runtime compatibility is claimed; public
+listener enablement does not claim resistance to every DPI or IP block.

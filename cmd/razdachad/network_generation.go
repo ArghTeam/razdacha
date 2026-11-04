@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"go4.org/netipx"
 
 	"github.com/ArghTeam/razdacha/internal/api"
+	"github.com/ArghTeam/razdacha/internal/ingressguard"
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/networkstate"
@@ -27,17 +29,19 @@ var errNoAppliedGeneration = errors.New("clients are guarded: explicit Apply is 
 
 // networkPublication is accessed only while the gate mutex is held.
 type networkPublication struct {
-	manager       *lists.Manager
-	guard         func(bool) error
-	route         func(context.Context) error
-	wg            func(context.Context, store.Settings) error
-	validateWG    func(context.Context, store.Settings) error
-	nft           func(context.Context, store.Snapshot, map[string]lists.List) (int, error)
-	path          string
-	bootstrapPath string
-	contents      map[string]lists.List
-	initialized   bool
-	uncertain     bool
+	checkPublicPort func(ingressguard.Endpoint) error
+	publicGuard     func([]ingressguard.Endpoint, bool) error
+	manager         *lists.Manager
+	guard           func(bool) error
+	route           func(context.Context) error
+	wg              func(context.Context, store.Settings) error
+	validateWG      func(context.Context, store.Settings) error
+	nft             func(context.Context, store.Snapshot, map[string]lists.List) (int, error)
+	path            string
+	bootstrapPath   string
+	contents        map[string]lists.List
+	initialized     bool
+	uncertain       bool
 }
 
 type networkGeneration = networkstate.Generation
@@ -67,6 +71,9 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 			if l.Native != nil {
 				if err := l.Native.Verify(artifactDir, l.Subnets, l.TransportSubnets); err != nil {
 					guardErr := n.guard(true)
+					if g.store != nil {
+						guardErr = errors.Join(guardErr, g.emergencyPublicGuard())
+					}
 					n.uncertain = true
 					return singbox.ApplyResult{}, fmt.Errorf("clients remain guarded: active native artifact verification: %w", errors.Join(err, guardErr))
 				}
@@ -114,6 +121,30 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	}
 	a := *g.inner
 	a.PlainLists = frozenPlainLists(selected)
+	if g.store != nil {
+		live, e := g.store.RealityRuntime(ctx, snap)
+		if e != nil {
+			return singbox.ApplyResult{}, e
+		}
+		addresses, e := net.InterfaceAddrs()
+		if e != nil {
+			return singbox.ApplyResult{}, fmt.Errorf("enumerate gateway addresses: %w", e)
+		}
+		for _, address := range addresses {
+			prefix, e := netip.ParsePrefix(address.String())
+			if e != nil {
+				continue
+			}
+			ip := prefix.Addr().Unmap()
+			if ip.Is4() {
+				live.LocalAddresses = append(live.LocalAddresses, netip.PrefixFrom(ip, 32).String())
+			}
+		}
+		if ip, e := netip.ParseAddr(snap.Settings.EndpointHost); e == nil && ip.Unmap().Is4() {
+			live.LocalAddresses = append(live.LocalAddresses, netip.PrefixFrom(ip.Unmap(), 32).String())
+		}
+		a.Reality = live
+	}
 	var prepared *singbox.Prepared
 	if n.uncertain {
 		prepared, err = a.PrepareRecovery(ctx, snap)
@@ -135,10 +166,24 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	if err := ctx.Err(); err != nil {
 		return singbox.ApplyResult{}, err
 	}
+	candidate, err := prepared.ConfigData()
+	if err != nil {
+		return singbox.ApplyResult{}, err
+	}
+	if g.store != nil {
+		if err := g.stagePublic(candidate); err != nil {
+			if errors.Is(err, errPublicPortBusy) {
+				return singbox.ApplyResult{}, err
+			}
+			n.uncertain = true
+			guardErr := n.guard(true)
+			return singbox.ApplyResult{}, fmt.Errorf("close public ingress: %w", errors.Join(err, guardErr))
+		}
+	}
+	n.uncertain = true
 	if err := n.guard(true); err != nil {
 		return singbox.ApplyResult{}, fmt.Errorf("close client ingress: %w", err)
 	}
-	n.uncertain = true
 	if n.wg != nil {
 		if err := n.wg(ctx, snap.Settings); err != nil {
 			return singbox.ApplyResult{}, fmt.Errorf("clients remain guarded: configure WireGuard: %w", err)
@@ -167,7 +212,7 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 			}
 		}
 	}
-	if err := writeGeneration(n.path, networkGeneration{Version: 4, Policy: snap, Lists: selected}); err != nil {
+	if err := writeGeneration(n.path, networkGeneration{Version: 5, Policy: snap, Lists: selected}); err != nil {
 		return res, fmt.Errorf("clients remain guarded: %w", err)
 	}
 	seedPath := n.bootstrapPath
@@ -185,6 +230,12 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 	}
 	if err := n.guard(false); err != nil {
 		return res, fmt.Errorf("clients remain guarded: release ingress guard: %w", err)
+	}
+	if g.store != nil {
+		if err := g.releasePublic(candidate); err != nil {
+			_ = n.guard(true)
+			return res, fmt.Errorf("clients remain guarded: release public ingress: %w", err)
+		}
 	}
 	n.uncertain = false
 	res.NftSubnets = &count

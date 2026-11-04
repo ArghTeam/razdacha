@@ -245,7 +245,7 @@ func (u *UnitInstaller) writeUnit(name, content string) (bool, error) {
 // сообщения пользователю и для решения, звать ли `daemon-reload`.
 func (u *UnitInstaller) RemoveUnits() ([]string, error) {
 	var removed []string
-	for _, name := range []string{DaemonUnit, SingboxUnit} {
+	for _, name := range []string{DaemonUnit, SingboxUnit, SingboxUnit + ".d/50-razdacha-ingress.conf"} {
 		path := u.Path(name)
 		content, err := os.ReadFile(path)
 		switch {
@@ -262,4 +262,16 @@ func (u *UnitInstaller) RemoveUnits() ([]string, error) {
 		removed = append(removed, path)
 	}
 	return removed, nil
+}
+
+// EnsureSingboxIngressGuard installs a managed pre-start safety hook for both
+// package-provided and generated units without replacing vendor directives.
+func (u *UnitInstaller) EnsureSingboxIngressGuard(daemon, config, manifest string) (bool, error) {
+	for name, path := range map[string]string{"daemon": daemon, "config": config, "manifest": manifest} {
+		if err := validateUnitPath(name, path); err != nil {
+			return false, err
+		}
+	}
+	content := fmt.Sprintf("%s\n[Service]\nExecStartPre=+%s --guard-ingress --guard-config %s --guard-manifest %s\n", marker, daemon, config, manifest)
+	return u.writeUnit(SingboxUnit+".d/50-razdacha-ingress.conf", content)
 }

@@ -13,7 +13,7 @@ description: wg0, nft-правила и маршрутизация через ne
 - Существование таблицы проверяется до формирования пакета: удаление отсутствующей таблицы отменяет весь пакет вместе с созданием новой.
 - Синхронизация пиров идёт диффом; совпадающие пиры не переписываются, при пустом диффе `ConfigureDevice` не вызывается — живым клиентам не рвутся хендшейки.
 - Приватный ключ сервера лежит в `settings` вне структуры `Settings`: сохранение настроек из UI его не затирает и наружу он не отдаётся.
-- Routing rules and the separate `inet razdacha_guard` table survive daemon exit. Startup installs the early wg0 ingress DROP guard before WG setup, and releases it only after a checked, durably committed generation. Normal direct routing resumes after recovery; daemon restart can interrupt clients. Explicit reset/uninstall removes both tables (ADR 0023).
+- Routing rules and the separate `inet razdacha_guard` table survive daemon exit. Startup installs the early wg0 ingress DROP guard before WG setup, and releases it only after a checked, durably committed generation. Normal direct routing resumes after recovery; daemon restart can interrupt clients. Explicit reset/uninstall removes those WG routing tables (ADR 0023); the separate public ingress guard has the lifecycle restrictions below (ADR 0032).
 
 - Candidate WG address, listen port and MTU are validated before publication and reconciled under the guard before route/runtime/nft. Temporary managers use live key storage and never replay peers; the long-lived peer-sync/stat manager retains its fixed interface identity. Startup uses trusted committed/seed WG settings; only genuine legacy absence allows guarded DB initialization for administrative access. All stored peers, including disabled peers, must fit usable pool addresses without server collision.
 - Explicit unchanged Apply guards and repairs WG/route/nft without restarting a known runtime. Healthy background no-ops may skip mutation.
@@ -50,3 +50,10 @@ description: wg0, nft-правила и маршрутизация через ne
 - Address/MTU publication still uses the test WG adapter; the fixture does not
   establish production key allocation or live peer-reconciliation lifecycle.
   Its two logical source identities share one synthetic encrypted peer.
+
+## Public client safety boundary (ADR 0032)
+
+- WireGuard peer synchronization excludes `WireGuardDisabled` peers without changing keys/addresses or existing ten-second synchronization semantics.
+- Reality uses the separately owned early inet INPUT TCP guard, covering established traffic and the union of previous/candidate listener endpoints. It does not change forwarded outgoing-tunnel traffic or rely on wg0 prerouting checks. The daemon guards saved public listeners before network startup.
+- A private versioned safety manifest approves exact checked config hashes and listener coverage. Publication uses short shared locks to stage manifest+kernel guard, releases the lock before runtime restart, commits policy and discards bootstrap authority, then releases guards last. Helper starts cannot resurrect a stale public config without valid manifest/hash/coverage.
+- Any uncertainty after guarding leaves both client paths closed. Active native-artifact corruption also closes public ingress. Explicit reset retains the public manifest/barrier; uninstall requires verified WG-only state first.

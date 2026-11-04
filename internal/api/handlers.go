@@ -27,6 +27,9 @@ func (s *Server) routes() http.Handler {
 	s.protect(mux, "PATCH /api/peers/{id}", s.handleUpdatePeer)
 	s.protect(mux, "DELETE /api/peers/{id}", s.handleDeletePeer)
 	s.protect(mux, "GET /api/peers/{id}/config", s.handlePeerConfig)
+	s.protect(mux, "GET /api/peers/{id}/reality-config", s.handleRealityConfig)
+	s.protect(mux, "GET /api/peers/{id}/reality-client-config", s.handleRealityClientConfig)
+	s.protect(mux, "POST /api/peers/{id}/reality/rotate", s.handleRotateReality)
 
 	s.protect(mux, "GET /api/tunnels", s.handleListTunnels)
 	s.protect(mux, "POST /api/tunnels", s.handleCreateTunnel)

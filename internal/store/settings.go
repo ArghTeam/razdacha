@@ -35,15 +35,20 @@ const MinPoolUpdateInterval = 30 * time.Minute
 // Settings — единственная запись настроек. В БД лежит как key/value, чтобы добавление
 // поля не требовало миграции; отсутствующие ключи берутся из [DefaultSettings].
 type Settings struct {
-	WGListenPort       int           `json:"wg_listen_port"`
-	WGPool             string        `json:"wg_pool"`
-	WGServerAddress    string        `json:"wg_server_address"`
-	EndpointHost       string        `json:"endpoint_host"`
-	ClientMTU          int           `json:"client_mtu"`
-	DNSUpstream        string        `json:"dns_upstream"`
-	DNSType            string        `json:"dns_type"`
-	WANInterface       string        `json:"wan_interface"`
-	ListUpdateInterval time.Duration `json:"list_update_interval"`
+	RealityEnabled         bool          `json:"reality_enabled,omitempty"`
+	RealityListenPort      int           `json:"reality_listen_port,omitempty"`
+	RealityServerName      string        `json:"reality_server_name,omitempty"`
+	RealityHandshakeServer string        `json:"reality_handshake_server,omitempty"`
+	RealityHandshakePort   int           `json:"reality_handshake_port,omitempty"`
+	WGListenPort           int           `json:"wg_listen_port"`
+	WGPool                 string        `json:"wg_pool"`
+	WGServerAddress        string        `json:"wg_server_address"`
+	EndpointHost           string        `json:"endpoint_host"`
+	ClientMTU              int           `json:"client_mtu"`
+	DNSUpstream            string        `json:"dns_upstream"`
+	DNSType                string        `json:"dns_type"`
+	WANInterface           string        `json:"wan_interface"`
+	ListUpdateInterval     time.Duration `json:"list_update_interval"`
 	// PoolUpdateInterval — как часто расписание обходит каталог ключей пула.
 	// Дефолт 1 ч, нижняя граница [MinPoolUpdateInterval].
 	PoolUpdateInterval time.Duration `json:"pool_update_interval"`
@@ -61,15 +66,17 @@ type Settings struct {
 // автодетект на слое netstack.
 func DefaultSettings() Settings {
 	return Settings{
-		WGListenPort:       51820,
-		WGPool:             "10.8.0.0/24",
-		WGServerAddress:    "10.8.0.1",
-		EndpointHost:       "",
-		ClientMTU:          1280,
-		DNSUpstream:        "1.1.1.1",
-		DNSType:            "udp",
-		WANInterface:       "",
-		ListUpdateInterval: 24 * time.Hour,
+		RealityListenPort:    8443,
+		RealityHandshakePort: 443,
+		WGListenPort:         51820,
+		WGPool:               "10.8.0.0/24",
+		WGServerAddress:      "10.8.0.1",
+		EndpointHost:         "",
+		ClientMTU:            1280,
+		DNSUpstream:          "1.1.1.1",
+		DNSType:              "udp",
+		WANInterface:         "",
+		ListUpdateInterval:   24 * time.Hour,
 		// Один час — тот же дефолт, что и `lists.DefaultPoolInterval`; держатся
 		// равными руками, потому что store не может импортировать lists (это он
 		// импортирует store). Разъедутся — расписание возьмёт свой fallback.
@@ -137,6 +144,15 @@ func (s *Store) SaveSettings(ctx context.Context, v Settings) error {
 		return err
 	}
 	return s.tx(ctx, func(tx *sql.Tx) error {
+		old, err := settings(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if old.RealityEnabled && !v.RealityEnabled {
+			if err := invalidateReality(ctx, tx, ""); err != nil {
+				return err
+			}
+		}
 		for key, value := range v.values() {
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO settings (key, value) VALUES (?, ?)
@@ -145,6 +161,9 @@ func (s *Store) SaveSettings(ctx context.Context, v Settings) error {
 				return fmt.Errorf("запись настройки %s: %w", key, err)
 			}
 		}
+		if v.RealityEnabled {
+			return ensureRealityIdentity(ctx, tx)
+		}
 		return nil
 	})
 }
@@ -152,16 +171,21 @@ func (s *Store) SaveSettings(ctx context.Context, v Settings) error {
 // values раскладывает настройки по ключам таблицы.
 func (v Settings) values() map[string]string {
 	return map[string]string{
-		keyWGListenPort:       strconv.Itoa(v.WGListenPort),
-		keyWGPool:             v.WGPool,
-		keyWGServerAddress:    v.WGServerAddress,
-		keyEndpointHost:       v.EndpointHost,
-		keyClientMTU:          strconv.Itoa(v.ClientMTU),
-		keyDNSUpstream:        v.DNSUpstream,
-		keyDNSType:            v.DNSType,
-		keyWANInterface:       v.WANInterface,
-		keyListUpdateInterval: strconv.FormatInt(int64(v.ListUpdateInterval/time.Second), 10),
-		keyPoolUpdateInterval: strconv.FormatInt(int64(v.PoolUpdateInterval/time.Second), 10),
+		"reality_enabled":          strconv.FormatBool(v.RealityEnabled),
+		"reality_listen_port":      strconv.Itoa(v.RealityListenPort),
+		"reality_server_name":      v.RealityServerName,
+		"reality_handshake_server": v.RealityHandshakeServer,
+		"reality_handshake_port":   strconv.Itoa(v.RealityHandshakePort),
+		keyWGListenPort:            strconv.Itoa(v.WGListenPort),
+		keyWGPool:                  v.WGPool,
+		keyWGServerAddress:         v.WGServerAddress,
+		keyEndpointHost:            v.EndpointHost,
+		keyClientMTU:               strconv.Itoa(v.ClientMTU),
+		keyDNSUpstream:             v.DNSUpstream,
+		keyDNSType:                 v.DNSType,
+		keyWANInterface:            v.WANInterface,
+		keyListUpdateInterval:      strconv.FormatInt(int64(v.ListUpdateInterval/time.Second), 10),
+		keyPoolUpdateInterval:      strconv.FormatInt(int64(v.PoolUpdateInterval/time.Second), 10),
 		// Через запятую, без пробелов. Пустая строка — законное значение: она
 		// означает «по стране не отбраковывать», в отличие от отсутствия ключа,
 		// который читается дефолтом (ADR 0020).
@@ -185,6 +209,20 @@ func (v *Settings) set(key, value string) error {
 	}
 
 	switch key {
+	case "reality_enabled":
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("%w: invalid REALITY enabled setting", ErrInvalid)
+		}
+		v.RealityEnabled = parsed
+	case "reality_listen_port":
+		return number(&v.RealityListenPort)
+	case "reality_server_name":
+		v.RealityServerName = value
+	case "reality_handshake_server":
+		v.RealityHandshakeServer = value
+	case "reality_handshake_port":
+		return number(&v.RealityHandshakePort)
 	case keyWGListenPort:
 		return number(&v.WGListenPort)
 	case keyClientMTU:
@@ -258,6 +296,9 @@ func isCountryCode(code string) bool {
 
 // validate проверяет настройки до записи.
 func (v Settings) validate() error {
+	if err := v.validateReality(); err != nil {
+		return err
+	}
 	if v.WGListenPort < 1 || v.WGListenPort > 65535 {
 		return fmt.Errorf("%w: порт WireGuard %d вне диапазона 1–65535", ErrInvalid, v.WGListenPort)
 	}

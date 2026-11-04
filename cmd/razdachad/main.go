@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/api"
+	"github.com/ArghTeam/razdacha/internal/ingressguard"
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/packaging"
@@ -33,6 +34,9 @@ var (
 const defaultDBPath = "/var/lib/razdacha/state.db"
 
 func main() {
+	guardIngress := flag.Bool("guard-ingress", false, "guard public client ingress before starting sing-box")
+	guardConfig := flag.String("guard-config", singbox.DefaultConfigPath, "checked sing-box configuration path")
+	guardManifest := flag.String("guard-manifest", "/var/lib/razdacha/public-ingress.json", "private ingress safety manifest path")
 	showVersion := flag.Bool("version", false, "показать версию и выйти")
 	listen := flag.String("listen", api.DefaultAddr,
 		"адрес HTTP-сервера панели; только loopback — наружу его открывает nginx")
@@ -43,6 +47,13 @@ func main() {
 		"снять nft-правила и маршрутизацию, wg0 оставить, и выйти")
 	flag.Parse()
 
+	if *guardIngress {
+		if err := ingressguard.Startup(*guardConfig, *guardManifest, func(e []ingressguard.Endpoint) error { return netstack.SetPublicClientGuard(e, true) }); err != nil {
+			slog.Error("Public ingress startup guard failed", "error", err)
+			os.Exit(2)
+		}
+		return
+	}
 	if *showVersion {
 		fmt.Println(version)
 		return
@@ -82,6 +93,9 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		return storePassword(ctx, st)
 	}
 
+	if err := guardSavedPublic(singbox.DefaultConfigPath, filepath.Join(filepath.Dir(dbPath), ingressManifestFile)); err != nil {
+		return fmt.Errorf("guard saved public ingress: %w", err)
+	}
 	nf, err := startNetfilter(ctx)
 	if err != nil {
 		return err

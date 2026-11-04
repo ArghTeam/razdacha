@@ -14,8 +14,10 @@ The independently versioned [razvedka extension](../tools/razvedka/README.md) li
 the daemon build. Its current single-page entry is specified in
 [ADR 0022](../docs/decisions/0022-single-run-entry.md).
 
-The [parallel client ingress proposal](../docs/decisions/0032-parallel-authenticated-client-ingress.md)
-and [task #297](../tasks/297-alternative-ingress.md) describe a planned optional VLESS +
-REALITY input. They do not change the current WireGuard-only client ingress invariants.
-The [bounded runtime proof](https://github.com/ArghTeam/razdacha/pull/299) validates
-engine identity hooks with handwritten policy; product integration remains open.
+The [parallel client ingress decision](../docs/decisions/0032-parallel-authenticated-client-ingress.md)
+and [task #297](../tasks/297-alternative-ingress.md) describe the optional VLESS +
+REALITY backend alongside WireGuard. It defaults disabled, keeps private live
+credentials outside committed routing authority and extends guarded publication to
+public listeners. The task distinguishes the earlier handwritten capability proof
+from generated-policy, full-client-profile and deployment validation; no general
+DPI resistance or untested application compatibility is implied.
