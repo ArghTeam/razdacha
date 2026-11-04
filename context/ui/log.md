@@ -426,3 +426,18 @@ The first location attempt was rejected and rolled back before a corrected attem
 passed. The [delivery record](../../tasks/done/300-ingress-ui-preview.md#static-staging-acceptance)
 retains that qualification and private-backup/postflight bounds. Current embedded
 UI/runtime invariants remain unchanged; this is not functional REALITY ingress.
+
+
+## 2026-11-04 — #297 authenticated Reality client workflow
+
+The embedded client editor now offers independent WireGuard and Reality methods
+within the existing four-screen shell, sharing identity and routing. The Network
+settings section persists public Reality configuration through its existing save
+boundary. Server status gates actual authenticated VLESS profile delivery after
+Apply. Text, QR, copy and download use the returned URI and existing guarded
+modal/session lifetime. Revision-based credential replacement clears old copies,
+retains reconciliation failures and requires fresh status after uncertain outcomes.
+WireGuard profiles retain legacy defaults; addresses and observations explicitly
+describe WireGuard, with no fabricated Reality connection state. The
+[implementation task](../../tasks/297-reality-ui.md) records synthetic acceptance
+and the boundary between browser behavior and actual runtime connectivity.

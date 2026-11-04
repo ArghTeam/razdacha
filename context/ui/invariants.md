@@ -227,3 +227,35 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
 - Shared destructive confirmation identifies the target and focuses Cancel. Closing,
   Escape, replacement and session dismissal cancel unconfirmed intent; confirmed
   operations retain their existing single-flight and initiating-session checks.
+
+
+## Authenticated Reality connection profiles
+
+- Connection methods are independent per client: legacy responses without method
+  fields retain WireGuard enabled and Reality disabled. Both methods share one
+  identity and configured route. Network settings use the existing independent
+  changed-field save boundary; only public Reality settings are editable. Public
+  key and short ID are read-only; server private keys never enter panel state.
+- Reality profile delivery uses the authenticated text endpoint and the server's
+  per-client `disabled`, `pending`, `available` or `guarded` status. Only available
+  profiles are requested. Saving configuration never claims active admission;
+  pending directs the administrator to Network settings and Apply. WireGuard
+  configuration delivery retains its existing behavior.
+- Method switching, connection edits, saved identity changes, close/replacement
+  and logout invalidate in-flight profile responses and clear application-held
+  text, QR and object URLs. Unsaved identity or method edits prevent copying and
+  downloading. Actual returned VLESS URIs drive text, QR, clipboard and download;
+  invalid responses never fall back to a synthetic URI. QR size failure leaves
+  text/copy/download available. Clipboard copies remain outside panel control.
+- Reality credential replacement retains the revision observed at confirmation entry,
+  rejects changed revisions on secret delivery, and clears delivered
+  copies before reconciliation. A failed operation may have revoked the credential:
+  the panel blocks another profile until explicit status reload, preserves the
+  server error and never invents successful revocation or a guarded response.
+  Status reload cannot overwrite drafts or accepted intervening writes.
+- Inventory addresses, handshakes and counters describe WireGuard only. Reality-only
+  clients hide the reserved WireGuard address and counters; Reality availability is
+  distinct from connection activity, which the server does not currently measure.
+- Synthetic browser fixtures exercise the actual embedded modules without contacting
+  any daemon, provider or tunnel. Frontend checks do not establish real transport
+  connectivity, DNS behavior, server revocation or ingress guard correctness.
