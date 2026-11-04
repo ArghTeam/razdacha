@@ -102,7 +102,7 @@ func TestNativePublicationPinsBothProjectionsAndRecovery(t *testing.T) {
 		t.Fatal("autonomous native source remains in runtime")
 	}
 	gen, err := readGeneration(f.g.network.path)
-	if err != nil || gen.Version != 4 || gen.Lists[url].Native.Hash != current.Native.Hash {
+	if err != nil || gen.Version != 5 || gen.Lists[url].Native.Hash != current.Native.Hash {
 		t.Fatalf("authority not pinned: %v", err)
 	}
 	// Refreshed malformed candidate did not advance accepted/cache authority.
@@ -161,7 +161,7 @@ func TestNativeLegacyAuthorityKeepsAdminAndRequiresApply(t *testing.T) {
 		t.Fatal("explicit native Apply failed to initialize")
 	}
 	gen, err := networkstate.Read(f.g.network.path, networkstate.CommittedKind)
-	if err != nil || gen.Version != 4 {
+	if err != nil || gen.Version != 5 {
 		t.Fatal("explicit Apply did not upgrade native authority")
 	}
 }

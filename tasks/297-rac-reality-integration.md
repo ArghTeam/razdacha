@@ -24,7 +24,8 @@ must never be merged into main.
 - Exact recorded deployed RAC candidate source:
   `deb5924d2362beb301443f1afa042427c3312e8e`.
 - Reviewed UI source: `eef576b1b3b814b27faf73f821b7f3a055d9c051`.
-- Final backend source and fresh merged main are pending primary approval.
+- Approved backend source: `c5bfa11fa577463392095476037f824e94303e8b`.
+- Final fresh merged main is pending primary approval.
 
 The installed RAC binary did not include VCS build metadata. Its recorded source
 relationship is deployment provenance, not self-attestation from that binary.
@@ -72,3 +73,15 @@ The exact recorded RAC candidate merged with only an ADR-index conflict. Both
 The frozen UI merge required composing the peer inventory: retained candidate
 unknown-aware WG aggregate counters and REALITY method/status/profile lifetimes,
 with explicit WG-only aggregate semantics and mixed-transport regressions.
+
+The backend merge retained both onboarding catalog ownership and the live Store
+reference on the serialized publication gate. Its exact managed runtime command,
+private config reads and conservative systemd filesystem-view preflight remain
+unchanged. API routes and fresh-install bootstrap were composed automatically and
+are checked by the complete suites.
+
+Two RAC-specific adaptations keep onboarding coherent with the new backend:
+transaction-local onboarding reads now share the complete Snapshot reader,
+including non-secret Reality identity/admission authority; Configure/Finish also
+refuse an independently guarded public ingress under their existing lock. Focused
+regressions exercise enabled/retained identities and successful checked repair.

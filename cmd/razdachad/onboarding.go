@@ -35,7 +35,7 @@ func (g *applyGate) ConfigureOnboarding(ctx context.Context, st *store.Store, in
 	if err := ctx.Err(); err != nil {
 		return store.OnboardingState{}, err
 	}
-	if !g.network.initialized || g.network.uncertain {
+	if !g.network.initialized || g.network.uncertain || (g.store != nil && g.publicGuarded()) {
 		return store.OnboardingState{}, api.ErrNetworkGuarded
 	}
 	state, err := st.Onboarding(ctx)
@@ -174,7 +174,7 @@ func (g *applyGate) FinishOnboarding(ctx context.Context, st *store.Store) error
 	if err != nil {
 		return err
 	}
-	if g.network.uncertain || !g.network.initialized || state.Expected != applied {
+	if g.network.uncertain || !g.network.initialized || (g.store != nil && g.publicGuarded()) || state.Expected != applied {
 		return store.ErrOnboardingConflict
 	}
 	return st.AcceptOnboarding(ctx, applied, true)

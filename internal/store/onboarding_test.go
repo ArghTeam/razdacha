@@ -196,3 +196,53 @@ func TestOnboardingInventoryCountsOnlyPolicyEligibleCandidates(t *testing.T) {
 		t.Fatal("all-excluded stored members reported as eligible exits")
 	}
 }
+
+func TestOnboardingFingerprintIncludesRealityAuthority(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		name := "identity retained while disabled"
+		if enabled {
+			name = "listener enabled"
+		}
+		t.Run(name, func(t *testing.T) {
+			s, peer := onboardingStore(t)
+			ctx := context.Background()
+			settings, err := s.Settings(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings.RealityEnabled = true
+			settings.RealityServerName = "fixture.example"
+			settings.RealityHandshakeServer = "127.0.0.1"
+			if err := s.SaveSettings(ctx, settings); err != nil {
+				t.Fatal(err)
+			}
+			yes := true
+			if _, err := s.PatchPeer(ctx, peer.ID, PeerPatch{RealityEnabled: &yes}); err != nil {
+				t.Fatal(err)
+			}
+			if !enabled {
+				settings.RealityEnabled = false
+				if err := s.SaveSettings(ctx, settings); err != nil {
+					t.Fatal(err)
+				}
+			}
+			snap, err := s.Snapshot(ctx)
+			if err != nil || snap.RealityIdentityID == "" || len(snap.RealityAdmissions) != 1 {
+				t.Fatalf("missing synthetic admission: %+v %v", snap.RealityAdmissions, err)
+			}
+			state, err := s.ConfigureOnboarding(ctx, fingerprint(t, s), "skip", "AUTO", "", nil, nil)
+			if err != nil {
+				t.Fatal("coherent Reality policy conflicts with onboarding", err)
+			}
+			if state.Expected != fingerprint(t, s) {
+				t.Fatal("onboarding omitted committed transport authority")
+			}
+			if err := s.AcceptOnboarding(ctx, state.Expected, false); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.AcceptOnboarding(ctx, state.Expected, true); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

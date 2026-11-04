@@ -916,3 +916,40 @@ to the ten-second runtime timer (twelve seconds total from local admission).
 The runtime timer may start near the HTTP deadline; releasing at ten seconds from
 local start could otherwise overlap a still-running resolver job. A regression
 checks that the original job identity remains retained beyond ten seconds.
+
+## Optional Reality client ingress
+
+Settings GET/PATCH add `reality_enabled` (false), `reality_listen_port` (8443),
+`reality_server_name`, `reality_handshake_server` and `reality_handshake_port` (443).
+`reality_public_key` and `reality_short_id` are read-only. An explicit valid enable
+generates a private server identity; ordinary responses never disclose it.
+
+Peer POST/PATCH accepts `wireguard_enabled` (true for legacy peers) and
+`reality_enabled` (false). Global `enabled` controls both. An enabled client must
+retain a connection method. Responses add `reality_revision` and
+`reality_profile_status`: disabled, pending, available or guarded. Available means
+committed configuration and current admission, not an observed handshake. Existing
+peer statistics describe WireGuard only.
+
+| Method | Path | Response |
+|---|---|---|
+| GET | `/api/peers/{id}/reality-config` | Importable single-line `vless://` URI, `text/plain` |
+| GET | `/api/peers/{id}/reality-client-config` | Complete sing-box TUN client JSON attachment |
+| POST | `/api/peers/{id}/reality/rotate` | Body `{ "expected_revision": 1 }`; standard updated peer response |
+
+All require the panel session. Dedicated profile responses and refusals are
+`Cache-Control: no-store`. Delivery requires an enabled, applied, unguarded listener
+and a current matching live credential; draft endpoints are never exported.
+Rotation returns 409 on a stale revision. Replacement admission remains pending
+until Apply. A 503 after revocation can mean the database mutation committed but
+checked reconciliation failed: refresh peers/settings and recover with Apply; do
+not assume the old credential remains usable. Disable, delete and global listener
+disable have the same failure boundary. The first version restarts the shared
+runtime to close active flows, briefly interrupting other clients.
+
+A URI configures an outbound only: the application must enable TUN and DNS through
+the proxy. The complete JSON profile includes proxy-only final routing, gateway
+DNS through the proxy, IPv4-only DNS/AAAA rejection and local IPv6 default-route
+capture/rejection. It uses local DNS only to bootstrap the gateway hostname.
+Compatible privileged TUN support is required; arbitrary L3, ICMP and IPv6 Internet
+service are not provided, and this does not identify every application DoH request.

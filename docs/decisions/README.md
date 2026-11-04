@@ -53,7 +53,7 @@ Candidate-only decisions and features are not proposed for main by this branch.
 
 Main lineage:
 
-- [0032: Parallel authenticated client ingress](0032-parallel-authenticated-client-ingress.md) — **proposed**; optional VLESS + REALITY alongside WireGuard, shared client policy and guarded lifecycle.
+- [0032: Parallel authenticated client ingress](0032-parallel-authenticated-client-ingress.md) — optional, disabled-by-default VLESS + REALITY alongside WireGuard, shared client policy and guarded lifecycle.
 
 RAC candidate lineage:
 

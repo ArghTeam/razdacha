@@ -9,13 +9,15 @@ import (
 	"time"
 )
 
-const peerColumns = `id, name, public_key, private_key, preshared_key, address, enabled, created_at, egress_tunnel_id`
+const peerColumns = `id, name, public_key, private_key, preshared_key, address, enabled, created_at, egress_tunnel_id, wireguard_disabled, reality_enabled, reality_credential_id, reality_revision`
 
 // CreatePeer добавляет пира. Пустые ID и CreatedAt заполняются здесь.
 func (s *Store) CreatePeer(ctx context.Context, p Peer) (Peer, error) {
 	if err := p.validate(); err != nil {
 		return Peer{}, err
 	}
+	p.RealityCredentialID = ""
+	p.RealityRevision = 0
 	if p.ID == "" {
 		p.ID = newID()
 	}
@@ -28,14 +30,17 @@ func (s *Store) CreatePeer(ctx context.Context, p Peer) (Peer, error) {
 			return err
 		}
 		_, err := tx.ExecContext(ctx,
-			`INSERT INTO peers (`+peerColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO peers (`+peerColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			p.ID, p.Name, p.PublicKey, p.PrivateKey, p.PresharedKey, p.Address,
-			p.Enabled, p.CreatedAt.Unix(), p.EgressTunnelID)
+			p.Enabled, p.CreatedAt.Unix(), p.EgressTunnelID, p.WireGuardDisabled, p.RealityEnabled, "", 0)
 		if err != nil {
 			if isUniqueViolation(err) {
 				return peerConflictErr(err, p)
 			}
 			return fmt.Errorf("добавление пира %q: %w", p.Name, err)
+		}
+		if p.RealityEnabled {
+			return ensurePeerReality(ctx, tx, &p)
 		}
 		return nil
 	})
@@ -94,7 +99,21 @@ func (s *Store) UpdatePeer(ctx context.Context, p Peer) error {
 		return fmt.Errorf("%w: у обновляемого пира пустой идентификатор", ErrInvalid)
 	}
 
-	return s.tx(ctx, func(tx *sql.Tx) error { return updatePeer(ctx, tx, p) })
+	// Full replacement is retained for legacy callers. Public-auth changes must
+	// pass through the daemon gate and transactionally reconciled PatchPeer path.
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		old, err := scanPeer(tx.QueryRowContext(ctx, `SELECT `+peerColumns+` FROM peers WHERE id=?`, p.ID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if (old.RealityEnabled || p.RealityEnabled) && (old.RealityEnabled != p.RealityEnabled || old.Enabled != p.Enabled || old.WireGuardDisabled != p.WireGuardDisabled) {
+			return fmt.Errorf("%w: Reality transport changes require gated peer patch", ErrInvalid)
+		}
+		return updatePeer(ctx, tx, p)
+	})
 }
 
 func updatePeer(ctx context.Context, tx *sql.Tx, p Peer) error {
@@ -103,8 +122,8 @@ func updatePeer(ctx context.Context, tx *sql.Tx, p Peer) error {
 	}
 	res, err := tx.ExecContext(ctx,
 		`UPDATE peers SET name = ?, public_key = ?, private_key = ?, preshared_key = ?,
-		 address = ?, enabled = ?, egress_tunnel_id = ? WHERE id = ?`,
-		p.Name, p.PublicKey, p.PrivateKey, p.PresharedKey, p.Address, p.Enabled, p.EgressTunnelID, p.ID)
+		 address = ?, enabled = ?, egress_tunnel_id = ?, wireguard_disabled = ?, reality_enabled = ? WHERE id = ?`,
+		p.Name, p.PublicKey, p.PrivateKey, p.PresharedKey, p.Address, p.Enabled, p.EgressTunnelID, p.WireGuardDisabled, p.RealityEnabled, p.ID)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return peerConflictErr(err, p)
@@ -116,10 +135,12 @@ func updatePeer(ctx context.Context, tx *sql.Tx, p Peer) error {
 
 // PeerPatch distinguishes an omitted exit from an explicit null (shared rules).
 type PeerPatch struct {
-	Name            *string
-	Enabled         *bool
-	SetEgressTunnel bool
-	EgressTunnelID  *string
+	WireGuardEnabled *bool
+	RealityEnabled   *bool
+	Name             *string
+	Enabled          *bool
+	SetEgressTunnel  bool
+	EgressTunnelID   *string
 }
 
 // PatchPeer reads and modifies only supplied fields in one transaction. A rename
@@ -135,6 +156,18 @@ func (s *Store) PatchPeer(ctx context.Context, id string, patch PeerPatch) (Peer
 		if err != nil {
 			return fmt.Errorf("read peer for patch: %w", err)
 		}
+		wasActive := p.Enabled && p.RealityEnabled
+		if patch.WireGuardEnabled != nil {
+			p.WireGuardDisabled = !*patch.WireGuardEnabled
+		}
+		if patch.RealityEnabled != nil {
+			p.RealityEnabled = *patch.RealityEnabled
+		}
+		if p.RealityEnabled {
+			if err := ensurePeerReality(ctx, tx, &p); err != nil {
+				return err
+			}
+		}
 		if patch.Name != nil {
 			p.Name = strings.TrimSpace(*patch.Name)
 		}
@@ -147,7 +180,16 @@ func (s *Store) PatchPeer(ctx context.Context, id string, patch PeerPatch) (Peer
 		if err := p.validate(); err != nil {
 			return err
 		}
-		return updatePeer(ctx, tx, p)
+		if err := updatePeer(ctx, tx, p); err != nil {
+			return err
+		}
+		if wasActive && (!p.Enabled || !p.RealityEnabled) {
+			if err := invalidateReality(ctx, tx, p.ID); err != nil {
+				return err
+			}
+			p.RealityRevision++
+		}
+		return nil
 	})
 	if err != nil {
 		return Peer{}, err
@@ -232,7 +274,7 @@ func scanPeer(sc scanner) (Peer, error) {
 		createdAt int64
 	)
 	err := sc.Scan(&p.ID, &p.Name, &p.PublicKey, &p.PrivateKey, &p.PresharedKey,
-		&p.Address, &p.Enabled, &createdAt, &p.EgressTunnelID)
+		&p.Address, &p.Enabled, &createdAt, &p.EgressTunnelID, &p.WireGuardDisabled, &p.RealityEnabled, &p.RealityCredentialID, &p.RealityRevision)
 	if err != nil {
 		return Peer{}, err
 	}

@@ -18,6 +18,7 @@ import (
 // Ошибки, по которым вызывающий слой принимает решения. Тексты доходят до UI как есть.
 var (
 	// ErrNotFound — записи с таким id нет.
+	ErrConflict = errors.New("concurrent state conflict")
 	ErrNotFound = errors.New("запись не найдена")
 	// ErrInUse — на запись ссылается другая, удаление отклонено.
 	ErrInUse = errors.New("запись используется")

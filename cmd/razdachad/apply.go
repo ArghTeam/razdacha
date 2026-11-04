@@ -19,6 +19,7 @@ import (
 // The editable database is never an automatic source of applied routing policy.
 type applyGate struct {
 	onboardingCatalog func(context.Context, string) ([]store.PoolServer, error)
+	store             *store.Store
 	inner             *singbox.Applier
 	log               *slog.Logger
 	mu                sync.Mutex
@@ -86,6 +87,7 @@ func startApply(ctx context.Context, st *store.Store, pools *lists.PoolManager,
 		path:      filepath.Join(filepath.Dir(dbPath), networkstate.CommittedFile),
 		uncertain: true,
 	}, log)
+	g.store = st
 	g.network.validateWG = func(ctx context.Context, settings store.Settings) error {
 		peers, err := st.Peers(ctx)
 		if err != nil {

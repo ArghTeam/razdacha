@@ -1,14 +1,14 @@
 # 0032. Parallel authenticated client ingress
 
-Date: 2026-11-04 · Status: **proposed** · Tracker: [#297](https://github.com/ArghTeam/razdacha/issues/297)
+Date: 2026-11-04 · Status: **accepted** · Tracker: [#297](https://github.com/ArghTeam/razdacha/issues/297)
 
 ## Context
 
-An optional VLESS + REALITY TCP listener would complement standard WireGuard when
-its UDP transport is blocked. This is a proposal, not implemented or deployed
-behavior, and promises no particular DPI or IP-block resistance. It addresses the
+An optional VLESS + REALITY TCP listener complements standard WireGuard when
+its UDP transport is blocked. It defaults disabled and promises no particular
+DPI or IP-block resistance. It addresses the
 client-to-gateway path; outgoing tunnels remain a separate choice.
-No decision is superseded by this proposal. Acceptance would extend the incoming
+No decision is superseded. This decision extends the incoming
 transport boundary of ADR 0001 and the contracts in ADRs 0005, 0009, 0013, 0016,
 0023, 0024, 0025, 0026, 0028 and 0029. Historical implementation and validation
 records remain unchanged.
@@ -16,7 +16,7 @@ records remain unchanged.
 The pinned sing-box version is 1.12.25. Current policy uses WG peer addresses and
 the persistent guard covers only `wg0`; both boundaries need extension.
 
-## Proposed decision
+## Decision
 
 ### One client identity, independent credentials
 
@@ -91,8 +91,11 @@ must not take the existing no-restart fast path when runtime authentication diff
 
 Boot and independent `sing-box.service` starts must establish the guard before
 loading a saved public listener. This requires packaging integration for both the
-generated service and a drop-in for a distribution-provided unit, without replacing
-unowned package files. Avoid a dependency cycle with the daemon's runtime restart.
+generated service and a drop-in for a distribution-provided unit, without editing
+unowned package files. The managed drop-in resets ExecStart to the installer-selected
+runtime binary and one explicit managed config/work directory; the helper and runtime
+must consume exactly the same bytes. Conflicting existing later command/guard
+overrides are refused before unit changes, while harmless resource settings remain. Avoid a dependency cycle with the daemon's runtime restart.
 An authoritative endpoint manifest and its failure behavior must be proven before
 enablement: missing or corrupt authority cannot permit a stale listener to start.
 Reset, uninstall and recovery must handle both guard branches deliberately.
@@ -147,3 +150,83 @@ Implementation spans store, generator, netstack, authority, lifecycle, packaging
 API and panel. The [task specification](../../tasks/297-alternative-ingress.md)
 requires runtime proof, independent review and staging validation before enablement.
 This proposal grants no merge, release or production access.
+
+## Implementation contract
+
+The implementation adds schema 13 and authority envelope 5 without changing the
+pinned runtime or outgoing tunnel generation. Legacy WireGuard enablement uses an
+internal default-false disable flag; Reality starts off globally and per client.
+Server X25519 private identity and random per-client UUIDs remain in separate
+private tables. Committed policy contains opaque IDs/revisions only; every prepare
+and recovery loads current live authentication under the serialized gate.
+
+Equivalent scoped source branches preserve WG-inbound/address OR dedicated
+Reality-inbound/auth-user semantics without conflating source and destination OR
+fields. Route and DNS variants share the same selected-client mapping.
+Whole-client resolution precedes shared rules and private destination rejection
+follows resolution, before any final dial.
+
+A private `public-ingress.json` manifest contains exact current/candidate config
+hashes and union endpoint coverage. A separate early INPUT TCP guard protects
+established and new sessions. The pre-start helper and publication controller use
+short shared file locks only around manifest/kernel steps; no lock spans service
+restart. Daemon startup guards saved public listeners before network setup. New
+ports receive a safe bind collision preflight before any guard/config mutation.
+
+Revocation closes both paths before durable auth mutation and uses checked shared
+runtime restart before success. Failure retains revoked state and closed ingress;
+a response can fail after mutation, so clients refresh status before retrying.
+Peer/global disable replaces UUIDs and advances revision atomically. Historical
+policy cannot restore them, and re-enable requires explicit Apply. Ordinary WG
+enable/delete synchronization keeps its existing ten-second behavior.
+
+The URI endpoint is an authenticated no-store outbound-only import. A second
+authenticated no-store endpoint returns a complete typed sing-box TUN profile with
+DNS through the gateway proxy, local bootstrap confined to the gateway hostname,
+proxy-only final routing, both default families captured and IPv6 rejected locally.
+Its virtual IPv6 capture address is not IPv6 Internet service. URI-only applications
+must enable equivalent TUN/DNS capture; arbitrary DoH detection is not promised.
+
+Restore invalidates cloned Reality identity/credentials, disables that transport
+and requires reconfiguration/profile reissue while preserving WG identity.
+Uninstall refuses active or uncertain public listener authority before changing
+services/files; first disable Reality and Apply. Explicit reset retains the public
+safety barrier and manifest. Older binaries reject schema/authority versions; a
+downgrade requires a compatible pre-upgrade backup and guarded recovery.
+
+The task records generated-runtime, independent-review and staging evidence
+separately. Only demonstrated client/runtime compatibility is claimed; public
+listener enablement does not claim resistance to every DPI or IP block.
+
+The supported managed service must share the host file and network views used by
+the controller and privileged pre-start helper. Setup refuses nonempty root/bind/
+tmpfs/image/extension remappings, non-host network namespace declarations and
+post-start hooks in base/vendor fragments or any applicable drop-in. Same-byte
+read-only restrictions and ordinary filters/limits remain supported. The drop-in
+clears vendor reload hooks and later reload overrides are refused. This is a
+bounded supported-service contract, not a general systemd configuration evaluator.
+
+Union hash approval is temporary startup safety authority, not permission to
+release an old generation. Before narrowing coverage or releasing either guard,
+the controller privately rereads exact runtime config bytes under the same safety
+lock and requires equality with the checked candidate. An earlier pre-start hook
+may run, but restoring old approved bytes makes publication fail closed. Post-start
+hooks are unsupported because they could hide such a restore from the reread.
+Systemd filesystem/root and executable-prefix behavior is documented in
+[systemd.exec](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
+and [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html).
+
+### Native handshake fallback exception
+
+The pinned REALITY implementation may relay unauthenticated TLS to the fixed,
+explicit handshake host:port before authenticated proxy routing begins. The
+private/admin/IPv6 destination restrictions above govern authenticated proxy
+flows, not this native fixed-target handshake fallback. The selected handshake
+service must intentionally be public TLS exposure. A loopback/private address is
+valid when it reaches an already-public TLS service; an admin/controller or
+intranet-only target must never be selected. The fallback grants no arbitrary
+destination choice but deliberately exposes that one configured target.
+
+Legacy unit includes and aliases to differently named services are unsupported
+because they introduce uninspected fragment/drop-in sources. Ordinary same-name
+distribution unit symlinks are retained.

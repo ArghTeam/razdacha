@@ -173,3 +173,50 @@ func TestOnboardingGateFreeApplyAcquiresCanonicalSources(t *testing.T) {
 		t.Fatal("coherent selected-client publication missing")
 	}
 }
+
+func TestOnboardingCannotCompleteWhilePublicIngressIsGuarded(t *testing.T) {
+	f := newRealityGateFixture(t)
+	ctx := context.Background()
+	if _, err := f.st.EnsureBuiltinPool(ctx, lists.BuiltinPoolCatalogURL, store.TunnelVLESS); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.st.InitOnboarding(ctx, f.p.ID, "", "AUTO"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ConfigureOnboarding(ctx, f.st, api.OnboardingRequest{Mode: "skip", Country: "AUTO"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ApplyOnboarding(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.g.emergencyPublicGuard(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := f.st.Onboarding(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ConfigureOnboarding(ctx, f.st, api.OnboardingRequest{Mode: "skip", Country: "AUTO"}); !errors.Is(err, api.ErrNetworkGuarded) {
+		t.Fatal("guarded public ingress permitted setup changes", err)
+	}
+	if err := f.g.FinishOnboarding(ctx, f.st); !errors.Is(err, store.ErrOnboardingConflict) {
+		t.Fatal("guarded public ingress reported completed setup", err)
+	}
+	after, err := f.st.Onboarding(ctx)
+	if err != nil || before.Expected != after.Expected || !after.Pending {
+		t.Fatal("guarded setup changed its accepted metadata", err)
+	}
+	reloads := f.reloads
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	if f.reloads <= reloads || f.closed {
+		t.Fatal("repair did not restart and release checked public ingress")
+	}
+	if err := f.g.FinishOnboarding(ctx, f.st); err != nil {
+		t.Fatal("checked repair did not restore setup completion", err)
+	}
+}

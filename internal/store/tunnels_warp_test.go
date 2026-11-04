@@ -111,7 +111,7 @@ func TestMigrationMarksPastedWARP(t *testing.T) {
 	// ok_at у проверок (шаг 10) и колонка country у туннелей (шаг 11): иначе
 	// повторный ALTER на уже существующей колонке упал бы.
 	if _, err := s.db.ExecContext(ctx, `
-DROP INDEX peers_egress_tunnel;
+DROP TABLE reality_credentials; DROP TABLE reality_identity; ALTER TABLE peers DROP COLUMN wireguard_disabled; ALTER TABLE peers DROP COLUMN reality_enabled; ALTER TABLE peers DROP COLUMN reality_credential_id; ALTER TABLE peers DROP COLUMN reality_revision; DROP INDEX peers_egress_tunnel;
 ALTER TABLE peers DROP COLUMN egress_tunnel_id;
 DROP TABLE warp_registrations;
 ALTER TABLE tunnel_checks DROP COLUMN ok_at;

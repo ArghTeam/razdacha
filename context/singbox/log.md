@@ -228,3 +228,14 @@ WG coexistence or actual DPI resistance. The [completed proof record](../../task
 preserves exact source/artifact identity, the earlier zero-test execution refusal,
 cleanup, post-test state equality and the file-level backup/recovery limits.
 The product ingress remains open under issue #297.
+
+## 2026-11-04 — #297 parallel authenticated client ingress
+
+Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The singbox invariants record final behavior; this entry does not claim deployment or general DPI resistance.
+
+Validation: independently reviewed isolated Linux generated-policy proof passed
+24.57s; exact delivered full TUN JSON proof passed 1.45s in a second anonymous
+client namespace. Both used only owned synthetic services and pinned sing-box
+1.12.25. HTTP/DNS/IPv6 controls and server-stop no-fallback were observed for the
+delivered client; no operator routes or installed runtime/provider state changed.
+The task retains exact frozen source/binary hashes and compatibility limits.

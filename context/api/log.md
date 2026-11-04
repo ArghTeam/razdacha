@@ -283,3 +283,7 @@ and the authenticated API/CLI reported the expected release, schema 12 and sing-
 [acceptance record](../../tasks/done/280-dashboard-design-system.md#staging-acceptance)
 separates installed operator/API/UI checks from the deterministic authentication/MTU
 test matrix; no live race replay or client/media end-to-end claim is made.
+
+## 2026-11-04 — #297 parallel authenticated client ingress
+
+Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The api invariants record final behavior; this entry does not claim deployment or general DPI resistance.

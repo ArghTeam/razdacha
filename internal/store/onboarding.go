@@ -125,19 +125,7 @@ func PolicyFingerprint(snap Snapshot) (string, error) {
 }
 
 func onboardingSnapshot(ctx context.Context, tx *sql.Tx) (Snapshot, error) {
-	var snap Snapshot
-	var err error
-	if snap.Settings, err = settings(ctx, tx); err != nil {
-		return snap, err
-	}
-	if snap.Tunnels, err = tunnels(ctx, tx); err != nil {
-		return snap, err
-	}
-	if snap.Rules, err = rules(ctx, tx); err != nil {
-		return snap, err
-	}
-	snap.Peers, err = peers(ctx, tx)
-	return snap, err
+	return snapshotInTransaction(ctx, tx)
 }
 
 // ReopenOnboarding changes only metadata. Legacy configured policy is read-only.
