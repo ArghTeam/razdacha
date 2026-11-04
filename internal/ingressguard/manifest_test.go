@@ -11,8 +11,10 @@ import (
 	"time"
 )
 
-const legacyConfig = `{"inbounds":[{"type":"direct","tag":"dns-in","listen":"10.8.0.1","listen_port":53},{"type":"tproxy","tag":"tproxy-in","listen":"127.0.0.1","listen_port":1602}],"experimental":{"clash_api":{"external_controller":"127.0.0.1:9090"}}}`
-const realityConfig = `{"inbounds":[{"type":"vless","tag":"reality-in","listen":"0.0.0.0","listen_port":8443,"tls":{"enabled":true,"reality":{"enabled":true}}}]}`
+const (
+	legacyConfig  = `{"inbounds":[{"type":"direct","tag":"dns-in","listen":"10.8.0.1","listen_port":53},{"type":"tproxy","tag":"tproxy-in","listen":"127.0.0.1","listen_port":1602}],"experimental":{"clash_api":{"external_controller":"127.0.0.1:9090"}}}`
+	realityConfig = `{"inbounds":[{"type":"vless","tag":"reality-in","listen":"0.0.0.0","listen_port":8443,"tls":{"enabled":true,"reality":{"enabled":true}}}]}`
+)
 
 func privateDirectory(t *testing.T) string {
 	t.Helper()
