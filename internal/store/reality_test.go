@@ -68,7 +68,7 @@ func TestRealityAdmissionDoesNotRestoreRevokedAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	enabled := true
-	p, err = st.PatchPeer(ctx, p.ID, PeerPatch{RealityEnabled: &enabled})
+	_, err = st.PatchPeer(ctx, p.ID, PeerPatch{RealityEnabled: &enabled})
 	if err != nil {
 		t.Fatal(err)
 	}

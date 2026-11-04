@@ -55,6 +55,7 @@ func TestRealityPublicResponsesNeverDiscloseCredentials(t *testing.T) {
 		t.Fatal("public handshake parameters missing")
 	}
 }
+
 func TestRealityDeliveryRequiresAuthenticationAndCommittedPublisher(t *testing.T) {
 	ts := newTestServer(t)
 	cookie := ts.login(t)

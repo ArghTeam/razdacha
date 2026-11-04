@@ -122,38 +122,40 @@ func TestRealityGeneratedProduct(t *testing.T) {
 	for _, u := range live.Users {
 		initialUsers[u.PeerID] = u
 	}
-	client := func(index int, host string, port int) [2]int {
-		return productClient(t, binary, settings.RealityListenPort, host, port, initialUsers[peers[index].ID].UUID, live.Identity.PublicKey, live.Identity.ShortID)
+	client := func(test *testing.T, index int, host string, port int) [2]int {
+		return productClient(test, binary, settings.RealityListenPort, host, port, initialUsers[peers[index].ID].UUID, live.Identity.PublicKey, live.Identity.ShortID)
 	}
 	for i := range peers {
-		allowed := client(i, "198.51.100.2", sink.port)
-		denied := client(i, "198.51.100.3", sink.port)
-		nativeDomain := client(i, "native.fixture.example", sink.port)
-		shared := client(i, "everyone.fixture.example", sink.port)
-		private := client(i, "private.fixture.example", sink.port)
-		mapped := client(i, "::ffff:127.0.0.1", sink.port)
-		for _, network := range []string{"tcp", "udp"} {
-			productExpect(t, sink, network, allowed[0], true)
-			productExpect(t, sink, network, denied[0], i == 1)
-			productExpect(t, sink, network, nativeDomain[0], i == 1)
-			productExpect(t, sink, network, shared[0], false)
-			productExpect(t, sink, network, private[0], false)
-			productExpect(t, sink, network, mapped[0], false)
-			for _, name := range []string{"allowed.fixture.example", "native.fixture.example", "everyone.fixture.example"} {
-				query := new(dns.Msg)
-				query.SetQuestion(name+".", dns.TypeA)
-				response, _, e := (&dns.Client{Net: network, Timeout: 2 * time.Second}).Exchange(query, fmt.Sprintf("127.0.0.1:%d", allowed[1]))
-				want := name == "allowed.fixture.example" || (i == 1 && name == "native.fixture.example")
-				accepted := e == nil && response.Rcode == dns.RcodeSuccess && len(response.Answer) > 0
-				if accepted != want {
-					t.Fatalf("client %d %s DNS %s accepted=%v want=%v", i, network, name, accepted, want)
+		t.Run(fmt.Sprintf("client-%d", i), func(t *testing.T) {
+			allowed := client(t, i, "198.51.100.2", sink.port)
+			denied := client(t, i, "198.51.100.3", sink.port)
+			nativeDomain := client(t, i, "native.fixture.example", sink.port)
+			shared := client(t, i, "everyone.fixture.example", sink.port)
+			private := client(t, i, "private.fixture.example", sink.port)
+			mapped := client(t, i, "::ffff:127.0.0.1", sink.port)
+			for _, network := range []string{"tcp", "udp"} {
+				productExpect(t, sink, network, allowed[0], true)
+				productExpect(t, sink, network, denied[0], i == 1)
+				productExpect(t, sink, network, nativeDomain[0], i == 1)
+				productExpect(t, sink, network, shared[0], false)
+				productExpect(t, sink, network, private[0], false)
+				productExpect(t, sink, network, mapped[0], false)
+				for _, name := range []string{"allowed.fixture.example", "native.fixture.example", "everyone.fixture.example"} {
+					query := new(dns.Msg)
+					query.SetQuestion(name+".", dns.TypeA)
+					response, _, e := (&dns.Client{Net: network, Timeout: 2 * time.Second}).Exchange(query, fmt.Sprintf("127.0.0.1:%d", allowed[1]))
+					want := name == "allowed.fixture.example" || (i == 1 && name == "native.fixture.example")
+					accepted := e == nil && response.Rcode == dns.RcodeSuccess && len(response.Answer) > 0
+					if accepted != want {
+						t.Fatalf("client %d %s DNS %s accepted=%v want=%v", i, network, name, accepted, want)
+					}
 				}
 			}
-		}
+		})
 	}
 	// A checked restart with the live intersection removes both existing sessions
 	// and historical credentials. The replacement remains unadmitted in this snap.
-	connection, err := net.DialTimeout("tcp4", fmt.Sprintf("127.0.0.1:%d", client(0, "198.51.100.2", sink.port)[0]), time.Second)
+	connection, err := net.DialTimeout("tcp4", fmt.Sprintf("127.0.0.1:%d", client(t, 0, "198.51.100.2", sink.port)[0]), time.Second)
 	realityMust(t, err)
 	_ = connection.SetDeadline(time.Now().Add(3 * time.Second))
 	_, err = connection.Write([]byte("established\n"))
@@ -258,6 +260,12 @@ func TestRealityGeneratedProduct(t *testing.T) {
 	unavailable := productClient(t, binary, settings.RealityListenPort, "198.51.100.2", sink.port, whole.UUID, live.Identity.PublicKey, live.Identity.ShortID)
 	for _, network := range []string{"tcp", "udp"} {
 		productExpect(t, sink, network, unavailable[0], false)
+		q := new(dns.Msg)
+		q.SetQuestion("unavailable.fixture.example.", dns.TypeA)
+		r, _, e := (&dns.Client{Net: network, Timeout: time.Second}).Exchange(q, fmt.Sprintf("127.0.0.1:%d", unavailable[1]))
+		if e == nil && r.Rcode == dns.RcodeSuccess && len(r.Answer) > 0 {
+			t.Fatal("unavailable whole exit leaked DNS", network)
+		}
 	}
 }
 

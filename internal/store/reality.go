@@ -22,13 +22,15 @@ type RealityAdmission struct {
 
 // RealityIdentity and RealityRuntime are live-only private material. They must
 // never be serialized into routing generations or ordinary API responses.
-type RealityIdentity struct{ ID, PrivateKey, PublicKey, ShortID string }
-type RealityUser struct{ PeerID, Name, UUID string }
-type RealityRuntime struct {
-	LocalAddresses []string
-	Identity       *RealityIdentity
-	Users          []RealityUser
-}
+type (
+	RealityIdentity struct{ ID, PrivateKey, PublicKey, ShortID string }
+	RealityUser     struct{ PeerID, Name, UUID string }
+	RealityRuntime  struct {
+		LocalAddresses []string
+		Identity       *RealityIdentity
+		Users          []RealityUser
+	}
+)
 
 func (v Settings) validateReality() error {
 	if !v.RealityEnabled {
@@ -51,7 +53,7 @@ func (v Settings) validateReality() error {
 		}
 		if net.ParseIP(value) == nil {
 			for _, c := range value {
-				if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-') {
+				if !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-", c) {
 					return fmt.Errorf("%w: invalid REALITY %s", ErrInvalid, name)
 				}
 			}
@@ -103,6 +105,7 @@ func realityIdentity(ctx context.Context, q querier) (*RealityIdentity, error) {
 	out.PublicKey = base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes())
 	return &out, nil
 }
+
 func (s *Store) RealityIdentity(ctx context.Context) (*RealityIdentity, error) {
 	return realityIdentity(ctx, s.db)
 }
@@ -186,7 +189,7 @@ func (s *Store) RealityRuntime(ctx context.Context, snap Snapshot) (*RealityRunt
 		if err != nil {
 			return fmt.Errorf("read live REALITY credentials: %w", err)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var peerID, credentialID, uuid string
 			var revision int
@@ -222,20 +225,18 @@ func invalidateReality(ctx context.Context, tx *sql.Tx, peerID string) error {
 	if err != nil {
 		return err
 	}
+	defer func() { _ = rows.Close() }()
 	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
 			return err
 		}
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
-		_ = rows.Close()
 		return err
 	}
-	_ = rows.Close()
 	for _, id := range ids {
 		if _, err := tx.ExecContext(ctx, `UPDATE reality_credentials SET revision=revision+1,uuid=? WHERE peer_id=?`, newID(), id); err != nil {
 			return err

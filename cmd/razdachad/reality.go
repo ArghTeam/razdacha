@@ -76,7 +76,7 @@ func (g *applyGate) stagePublic(candidate []byte) error {
 					check = probePublicPort
 				}
 				if err := check(endpoint); err != nil {
-					return fmt.Errorf("%w: %v", errPublicPortBusy, err)
+					return fmt.Errorf("%w: %w", errPublicPortBusy, err)
 				}
 			}
 		}
@@ -91,12 +91,14 @@ func (g *applyGate) stagePublic(candidate []byte) error {
 		return g.publicGuard(endpoints, true)
 	})
 }
+
 func (g *applyGate) publicGuard(e []ingressguard.Endpoint, on bool) error {
 	if g.network.publicGuard != nil {
 		return g.network.publicGuard(e, on)
 	}
 	return netstack.SetPublicClientGuard(e, on)
 }
+
 func (g *applyGate) releasePublic(candidate []byte) error {
 	return ingressguard.WithLock(g.manifestPath(), func() error {
 		e, err := ingressguard.ConfigEndpoints(candidate)
@@ -117,6 +119,7 @@ func (g *applyGate) releasePublic(candidate []byte) error {
 		return nil
 	})
 }
+
 func (g *applyGate) publicGuarded() bool {
 	m, err := ingressguard.Read(g.manifestPath())
 	return err != nil || m.Guarded
@@ -134,13 +137,15 @@ func (g *applyGate) closeForRevocation() error {
 	g.network.uncertain = true
 	return g.network.guard(true)
 }
+
 func (g *applyGate) reconcileRevocation(ctx context.Context) error {
 	_, err := g.publish(ctx, g.base, true, false)
 	if err != nil {
-		return fmt.Errorf("%w: authentication revoked; ingress remains guarded: %v", api.ErrNetworkGuarded, err)
+		return fmt.Errorf("%w: authentication revoked; ingress remains guarded: %w", api.ErrNetworkGuarded, err)
 	}
 	return nil
 }
+
 func (g *applyGate) PatchPeer(ctx context.Context, st *store.Store, id string, patch store.PeerPatch) (store.Peer, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -163,6 +168,7 @@ func (g *applyGate) PatchPeer(ctx context.Context, st *store.Store, id string, p
 	}
 	return p, err
 }
+
 func (g *applyGate) DeletePeer(ctx context.Context, st *store.Store, id string) (store.PeerDeletion, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -185,6 +191,7 @@ func (g *applyGate) DeletePeer(ctx context.Context, st *store.Store, id string) 
 	}
 	return effects, err
 }
+
 func (g *applyGate) RotateReality(ctx context.Context, st *store.Store, id string, expected int) (store.Peer, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -207,6 +214,7 @@ func (g *applyGate) RotateReality(ctx context.Context, st *store.Store, id strin
 	}
 	return p, g.reconcileRevocation(ctx)
 }
+
 func (g *applyGate) SaveSettings(ctx context.Context, st *store.Store, next store.Settings) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -228,11 +236,13 @@ func (g *applyGate) SaveSettings(ctx context.Context, st *store.Store, next stor
 	}
 	return nil
 }
+
 func (g *applyGate) RealityStatus(ctx context.Context, st *store.Store, p store.Peer) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.realityStatus(ctx, st, p)
 }
+
 func (g *applyGate) realityStatus(ctx context.Context, st *store.Store, p store.Peer) string {
 	if !p.Enabled || !p.RealityEnabled {
 		return "disabled"
@@ -258,6 +268,7 @@ func (g *applyGate) realityStatus(ctx context.Context, st *store.Store, p store.
 	}
 	return "pending"
 }
+
 func (g *applyGate) RealityConfig(ctx context.Context, st *store.Store, id string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -289,7 +300,7 @@ func (g *applyGate) RealityConfig(ctx context.Context, st *store.Store, id strin
 var _ api.RealityPublisher = (*applyGate)(nil)
 
 func probePublicPort(endpoint ingressguard.Endpoint) error {
-	listener, err := net.Listen("tcp", net.JoinHostPort(endpoint.Address, strconv.Itoa(int(endpoint.Port))))
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", net.JoinHostPort(endpoint.Address, strconv.Itoa(int(endpoint.Port))))
 	if err != nil {
 		return err
 	}

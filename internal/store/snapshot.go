@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 )
 
 // Snapshot читает полное состояние в одной транзакции. Конфиг sing-box генерируется
@@ -26,7 +27,7 @@ func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
 			return err
 		}
 		err = tx.QueryRowContext(ctx, `SELECT identity_id FROM reality_identity WHERE singleton=1`).Scan(&snap.RealityIdentityID)
-		if err != nil && err != sql.ErrNoRows {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 		for _, p := range snap.Peers {

@@ -34,7 +34,7 @@ func newRealityGateFixture(t *testing.T) *realityGateFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(dir, 0700); err != nil {
+	if err := os.Chmod(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	f := &realityGateFixture{closed: true, wgClosed: true}
@@ -90,6 +90,7 @@ func newRealityGateFixture(t *testing.T) *realityGateFixture {
 	})
 	return f
 }
+
 func TestRealityPublicationRotationAndRecovery(t *testing.T) {
 	f := newRealityGateFixture(t)
 	ctx := context.Background()
@@ -147,6 +148,7 @@ func TestRealityPublicationRotationAndRecovery(t *testing.T) {
 		t.Fatal("stale revision accepted")
 	}
 }
+
 func TestRealityForeignListenerRejectedBeforeGuardMutation(t *testing.T) {
 	f := newRealityGateFixture(t)
 	f.closed = false
@@ -163,6 +165,7 @@ func TestRealityForeignListenerRejectedBeforeGuardMutation(t *testing.T) {
 		t.Fatal("port preflight wrote safety authority")
 	}
 }
+
 func TestRealityDraftDoesNotActivateOnBackgroundRefresh(t *testing.T) {
 	f := newRealityGateFixture(t)
 	ctx := context.Background()

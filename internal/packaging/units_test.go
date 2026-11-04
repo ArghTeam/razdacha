@@ -161,10 +161,10 @@ func TestIngressGuardDropInSupportsPackagedRuntime(t *testing.T) {
 	root := t.TempDir()
 	u := &UnitInstaller{Root: root, PackagedDirs: []string{"/usr/lib/systemd/system"}}
 	vendor := filepath.Join(root, "usr/lib/systemd/system/sing-box.service")
-	if err := os.MkdirAll(filepath.Dir(vendor), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(vendor), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(vendor, []byte("vendor fixture"), 0644); err != nil {
+	if err := os.WriteFile(vendor, []byte("vendor fixture"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := u.EnsureSingboxIngressGuard("/usr/local/bin/razdachad", "/etc/sing-box/config.json", "/var/lib/razdacha/public-ingress.json"); err != nil {

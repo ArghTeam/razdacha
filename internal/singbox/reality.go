@@ -81,7 +81,8 @@ func GenerateWithReality(snap store.Snapshot, plain PlainLists, live *store.Real
 	privateReject := func(auth []string) option.Rule {
 		return option.Rule{Type: C.RuleTypeDefault, DefaultOptions: option.DefaultRule{RawDefaultRule: option.RawDefaultRule{Inbound: []string{TagRealityIn}, AuthUser: auth, IPCIDR: deniedCIDRs}, RuleAction: rejectAction}}
 	}
-	rules := []option.Rule{unknown,
+	rules := []option.Rule{
+		unknown,
 		{Type: C.RuleTypeDefault, DefaultOptions: option.DefaultRule{RawDefaultRule: option.RawDefaultRule{Inbound: []string{TagRealityIn}, IPVersion: 6}, RuleAction: rejectAction}},
 		{Type: C.RuleTypeDefault, DefaultOptions: option.DefaultRule{RawDefaultRule: option.RawDefaultRule{Inbound: []string{TagRealityIn}, Port: []uint16{853}}, RuleAction: rejectAction}},
 		{Type: C.RuleTypeDefault, DefaultOptions: option.DefaultRule{RawDefaultRule: option.RawDefaultRule{Inbound: []string{TagRealityIn}, Port: []uint16{53}}, RuleAction: option.RuleAction{Action: C.RuleActionTypeHijackDNS}}},

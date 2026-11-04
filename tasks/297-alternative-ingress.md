@@ -171,3 +171,19 @@ whole exits, cached FakeIP, session closure and stale credentials after restart.
 Runtime execution, independent review and staging evidence must be recorded before
 claiming those checks passed or broad application compatibility. The earlier PR299
 capability proof remains a separate historical handwritten-policy result.
+
+### Generated product proof (2026-11-04)
+
+The coordinator ran the independently reviewed frozen generated-product fixture in
+an isolated Linux network/mount namespace under a 384 MiB memory limit. It passed
+in 24.76 seconds using sing-box 1.12.25. Installed daemon/runtime/config hashes and
+existing service process identities remained unchanged; no provider was contacted.
+Frozen test binary SHA256:
+`e5e6abc2efd442186177840a8efe869c18c6d7c032d9553be9361f1b8a87d2f0`;
+frozen product fixture source SHA256:
+`1b99cb16691a97645b675717d3acd87213b2d442bdbe013b9ee8403035a560f5`.
+This proves generated server policy with isolated proxy wrapper clients and a
+checked complete JSON profile. Running the delivered TUN profile itself is a
+separate namespace proof; it is not implied by this pass. Later fixture additions
+add unavailable-exit DNS assertions and bounded per-client cleanup and need their
+own execution record.
