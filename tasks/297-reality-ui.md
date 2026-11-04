@@ -96,3 +96,27 @@ legacy client details/actions remain required alongside the full browser runner.
 All 16 browser suites passed after the durable-mutation/JSON additions. The final
 focused suite adds explicit Network recovery and stale recovery-after-client-write
 coverage. Final syntax and whitespace checks pass; `go test ./ui` passes.
+
+## Fresh-main backend integration
+
+Fetched `origin/main` at `5158748b5d1e2a1fec4b842851f200933a168fa2` after reviewed
+backend #305 merged, then merged it into this branch without rebasing. Merge
+`0e062dcd99f46c1a517b78e9c2bc80f045b829db` retained the owned UI/context changes.
+Actual backend source and tests confirm flat settings and additive peer fields,
+legacy WireGuard defaults, committed/status-gated profiles, required positive
+rotation revisions, authenticated no-store URI/JSON attachments and durable
+revocation failures. The URI's trailing newline is trimmed; JSON attachment text is
+parsed only for delivery validation and stays out of panel state.
+
+Combined-tree `CGO_ENABLED=0 go test ./...` and `go vet ./...` passed. Linux/amd64
+pinned golangci-lint 2.12.2 passed with zero issues using an isolated lint cache.
+The shared lint cache initially warned about a deleted backend worktree; the clean
+isolated rerun removes that limitation. Handshake help now explicitly requires a
+public TLS service safe for unauthenticated connections from this gateway, including
+its source-address trust context, without imposing an address ban or approval flow.
+
+All 16 browser regression suites passed on the combined backend/UI tree, including
+36 Reality connection cases. Browser checks still use synthetic/intercepted API
+responses; they complement the passing actual backend Go tests and contract review,
+not an operating-system TUN/client connectivity run. Final syntax/whitespace checks
+passed. No SSH, production, real server or existing tunnel actions were performed.

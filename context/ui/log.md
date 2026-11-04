@@ -465,3 +465,15 @@ on demand with URI-equivalent secret lifetime/revision/mutation guards. URI help
 now explicitly requires app TUN and DNS proxy setup. Full JSON includes those
 routes, but UI/browser checks make no claim that a real TUN client has run. Legacy
 WireGuard defaults and profile delivery remain covered by existing regressions.
+
+### Final backend integration
+
+The UI branch merged fresh main `5158748` containing the reviewed ingress backend
+and safety foundation. Actual API contracts match the embedded UI, including plain
+URI trailing-newline handling, authenticated no-store JSON attachments, statuses,
+revision checks and durable revocation failures. Combined Go tests/vet and pinned
+Linux lint passed. Handshake help clarifies that the public fallback service must
+also be safe for unauthenticated connections originating from this gateway; no
+address prohibition or new approval workflow was added.
+All 16 browser suites, including 36 Reality scenarios, passed on the merged tree;
+these remain synthetic API fixtures rather than deployed networking/TUN evidence.
