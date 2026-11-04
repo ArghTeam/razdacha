@@ -203,3 +203,18 @@ CI remain merge gates. See the [implementation record](../../tasks/done/220-nati
 Whole-Internet peer source policies precede ordinary destination rules after DNS hijack. Same-exit DNS upstream and hostname bootstrap, plus an explicit source resolve action, prevent destination DNS fallback and stale FakeIP leakage. A post-resolve source-scoped private/special CIDR reject precedes the terminal exit. Missing/disabled/empty targets retain source-only route/DNS rejection. Health never authorizes fallback (ADR 0028).
 
 Implementation and verification record: [task 231](../../tasks/done/231-peer-egress.md). The bounded isolated Linux fixture and independent synthetic-browser checks passed; the completed record retains the failed first attempt and exact evidence boundaries. The fixture uses veth identities and a synthetic SOCKS exit, not encrypted incoming WireGuard or a DO client flow.
+
+## 2026-11-04 — #297 authenticated REALITY capability proof
+
+The opt-in pinned sing-box 1.12.25 fixture passed twelve subtests and the top-level
+test using synthetic credentials and local sinks in isolated Linux network/mount
+namespaces. Two same-source users retained distinct TCP/UDP routing and DNS identity;
+invalid UUID, unnamed-user, plaintext and wrong-key controls were rejected. Independent
+source, supervisor and final evidence review completed without material findings.
+
+Current runtime invariants are unchanged. Handwritten fixture policy does not prove
+product generation, public ingress protection, credential revocation, startup/recovery,
+WG coexistence or actual DPI resistance. The [completed proof record](../../tasks/done/297-reality-runtime-proof.md)
+preserves exact source/artifact identity, the earlier zero-test execution refusal,
+cleanup, post-test state equality and the file-level backup/recovery limits.
+The product ingress remains open under issue #297.
