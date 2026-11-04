@@ -227,3 +227,61 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
 - Shared destructive confirmation identifies the target and focuses Cancel. Closing,
   Escape, replacement and session dismissal cancel unconfirmed intent; confirmed
   operations retain their existing single-flight and initiating-session checks.
+
+
+## Authenticated Reality connection profiles
+
+- Connection methods are independent per client: legacy responses without method
+  fields retain WireGuard enabled and Reality disabled. Both methods share one
+  identity and configured route. Network settings use the existing independent
+  changed-field save boundary; only public Reality settings are editable. Public
+  key and short ID are read-only; server private keys never enter panel state.
+- Reality profile delivery uses the authenticated text endpoint and the server's
+  per-client `disabled`, `pending`, `available` or `guarded` status. Only available
+  profiles are requested. Saving configuration never claims active admission;
+  pending directs the administrator to Network settings and Apply. WireGuard
+  configuration delivery retains its existing behavior.
+- Method switching, connection edits, saved identity changes, close/replacement
+  and logout invalidate in-flight profile responses and clear application-held
+  text, QR and object URLs. Unsaved identity or method edits prevent copying and
+  downloading. Actual returned VLESS URIs drive text, QR, clipboard and download;
+  invalid responses never fall back to a synthetic URI. QR size failure leaves
+  text/copy/download available. Clipboard copies remain outside panel control.
+- Reality credential replacement retains the revision observed at confirmation entry,
+  rejects changed revisions on secret delivery, and clears delivered
+  copies before reconciliation. A failed operation may have revoked the credential:
+  the panel blocks another profile until explicit status reload, preserves the
+  server error and never invents successful revocation or a guarded response.
+  Pending/uncertain recovery belongs to the client and initiating session, surviving
+  close/replacement/reopen; reopened dialogs cannot fetch a profile while replacement
+  is pending. Failures invalidate the current same-client dialog even when the
+  initiating dialog is gone. Prior-session completions cannot poison a new login.
+  Only a fresh explicit authoritative reload clears uncertainty; pre-mutation reads
+  cannot clear a newer recovery record or overwrite drafts/intervening writes.
+- Inventory addresses, handshakes and counters describe WireGuard only. Reality-only
+  clients hide the reserved WireGuard address and counters; Reality availability is
+  distinct from connection activity, which the server does not currently measure.
+- Synthetic browser fixtures exercise the actual embedded modules without contacting
+  any daemon, provider or tunnel. Frontend checks do not establish real transport
+  connectivity, DNS behavior, server revocation or ingress guard correctness.
+
+
+### Durable access mutations and full client JSON
+
+- Reality-affecting peer method/enabled saves, peer deletion, and global Reality
+  settings writes can durably revoke credentials before returning an error. Their
+  session-bound pending/uncertain records survive dialogs just like rotation. A
+  failed response never restores cached profile admission. Explicit fresh status
+  reload fetches authoritative peers and, for a global failure, settings; an absent
+  deleted peer is removed and its stale dialog closes. Unrelated rename and legacy
+  WireGuard-only save behavior remains unchanged. Global mutations invalidate all
+  Reality delivery epochs and older status/inventory reads.
+- The optional sing-box download fetches the actual authenticated, no-store JSON
+  endpoint only on demand. Contents stay out of persistent panel state. Download
+  creation checks method, saved draft, modal/session, credential revision and access
+  mutation epoch; close, logout, replacement, rename and revocation invalidate late
+  responses. Existing object URL cleanup applies. The URI remains available as a
+  separate import option and requires app TUN and DNS-through-connection setup; URI
+  import alone cannot enforce DNS capture. The server-generated JSON includes TUN
+  and DNS routing. Browser regressions validate delivery/lifetime, not actual TUN
+  startup, operating-system routing, DNS capture or end-to-end client connectivity.
