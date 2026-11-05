@@ -51,3 +51,17 @@ are independent credentials sharing routing rules, with no automatic fallback.
 
 Only local synthetic fixtures were used. No server, sandbox, production tunnel,
 credential, deployment or release was modified by this implementation task.
+
+## Completed implementation
+
+Implementation completed in commit `3640d58d82a515bb4f46e59c1dbeab891f9b0dcd`
+and delivered in [PR #309](https://github.com/ArghTeam/razdacha/pull/309).
+Independent review approved that implementation commit. The Go, Linux lint,
+16-suite browser run, final affected browser reruns and pinned profile checker
+results above establish the completed local verification boundary.
+
+The implementation includes independent downloadability metadata, coherent private
+export responses, persistent pending activation guidance and unchanged explicit
+Apply/runtime admission. ADR 0036, API documentation and maintained layer context
+are included in the same PR. Merge and any later deployment are separate primary
+agent operations and are not claimed by this completed implementation record.
