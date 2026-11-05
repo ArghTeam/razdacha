@@ -329,3 +329,22 @@ Cloudflare exit matched the earlier chain and establishes no location guarantee
 or residential IP claim. No application code, production host, release or host-wide
 route changed. The [operational record](../../tasks/done/318-do-warp-egress.md)
 preserves exact topology, verification, rollback and evidence limits.
+
+## 2026-11-06 — Direct DO client profiles (#320)
+
+Added one fresh client user to each existing DO REALITY listener, retaining the
+RAC users, server keys, service units and route/DNS policy. Only the two owned
+services were restarted after checked atomic configuration publication. Additive
+public IPv4 TCP443/TCP2443 permits replace the earlier RAC-only access boundary;
+all original host rules and cloud rule membership/bindings remain. Cloud rule
+list order was provider-normalized, not treated as stable.
+
+Private URI/QR and full sing-box profiles point directly at DO. Actual-profile
+loopback probes passed TCP, UDP STUN and configured proxy DoH: direct exit
+165.22.196.130 with WARP off, versus Cloudflare exits with WARP on. No operator
+TUN or network change was made; Android on-device/import behavior and physical
+carrier path remain untested. The [operational record](../../tasks/done/320-direct-do-clients.md)
+retains rollback, exact evidence and access boundaries. Historical #318 remains
+unchanged. Existing RAC client smoke checks passed after both DO restarts; its
+protected saved-state fingerprint remained exact, Apply was clean and ingress
+released. No application code, production deployment or release changed.
