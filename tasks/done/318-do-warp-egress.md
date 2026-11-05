@@ -87,8 +87,8 @@ released and Apply was clean. Temporary local exported profiles and the owned AP
 
 ## Observed verification
 
-An isolated DO mixed-listener child first checked the new endpoint/DNS/guards.
-TCP trace reported `warp=on`; SOCKS UDP STUN mapped `104.28.219.139`. Host direct
+The new configuration passed `sing-box check`. An isolated DO mixed-listener
+child then passed positive TCP/UDP WARP checks. TCP trace reported `warp=on`; SOCKS UDP STUN mapped `104.28.219.139`. Host direct
 HTTPS remained DO `165.22.196.130`. The child was terminated after its probe.
 
 The actual exported REALITY client retained outbound, DNS and route sections;
