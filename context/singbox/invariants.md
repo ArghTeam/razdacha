@@ -60,3 +60,8 @@ description: генерация option.Options из состояния БД, п�
 - Complete client JSON captures both default address families, rejects IPv6 locally, hijacks DNS to gateway `10.8.0.1` through the proxy, uses proxy-only final routing and confines local DNS bootstrap to the gateway endpoint. The virtual IPv6 TUN address enables capture; it does not provide IPv6 Internet support. URI imports additionally require compatible application TUN/DNS settings.
 
 - Private/admin/IPv6 destination rejection applies to authenticated proxy flows. Native REALITY may relay unauthenticated TLS to the single explicitly configured handshake host:port before proxy policy. That target must intentionally be a public TLS exposure, including loopback/private addresses reaching an already-public TLS service; never select an admin/controller or intranet-only target.
+
+- Client profile construction accepts a validated delivery plan, whether committed
+  for active admission or saved for pending export. This does not change server
+  configuration generation, live credential intersection or explicit Apply authority
+  (ADR 0036).

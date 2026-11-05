@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -376,5 +378,164 @@ func TestRealityPartialGuardReleaseFailureReclosesBothPaths(t *testing.T) {
 				t.Fatal("partial release uncertainty hidden", status)
 			}
 		})
+	}
+}
+
+func TestRealityPendingDeliveryDoesNotAdmitCredentials(t *testing.T) {
+	f := newRealityGateFixture(t)
+	ctx := context.Background()
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	p, err := api.CreatePeer(ctx, f.st, "Pending client", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	yes := true
+	p, err = f.g.PatchPeer(ctx, f.st, p.ID, store.PeerPatch{RealityEnabled: &yes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := f.st.Snapshot(ctx)
+	authority, _ := os.ReadFile(f.g.network.path)
+	config, _ := os.ReadFile(f.g.configPath())
+	reloads := f.reloads
+	profile, err := f.g.RealityProfile(ctx, f.st, p.ID)
+	if err != nil || profile.State != "pending" || profile.Revision != p.RealityRevision {
+		t.Fatal("pending delivery unavailable", profile.State, err)
+	}
+	material, err := f.st.RealityDelivery(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(profile.URI, material.UUID) || !strings.Contains(string(profile.JSON), material.UUID) {
+		t.Fatal("profiles do not contain the current real credential")
+	}
+	if bin := os.Getenv("RAZDACHA_TEST_SINGBOX"); bin != "" {
+		path := filepath.Join(t.TempDir(), "pending-client.json")
+		if err := os.WriteFile(path, profile.JSON, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if output, err := exec.Command(bin, "check", "-c", path).CombinedOutput(); err != nil {
+			t.Fatalf("pinned runtime rejected pending client profile: %v %s", err, output)
+		}
+	}
+	if !f.g.RealityDownloadable(ctx, f.st, p) || f.g.RealityStatus(ctx, f.st, p) != "pending" {
+		t.Fatal("delivery confused with admission")
+	}
+	runtime, err := f.st.RealityRuntime(ctx, f.g.base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range runtime.Users {
+		if user.PeerID == p.ID {
+			t.Fatal("delivery admitted a pending credential")
+		}
+	}
+	after, _ := f.st.Snapshot(ctx)
+	nextAuthority, _ := os.ReadFile(f.g.network.path)
+	nextConfig, _ := os.ReadFile(f.g.configPath())
+	if !reflect.DeepEqual(before, after) || string(authority) != string(nextAuthority) || string(config) != string(nextConfig) || reloads != f.reloads {
+		t.Fatal("secret read changed policy or runtime")
+	}
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	active, err := f.g.RealityProfile(ctx, f.st, p.ID)
+	if err != nil || active.State != "available" || active.URI != profile.URI || string(active.JSON) != string(profile.JSON) {
+		t.Fatal("Apply changed delivered connection material", err)
+	}
+	rotated, err := f.g.RotateReality(ctx, f.st, p.ID, p.RealityRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := f.g.RealityProfile(ctx, f.st, p.ID)
+	if err != nil || replacement.State != "pending" || replacement.Revision != rotated.RealityRevision || strings.Contains(replacement.URI, material.UUID) {
+		t.Fatal("replacement profile is stale or admitted", err)
+	}
+	if f.g.RealityDownloadable(ctx, f.st, p) {
+		t.Fatal("stale inventory revision reported downloadable")
+	}
+}
+
+func TestRealityDeliveryRefusesUnavailableSavedMaterial(t *testing.T) {
+	for _, reason := range []string{"disabled", "global-off", "deleted", "endpoint"} {
+		t.Run(reason, func(t *testing.T) {
+			f := newRealityGateFixture(t)
+			ctx := context.Background()
+			if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+				t.Fatal(err)
+			}
+			no := false
+			switch reason {
+			case "disabled":
+				if _, err := f.g.PatchPeer(ctx, f.st, f.p.ID, store.PeerPatch{Enabled: &no}); err != nil {
+					t.Fatal(err)
+				}
+			case "global-off":
+				cfg, _ := f.st.Settings(ctx)
+				cfg.RealityEnabled = false
+				if err := f.g.SaveSettings(ctx, f.st, cfg); err != nil {
+					t.Fatal(err)
+				}
+			case "deleted":
+				if _, err := f.g.DeletePeer(ctx, f.st, f.p.ID); err != nil {
+					t.Fatal(err)
+				}
+			case "endpoint":
+				// A new pending client cannot use an unspecified saved endpoint, while
+				// the already active client still exports its committed endpoint.
+				cfg, _ := f.st.Settings(ctx)
+				cfg.EndpointHost = ""
+				if err := f.g.SaveSettings(ctx, f.st, cfg); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := f.g.RealityProfile(ctx, f.st, f.p.ID); err != nil {
+					t.Fatal("active committed endpoint lost", err)
+				}
+				p, err := api.CreatePeer(ctx, f.st, "Pending", time.Now())
+				if err != nil {
+					t.Fatal(err)
+				}
+				yes := true
+				p, err = f.g.PatchPeer(ctx, f.st, p.ID, store.PeerPatch{RealityEnabled: &yes})
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.p = p
+			}
+			if _, err := f.g.RealityProfile(ctx, f.st, f.p.ID); err == nil {
+				t.Fatal("unavailable material delivered")
+			}
+		})
+	}
+}
+
+func TestRealityFirstSavedGlobalEnableCanExportBeforeApply(t *testing.T) {
+	f := newRealityGateFixture(t)
+	ctx := context.Background()
+	cfg, _ := f.st.Settings(ctx)
+	cfg.RealityEnabled = false
+	if err := f.st.SaveSettings(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	cfg.RealityEnabled = true
+	if err := f.g.SaveSettings(ctx, f.st, cfg); err != nil {
+		t.Fatal(err)
+	}
+	p, err := f.st.Peer(ctx, f.p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := f.g.RealityProfile(ctx, f.st, p.ID)
+	if err != nil || profile.State != "pending" || !strings.HasPrefix(profile.URI, "vless://") {
+		t.Fatal("first saved global enable did not export", err)
+	}
+	runtime, err := f.st.RealityRuntime(ctx, f.g.base)
+	if err != nil || len(runtime.Users) != 0 {
+		t.Fatal("export activated global listener", err)
 	}
 }

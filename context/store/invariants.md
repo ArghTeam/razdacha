@@ -50,6 +50,12 @@ description: "SQLite: схема четырёх сущностей, миграц
 
 - Restore disables the global peer flag only when its WG method is disabled as Reality is stripped. Such clients remain editable while disabled and require explicit method selection plus configuration/Apply; every WG-enabled peer retains its enabled flag, keys and address.
 
+- `RealityDelivery` reads one export-only transaction under the publication gate:
+  saved settings, enabled peer/current credential revision and public server identity.
+  It returns no private server key, initializes nothing and changes no admission.
+  Missing/disabled/deleted material is refused. `RealityRuntime` remains unchanged;
+  pending export never authorizes runtime users (ADR 0036).
+
 ## RAC-only onboarding composition
 
 Onboarding fingerprints share the ordinary transaction-local complete Snapshot

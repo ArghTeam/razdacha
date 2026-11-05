@@ -120,7 +120,7 @@ not affect the designated RAC deployment. That inventory involved no metadata
 writes and is not deployment or functional rollback proof. Main has no candidate
 onboarding metadata, so this limitation is outside the main feature scope.
 
-## Final functional source freeze
+## Historical RC9 functional source freeze
 
 The final functional main merge changes only the clarified handshake-target help
 copy plus its UI task/log records. Candidate WG counters and both onboarding
@@ -136,3 +136,27 @@ commit, static Linux target settings, checksums and Go build information. A loca
 metadata probe must distinguish linker/API values from potentially misleading
 worktree VCS metadata; it is not a deployed Linux daemon or network test. No source
 changes are permitted after the artifact version/hash freeze.
+
+## RC10 pending-profile upgrade after sandbox reset
+
+The primary confirmed implementation PR #309 merged at
+`a8530e3579f89f02bc2e941f2ac45368f3a8bb37` for issue #308. This worktree fetched
+that exact fresh `origin/main`, verified the merge is reachable and composed it
+into the existing integration branch. ADR 0036's pending profile delivery, coherent
+response metadata and unchanged runtime admission are retained alongside the
+historical candidate's onboarding snapshot/guard checks and WG-only counters.
+Only context/index conflicts required manual composition; production code merged
+automatically.
+
+The sandbox has since been fully reset by the primary under explicit user
+authorization. Earlier cloned-state preservation/rollback notes above are historical
+RC9 records. This upgrade must preserve the current clean state, standard password
+and all current clients. It performs no setup, reset, restore, original-archive
+access, server access or deployment in this worker task. Candidate code lineage
+does not authorize reintroducing any old network/authentication data.
+
+RC10 artifacts will use the new clean post-merge integration commit, version
+`0.11.0-rc.10.rac.<12-character-source>`, full linker commit and process-local
+`GIT_DIR`/`GIT_WORK_TREE` overrides. A new private external directory and regenerated
+overlay/expected identities prevent reuse of RC9 binaries or metadata. Final source
+SHA and checksums belong in the external manifest; no source changes follow freeze.

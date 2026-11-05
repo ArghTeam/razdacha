@@ -22,9 +22,13 @@ public listeners. The task distinguishes the earlier handwritten capability proo
 from generated-policy, full-client-profile and deployment validation; no general
 DPI resistance or untested application compatibility is implied.
 
+[ADR 0036](../docs/decisions/0036-pending-reality-profile-delivery.md) separates saved
+REALITY profile delivery from activation: pending QR/URI/JSON can be imported before
+explicit Apply, with persistent pending notices and unchanged runtime admission.
+
 ## RAC-only integration source
 
-This branch preserves the independently deployed candidate's free-start wizard,
+This branch preserves the historical candidate code for its free-start wizard,
 fresh panel bootstrap and measured WG aggregate traffic alongside main's REALITY
 implementation. It is not a proposal to publish those candidate-only features to
 main. The [integration record](../tasks/297-rac-reality-integration.md) identifies
@@ -32,3 +36,8 @@ the source commits, canonical onboarding authority and WG-only counter semantics
 Both historical decisions numbered 0032 retain their full filenames and source
 lineage in the decision index. Host deployment, rollback and client connectivity
 evidence are separate from this local source composition.
+
+The designated sandbox was subsequently fully reset under explicit authorization.
+The RC10 build updates code only: current clean state, password and clients remain
+authoritative. Historical cloned VPN state and its private archive are not inputs
+to this build or deployment preparation.

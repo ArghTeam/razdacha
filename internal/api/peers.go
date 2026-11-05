@@ -31,17 +31,18 @@ var ErrNoAddress = errors.New("в пуле не осталось свободн�
 // означал бы «замерили и там ноль» — для «онлайн» и «последний хендшейк» это
 // противоположные состояния.
 type peerResponse struct {
-	WireGuardEnabled     bool      `json:"wireguard_enabled"`
-	RealityEnabled       bool      `json:"reality_enabled"`
-	RealityProfileStatus string    `json:"reality_profile_status"`
-	RealityRevision      int       `json:"reality_revision"`
-	EgressTunnelID       *string   `json:"egress_tunnel_id"`
-	ID                   string    `json:"id"`
-	Name                 string    `json:"name"`
-	PublicKey            string    `json:"public_key"`
-	Address              string    `json:"address"`
-	Enabled              bool      `json:"enabled"`
-	CreatedAt            time.Time `json:"created_at"`
+	WireGuardEnabled           bool      `json:"wireguard_enabled"`
+	RealityEnabled             bool      `json:"reality_enabled"`
+	RealityProfileStatus       string    `json:"reality_profile_status"`
+	RealityProfileDownloadable bool      `json:"reality_profile_downloadable"`
+	RealityRevision            int       `json:"reality_revision"`
+	EgressTunnelID             *string   `json:"egress_tunnel_id"`
+	ID                         string    `json:"id"`
+	Name                       string    `json:"name"`
+	PublicKey                  string    `json:"public_key"`
+	Address                    string    `json:"address"`
+	Enabled                    bool      `json:"enabled"`
+	CreatedAt                  time.Time `json:"created_at"`
 
 	Online        *bool      `json:"online"`
 	LastHandshake *time.Time `json:"last_handshake"`

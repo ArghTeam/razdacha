@@ -3,6 +3,25 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-11-04
+
+### #297 — Isolated encrypted WG and REALITY coexistence
+
+**Changed:** Added a separate opt-in exercise to the existing private kernel WG
+quality topology. The generated REALITY runtime and delivered-profile-derived
+client run alongside the reciprocal encrypted WG peer.
+**New surface:** A reviewed isolated Linux execution passed in 5.31s, requiring
+repeated REALITY TCP/UDP and TCP/UDP DNS controls during WG matrix/persistent
+traffic, a stable WG peer key and increasing encrypted bidirectional counters.
+The supervisor verified unchanged installed binaries/config/service PIDs and
+complete owned process/cgroup cleanup.
+**Beware:** The first frozen attempt safely failed on a fixture-only directory
+mode; production authority checks were retained. The corrected wrapper binds its
+owned direct underlay, while WG address/MTU publication still uses the test adapter.
+This is not full delivered-TUN, systemd, provider/DPI or production key-lifecycle
+evidence. Exact frozen hashes and limitations remain in
+[`tasks/297-wg-reality-coexistence.md`](../../tasks/297-wg-reality-coexistence.md).
+
 ## 2026-10-21
 
 ### #266 — Isolated encrypted client connection-quality fixture

@@ -239,10 +239,15 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   changed-field save boundary; only public Reality settings are editable. Public
   key and short ID are read-only; server private keys never enter panel state.
 - Reality profile delivery uses the authenticated text endpoint and the server's
-  per-client `disabled`, `pending`, `available` or `guarded` status. Only available
-  profiles are requested. Saving configuration never claims active admission;
-  pending directs the administrator to Network settings and Apply. WireGuard
-  configuration delivery retains its existing behavior.
+  per-client activation status plus independent `reality_profile_downloadable` flag.
+  Downloadable pending profiles are requested immediately. Response state/revision
+  headers must be valid and match the observed credential revision. A persistent
+  **Works after Apply** notice remains through QR, copy and both downloads when
+  inventory or delivered metadata is pending. **Close and go to Apply** clears the
+  modal and focuses the existing global action; it cannot save or Apply, and unsaved
+  edits block navigation. Missing setup directs the administrator to Network settings.
+  Saving configuration never claims active admission. WireGuard delivery is unchanged
+  (ADR 0036).
 - Method switching, connection edits, saved identity changes, close/replacement
   and logout invalidate in-flight profile responses and clear application-held
   text, QR and object URLs. Unsaved identity or method edits prevent copying and
@@ -277,7 +282,9 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   reload fetches authoritative peers and, for a global failure, settings; an absent
   deleted peer is removed and its stale dialog closes. Unrelated rename and legacy
   WireGuard-only save behavior remains unchanged. Global mutations invalidate all
-  Reality delivery epochs and older status/inventory reads.
+  Reality delivery epochs and older status/inventory reads. Successful global settings
+  saves clear cached downloadability until authoritative inventory reload; stale
+  readiness cannot survive a global disable.
 - The optional sing-box download fetches the actual authenticated, no-store JSON
   endpoint only on demand. Contents stay out of persistent panel state. Download
   creation checks method, saved draft, modal/session, credential revision and access

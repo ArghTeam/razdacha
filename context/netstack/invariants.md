@@ -50,6 +50,13 @@ description: wg0, nft-правила и маршрутизация через ne
 - Address/MTU publication still uses the test WG adapter; the fixture does not
   establish production key allocation or live peer-reconciliation lifecycle.
   Its two logical source identities share one synthetic encrypted peer.
+- The additional `RAZDACHA_WIRE_REALITY_COEXIST=1` exercise requires both existing
+  quality opt-ins. It checks concurrent authenticated REALITY TCP/UDP/DNS while
+  that real kernel WG peer retains its key and advances bidirectional encrypted
+  counters. The profile-derived wrapper binds only its synthetic `under1`; it is
+  not a full-TUN, systemd, provider or production WG-key-lifecycle proof. The
+  [coexistence record](../../tasks/297-wg-reality-coexistence.md) pins its execution
+  and preserves the existing WG address/MTU publication-adapter limitation.
 
 ## Public client safety boundary (ADR 0032)
 

@@ -55,6 +55,8 @@ Main lineage:
 
 - [0032: Parallel authenticated client ingress](0032-parallel-authenticated-client-ingress.md) — optional, disabled-by-default VLESS + REALITY alongside WireGuard, shared client policy and guarded lifecycle.
 
+- [0036: Saved REALITY profiles before activation](0036-pending-reality-profile-delivery.md) — pending URI/QR/JSON delivery without runtime admission; partially supersedes 0032 delivery.
+
 RAC candidate lineage:
 
 - [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.

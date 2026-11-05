@@ -282,32 +282,61 @@ func (g *applyGate) realityStatus(ctx context.Context, st *store.Store, p store.
 	return "pending"
 }
 
-func (g *applyGate) RealityConfig(ctx context.Context, st *store.Store, id string) (string, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	p, err := st.Peer(ctx, id)
+// realityProfile separates secret export from runtime admission. The gate prevents
+// authentication/settings changes while the store reads one coherent live plan.
+func (g *applyGate) realityProfile(ctx context.Context, st *store.Store, id string) (api.RealityProfile, error) {
+	var out api.RealityProfile
+	if !g.network.initialized || g.network.uncertain || g.publicGuarded() {
+		return out, api.ErrNetworkGuarded
+	}
+	material, err := st.RealityDelivery(ctx, id)
 	if err != nil {
-		return "", err
+		return out, err
 	}
-	if g.realityStatus(ctx, st, p) != "available" {
-		return "", fmt.Errorf("%w: profile is not applied and available", api.ErrNetworkGuarded)
-	}
-	live, err := st.RealityRuntime(ctx, g.base)
-	if err != nil {
-		return "", err
-	}
-	if live.Identity == nil {
-		return "", api.ErrNetworkGuarded
-	}
-	for _, u := range live.Users {
-		if u.PeerID == id {
-			cfg := g.base.Settings
-			q := url.Values{"encryption": {"none"}, "security": {"reality"}, "sni": {cfg.RealityServerName}, "fp": {"chrome"}, "pbk": {live.Identity.PublicKey}, "sid": {live.Identity.ShortID}, "type": {"tcp"}, "packetEncoding": {"xudp"}}
-			uri := url.URL{Scheme: "vless", User: url.User(u.UUID), Host: net.JoinHostPort(cfg.EndpointHost, strconv.Itoa(cfg.RealityListenPort)), RawQuery: q.Encode(), Fragment: p.Name}
-			return uri.String(), nil
+	cfg, p := material.Settings, material.Peer
+	out.State, out.Revision = "pending", p.RealityRevision
+	if g.base.Settings.RealityEnabled {
+		if material.IdentityID != g.base.RealityIdentityID {
+			return out, api.ErrNetworkGuarded
+		}
+		for _, a := range g.base.RealityAdmissions {
+			if a.PeerID != id || a.CredentialID != p.RealityCredentialID || a.Revision != p.RealityRevision {
+				continue
+			}
+			for _, committed := range g.base.Peers {
+				if committed.ID == id && committed.Enabled && committed.RealityEnabled {
+					cfg, out.State = g.base.Settings, "available"
+				}
+			}
 		}
 	}
-	return "", api.ErrNetworkGuarded
+	if err := cfg.ValidateRealityDelivery(); err != nil {
+		return api.RealityProfile{}, err
+	}
+	out.JSON, err = singbox.RealityClientProfile(cfg, material.UUID, material.PublicKey, material.ShortID)
+	if err != nil {
+		return api.RealityProfile{}, err
+	}
+	q := url.Values{"encryption": {"none"}, "security": {"reality"}, "sni": {cfg.RealityServerName}, "fp": {"chrome"}, "pbk": {material.PublicKey}, "sid": {material.ShortID}, "type": {"tcp"}, "packetEncoding": {"xudp"}}
+	uri := url.URL{Scheme: "vless", User: url.User(material.UUID), Host: net.JoinHostPort(cfg.EndpointHost, strconv.Itoa(cfg.RealityListenPort)), RawQuery: q.Encode(), Fragment: p.Name}
+	out.URI = uri.String()
+	return out, nil
+}
+
+func (g *applyGate) RealityProfile(ctx context.Context, st *store.Store, id string) (api.RealityProfile, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.realityProfile(ctx, st, id)
+}
+
+func (g *applyGate) RealityDownloadable(ctx context.Context, st *store.Store, p store.Peer) bool {
+	profile, err := g.RealityProfile(ctx, st, p.ID)
+	return err == nil && profile.Revision == p.RealityRevision
+}
+
+func (g *applyGate) RealityConfig(ctx context.Context, st *store.Store, id string) (string, error) {
+	profile, err := g.RealityProfile(ctx, st, id)
+	return profile.URI, err
 }
 
 var _ api.RealityPublisher = (*applyGate)(nil)
@@ -327,28 +356,8 @@ func guardSavedPublic(configPath, manifestPath string) error {
 }
 
 func (g *applyGate) RealityClientConfig(ctx context.Context, st *store.Store, id string) ([]byte, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	p, err := st.Peer(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if g.realityStatus(ctx, st, p) != "available" {
-		return nil, api.ErrNetworkGuarded
-	}
-	live, err := st.RealityRuntime(ctx, g.base)
-	if err != nil {
-		return nil, err
-	}
-	if live.Identity == nil {
-		return nil, api.ErrNetworkGuarded
-	}
-	for _, u := range live.Users {
-		if u.PeerID == id {
-			return singbox.RealityClientProfile(g.base.Settings, u.UUID, live.Identity.PublicKey, live.Identity.ShortID)
-		}
-	}
-	return nil, api.ErrNetworkGuarded
+	profile, err := g.RealityProfile(ctx, st, id)
+	return profile.JSON, err
 }
 
 func (g *applyGate) emergencyPublicGuard() error {

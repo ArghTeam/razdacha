@@ -929,7 +929,9 @@ Peer POST/PATCH accepts `wireguard_enabled` (true for legacy peers) and
 retain a connection method. Responses add `reality_revision` and
 `reality_profile_status`: disabled, pending, available or guarded. Available means
 committed configuration and current admission, not an observed handshake. Existing
-peer statistics describe WireGuard only.
+peer statistics describe WireGuard only. `reality_profile_downloadable` independently
+reports whether the current saved credential can be exported; a pending client can
+be downloadable without active runtime admission.
 
 | Method | Path | Response |
 |---|---|---|
@@ -938,8 +940,16 @@ peer statistics describe WireGuard only.
 | POST | `/api/peers/{id}/reality/rotate` | Body `{ "expected_revision": 1 }`; standard updated peer response |
 
 All require the panel session. Dedicated profile responses and refusals are
-`Cache-Control: no-store`. Delivery requires an enabled, applied, unguarded listener
-and a current matching live credential; draft endpoints are never exported.
+`Cache-Control: no-store`. Delivery requires enabled global/client access, coherent
+current credentials/public identity, valid connection settings and released guards.
+Pending profiles can be exported before Apply; only explicit Apply activates them.
+Active clients retain committed endpoints; pending clients use validated saved
+settings. Both endpoints derive bodies and headers from one gated delivery result:
+`X-Razdacha-Reality-State: pending|available` and
+`X-Razdacha-Reality-Revision: <positive integer>`. URI bodies remain plain text and
+JSON bodies remain complete engine configurations. A missing gateway endpoint,
+identity or disabled global setup returns an actionable 400; guarded or uncertain
+publication returns 503. No GET creates keys or changes runtime admission (ADR 0036).
 Rotation returns 409 on a stale revision. Replacement admission remains pending
 until Apply. A 503 after revocation can mean the database mutation committed but
 checked reconciliation failed: refresh peers/settings and recover with Apply; do

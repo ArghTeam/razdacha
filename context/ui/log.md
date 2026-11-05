@@ -32,6 +32,18 @@ interface-reset scope rather than lifetime history.
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-11-05
+
+### #308 — pending REALITY profile delivery
+
+**Changed:** Dedicated profile delivery can export validated saved credentials before
+Apply, with independent downloadability and coherent activation/revision headers.
+Active clients retain committed endpoints. Pending exports do not admit runtime users.
+
+**Beware:** Explicit Apply still activates access. Guarded/uncertain/revoked states
+and existing secret lifetime protections remain enforced. See ADR 0036.
+
+
 ## 2026-10-21
 
 ### #248 — honest diagnostics and compact shared shell

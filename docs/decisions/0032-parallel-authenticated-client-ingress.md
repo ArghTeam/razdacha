@@ -2,6 +2,9 @@
 
 Date: 2026-11-04 · Status: **accepted** · Tracker: [#297](https://github.com/ArghTeam/razdacha/issues/297)
 
+Profile delivery requirement partially superseded by [ADR 0036](0036-pending-reality-profile-delivery.md).
+Runtime admission, revocation and guarded publication remain unchanged.
+
 ## Context
 
 An optional VLESS + REALITY TCP listener complements standard WireGuard when

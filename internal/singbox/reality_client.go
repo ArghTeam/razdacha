@@ -13,11 +13,11 @@ import (
 // cannot configure an application's DNS routing or prevent native IPv6 escape.
 func RealityClientProfile(settings store.Settings, credential, publicKey, shortID string) ([]byte, error) {
 	if settings.EndpointHost == "" || credential == "" || publicKey == "" || shortID == "" {
-		return nil, fmt.Errorf("REALITY client profile requires an applied endpoint and credential")
+		return nil, fmt.Errorf("REALITY client profile requires a configured endpoint and credential")
 	}
 	mtu := settings.ClientMTU
 	if mtu < store.MinClientMTU || mtu > store.MaxClientMTU {
-		return nil, fmt.Errorf("invalid applied client MTU")
+		return nil, fmt.Errorf("invalid configured client MTU")
 	}
 	encoding := "xudp"
 	opts := option.Options{
