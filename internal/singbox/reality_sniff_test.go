@@ -60,7 +60,7 @@ func TestRealitySniffRetainsGuardsScopeAndExitPrecedence(t *testing.T) {
 		if len(d.RuleSet) > 0 && firstSet < 0 {
 			firstSet = i
 		}
-		if strings.Join(d.AuthUser, ",") == store.RealityUserName("b") && d.Action == C.RuleActionTypeRoute && len(d.RuleSet) == 0 {
+		if strings.Join(d.AuthUser, ",") == store.RealityUserName("b") && d.Action == C.RuleActionTypeRoute && d.RouteOptions.Outbound == TunnelTag("exit") && len(d.RuleSet) == 0 {
 			wholeExit = i
 		}
 	}

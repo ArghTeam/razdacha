@@ -149,7 +149,7 @@ export const session = {
 /* --- Пиры ---------------------------------------------------------------- */
 
 export const peers = {
-  list: () => get('/api/peers'),
+  list: () => get('/api/peers').then(observePeerReceipts),
   create: (name, connections = {}) => post('/api/peers', { name, ...connections }),
   update: (id, patchBody) => patch(`/api/peers/${encodeURIComponent(id)}`, patchBody),
   remove: (id) => del(`/api/peers/${encodeURIComponent(id)}`),
@@ -407,4 +407,16 @@ export function logLines(payload) {
   if (Array.isArray(payload)) return payload.map(String);
   if (payload && Array.isArray(payload.lines)) return payload.lines.map(String);
   return [];
+}
+
+// Monotonic receipt time avoids comparing the browser clock with the server clock.
+const peerActivityReceipts = new WeakMap();
+export function peerActivityAge(peer) {
+  const received = peerActivityReceipts.get(peer);
+  return received === undefined ? null : performance.now() - received;
+}
+function observePeerReceipts(peers) {
+  const received = performance.now();
+  for (const peer of peers) if (peer?.reality_activity) peerActivityReceipts.set(peer, received);
+  return peers;
 }

@@ -140,6 +140,7 @@ func (g *applyGate) publicGuarded() bool {
 
 // closeForRevocation leaves durable guard intent before touching live secrets.
 func (g *applyGate) closeForRevocation() error {
+	g.activityEpoch++
 	b, err := os.ReadFile(g.configPath())
 	if err != nil {
 		return err

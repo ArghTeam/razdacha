@@ -169,3 +169,21 @@ checks that the original job identity remains retained beyond ten seconds.
 Configure and Finish retain their existing publication lock and also treat a
 guarded public-ingress manifest as uncertain. An independent runtime start cannot
 permit setup completion before checked Apply repairs and releases that ingress.
+
+## Authenticated REALITY flow observations (ADR 0038)
+
+- Client inventory adds `reality_activity` with `state`, nullable `open_flows` and
+  nullable `observed_at`. Counts describe open flows in a local runtime snapshot,
+  never idle online presence or byte volume. Missing, pending, disabled, guarded,
+  unsupported and failed observations are unavailable, not measured zero.
+- A bounded `/connections` read accepts only the pinned authenticated singleton
+  route prefix and dedicated VLESS inbound. It ignores public addresses as identity
+  and returns no connection destinations. The checked configuration must contain
+  per-user direct fallbacks before empty observations are considered supported.
+- One two-second read is shared across concurrent inventories; successful and failed
+  results have a five-second cache interval. Responses are limited to 1 MiB and
+  4096 flows. Request cancellation cannot create overlapping controller reads.
+- Private authority combines publication epoch, checked configuration and effective
+  admission revisions before and after observation. Apply/revocation advances the
+  epoch, including same-byte publication; late or mismatched samples cannot appear
+  as fresh activity. The API rechecks available admission before exposing a count.

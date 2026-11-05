@@ -59,6 +59,8 @@ Main lineage:
 
 - [0037: REALITY visible TCP names](0037-reality-visible-tcp-names.md) — bounded TLS/HTTP matching for numeric IPv4 requests without retargeting; extends 0032.
 
+- [0038: Authenticated REALITY flow observations](0038-authenticated-reality-flow-observations.md) — bounded per-client open-flow counts from singleton authenticated runtime routes.
+
 RAC candidate lineage:
 
 - [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.

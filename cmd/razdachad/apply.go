@@ -18,6 +18,7 @@ import (
 // applyGate owns all manual, list and pool publication (ADR 0023).
 // The editable database is never an automatic source of applied routing policy.
 type applyGate struct {
+	activityEpoch     uint64
 	onboardingCatalog func(context.Context, string) ([]store.PoolServer, error)
 	store             *store.Store
 	inner             *singbox.Applier

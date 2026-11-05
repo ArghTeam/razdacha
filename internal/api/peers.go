@@ -31,18 +31,19 @@ var ErrNoAddress = errors.New("в пуле не осталось свободн�
 // означал бы «замерили и там ноль» — для «онлайн» и «последний хендшейк» это
 // противоположные состояния.
 type peerResponse struct {
-	WireGuardEnabled           bool      `json:"wireguard_enabled"`
-	RealityEnabled             bool      `json:"reality_enabled"`
-	RealityProfileStatus       string    `json:"reality_profile_status"`
-	RealityProfileDownloadable bool      `json:"reality_profile_downloadable"`
-	RealityRevision            int       `json:"reality_revision"`
-	EgressTunnelID             *string   `json:"egress_tunnel_id"`
-	ID                         string    `json:"id"`
-	Name                       string    `json:"name"`
-	PublicKey                  string    `json:"public_key"`
-	Address                    string    `json:"address"`
-	Enabled                    bool      `json:"enabled"`
-	CreatedAt                  time.Time `json:"created_at"`
+	RealityActivity            *realityActivityResponse `json:"reality_activity,omitempty"`
+	WireGuardEnabled           bool                     `json:"wireguard_enabled"`
+	RealityEnabled             bool                     `json:"reality_enabled"`
+	RealityProfileStatus       string                   `json:"reality_profile_status"`
+	RealityProfileDownloadable bool                     `json:"reality_profile_downloadable"`
+	RealityRevision            int                      `json:"reality_revision"`
+	EgressTunnelID             *string                  `json:"egress_tunnel_id"`
+	ID                         string                   `json:"id"`
+	Name                       string                   `json:"name"`
+	PublicKey                  string                   `json:"public_key"`
+	Address                    string                   `json:"address"`
+	Enabled                    bool                     `json:"enabled"`
+	CreatedAt                  time.Time                `json:"created_at"`
 
 	Online        *bool      `json:"online"`
 	LastHandshake *time.Time `json:"last_handshake"`
@@ -92,10 +93,14 @@ func (s *Server) handleListPeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stats := s.peerStats(r)
+	activity := s.observeReality(r.Context(), list)
 	now := s.now()
 	out := make([]peerResponse, 0, len(list))
 	for _, p := range list {
 		resp := s.peerResponse(r.Context(), p)
+		if a, ok := activity[p.ID]; ok && resp.RealityProfileStatus == "available" {
+			resp.RealityActivity = &a
+		}
 		if st, ok := stats[p.PublicKey]; ok {
 			resp = resp.withStat(st, now)
 		}

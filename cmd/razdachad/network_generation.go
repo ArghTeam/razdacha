@@ -58,6 +58,7 @@ func writeGeneration(path string, gen networkGeneration) error {
 // publish validates before mutation, then closes client ingress across every
 // publication boundary. The separate kernel guard survives daemon failure.
 func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, repair bool) (singbox.ApplyResult, error) {
+	g.activityEpoch++
 	n := g.network
 	artifactDir, err := filepath.Abs(filepath.Join(filepath.Dir(n.path), "lists", "native"))
 	if err != nil {

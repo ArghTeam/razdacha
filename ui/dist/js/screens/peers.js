@@ -37,7 +37,35 @@ export async function load() {
   }
 }
 
+let activityTimer = null;
+
+// Expire only observation text and dots while a dialog/menu pauses ordinary polls.
+// Updating these nodes preserves the editor, focus and unsaved form state.
+function scheduleActivityExpiry() {
+  if (activityTimer !== null) clearTimeout(activityTimer);
+  activityTimer = setTimeout(() => {
+    activityTimer = null;
+    if (state.screen !== 'peers') return;
+    for (const row of document.querySelectorAll('[data-client-activity]')) {
+      const peer = peerById(row.dataset.clientActivity);
+      if (!peer) continue;
+      const on = peer.enabled !== false && (wireGuardEnabled(peer) && isOnline(peer) || realityFlowCount(peer) > 0);
+      const dot = row.querySelector('.client-name .dot');
+      if (dot) { dot.classList.toggle('on', on); dot.classList.toggle('off', !on); }
+      const text = row.querySelector('[data-reality-activity]');
+      if (text) text.textContent = realityRecoveryMessage(peer.id) || realityStatusText(peer);
+    }
+    if (editor && current(editor)) {
+      const peer = peerById(editor.id);
+      const status = editor.modal.querySelector('#client-reality-status');
+      if (peer && status) status.textContent = realityRecoveryMessage(peer.id) || realityStatusText(peer);
+    }
+    scheduleActivityExpiry();
+  }, 1000);
+}
+
 export function view() {
+  scheduleActivityExpiry();
   if (state.missing.has('peers')) {
     return head() + `<div class="card">${notImplemented('Clients')}</div>`;
   }
@@ -45,11 +73,12 @@ export function view() {
   const online = state.peers.filter(peer => wireGuardEnabled(peer) && isOnline(peer)).length;
   const selected = state.peers.filter((p) => p.egress_tunnel_id).length;
   const rows = state.peers.map((p) => {
-    const on = wireGuardEnabled(p) && isOnline(p);
-    const activity = p.enabled === false ? 'Disabled' : !wireGuardEnabled(p) ? 'WireGuard disabled' : on ? 'WireGuard connected' : p.last_handshake && Number.isFinite(Date.parse(p.last_handshake)) ? `WireGuard handshake ${new Date(p.last_handshake).toLocaleString('en-GB')}` : 'No WireGuard handshake yet';
-    const reality = realityEnabled(p) ? `<div class="row-meta">${esc(realityRecoveryMessage(p.id) || realityStatusText(p))}</div>` : '';
+    const wgOn = wireGuardEnabled(p) && isOnline(p);
+    const on = wgOn || realityFlowCount(p) > 0;
+    const activity = p.enabled === false ? 'Disabled' : !wireGuardEnabled(p) ? 'WireGuard disabled' : wgOn ? 'WireGuard connected' : p.last_handshake && Number.isFinite(Date.parse(p.last_handshake)) ? `WireGuard handshake ${new Date(p.last_handshake).toLocaleString('en-GB')}` : 'No WireGuard handshake yet';
+    const reality = realityEnabled(p) ? `<div class="row-meta" data-reality-activity>${esc(realityRecoveryMessage(p.id) || realityStatusText(p))}</div>` : '';
     return `
-      <article class="row client-row${p.enabled === false ? ' dim' : ''}" aria-label="Client ${esc(p.name)}">
+      <article class="row client-row${p.enabled === false ? ' dim' : ''}" aria-label="Client ${esc(p.name)}" data-client-activity="${esc(p.id)}">
         <div class="client-identity">
           <div class="client-name"><span class="dot ${on ? 'on' : 'off'}" aria-hidden="true"></span><h2>${esc(p.name)}</h2></div>
           ${wireGuardEnabled(p) ? `<div class="mono row-meta">WG · ${esc(p.address)}</div>` : ''}
@@ -80,7 +109,7 @@ export function view() {
       <span>Saved routes need Apply. Device access can change during synchronization before Apply.${state.dirty ? ' Unapplied changes exist.' : ''}</span>
     </div>
     <div class="card client-inventory">${rows || '<div class="empty"><strong>No clients yet</strong><p>Add a device to create its WireGuard configuration, then choose its route.</p><button class="btn" data-act="add-peer">Add client</button></div>'}</div>
-    `;
+    <p class="screen-sub" style="margin-top:10px">WireGuard traffic counters are measured since the gateway interface started. Reality shows open flows from a server snapshot. Its indicator expires after 30 seconds without a new observation; short connections between polls may be missed.</p>`;
 }
 
 const observedTraffic = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? bytes(value) : 'Unknown';
@@ -175,9 +204,19 @@ function realityStatus(peer) {
   if (peer?.enabled === false || !realityEnabled(peer)) return 'disabled';
   return ['disabled', 'pending', 'available', 'guarded'].includes(peer.reality_profile_status) ? peer.reality_profile_status : 'pending';
 }
+function realityFlowCount(peer) {
+  const sample = peer?.reality_activity;
+  const time = Date.parse(sample?.observed_at);
+  const age = api.peerActivityAge(peer);
+  if (peer?.enabled === false || realityRecovery(peer?.id) || realityStatus(peer) !== 'available' || sample?.state !== 'observed' || !Number.isInteger(sample.open_flows) || sample.open_flows < 0 || !Number.isFinite(time) || age === null || age < 0 || age > 30000) return null;
+  return sample.open_flows;
+}
 function realityStatusText(peer) {
   switch (realityStatus(peer)) {
-    case 'available': return 'Reality profile available. Connection activity is not measured.';
+    case 'available': {
+      const count = realityFlowCount(peer);
+      return count === null ? 'Reality · Activity unavailable' : count > 0 ? `Reality · ${count} open ${count === 1 ? 'flow' : 'flows'}` : 'Reality · No open flows observed';
+    }
     case 'pending': return peer?.reality_profile_downloadable === true ? 'Works after Apply. Import this profile now, then close this dialog and Apply saved changes to activate access.' : 'Complete and save Reality settings and the public gateway endpoint in Network to obtain a profile. Reload Reality status after saving. Then Apply to activate access.';
     case 'guarded': return 'Reality ingress is guarded. Resolve the server error and Apply before requesting a profile.';
     default: return 'Reality is disabled or not configured. Check Network settings, enable client access and Apply saved changes.';
@@ -293,7 +332,7 @@ function modalPeerDetails(id, showConfig = false, preferredMethod = '') {
         <div class="client-config-content"><div class="client-profile-methods" role="group" aria-label="Profile connection method"><button class="btn btn-sm" data-act="select-client-wg" aria-pressed="${wireGuardEnabled(peer)}">WireGuard</button><button class="btn btn-sm" data-act="select-client-reality" aria-pressed="${!wireGuardEnabled(peer)}">Reality</button></div><p class="client-small">${showConfig ? 'Client created. Device and routing settings are above. ' : ''}Generated by the gateway from saved settings. Copy and download do not save edits or apply routing.</p>
           <div id="client-config-status" class="client-status" role="status">Open to load configuration.</div>
           <button class="btn" data-act="retry-client-config" hidden>Retry configuration</button>
-          <p id="client-reality-pending-note" class="client-status" role="status" hidden><strong>Works after Apply.</strong> Import now. Connect after Apply. Apply publishes all saved changes. <button class="btn btn-sm" data-act="go-to-client-apply">Close and go to Apply</button></p><div id="client-config-result" hidden><div class="client-config-grid"><div class="client-qr"><canvas id="client-qr"></canvas></div><div class="client-config-delivery"><p class="client-small"><span id="client-profile-help">${wireGuardEnabled(peer) ? 'Scan with WireGuard or use the saved configuration.' : 'Import this profile into a compatible VLESS + REALITY app.'}</span></p><p id="client-config-draft-note" class="client-small" role="status" hidden>Save the name change before copying or downloading.</p><div class="client-delivery-actions"><button class="btn" data-act="copy-client-config">Copy configuration</button><button class="btn" data-act="download-reality-json" hidden>Download sing-box profile</button><button class="btn" data-act="download-conf">${wireGuardEnabled(peer) ? 'Download .conf' : 'Download profile'}</button></div><span id="client-config-filename" class="mono client-small"></span></div></div><details class="client-config-text"><summary>Show configuration text</summary><pre class="pane" id="client-config-text"></pre></details></div>
+          <p id="client-reality-dns-note" class="client-small" hidden>Enable VPN/TUN capture and send UDP DNS through this connection to 10.8.0.1:53. This preserves domain routing, including QUIC and encrypted TLS names. URI import does not configure DNS. Some apps import only outbounds from JSON; use their full-configuration mode or set gateway DNS explicitly.</p><p id="client-reality-pending-note" class="client-status" role="status" hidden><strong>Works after Apply.</strong> Import now. Connect after Apply. Apply publishes all saved changes. <button class="btn btn-sm" data-act="go-to-client-apply">Close and go to Apply</button></p><div id="client-config-result" hidden><div class="client-config-grid"><div class="client-qr"><canvas id="client-qr"></canvas></div><div class="client-config-delivery"><p class="client-small"><span id="client-profile-help">${wireGuardEnabled(peer) ? 'Scan with WireGuard or use the saved configuration.' : 'Import this profile into a compatible VLESS + REALITY app.'}</span></p><p id="client-config-draft-note" class="client-small" role="status" hidden>Save the name change before copying or downloading.</p><div class="client-delivery-actions"><button class="btn" data-act="copy-client-config">Copy configuration</button><button class="btn" data-act="download-reality-json" hidden>Download sing-box profile</button><button class="btn" data-act="download-conf">${wireGuardEnabled(peer) ? 'Download .conf' : 'Download profile'}</button></div><span id="client-config-filename" class="mono client-small"></span></div></div><details class="client-config-text"><summary>Show configuration text</summary><pre class="pane" id="client-config-text"></pre></details></div>
           <p class="client-small">Contains private connection credentials. Closing clears the panel's copies; copied clipboard content remains outside the panel.</p>
           <details class="client-reality-management"><summary>Manage Reality access</summary><p class="client-small">Replacing the key revokes the previous credential and requires server reconciliation. Existing connections can be interrupted. The replacement profile can be imported now and works after Apply.</p><button class="btn" data-act="inspect-reality-rotation">Replace Reality key…</button><div id="client-reality-confirmation" hidden><p class="client-small">Replace this client's Reality key? The old profile will stop working. WireGuard keys remain unchanged, but reconciliation may briefly interrupt connections.</p><div class="client-delete-actions"><button class="btn" data-act="cancel-reality-rotation">Keep key</button><button class="btn btn-danger" data-act="confirm-reality-rotation">Replace key</button></div></div><div id="client-reality-rotation-status" class="client-status" role="status"></div><button class="btn" data-act="refresh-reality-status">Reload Reality status</button></details>
         </div>
@@ -375,6 +414,7 @@ function syncDetails(ctx) {
   note.textContent = values.name !== ctx.baseline.name ? 'Save the name change before copying or downloading.' : 'Save connection changes before copying or downloading.';
   const peer = peerById(ctx.id);
   modal.querySelector('#client-reality-status').textContent = realityRecoveryMessage(ctx.id) || realityStatusText(peer);
+  modal.querySelector('#client-reality-dns-note').hidden = ctx.profileMethod !== 'reality';
   modal.querySelector('#client-reality-pending-note').hidden = ctx.profileMethod !== 'reality' || !ctx.configReady || ctx.configRealityState !== 'pending' && realityStatus(peer) !== 'pending';
   modal.querySelector('#client-config-heading').textContent = ctx.profileMethod === 'wg' ? 'WireGuard configuration' : 'Reality profile';
   modal.querySelector('#client-profile-help').textContent = ctx.profileMethod === 'wg' ? 'Scan with WireGuard or use the saved configuration.' : 'URI import requires a compatible app configured for TUN and DNS through the connection. The sing-box JSON profile includes TUN and DNS routing.';
