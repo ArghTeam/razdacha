@@ -286,3 +286,26 @@ Publication/revocation stamps and live revision checks reject stale observations
 UI receipt-time expiry and mutation recovery prevent stale green indicators.
 Profile help documents gateway DNS and full-configuration import requirements.
 See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation boundary.
+
+## 2026-11-06 — Owned REALITY to WARP chain verification (#316)
+
+Exercised the existing ADR 0012 userspace WARP clone through the owned VLESS/REALITY
+DO exit using an actual exported client profile with loopback-only diagnostic
+inbounds. Selected HTTPS trace, a real-public-IP TLS-name request, gateway FakeIP
+and UDP STUN reported Cloudflare exits. A configured-disabled WARP leg rejected
+selected requests while the direct control worked; restoring it recovered the
+chain. Four samples over 143.6 seconds remained successful across advancing
+standalone WARP health timestamps; that endpoint's health status stayed unknown
+and is distinct from chain verification. No DO service/route or local-machine
+route/DNS change was required. The run did not test a physical handshake outage,
+indefinite stability or same-exit DNS for shared destination rules.
+
+The existing IPinfo DO-only route was retained after IPinfo returned HTTP 429
+through WARP. The new selected WWW-only Cloudflare check keeps chain verification
+separate. The second client remained direct, client exports were byte-identical,
+protected state was preserved and temporary sessions/exports/processes were
+removed. Final Apply was clean with active services and released checked ingress;
+the actual panel showed the intended two-hop rule without writes or page errors.
+The [operational record](../../tasks/done/316-owned-reality-warp-chain.md) preserves
+the foreign local FakeIP diagnostic, final-state boundary, rollback and cleanup
+evidence. No runtime code, release or production change accompanies this record.
