@@ -7,7 +7,7 @@
 
 ### #310 — owned REALITY exit verification
 
-**Changed:** Recorded live whole-client IPv4 TCP/UDP and TCP/UDP DNS observations
+**Changed:** Recorded live whole-client IPv4 TCP/UDP and client-facing TCP/UDP DNS observations
 through actual RAC REALITY ingress and a separately owned VLESS/REALITY exit.
 Exit outage failed all four probes while direct controls remained reachable;
 recovery passed fresh probes. Normal DoH and HTTPS returned the DO public address.

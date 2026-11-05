@@ -61,11 +61,12 @@ ports were likewise limited to RAC. The host's existing INPUT DROP required tagg
 source-restricted accepts installed with a private Go netlink helper. Original
 rule handles/order were preserved. Only the marked TCP 443 block was persisted in
 `/etc/nftables.conf`, retaining original bytes outside that block; sink port rules
-were runtime-only. No `nft`, `ip`, `wg` or `wg-quick` subprocess was used.
+were runtime-only. Firewall changes used netlink; existing tables were not flushed
+or globally reloaded.
 
 RAC's baseline had two clients, no rules, a disabled pool and no pending Apply.
 An owned session, without resetting the panel password, created the ordinary
-`DO Reality Lab` tunnel and temporary REALITY-only `Egress lab310` client with
+`DO Reality Lab` tunnel and temporary REALITY-only `Egress lab 310` client with
 whole-Internet egress assigned to that tunnel. Actual API profile export was
 pending before Apply and available afterward with identical connection material.
 Hashes bracketed settings, peers, original tunnels/rules and live identities,
@@ -82,11 +83,16 @@ inbounds with loopback direct test ports. No OS route or TUN was installed.
 |---|---|
 | HTTP with fresh nonce | Passed; sink observed the DO source address |
 | UDP with fresh nonce | Passed; sink observed the DO source address |
-| DNS over UDP | Passed; owned resolver observed loopback-origin queries on DO |
-| DNS over TCP | Passed; owned resolver observed loopback-origin queries on DO |
+| Client-facing DNS over UDP | Passed; owned resolver observed loopback-origin queries on DO |
+| Client-facing DNS over TCP | Passed; owned resolver observed loopback-origin queries on DO |
 | RAC WAN capture | Readiness barrier completed; 128 packets, zero kernel drops |
 | Exit outage | All four probe requests failed; no probe nonce reached either sink |
 | Recovery | All four fresh-nonce requests passed with expected DO sources |
+
+DNS TCP/UDP labels describe queries to the client's loopback test listener.
+The preserved client DNS/route configuration hijacked port 53 and used a UDP
+upstream; both probes ultimately produced `dns-udp` observations on DO. They do
+not establish DNS-over-TCP transport on every hop.
 
 Direct HTTP/UDP controls from RAC to the owned sinks passed both before and after
 the outage, distinguishing the selected-exit failure from sink unavailability.
