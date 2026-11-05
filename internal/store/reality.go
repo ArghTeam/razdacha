@@ -151,6 +151,54 @@ func (s *Store) RotateReality(ctx context.Context, id string, expected int) (Pee
 	return p, err
 }
 
+// RealityDeliveryMaterial is private export-only material, never runtime authority.
+// It deliberately contains no private server key and is not JSON API data.
+type RealityDeliveryMaterial struct {
+	Settings                             Settings
+	Peer                                 Peer
+	IdentityID, PublicKey, ShortID, UUID string
+}
+
+// RealityDelivery reads one coherent saved export plan without creating keys or
+// changing admissions. Callers must hold the publication gate and check guards.
+func (s *Store) RealityDelivery(ctx context.Context, id string) (RealityDeliveryMaterial, error) {
+	var out RealityDeliveryMaterial
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		var err error
+		out.Peer, err = scanPeer(tx.QueryRowContext(ctx, `SELECT `+peerColumns+` FROM peers WHERE id=?`, id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		out.Settings, err = settings(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if !out.Peer.Enabled || !out.Peer.RealityEnabled {
+			return fmt.Errorf("%w: enable Reality access for this client before requesting a profile", ErrInvalid)
+		}
+		if !out.Settings.RealityEnabled {
+			return fmt.Errorf("%w: configure and enable Reality in Network settings, then save settings before requesting a profile", ErrInvalid)
+		}
+		identity, err := realityIdentity(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if identity == nil {
+			return fmt.Errorf("%w: save enabled Reality settings in Network settings to initialize its server identity", ErrInvalid)
+		}
+		out.IdentityID, out.PublicKey, out.ShortID = identity.ID, identity.PublicKey, identity.ShortID
+		err = tx.QueryRowContext(ctx, `SELECT uuid FROM reality_credentials WHERE peer_id=? AND credential_id=? AND revision=?`, id, out.Peer.RealityCredentialID, out.Peer.RealityRevision).Scan(&out.UUID)
+		if errors.Is(err, sql.ErrNoRows) || err == nil && (out.UUID == "" || out.Peer.RealityRevision < 1 || out.Peer.RealityCredentialID == "") {
+			return fmt.Errorf("%w: Reality credentials are unavailable; reload the client and replace its key", ErrInvalid)
+		}
+		return err
+	})
+	return out, err
+}
+
 // RealityRuntime intersects committed admission with live authentication. A stale
 // generation cannot recreate deleted/disabled clients or a rotated UUID.
 func (s *Store) RealityRuntime(ctx context.Context, snap Snapshot) (*RealityRuntime, error) {
@@ -263,4 +311,22 @@ func (s *Store) ResetRealityAfterRestore(ctx context.Context) error {
 		}
 		return nil
 	})
+}
+
+// ValidateRealityDelivery checks connection settings without creating an identity.
+func (v Settings) ValidateRealityDelivery() error {
+	if err := v.validateReality(); err != nil {
+		return err
+	}
+	if v.EndpointHost == "" {
+		return fmt.Errorf("%w: save the public gateway endpoint in Network settings before requesting a Reality profile", ErrInvalid)
+	}
+	if net.ParseIP(v.EndpointHost) == nil {
+		for _, c := range v.EndpointHost {
+			if !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-", c) {
+				return fmt.Errorf("%w: save a valid public gateway hostname or IP address in Network settings", ErrInvalid)
+			}
+		}
+	}
+	return nil
 }

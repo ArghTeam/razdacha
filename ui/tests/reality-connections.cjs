@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const { fixture, examplePeer, config } = require('./client.fixture.cjs');
-const dual = { ...examplePeer, wireguard_enabled: true, reality_enabled: true, reality_revision: 3, reality_profile_status: 'available' };
+const dual = { ...examplePeer, wireguard_enabled: true, reality_enabled: true, reality_revision: 3, reality_profile_status: 'available', reality_profile_downloadable: true };
 (async () => {
   const browser = await chromium.launch({ headless: true });
   let cases = 0;
@@ -34,6 +34,63 @@ const dual = { ...examplePeer, wireguard_enabled: true, reality_enabled: true, r
       const download = t.page.waitForEvent('download'); await t.page.locator('[data-act="download-conf"]').click(); assert.equal((await download).suggestedFilename(), 'reality-example.txt');
       await t.page.keyboard.press('Escape'); assert.equal((await t.state()).conf, ''); assert.equal(await t.page.locator('#modal canvas').count(), 0);
     }, { peers: [dual] });
+    await check(async t => {
+      await t.open(); await t.readyConfig();
+      const warning = t.page.locator('#client-reality-pending-note');
+      assert(await warning.isVisible());
+      await t.page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+      await t.invoke('copy-client-config'); await t.done(); assert(await warning.isVisible());
+      for (const action of ['download-conf', 'download-reality-json']) {
+        const event = t.page.waitForEvent('download'); await t.page.locator(`[data-act="${action}"]`).click(); await event;
+        assert(await warning.isVisible()); assert.match(await warning.textContent(), /Works after Apply/);
+      }
+      await t.page.fill('#client-name', 'Unsaved edit');
+      assert(await t.page.locator('[data-act="go-to-client-apply"]').isDisabled());
+      await t.page.fill('#client-name', dual.name);
+      await t.page.locator('[data-act="go-to-client-apply"]').click();
+      assert.equal((await t.state()).conf, ''); assert.equal(await t.page.locator('#modal-backdrop').isVisible(), false);
+      assert.equal(t.calls.filter(c => c.key === 'POST /api/apply').length, 0);
+      assert.equal(await t.page.locator('#btn-apply').evaluate(el => el === document.activeElement), true);
+    }, { peers: [{ ...dual, wireguard_enabled: false, reality_profile_status: 'pending' }], dirty: true });
+    for (const metadata of [
+      { 'X-Razdacha-Reality-Revision': '2' },
+      { 'X-Razdacha-Reality-State': 'guarded' },
+      { 'X-Razdacha-Reality-Revision': '' },
+    ]) await check(async t => {
+      await t.open(); const key = 'GET /api/peers/example/reality-config'; t.holds.add(key); await t.expand(); await t.waitHeld(key);
+      await t.replyConfig(key, t.realityURI, 'stale.txt', metadata);
+      await t.page.getByText('Reality access changed while loading. Reload its status before requesting another profile.', { exact: true }).waitFor();
+      assert.equal((await t.state()).conf, '');
+    }, { peers: [{ ...dual, wireguard_enabled: false, reality_profile_status: 'pending' }] });
+    await check(async t => {
+      await t.open(); const key = 'GET /api/peers/example/reality-config'; t.holds.add(key); await t.expand(); await t.waitHeld(key);
+      await t.replyConfig(key, t.realityURI, 'pending.txt', { 'X-Razdacha-Reality-State': 'pending' });
+      await t.readyConfig(); assert(await t.page.locator('#client-reality-pending-note').isVisible());
+    }, { peers: [{ ...dual, wireguard_enabled: false }] });
+    for (const metadata of [
+      { 'X-Razdacha-Reality-State': 'pending', 'X-Razdacha-Reality-Revision': '2' },
+      { 'X-Razdacha-Reality-State': 'guarded', 'X-Razdacha-Reality-Revision': '3' },
+    ]) await check(async t => {
+      await t.open(); await t.readyConfig(); const downloads = [];
+      t.page.on('download', item => downloads.push(item));
+      t.overrides.set('GET /api/peers/example/reality-client-config', { status: 200, headers: metadata, body: { inbounds: [], outbounds: [] } });
+      await t.invoke('download-reality-json'); await t.done();
+      assert.equal(downloads.length, 0);
+      assert.match(await t.page.locator('#client-config-status').textContent(), /Reality access changed while loading/);
+      assert(await t.page.locator('#client-reality-pending-note').isVisible());
+    }, { peers: [{ ...dual, wireguard_enabled: false, reality_profile_status: 'pending' }] });
+    await check(async t => {
+      await t.open(); await t.readyConfig();
+      const requests = t.calls.filter(c => c.key.endsWith('/reality-config')).length;
+      await t.page.evaluate(async () => { (await import('/js/screens/settings.js')).modalSettings(); });
+      await t.page.uncheck('#s-reality-on'); await t.page.locator('#settings-network [type="submit"]').click();
+      await t.page.getByText(/Network saved. Use Apply/).waitFor();
+      assert.equal((await t.state()).peers[0].reality_profile_downloadable, false);
+      await t.page.keyboard.press('Escape'); await t.open(); await t.expand();
+      assert.equal((await t.state()).conf, '');
+      assert.equal(t.calls.filter(c => c.key.endsWith('/reality-config')).length, requests);
+      assert.match(await t.page.locator('#client-config-status').textContent(), /Reload Reality status/);
+    }, { peers: [{ ...dual, wireguard_enabled: false }], settings: { reality_enabled: true, reality_server_name: 'tls.example', reality_handshake_server: 'tls.example' } });
     for (const leave of ['method', 'close', 'session']) await check(async t => {
       await t.open(); const key = 'GET /api/peers/example/reality-config'; t.holds.add(key);
       await t.invoke('select-client-reality'); await t.done(); await t.expand(); await t.waitHeld(key);
@@ -49,7 +106,7 @@ const dual = { ...examplePeer, wireguard_enabled: true, reality_enabled: true, r
       assert.match(await t.page.locator('#client-config-status').textContent(), status === 'pending' ? /Apply/ : status === 'guarded' ? /guard|Apply/i : /disabled|Enable/i);
       assert.equal(await t.page.locator('[data-act="copy-client-config"]').isDisabled(), true);
       assert(!await t.page.locator('.client-row').textContent().then(text => text.includes(examplePeer.address)));
-    }, { peers: [{ ...dual, wireguard_enabled: false, reality_profile_status: status, enabled: status !== 'disabled' }] });
+    }, { peers: [{ ...dual, wireguard_enabled: false, reality_profile_status: status, reality_profile_downloadable: false, enabled: status !== 'disabled' }] });
     await check(async t => {
       await t.open(); await t.readyConfig(); await t.invoke('inspect-reality-rotation'); await t.done(); await t.invoke('confirm-reality-rotation'); await t.done();
       assert.deepEqual(t.calls.find(c => c.key.endsWith('/reality/rotate')).body, { expected_revision: 3 });
@@ -76,7 +133,10 @@ const dual = { ...examplePeer, wireguard_enabled: true, reality_enabled: true, r
       await t.page.uncheck('#new-peer-wg'); await t.page.check('#new-peer-reality');
       await t.invoke('create-peer'); await t.done();
       assert.deepEqual(t.calls.find(c => c.key === 'POST /api/peers').body, { name: 'Reality device', wireguard_enabled: false, reality_enabled: true });
-      assert.equal((await t.state()).conf, ''); assert.match(await t.page.locator('#client-config-status').textContent(), /Apply/);
+      await t.readyConfig(); assert.equal((await t.state()).conf, t.realityURI);
+      assert.equal(t.calls.filter(c => c.key === 'POST /api/apply').length, 0);
+      assert.match(await t.page.locator('#client-reality-pending-note').textContent(), /Works after Apply/);
+      assert(await t.page.locator('#client-reality-pending-note').isVisible());
       await t.page.keyboard.press('Escape'); await t.page.locator('#btn-apply').click();
       await t.page.waitForFunction(() => document.querySelector('#apply-bar').hidden);
       await t.open('created'); await t.readyConfig(); assert.equal((await t.state()).conf, t.realityURI);

@@ -4,18 +4,29 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
-// RealityPublisher serializes authentication changes and derives delivery from
-// committed policy plus live credentials. Status never contains bearer material.
+// RealityProfile contains private delivery material and coherent activation metadata.
+// It must only be returned by authenticated, no-store delivery endpoints.
+type RealityProfile struct {
+	URI      string
+	JSON     []byte
+	State    string
+	Revision int
+}
+
+// RealityPublisher serializes authentication and export without admitting pending users.
 type RealityPublisher interface {
 	PatchPeer(context.Context, *store.Store, string, store.PeerPatch) (store.Peer, error)
 	DeletePeer(context.Context, *store.Store, string) (store.PeerDeletion, error)
 	RotateReality(context.Context, *store.Store, string, int) (store.Peer, error)
 	SaveSettings(context.Context, *store.Store, store.Settings) error
 	RealityStatus(context.Context, *store.Store, store.Peer) string
+	RealityDownloadable(context.Context, *store.Store, store.Peer) bool
+	RealityProfile(context.Context, *store.Store, string) (RealityProfile, error)
 	RealityConfig(context.Context, *store.Store, string) (string, error)
 	RealityClientConfig(context.Context, *store.Store, string) ([]byte, error)
 }
@@ -31,6 +42,7 @@ func (s *Server) peerResponse(ctx context.Context, p store.Peer) peerResponse {
 	out := newPeerResponse(p)
 	if pub, ok := s.applier.(RealityPublisher); ok {
 		out.RealityProfileStatus = pub.RealityStatus(ctx, s.store, p)
+		out.RealityProfileDownloadable = pub.RealityDownloadable(ctx, s.store, p)
 	}
 	return out
 }
@@ -57,14 +69,15 @@ func (s *Server) handleRealityConfig(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, ErrNetworkGuarded, "Profile unavailable")
 		return
 	}
-	profile, err := pub.RealityConfig(r.Context(), s.store, id)
+	profile, err := pub.RealityProfile(r.Context(), s.store, id)
 	if err != nil {
 		s.storeError(w, err, "Profile unavailable")
 		return
 	}
+	setRealityProfileHeaders(w, profile)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="reality-client.txt"`)
-	_, _ = w.Write([]byte(profile + "\n"))
+	_, _ = w.Write([]byte(profile.URI + "\n"))
 }
 
 func (s *Server) handleRotateReality(w http.ResponseWriter, r *http.Request) {
@@ -106,12 +119,18 @@ func (s *Server) handleRealityClientConfig(w http.ResponseWriter, r *http.Reques
 		s.storeError(w, ErrNetworkGuarded, "Profile unavailable")
 		return
 	}
-	profile, err := pub.RealityClientConfig(r.Context(), s.store, id)
+	profile, err := pub.RealityProfile(r.Context(), s.store, id)
 	if err != nil {
 		s.storeError(w, err, "Profile unavailable")
 		return
 	}
+	setRealityProfileHeaders(w, profile)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="razdacha-reality.json"`)
-	_, _ = w.Write(profile)
+	_, _ = w.Write(profile.JSON)
+}
+
+func setRealityProfileHeaders(w http.ResponseWriter, p RealityProfile) {
+	w.Header().Set("X-Razdacha-Reality-State", p.State)
+	w.Header().Set("X-Razdacha-Reality-Revision", strconv.Itoa(p.Revision))
 }

@@ -21,3 +21,7 @@ credentials outside committed routing authority and extends guarded publication 
 public listeners. The task distinguishes the earlier handwritten capability proof
 from generated-policy, full-client-profile and deployment validation; no general
 DPI resistance or untested application compatibility is implied.
+
+[ADR 0036](../docs/decisions/0036-pending-reality-profile-delivery.md) separates saved
+REALITY profile delivery from activation: pending QR/URI/JSON can be imported before
+explicit Apply, with persistent pending notices and unchanged runtime admission.
