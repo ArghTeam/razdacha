@@ -45,3 +45,5 @@
 - [0031: Scoped tunnel observations](0031-scoped-tunnel-observations.md) — HTTPS, DNS, unknown transport and bounded probing.
 
 - [0032: Parallel authenticated client ingress](0032-parallel-authenticated-client-ingress.md) — optional, disabled-by-default VLESS + REALITY alongside WireGuard, shared client policy and guarded lifecycle.
+
+- [0036: Saved REALITY profiles before activation](0036-pending-reality-profile-delivery.md) — pending URI/QR/JSON delivery without runtime admission; partially supersedes 0032 delivery.

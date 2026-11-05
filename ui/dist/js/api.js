@@ -95,7 +95,7 @@ async function request(method, path, opts = {}) {
     );
   }
 
-  if (expect === 'file') return { text, filename: filenameFrom(res) };
+  if (expect === 'file') return { text, filename: filenameFrom(res), realityState: res.headers.get('X-Razdacha-Reality-State'), realityRevision: Number(res.headers.get('X-Razdacha-Reality-Revision')) };
   return expect === 'text' ? text : json;
 }
 

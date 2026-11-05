@@ -285,7 +285,7 @@ function mount(modal) {
       $('#s-reality-public-key').textContent = saved.reality_public_key || 'Generated when Reality is configured.';
       $('#s-reality-short-id').textContent = saved.reality_short_id || 'Not configured';
       baseline.network = readSection('network'); clearRealitySettingsRecovery(recovery); syncReality(); remember(form);
-      status(form, 'Saved Network settings reloaded. Apply pending configuration before new profile delivery.');
+      status(form, 'Saved Network settings reloaded. Configured profiles can be imported now; pending access works after Apply.');
     } catch (err) { if (current()) status(form, err.message || 'Could not reload saved Network settings.', 'err'); }
     finally { if (current()) busy(form, false); }
   });

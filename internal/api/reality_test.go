@@ -80,3 +80,44 @@ func TestRealityDeliveryRequiresAuthenticationAndCommittedPublisher(t *testing.T
 		t.Fatal("rejected creation persisted a peer")
 	}
 }
+
+// Embed the unused publication methods so this fixture exercises only the HTTP
+// delivery adapter. Real gate/credential behavior is covered by daemon tests.
+type realityDeliveryApplier struct {
+	Applier
+	RealityPublisher
+	profile RealityProfile
+	calls   int
+}
+
+func (a *realityDeliveryApplier) RealityProfile(context.Context, *store.Store, string) (RealityProfile, error) {
+	a.calls++
+	return a.profile, nil
+}
+
+func TestRealityDeliveryHeadersAndRawBodiesUseOneResult(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	p := createPeer(t, ts, cookie, "Delivery")
+	for _, state := range []string{"pending", "available"} {
+		a := &realityDeliveryApplier{profile: RealityProfile{URI: "vless://fixture@example.test:8443", JSON: []byte(`{"inbounds":[],"outbounds":[]}`), State: state, Revision: 7}}
+		ts.applier = a
+		for _, suffix := range []string{"reality-config", "reality-client-config"} {
+			response := ts.auth(t, cookie, http.MethodGet, "/api/peers/"+p.ID+"/"+suffix, "")
+			requireCode(t, response, http.StatusOK)
+			if response.header.Get("Cache-Control") != "no-store" || response.header.Get("X-Razdacha-Reality-State") != state || response.header.Get("X-Razdacha-Reality-Revision") != "7" {
+				t.Fatal("missing coherent private response metadata")
+			}
+			want := a.profile.URI + "\n"
+			if suffix == "reality-client-config" {
+				want = string(a.profile.JSON)
+			}
+			if response.body != want {
+				t.Fatal("importable profile body was wrapped or changed")
+			}
+		}
+		if a.calls != 2 {
+			t.Fatal("delivery metadata was read separately")
+		}
+	}
+}

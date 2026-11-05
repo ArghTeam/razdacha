@@ -230,3 +230,32 @@ func TestRestoredRealityOnlyPeerRemainsEditableAndRequiresExplicitMethod(t *test
 		t.Fatal("method selection activated restored credentials before configuration/Apply", err)
 	}
 }
+
+func TestRealityDeliveryNeverInitializesMissingPrivateMaterial(t *testing.T) {
+	ctx := context.Background()
+	st := openAt(t, t.TempDir()+"/state.db")
+	cfg := DefaultSettings()
+	cfg.RealityEnabled, cfg.EndpointHost = true, "gateway.fixture.example"
+	cfg.RealityServerName, cfg.RealityHandshakeServer = "fixture.example", "127.0.0.1"
+	if err := st.SaveSettings(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	p := samplePeer("Pending", "10.8.0.2")
+	p.RealityEnabled = true
+	p, err := st.CreatePeer(ctx, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"reality_credentials", "reality_identity"} {
+		if _, err := st.db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.RealityDelivery(ctx, p.ID); !errors.Is(err, ErrInvalid) {
+			t.Fatal("missing material was not refused", err)
+		}
+		var count int
+		if err := st.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil || count != 0 {
+			t.Fatal("delivery initialized missing material", err)
+		}
+	}
+}

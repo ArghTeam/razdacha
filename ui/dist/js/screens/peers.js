@@ -106,8 +106,11 @@ export function finishRealitySettingsMutation(token, error = null) {
   if (error) { token.pending = false; token.uncertain = true; token.error = `Reality settings could not be confirmed: ${error.message}. Access may already have changed. Reload saved Network settings or Reality status.`; }
   else {
     globalRealityRecovery = null;
-    // Configuration changed; only a later authoritative inventory can admit profiles.
-    for (const peer of state.peers) if (realityEnabled(peer)) peer.reality_profile_status = 'pending';
+    // Configuration changed; only a later authoritative inventory confirms downloadability.
+    for (const peer of state.peers) if (realityEnabled(peer)) {
+      peer.reality_profile_status = 'pending';
+      peer.reality_profile_downloadable = false;
+    }
   }
   if (editor && current(editor)) clearClientConfig(editor);
 }
@@ -153,15 +156,21 @@ function realityStatus(peer) {
 function realityStatusText(peer) {
   switch (realityStatus(peer)) {
     case 'available': return 'Reality profile available. Connection activity is not measured.';
-    case 'pending': return 'Reality access is pending. Configure and enable Reality in Network settings, then Apply saved changes before requesting a profile.';
+    case 'pending': return peer?.reality_profile_downloadable === true ? 'Works after Apply. Import this profile now, then close this dialog and Apply saved changes to activate access.' : 'Complete and save Reality settings and the public gateway endpoint in Network to obtain a profile. Reload Reality status after saving. Then Apply to activate access.';
     case 'guarded': return 'Reality ingress is guarded. Resolve the server error and Apply before requesting a profile.';
     default: return 'Reality is disabled or not configured. Check Network settings, enable client access and Apply saved changes.';
   }
 }
 
+function realityDownloadable(peer) {
+  return ['pending', 'available'].includes(realityStatus(peer)) && peer?.reality_profile_downloadable === true;
+}
+function checkRealityDelivery(result, revision) {
+  if (!['pending', 'available'].includes(result.realityState) || !Number.isInteger(result.realityRevision) || result.realityRevision !== revision) throw new Error('Reality access changed while loading. Reload its status before requesting another profile.');
+}
 function profileAvailable(ctx) {
   const peer = peerById(ctx.id);
-  return ctx.profileMethod !== 'reality' || !realityRecovery(ctx.id) && realityStatus(peer) === 'available' && peer?.reality_revision === ctx.configRealityRevision;
+  return ctx.profileMethod !== 'reality' || !realityRecovery(ctx.id) && realityDownloadable(peer) && peer?.reality_revision === ctx.configRealityRevision;
 }
 
 function current(ctx) {
@@ -178,7 +187,7 @@ function modalAddPeer() {
     <div class="field"><label for="peer-name">Device name</label>
       <input id="peer-name" type="text" placeholder="Travel laptop" autocomplete="off" autofocus>
       <div class="hint">Address, keys, MTU and DNS are assigned automatically.</div>
-    </div><fieldset class="client-method-choices"><legend>Connection methods</legend><label class="client-routing-choice"><input id="new-peer-wg" type="checkbox" checked><span><strong>WireGuard</strong><span>Standard WireGuard app or router.</span></span></label><label class="client-routing-choice"><input id="new-peer-reality" type="checkbox"><span><strong>Reality (TCP)</strong><span>Requires a compatible app and gateway setup.</span></span></label></fieldset><div id="client-create-error" class="client-status err" role="alert"></div>`,
+    </div><fieldset class="client-method-choices"><legend>Connection methods</legend><label class="client-routing-choice"><input id="new-peer-wg" type="checkbox" checked><span><strong>WireGuard</strong><span>Standard WireGuard app or router.</span></span></label><label class="client-routing-choice"><input id="new-peer-reality" type="checkbox"><span><strong>Reality (TCP)</strong><span>Requires a compatible app and gateway setup.</span></span></label></fieldset><p class="client-small">Choose either or both methods. Separate profiles share routing rules; there is no automatic fallback.</p><div id="client-create-error" class="client-status err" role="alert"></div>`,
   '<button class="btn" data-act="close-modal">Cancel</button><button class="btn btn-primary" data-act="create-peer">Create client</button>'), (modal) => {
     modal.querySelector('#peer-name').addEventListener('keydown', (event) => {
       if (event.key === 'Enter') { event.preventDefault(); createPeer(); }
@@ -262,9 +271,9 @@ function modalPeerDetails(id, showConfig = false, preferredMethod = '') {
         <div class="client-config-content"><div class="client-profile-methods" role="group" aria-label="Profile connection method"><button class="btn btn-sm" data-act="select-client-wg" aria-pressed="${wireGuardEnabled(peer)}">WireGuard</button><button class="btn btn-sm" data-act="select-client-reality" aria-pressed="${!wireGuardEnabled(peer)}">Reality</button></div><p class="client-small">${showConfig ? 'Client created. Device and routing settings are above. ' : ''}Generated by the gateway from saved settings. Copy and download do not save edits or apply routing.</p>
           <div id="client-config-status" class="client-status" role="status">Open to load configuration.</div>
           <button class="btn" data-act="retry-client-config" hidden>Retry configuration</button>
-          <div id="client-config-result" hidden><div class="client-config-grid"><div class="client-qr"><canvas id="client-qr"></canvas></div><div class="client-config-delivery"><p class="client-small"><span id="client-profile-help">${wireGuardEnabled(peer) ? 'Scan with WireGuard or use the saved configuration.' : 'Import this profile into a compatible VLESS + REALITY app.'}</span></p><p id="client-config-draft-note" class="client-small" role="status" hidden>Save the name change before copying or downloading.</p><div class="client-delivery-actions"><button class="btn" data-act="copy-client-config">Copy configuration</button><button class="btn" data-act="download-reality-json" hidden>Download sing-box profile</button><button class="btn" data-act="download-conf">${wireGuardEnabled(peer) ? 'Download .conf' : 'Download profile'}</button></div><span id="client-config-filename" class="mono client-small"></span></div></div><details class="client-config-text"><summary>Show configuration text</summary><pre class="pane" id="client-config-text"></pre></details></div>
+          <p id="client-reality-pending-note" class="client-status" role="status" hidden><strong>Works after Apply.</strong> Import now. Connect after Apply. Apply publishes all saved changes. <button class="btn btn-sm" data-act="go-to-client-apply">Close and go to Apply</button></p><div id="client-config-result" hidden><div class="client-config-grid"><div class="client-qr"><canvas id="client-qr"></canvas></div><div class="client-config-delivery"><p class="client-small"><span id="client-profile-help">${wireGuardEnabled(peer) ? 'Scan with WireGuard or use the saved configuration.' : 'Import this profile into a compatible VLESS + REALITY app.'}</span></p><p id="client-config-draft-note" class="client-small" role="status" hidden>Save the name change before copying or downloading.</p><div class="client-delivery-actions"><button class="btn" data-act="copy-client-config">Copy configuration</button><button class="btn" data-act="download-reality-json" hidden>Download sing-box profile</button><button class="btn" data-act="download-conf">${wireGuardEnabled(peer) ? 'Download .conf' : 'Download profile'}</button></div><span id="client-config-filename" class="mono client-small"></span></div></div><details class="client-config-text"><summary>Show configuration text</summary><pre class="pane" id="client-config-text"></pre></details></div>
           <p class="client-small">Contains private connection credentials. Closing clears the panel's copies; copied clipboard content remains outside the panel.</p>
-          <details class="client-reality-management"><summary>Manage Reality access</summary><p class="client-small">Replacing the key revokes the previous credential and requires server reconciliation. Existing connections can be interrupted. The replacement becomes available after Apply.</p><button class="btn" data-act="inspect-reality-rotation">Replace Reality key…</button><div id="client-reality-confirmation" hidden><p class="client-small">Replace this client's Reality key? The old profile will stop working. WireGuard keys remain unchanged, but reconciliation may briefly interrupt connections.</p><div class="client-delete-actions"><button class="btn" data-act="cancel-reality-rotation">Keep key</button><button class="btn btn-danger" data-act="confirm-reality-rotation">Replace key</button></div></div><div id="client-reality-rotation-status" class="client-status" role="status"></div><button class="btn" data-act="refresh-reality-status">Reload Reality status</button></details>
+          <details class="client-reality-management"><summary>Manage Reality access</summary><p class="client-small">Replacing the key revokes the previous credential and requires server reconciliation. Existing connections can be interrupted. The replacement profile can be imported now and works after Apply.</p><button class="btn" data-act="inspect-reality-rotation">Replace Reality key…</button><div id="client-reality-confirmation" hidden><p class="client-small">Replace this client's Reality key? The old profile will stop working. WireGuard keys remain unchanged, but reconciliation may briefly interrupt connections.</p><div class="client-delete-actions"><button class="btn" data-act="cancel-reality-rotation">Keep key</button><button class="btn btn-danger" data-act="confirm-reality-rotation">Replace key</button></div></div><div id="client-reality-rotation-status" class="client-status" role="status"></div><button class="btn" data-act="refresh-reality-status">Reload Reality status</button></details>
         </div>
       </details>
       <section class="client-danger" aria-labelledby="client-danger-heading"><h3 id="client-danger-heading">Delete device</h3><p class="client-small">Deletion revokes access during synchronization and cannot be undone.</p><button class="btn btn-danger" data-act="inspect-client-delete">Delete client…</button>
@@ -344,6 +353,7 @@ function syncDetails(ctx) {
   note.textContent = values.name !== ctx.baseline.name ? 'Save the name change before copying or downloading.' : 'Save connection changes before copying or downloading.';
   const peer = peerById(ctx.id);
   modal.querySelector('#client-reality-status').textContent = realityRecoveryMessage(ctx.id) || realityStatusText(peer);
+  modal.querySelector('#client-reality-pending-note').hidden = ctx.profileMethod !== 'reality' || !ctx.configReady || ctx.configRealityState !== 'pending' && realityStatus(peer) !== 'pending';
   modal.querySelector('#client-config-heading').textContent = ctx.profileMethod === 'wg' ? 'WireGuard configuration' : 'Reality profile';
   modal.querySelector('#client-profile-help').textContent = ctx.profileMethod === 'wg' ? 'Scan with WireGuard or use the saved configuration.' : 'URI import requires a compatible app configured for TUN and DNS through the connection. The sing-box JSON profile includes TUN and DNS routing.';
   modal.querySelector('[data-act="download-conf"]').textContent = ctx.profileMethod === 'wg' ? 'Download .conf' : 'Download profile';
@@ -358,6 +368,7 @@ function syncDetails(ctx) {
   if (transportDraft) message(modal.querySelector('#client-config-status'), 'Save connection changes before requesting a profile.');
   modal.querySelectorAll('#client-name, #client-enabled, #client-wireguard, #client-reality, [name="client-route-mode"], #client-target').forEach(control => { control.disabled = ctx.saving || ctx.rotating; });
   // Deliver only a saved identity; rename changes the gateway-generated filename.
+  modal.querySelector('[data-act="go-to-client-apply"]').disabled = ctx.saving || ctx.rotating || ctx.deleting || Object.keys(changes(ctx)).length > 0;
   modal.querySelector('[data-act="download-reality-json"]').hidden = ctx.profileMethod !== 'reality';
   modal.querySelectorAll('[data-act="copy-client-config"], [data-act="download-conf"], [data-act="download-reality-json"]').forEach(button => { button.disabled = !ctx.configReady || ctx.saving || ctx.rotating || profileDraft || !profileAvailable(ctx); });
 }
@@ -396,6 +407,7 @@ function clearClientConfig(ctx) {
   ctx.configGeneration++;
   ctx.configPending = false;
   ctx.configReady = false;
+  ctx.configRealityState = null;
   const modal = ctx.modal;
   delete modal.dataset.conf;
   delete modal.dataset.confName;
@@ -414,7 +426,7 @@ async function loadClientConfig(ctx = editor) {
   const method = ctx.profileMethod, peer = peerById(ctx.id);
   const status = ctx.modal.querySelector('#client-config-status');
   if (method === 'wg' && !wireGuardEnabled(peer)) { message(status, 'WireGuard is disabled for this client.', 'err'); return; }
-  if (method === 'reality' && realityStatus(peer) !== 'available') { message(status, realityStatusText(peer), realityStatus(peer) === 'guarded' ? 'err' : ''); return; }
+  if (method === 'reality' && !realityDownloadable(peer)) { message(status, realityStatusText(peer), realityStatus(peer) === 'guarded' ? 'err' : ''); return; }
   if (method === 'reality' && realityRecovery(ctx.id)) { message(status, realityRecoveryMessage(ctx.id), 'err'); return; }
   if (Object.keys(changes(ctx)).some(key => ['enabled', 'wireguard_enabled', 'reality_enabled'].includes(key))) { message(status, 'Save connection changes before requesting a profile.'); return; }
   const generation = ctx.configGeneration, epoch = realityEpoch, realityRevision = peer?.reality_revision;
@@ -430,8 +442,10 @@ async function loadClientConfig(ctx = editor) {
     if (method === 'reality' && (!text.startsWith('vless://') || /[\r\n]/.test(text))) throw new Error('The server did not return a valid Reality import profile.');
     const filename = result.filename || `reality-${String(ctx.id).replace(/[^a-zA-Z0-9_-]/g, '_')}.txt`;
     if (!current(ctx) || generation !== ctx.configGeneration || method === 'reality' && epoch !== realityEpoch) return;
-    if (method === 'reality' && (peerById(ctx.id)?.reality_revision !== realityRevision || realityStatus(peerById(ctx.id)) !== 'available')) throw new Error('Reality access changed while loading. Reload its status before requesting another profile.');
+    if (method === 'reality' && (peerById(ctx.id)?.reality_revision !== realityRevision || !realityDownloadable(peerById(ctx.id)))) throw new Error('Reality access changed while loading. Reload its status before requesting another profile.');
+    if (method === 'reality') checkRealityDelivery(result, realityRevision);
     ctx.configRealityRevision = realityRevision;
+    ctx.configRealityState = result.realityState;
     modal.dataset.conf = text;
     modal.dataset.confName = filename;
     modal.querySelector('#client-config-text').textContent = text;
@@ -493,7 +507,7 @@ async function saveClientDetails() {
     const peer = peerById(ctx.id);
     if (peer) {
       Object.assign(peer, patch);
-      if (savedPeer?.id === ctx.id) for (const key of ['reality_revision', 'reality_profile_status']) if (key in savedPeer) peer[key] = savedPeer[key];
+      if (savedPeer?.id === ctx.id) for (const key of ['reality_revision', 'reality_profile_status', 'reality_profile_downloadable']) if (key in savedPeer) peer[key] = savedPeer[key];
     }
     // A rename finishing in another dialog also invalidates this client's delivered filename.
     if (['name', 'enabled', 'wireguard_enabled', 'reality_enabled'].some(key => key in patch) && editor?.id === ctx.id && current(editor)) {
@@ -743,6 +757,8 @@ async function downloadRealityJSON() {
   try {
     const result = await api.peers.realityClientConfig(ctx.id);
     if (!current(ctx) || generation !== ctx.configGeneration || epoch !== realityEpoch || !profileAvailable(ctx) || revision !== peerById(ctx.id)?.reality_revision || Object.keys(changes(ctx)).length) return;
+    checkRealityDelivery(result, revision);
+    ctx.configRealityState = result.realityState;
     const profile = JSON.parse(result.text);
     if (!profile || !Array.isArray(profile.inbounds) || !Array.isArray(profile.outbounds)) throw new Error('The server did not return a sing-box client profile.');
     if (ctx.revokeDownload) ctx.revokeDownload();
@@ -755,6 +771,12 @@ async function downloadRealityJSON() {
 
 export const actions = {
   'add-peer': modalAddPeer,
+  'go-to-client-apply': () => {
+    const ctx = editor;
+    if (!ctx || !current(ctx) || ctx.saving || ctx.rotating || ctx.deleting || Object.keys(changes(ctx)).length) return;
+    closeModal();
+    document.querySelector('#btn-apply')?.focus();
+  },
   'create-peer': createPeer,
   'menu-peer': (id, button) => openMenu(button, [
     { act: 'peer-details', id, label: 'Settings' },

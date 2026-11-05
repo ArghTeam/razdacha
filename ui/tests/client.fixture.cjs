@@ -11,10 +11,12 @@ async function fixture(browser, options = {}) {
   const page = await browser.newPage({ acceptDownloads: true, viewport: options.viewport || { width: 1440, height: 1000 }, colorScheme: options.theme || 'light' });
   const held = new Map(), holds = new Set(), overrides = new Map(), calls = [];
   let peers = structuredClone(options.peers || [examplePeer]), tunnels = structuredClone(options.tunnels || exampleTunnels), rules = options.rules || [];
+  for (const p of peers) if (p.reality_profile_downloadable === undefined) p.reality_profile_downloadable = p.reality_profile_status === 'available';
   let authenticated = true;
   let settings = { client_mtu: 1280, wg_pool: '192.0.2.0/24', wg_server_address: '192.0.2.1', wg_listen_port: 51820, endpoint_host: 'gateway.example', dns_upstream: '192.0.2.53', ...(options.settings || {}) };
   const realityURI = options.realityURI || 'vless://11111111-1111-4111-8111-111111111111@gateway.example:8443?security=reality&type=tcp&sni=tls.example&fp=chrome&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=0011223344556677#Travel%20laptop';
-  const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  const profileHeaders = p => ({ 'X-Razdacha-Reality-State': p?.reality_profile_status || 'available', 'X-Razdacha-Reality-Revision': String(p?.reality_revision || 3) });
+  const json = (route, body, status = 200, headers = {}) => route.fulfill({ status, headers, contentType: 'application/json', body: JSON.stringify(body) });
   await page.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url()), key = `${request.method()} ${url.pathname}`;
     if (url.origin !== origin) return route.abort();
@@ -25,17 +27,17 @@ async function fixture(browser, options = {}) {
     }
     calls.push({ key, body: request.postData() ? request.postDataJSON() : null });
     if (holds.has(key)) { assert(!held.has(key), `Unexpected concurrent ${key}`); held.set(key, route); return; }
-    if (overrides.has(key)) { const value = overrides.get(key); return json(route, value.body, value.status); }
+    if (overrides.has(key)) { const value = overrides.get(key); return json(route, value.body, value.status, value.headers); }
     if (url.pathname === '/api/session') return json(route, { authenticated });
     if (url.pathname === '/api/logout') { authenticated = false; return json(route, {}); }
     if (url.pathname === '/api/login') { authenticated = true; return json(route, {}); }
     if (key === 'GET /api/peers') return json(route, peers);
-    if (key === 'POST /api/peers') { const p = { ...examplePeer, id: 'created', ...request.postDataJSON() }; if (p.reality_enabled) Object.assign(p, { reality_profile_status: 'pending', reality_revision: 1 }); peers.push(p); return json(route, p); }
-    if (url.pathname.endsWith('/reality-client-config')) return route.fulfill({ contentType: 'application/json', headers: { 'Content-Disposition': 'attachment; filename="razdacha-reality.json"', 'Cache-Control': 'no-store' }, body: JSON.stringify({ dns: { servers: [{ address: '10.8.0.1' }] }, inbounds: [{ type: 'tun' }], outbounds: [{ type: 'vless' }] }) });
+    if (key === 'POST /api/peers') { const p = { ...examplePeer, id: 'created', ...request.postDataJSON() }; if (p.reality_enabled) Object.assign(p, { reality_profile_status: 'pending', reality_profile_downloadable: settings.reality_enabled === true, reality_revision: 1 }); peers.push(p); return json(route, p); }
+    if (url.pathname.endsWith('/reality-client-config')) return route.fulfill({ contentType: 'application/json', headers: { ...profileHeaders(peers.find(p => p.id === url.pathname.split('/')[3])), 'Content-Disposition': 'attachment; filename="razdacha-reality.json"', 'Cache-Control': 'no-store' }, body: JSON.stringify({ dns: { servers: [{ address: '10.8.0.1' }] }, inbounds: [{ type: 'tun' }], outbounds: [{ type: 'vless' }] }) });
     if (url.pathname.endsWith('/reality-config')) {
       const p = peers.find(p => p.id === url.pathname.split('/')[3]);
-      if (!p?.enabled || !p.reality_enabled || p.reality_profile_status !== 'available') return json(route, { error: 'Apply saved Reality settings before requesting a profile', code: 'not_ready' }, 409);
-      return route.fulfill({ contentType: 'text/plain', headers: { 'Content-Disposition': 'attachment; filename="reality-example.txt"', 'Cache-Control': 'no-store' }, body: realityURI });
+      if (!p?.enabled || !p.reality_enabled || !p.reality_profile_downloadable || !['pending', 'available'].includes(p.reality_profile_status)) return json(route, { error: 'Apply saved Reality settings before requesting a profile', code: 'not_ready' }, 409);
+      return route.fulfill({ contentType: 'text/plain', headers: { ...profileHeaders(p), 'Content-Disposition': 'attachment; filename="reality-example.txt"', 'Cache-Control': 'no-store' }, body: realityURI });
     }
     if (url.pathname.endsWith('/reality/rotate')) {
       const p = peers.find(p => p.id === url.pathname.split('/')[3]);
@@ -52,7 +54,7 @@ async function fixture(browser, options = {}) {
     if (url.pathname === '/api/tunnels') return json(route, tunnels);
     if (url.pathname === '/api/rules') return json(route, rules);
     if (url.pathname.includes('/lists/')) return json(route, []);
-    if (url.pathname === '/api/apply/status') return json(route, { dirty: false });
+    if (url.pathname === '/api/apply/status') return json(route, { dirty: options.dirty === true });
     if (url.pathname === '/api/version') return json(route, { version: 'synthetic-preview' });
     return json(route, {});
   });
@@ -68,7 +70,7 @@ async function fixture(browser, options = {}) {
   });
   const waitHeld = async key => { for (let i = 0; i < 300 && !held.has(key); i++) await new Promise(r => setTimeout(r, 10)); assert(held.has(key), `Missing held ${key}`); };
   const reply = async (key, body = {}, status = 200) => { await waitHeld(key); const route = held.get(key); held.delete(key); holds.delete(key); await json(route, body, status); };
-  const replyConfig = async (key = 'GET /api/peers/example/config', text = config, filename = 'example.conf') => { await waitHeld(key); const route = held.get(key); held.delete(key); holds.delete(key); await route.fulfill({ contentType: 'text/plain', headers: { 'Content-Disposition': `attachment; filename="${filename}"` }, body: text }); };
+  const replyConfig = async (key = 'GET /api/peers/example/config', text = config, filename = 'example.conf', metadata = {}) => { await waitHeld(key); const route = held.get(key); held.delete(key); holds.delete(key); await route.fulfill({ contentType: 'text/plain', headers: { ...profileHeaders(peers.find(p => p.id === key.split('/')[3])), ...metadata, 'Content-Disposition': `attachment; filename="${filename}"` }, body: text }); };
   const done = () => page.waitForFunction(() => window.actionDone);
   const open = async (id = 'example') => {
     // Replacement-dialog lifetime cases intentionally enter the handler directly.
