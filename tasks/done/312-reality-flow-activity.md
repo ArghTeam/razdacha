@@ -1,6 +1,6 @@
 # Authenticated REALITY flow activity
 
-Tracker: #312. Decision: [ADR 0038](../docs/decisions/0038-authenticated-reality-flow-observations.md).
+Tracker: #312. Decision: [ADR 0038](../../docs/decisions/0038-authenticated-reality-flow-observations.md).
 
 ## Scope and checkout
 

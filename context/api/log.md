@@ -299,4 +299,4 @@ routes preserve policy while exposing trusted opaque identity in matched rules.
 Publication/revocation stamps and live revision checks reject stale observations;
 UI receipt-time expiry and mutation recovery prevent stale green indicators.
 Profile help documents gateway DNS and full-configuration import requirements.
-See ADR 0038 and `tasks/312-reality-flow-activity.md` for the validation boundary.
+See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation boundary.
