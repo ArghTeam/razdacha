@@ -300,8 +300,9 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
 The RAC candidate's aggregate counters remain WireGuard observations. The combined
 peer inventory filters Reality-only clients out of the aggregate and displays no
 WG counter or reserved WG address on their rows. Missing WG observations stay
-unknown. The summary explicitly identifies WireGuard traffic; it never claims to
-measure REALITY sessions or combine two transports into a measured total.
+unknown. The aggregate summary identifies WireGuard byte totals. Per-client
+REALITY open-flow observations remain separate and never form a combined measured
+byte total.
 
 ## REALITY activity and DNS guidance (ADR 0038)
 

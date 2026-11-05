@@ -98,7 +98,7 @@ export function view() {
       <div class="stat"><div class="stat-label">WireGuard received</div><div class="stat-value" data-traffic="received">${received === null ? 'Unknown' : bytes(received)}</div></div>
       <div class="stat"><div class="stat-label">WireGuard sent</div><div class="stat-value" data-traffic="sent">${sent === null ? 'Unknown' : bytes(sent)}</div></div>
     </section>
-    <p class="screen-sub">Current clients since the gateway interface started; resets with the interface. Only WireGuard traffic is measured; Reality activity is not measured. Missing observations are unknown.</p>
+    <p class="screen-sub">WireGuard byte totals cover current clients and reset with the gateway interface. Missing observations are unknown.</p>
     <div class="client-overview" aria-label="Client inventory summary">
       <span><strong>${state.peers.length}</strong> clients</span>
       <span><strong>${online}</strong> WireGuard connected</span>
