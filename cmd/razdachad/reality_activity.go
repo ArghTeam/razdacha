@@ -42,11 +42,13 @@ func (g *applyGate) RealityActivityAuthority(ctx context.Context, st *store.Stor
 		return out, fmt.Errorf("read activity admission: %w", err)
 	}
 	out.Users = make(map[string]int)
+	revisions := make(map[string]int, len(g.base.RealityAdmissions))
+	for _, a := range g.base.RealityAdmissions {
+		revisions[a.PeerID] = a.Revision
+	}
 	for _, u := range live.Users {
-		for _, a := range g.base.RealityAdmissions {
-			if a.PeerID == u.PeerID {
-				out.Users[u.Name] = a.Revision
-			}
+		if revision := revisions[u.PeerID]; revision > 0 {
+			out.Users[u.Name] = revision
 		}
 	}
 	if !activityFallbacksPresent(config, out.Users) {
@@ -77,12 +79,26 @@ func activityFallbacksPresent(config []byte, users map[string]int) bool {
 	}
 	found := make(map[string]bool)
 	for _, r := range doc.Route.Rules {
-		if len(r) != 4 {
+		if len(r) != 3 && len(r) != 4 {
+			continue
+		}
+		exact := true
+		for key := range r {
+			if key != "inbound" && key != "auth_user" && key != "outbound" && key != "action" {
+				exact = false
+				break
+			}
+		}
+		if !exact {
 			continue
 		}
 		var inbound, auth []string
-		var action, outbound string
-		if json.Unmarshal(r["inbound"], &inbound) != nil || json.Unmarshal(r["auth_user"], &auth) != nil || json.Unmarshal(r["action"], &action) != nil || json.Unmarshal(r["outbound"], &outbound) != nil {
+		action := "route"
+		var outbound string
+		if !activityStringList(r["inbound"], &inbound) || !activityStringList(r["auth_user"], &auth) || json.Unmarshal(r["outbound"], &outbound) != nil {
+			continue
+		}
+		if raw, ok := r["action"]; ok && json.Unmarshal(raw, &action) != nil {
 			continue
 		}
 		if len(inbound) == 1 && inbound[0] == singbox.TagRealityIn && len(auth) == 1 && action == "route" && outbound == singbox.TagDirect {
@@ -92,4 +108,16 @@ func activityFallbacksPresent(config []byte, users map[string]int) bool {
 		}
 	}
 	return len(users) > 0 && len(found) == len(users)
+}
+
+func activityStringList(data json.RawMessage, out *[]string) bool {
+	if json.Unmarshal(data, out) == nil {
+		return true
+	}
+	var single string
+	if json.Unmarshal(data, &single) != nil {
+		return false
+	}
+	*out = []string{single}
+	return true
 }

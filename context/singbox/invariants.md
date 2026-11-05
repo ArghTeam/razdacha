@@ -68,3 +68,10 @@ description: генерация option.Options из состояния БД, п�
   (ADR 0036).
 
 - Numeric IPv4 TCP REALITY flows reaching shared destination sets recover visible TLS/HTTP names with a 300 ms bounded sniff action after authentication/private/resolve guards and whole-client exits. It never overrides the original destination, performs no recovered-name DNS lookup, repeats gateway-name rejection and excludes WG, explicit domain/FakeIP flows and UDP/QUIC. No destination sets means no sniff. Gateway DNS through the authenticated proxy remains the supported selective-routing contract; ECH/opaque names retain existing fallback (ADR 0037).
+
+- Authenticated REALITY positive terminal routes use one opaque user per branch,
+  followed by a per-user direct fallback after all destination policy. This retains
+  WG branches, source scope, ordering, guards and whole-client precedence, while
+  allowing the pinned controller's matched-rule metadata to identify open flows
+  without credentials or public-address attribution (ADR 0038). Only terminal
+  routes expand; DNS, resolve and reject alternatives keep their existing scope.

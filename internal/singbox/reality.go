@@ -139,13 +139,29 @@ func GenerateWithReality(snap store.Snapshot, plain PlainLists, live *store.Real
 		alternative.DefaultOptions.SourceIPCIDR = nil
 		alternative.DefaultOptions.Inbound = []string{TagRealityIn}
 		alternative.DefaultOptions.AuthUser = auth
-		rules = append(rules, alternative)
+		if alternative.DefaultOptions.Action == C.RuleActionTypeRoute {
+			// A singleton matcher lets the pinned controller identify this flow
+			// without exposing credentials or trusting its public source address.
+			for _, user := range auth {
+				perUser := alternative
+				perUser.DefaultOptions.AuthUser = []string{user}
+				rules = append(rules, perUser)
+			}
+		} else {
+			rules = append(rules, alternative)
+		}
 		if alternative.DefaultOptions.Action == C.RuleActionTypeResolve {
 			rules = append(rules, privateReject(auth))
 		}
 	}
 	if !inserted {
 		sharedResolve(false)
+	}
+	for _, user := range names {
+		rules = append(rules, option.Rule{Type: C.RuleTypeDefault, DefaultOptions: option.DefaultRule{
+			RawDefaultRule: option.RawDefaultRule{Inbound: []string{TagRealityIn}, AuthUser: []string{user}},
+			RuleAction:     option.RuleAction{Action: C.RuleActionTypeRoute, RouteOptions: option.RouteActionOptions{Outbound: TagDirect}},
+		}})
 	}
 	opts.Route.Rules = rules
 	dnsRules := []option.DNSRule{reject(option.RawDefaultDNSRule{Inbound: []string{TagRealityIn}, QueryType: []option.DNSQueryType{option.DNSQueryType(28)}})}

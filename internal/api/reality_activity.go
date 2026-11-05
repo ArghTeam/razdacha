@@ -104,7 +104,7 @@ func (s *Server) observeReality(ctx context.Context, peers []store.Peer) map[str
 	if err != nil || before.Epoch == "" || len(before.Users) == 0 {
 		return out
 	}
-	sample := s.realityActivity.observe(ctx, before.Epoch, s.now, func() (map[string]int, error) { return s.clash.RealityConnections(ctx) })
+	sample := s.realityActivity.observe(ctx, before.Epoch, s.now, func() (map[string]int, error) { return s.clash.RealityConnections(context.WithoutCancel(ctx)) })
 	after, err := pub.RealityActivityAuthority(ctx, s.store)
 	if err != nil || after.Epoch != before.Epoch || sample.epoch != before.Epoch || sample.counts == nil {
 		return out

@@ -489,3 +489,14 @@ also be safe for unauthenticated connections originating from this gateway; no
 address prohibition or new approval workflow was added.
 All 16 browser suites, including 36 Reality scenarios, passed on the merged tree;
 these remain synthetic API fixtures rather than deployed networking/TUN evidence.
+
+
+## 2026-11-05 — Authenticated REALITY open-flow observations (#312)
+
+Added bounded per-user open-flow snapshots from the official pinned controller,
+separate from WireGuard handshakes and counters. Singleton authenticated terminal
+routes preserve policy while exposing trusted opaque identity in matched rules.
+Publication/revocation stamps and live revision checks reject stale observations;
+UI receipt-time expiry and mutation recovery prevent stale green indicators.
+Profile help documents gateway DNS and full-configuration import requirements.
+See ADR 0038 and `tasks/312-reality-flow-activity.md` for the validation boundary.

@@ -162,3 +162,21 @@ checks that the original job identity remains retained beyond ten seconds.
 - Disable/delete/rotation/global listener disable are serialized with publication. Guarding precedes durable auth mutation and a checked restart closes active TCP/UDP sessions before success. A 503 can follow a committed revocation; clients refresh inventory/settings after failed saves/deletes as well as rotation. Revocation is never undone on failure. New admission still requires Apply.
 
 - An independently guarded runtime start makes Apply status pending and diagnostics guarded. Repair forces a checked restart even when config bytes are unchanged; draft endpoint edits never alter active clients' delivered committed URI/JSON parameters. Pending credentials can export their saved plan before Apply without changing policy, private state or runtime.
+
+## Authenticated REALITY flow observations (ADR 0038)
+
+- Client inventory adds `reality_activity` with `state`, nullable `open_flows` and
+  nullable `observed_at`. Counts describe open flows in a local runtime snapshot,
+  never idle online presence or byte volume. Missing, pending, disabled, guarded,
+  unsupported and failed observations are unavailable, not measured zero.
+- A bounded `/connections` read accepts only the pinned authenticated singleton
+  route prefix and dedicated VLESS inbound. It ignores public addresses as identity
+  and returns no connection destinations. The checked configuration must contain
+  per-user direct fallbacks before empty observations are considered supported.
+- One two-second read is shared across concurrent inventories; successful and failed
+  results have a five-second cache interval. Responses are limited to 1 MiB and
+  4096 flows. Request cancellation cannot create overlapping controller reads.
+- Private authority combines publication epoch, checked configuration and effective
+  admission revisions before and after observation. Apply/revocation advances the
+  epoch, including same-byte publication; late or mismatched samples cannot appear
+  as fresh activity. The API rechecks available admission before exposing a count.

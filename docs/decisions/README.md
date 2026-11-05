@@ -49,3 +49,5 @@
 - [0036: Saved REALITY profiles before activation](0036-pending-reality-profile-delivery.md) — pending URI/QR/JSON delivery without runtime admission; partially supersedes 0032 delivery.
 
 - [0037: REALITY visible TCP names](0037-reality-visible-tcp-names.md) — bounded TLS/HTTP matching for numeric IPv4 requests without retargeting; extends 0032.
+
+- [0038: Authenticated REALITY flow observations](0038-authenticated-reality-flow-observations.md) — bounded per-client open-flow counts from singleton authenticated runtime routes.

@@ -32,7 +32,9 @@ disabled and guarded admission cannot receive positive observations.
 
 Label positive counts **open flows**, separately from WG. Zero means no open flows
 were observed, not offline. Polling can miss short connections, and idle open flows
-do not prove recent traffic. No REALITY traffic volume is claimed.
+do not prove recent traffic. No REALITY traffic volume is claimed. The panel expires retained observations
+after thirty seconds using monotonic receipt age, including while dialogs pause
+ordinary inventory polling; server observation time remains diagnostic.
 
 ## Consequences
 

@@ -275,3 +275,14 @@ client namespace. Both used only owned synthetic services and pinned sing-box
 1.12.25. HTTP/DNS/IPv6 controls and server-stop no-fallback were observed for the
 delivered client; no operator routes or installed runtime/provider state changed.
 The task retains exact frozen source/binary hashes and compatibility limits.
+
+
+## 2026-11-05 — Authenticated REALITY open-flow observations (#312)
+
+Added bounded per-user open-flow snapshots from the official pinned controller,
+separate from WireGuard handshakes and counters. Singleton authenticated terminal
+routes preserve policy while exposing trusted opaque identity in matched rules.
+Publication/revocation stamps and live revision checks reject stale observations;
+UI receipt-time expiry and mutation recovery prevent stale green indicators.
+Profile help documents gateway DNS and full-configuration import requirements.
+See ADR 0038 and `tasks/312-reality-flow-activity.md` for the validation boundary.

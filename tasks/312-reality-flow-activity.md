@@ -24,5 +24,28 @@ No production, cloud resource mutation or legacy tunnel activation.
 
 ## Validation
 
-Implementation checks pending. Synthetic browser and loopback tests do not
-establish Android DNS capture; device confirmation remains separate.
+- Complete `CGO_ENABLED=0 go test ./...`: passed.
+- Linux golangci-lint 2.12.2: zero issues. Focused API/Clash race checks: passed.
+- All 17 embedded Chromium suites: passed, including eight new activity cases
+  covering separate WG/REALITY states, clock skew, modal-safe expiry and pending/
+  uncertain peer and global authentication changes.
+- Official sing-box 1.12.25 loopback fixture: two authenticated VLESS users sharing
+  one source address each retain separate TCP and UDP counts; selected/direct
+  egress is checked independently. Only the TLS wrapper and fixture egress dial
+  targets are substituted; no REALITY handshake or Android TUN startup is claimed.
+- Existing pinned-runtime numeric TLS/HTTP routing checks still pass.
+- Representative 100 clients × 100 rules: 10,211 route rules; compact runtime
+  fixture 1,848,764 bytes. Native check took approximately 0.43–0.48 seconds.
+  Generation plus pretty serialization benchmark: approximately 376 ms and
+  321,712,272 cumulative allocated bytes, not retained memory or RSS.
+- Standalone compiled scale test under macOS `/usr/bin/time -l` (excluding the Go
+  compiler): maximum resident set 111,468,544 bytes, peak memory footprint
+  75,276,288 bytes, zero swaps. This is the OS-reported test-process measurement,
+  not total concurrent host memory under real traffic.
+
+Synthetic browser and loopback tests do not establish Android DNS capture; device
+confirmation and sandbox deployment remain separate. Publication invalidation,
+changed config/guard rejection and restricted legacy fallback rejection are
+covered by daemon tests. Maintained API, UI and singbox invariants/logs accompany
+the implementation. The branch merged fresh `origin/main` at
+`2be4de4111d27d94dda4177d9fbb0000b43e0a2f` after the dependent TCP-routing fix.
