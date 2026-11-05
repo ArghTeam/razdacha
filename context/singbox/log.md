@@ -5,6 +5,25 @@
 
 ## 2026-11-05
 
+### #313 — recover visible names for numeric REALITY TCP destinations
+
+**Changed:** Added bounded TLS/HTTP route sniffing before shared destination sets
+for numeric IPv4 authenticated REALITY flows, retaining the original destination,
+source scope, private/admin guards and whole-client exit precedence.
+
+**Decision:** [ADR 0037](../../docs/decisions/0037-reality-visible-tcp-names.md)
+extends ADR 0032; no decision is superseded.
+
+**Validation:** Full singbox package tests, race-enabled focused regressions and
+Linux-target lint passed. Pinned-runtime synthetic flows covered TLS (including
+delayed fragmented ClientHello), HTTP, source isolation, original IP preservation,
+private/gateway rejection and a silent-stream 300 ms timeout.
+
+**Beware:** This is visible TCP name recovery only. No QUIC sniffing, ECH recovery,
+Android TUN validation or broad IP-based website matching is claimed. Gateway DNS
+through the proxy remains required for the supported selective-routing profile.
+
+
 ### #310 — owned REALITY exit verification
 
 **Changed:** Recorded live whole-client IPv4 TCP/UDP and client-facing TCP/UDP DNS observations
