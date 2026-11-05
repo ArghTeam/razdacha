@@ -49,6 +49,8 @@ description: генерация option.Options из состояния БД, п�
 
 - Whole-Internet peer source policies precede ordinary destination rules after DNS hijack. Same-exit DNS upstream and hostname bootstrap, plus an explicit source resolve action, prevent destination DNS fallback and stale FakeIP leakage. A post-resolve source-scoped private/special CIDR reject precedes the terminal exit. Missing/disabled/empty targets retain source-only route/DNS rejection. Health never authorizes fallback (ADR 0028).
 
+- Verification boundary: the [owned-exit experiment #310](../../tasks/done/310-owned-reality-egress.md) observed an actual sing-box 1.12.25 client through RAC REALITY ingress and an owned VLESS/REALITY exit, covering whole-client IPv4 TCP/UDP, DNS, exit outage without observed direct fallback, recovery and normal DoH/HTTPS. Only local client inbounds replaced exported TUN inbounds; OS TUN startup and selective destination-rule DNS were not verified. Finite packet windows, including a nonexhaustive recovery capture, do not establish universal leakage absence. ADR 0028's earlier synthetic validation remains historical and unchanged.
+
 - Native transport admission (ADR 0029) changes interception capacity, not native matching: immutable originals retain network, destination-port and logical semantics and rule ordering. DNS projections omit address-only transport branches. Recovery verifies projection v1 under the legacy contract and v2 under the transport-aware contract before guarded publication.
 
 ## Parallel client ingress (ADR 0032)

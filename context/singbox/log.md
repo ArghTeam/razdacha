@@ -5,6 +5,21 @@
 
 ## 2026-11-05
 
+### #310 — owned REALITY exit verification
+
+**Changed:** Recorded live whole-client IPv4 TCP/UDP and client-facing TCP/UDP DNS observations
+through actual RAC REALITY ingress and a separately owned VLESS/REALITY exit.
+Exit outage failed all four probes while direct controls remained reachable;
+recovery passed fresh probes. Normal DoH and HTTPS returned the DO public address.
+The normal exit and an unassigned reusable tunnel remain; temporary client,
+session, fixtures and test-port exceptions were removed, preserving existing state.
+
+**Beware:** No runtime behavior or ADR contract changed. Client tests replaced
+only exported inbounds with loopback test ports, without OS TUN/system routing.
+Capture claims cover finite windows; recovery captured 102 of 137 filter-received
+packets. Selective destination-rule DNS, reboot, arbitrary L3/IPv6 and general
+DPI resistance were not established. See the [completed record](../../tasks/done/310-owned-reality-egress.md).
+
 ### #308 — pending REALITY profile delivery
 
 **Changed:** Dedicated profile delivery can export validated saved credentials before
