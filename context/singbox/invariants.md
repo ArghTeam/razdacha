@@ -66,3 +66,5 @@ description: генерация option.Options из состояния БД, п�
   for active admission or saved for pending export. This does not change server
   configuration generation, live credential intersection or explicit Apply authority
   (ADR 0036).
+
+- Numeric IPv4 TCP REALITY flows reaching shared destination sets recover visible TLS/HTTP names with a 300 ms bounded sniff action after authentication/private/resolve guards and whole-client exits. It never overrides the original destination, performs no recovered-name DNS lookup, repeats gateway-name rejection and excludes WG, explicit domain/FakeIP flows and UDP/QUIC. No destination sets means no sniff. Gateway DNS through the authenticated proxy remains the supported selective-routing contract; ECH/opaque names retain existing fallback (ADR 0037).
