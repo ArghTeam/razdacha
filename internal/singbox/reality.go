@@ -3,11 +3,13 @@ package singbox
 import (
 	"fmt"
 	"net/netip"
+	"time"
 
 	"github.com/ArghTeam/razdacha/internal/ippolicy"
 	"github.com/ArghTeam/razdacha/internal/store"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing/common/json/badoption"
 )
 
 const TagRealityIn = "reality-in"
@@ -88,13 +90,27 @@ func GenerateWithReality(snap store.Snapshot, plain PlainLists, live *store.Real
 		{Type: C.RuleTypeDefault, DefaultOptions: option.DefaultRule{RawDefaultRule: option.RawDefaultRule{Inbound: []string{TagRealityIn}, Port: []uint16{53}}, RuleAction: option.RuleAction{Action: C.RuleActionTypeHijackDNS}}},
 		privateReject(names),
 	}
-	if snap.Settings.EndpointHost != "" {
-		if _, e := netip.ParseAddr(snap.Settings.EndpointHost); e != nil {
-			rules = append(rules, option.Rule{Type: C.RuleTypeDefault, DefaultOptions: option.DefaultRule{RawDefaultRule: option.RawDefaultRule{Inbound: []string{TagRealityIn}, Domain: []string{snap.Settings.EndpointHost}}, RuleAction: rejectAction}})
+	rejectEndpointName := func() {
+		if snap.Settings.EndpointHost != "" {
+			if _, e := netip.ParseAddr(snap.Settings.EndpointHost); e != nil {
+				rules = append(rules, option.Rule{Type: C.RuleTypeDefault, DefaultOptions: option.DefaultRule{RawDefaultRule: option.RawDefaultRule{Inbound: []string{TagRealityIn}, Domain: []string{snap.Settings.EndpointHost}}, RuleAction: rejectAction}})
+			}
 		}
 	}
-	sharedResolve := func() {
+	rejectEndpointName()
+	sharedResolve := func(withDestinationRules bool) {
 		rules = append(rules, option.Rule{Type: C.RuleTypeDefault, DefaultOptions: option.DefaultRule{RawDefaultRule: option.RawDefaultRule{Inbound: []string{TagRealityIn}}, RuleAction: option.RuleAction{Action: C.RuleActionTypeResolve, ResolveOptions: option.RouteActionResolve{Server: TagDNSUpstream, Strategy: option.DomainStrategy(C.DomainStrategyIPv4Only)}}}}, privateReject(names))
+		if withDestinationRules {
+			// Recover matching metadata only; the original numeric destination stays
+			// unchanged. Domain/FakeIP and whole-client exit paths bypass this action.
+			rules = append(rules, option.Rule{Type: C.RuleTypeDefault, DefaultOptions: option.DefaultRule{
+				RawDefaultRule: option.RawDefaultRule{Inbound: []string{TagRealityIn}, IPVersion: 4, Network: []string{"tcp"}},
+				RuleAction: option.RuleAction{Action: C.RuleActionTypeSniff, SniffOptions: option.RouteActionSniff{
+					Sniffer: []string{C.ProtocolTLS, C.ProtocolHTTP}, Timeout: badoption.Duration(300 * time.Millisecond),
+				}},
+			}})
+			rejectEndpointName()
+		}
 	}
 	inserted := false
 	for _, r := range opts.Route.Rules {
@@ -104,7 +120,7 @@ func GenerateWithReality(snap store.Snapshot, plain PlainLists, live *store.Real
 		}
 		raw := r.DefaultOptions.RawDefaultRule
 		if len(raw.RuleSet) > 0 && !inserted {
-			sharedResolve()
+			sharedResolve(true)
 			inserted = true
 		}
 		scoped := len(raw.SourceIPCIDR) > 0 || len(raw.RuleSet) > 0
@@ -129,7 +145,7 @@ func GenerateWithReality(snap store.Snapshot, plain PlainLists, live *store.Real
 		}
 	}
 	if !inserted {
-		sharedResolve()
+		sharedResolve(false)
 	}
 	opts.Route.Rules = rules
 	dnsRules := []option.DNSRule{reject(option.RawDefaultDNSRule{Inbound: []string{TagRealityIn}, QueryType: []option.DNSQueryType{option.DNSQueryType(28)}})}

@@ -57,6 +57,8 @@ Main lineage:
 
 - [0036: Saved REALITY profiles before activation](0036-pending-reality-profile-delivery.md) — pending URI/QR/JSON delivery without runtime admission; partially supersedes 0032 delivery.
 
+- [0037: REALITY visible TCP names](0037-reality-visible-tcp-names.md) — bounded TLS/HTTP matching for numeric IPv4 requests without retargeting; extends 0032.
+
 RAC candidate lineage:
 
 - [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.

@@ -15,6 +15,40 @@ Catalog/config acceptance does not establish connectivity or media suitability.
 
 ## 2026-11-05
 
+### #313 — recover visible names for numeric REALITY TCP destinations
+
+**Changed:** Added bounded TLS/HTTP route sniffing before shared destination sets
+for numeric IPv4 authenticated REALITY flows, retaining the original destination,
+source scope, private/admin guards and whole-client exit precedence.
+
+**Decision:** [ADR 0037](../../docs/decisions/0037-reality-visible-tcp-names.md)
+extends ADR 0032; no decision is superseded.
+
+**Validation:** Full singbox package tests, race-enabled focused regressions and
+Linux-target lint passed. Pinned-runtime synthetic flows covered TLS (including
+delayed fragmented ClientHello), HTTP, source isolation, original IP preservation,
+private/gateway rejection and a silent-stream 300 ms timeout.
+
+**Beware:** This is visible TCP name recovery only. No QUIC sniffing, ECH recovery,
+Android TUN validation or broad IP-based website matching is claimed. Gateway DNS
+through the proxy remains required for the supported selective-routing profile.
+
+
+### #310 — owned REALITY exit verification
+
+**Changed:** Recorded live whole-client IPv4 TCP/UDP and client-facing TCP/UDP DNS observations
+through actual RAC REALITY ingress and a separately owned VLESS/REALITY exit.
+Exit outage failed all four probes while direct controls remained reachable;
+recovery passed fresh probes. Normal DoH and HTTPS returned the DO public address.
+The normal exit and an unassigned reusable tunnel remain; temporary client,
+session, fixtures and test-port exceptions were removed, preserving existing state.
+
+**Beware:** No runtime behavior or ADR contract changed. Client tests replaced
+only exported inbounds with loopback test ports, without OS TUN/system routing.
+Capture claims cover finite windows; recovery captured 102 of 137 filter-received
+packets. Selective destination-rule DNS, reboot, arbitrary L3/IPv6 and general
+DPI resistance were not established. See the [completed record](../../tasks/done/310-owned-reality-egress.md).
+
 ### #308 — pending REALITY profile delivery
 
 **Changed:** Dedicated profile delivery can export validated saved credentials before
