@@ -265,7 +265,7 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   cannot clear a newer recovery record or overwrite drafts/intervening writes.
 - Inventory addresses, handshakes and counters describe WireGuard only. Reality-only
   clients hide the reserved WireGuard address and counters; Reality availability is
-  distinct from connection activity, which the server does not currently measure.
+  distinct from the separately observed open-flow count (ADR 0038).
 - Synthetic browser fixtures exercise the actual embedded modules without contacting
   any daemon, provider or tunnel. Frontend checks do not establish real transport
   connectivity, DNS behavior, server revocation or ingress guard correctness.
@@ -292,3 +292,21 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   import alone cannot enforce DNS capture. The server-generated JSON includes TUN
   and DNS routing. Browser regressions validate delivery/lifetime, not actual TUN
   startup, operating-system routing, DNS capture or end-to-end client connectivity.
+
+## REALITY activity and DNS guidance (ADR 0038)
+
+- A client dot may use a positive authenticated REALITY open-flow snapshot separately
+  from WG handshake/counters. Zero is no open flows observed; missing, stale or
+  invalid samples are unavailable. Pending/uncertain peer or global auth mutations
+  immediately suppress cached REALITY activity until authoritative recovery.
+- The API checks server-side sample age. The browser measures receipt age with its
+  monotonic clock, avoiding assumptions that server and browser wall clocks agree.
+  An activity-only timer expires indicators after thirty seconds without a new
+  inventory observation, including while an editor/menu pauses normal polling.
+  It updates only text/dots, preserving focus and unsaved fields, and stops when
+  leaving the client screen. These snapshots can miss short-lived flows and do not
+  establish recent traffic or idle online presence.
+- REALITY profile help requires VPN/TUN capture and UDP gateway DNS `10.8.0.1:53`
+  through the proxy. URI import cannot enforce that setup; JSON importers which
+  keep only outbounds also need full-configuration mode or explicit DNS setup.
+  QUIC/encrypted-name domain routing relies on that DNS path, not TCP sniffing.

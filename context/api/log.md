@@ -289,3 +289,14 @@ test matrix; no live race replay or client/media end-to-end claim is made.
 ## 2026-11-04 — #297 parallel authenticated client ingress
 
 Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The api invariants record final behavior; this entry does not claim deployment or general DPI resistance.
+
+
+## 2026-11-05 — Authenticated REALITY open-flow observations (#312)
+
+Added bounded per-user open-flow snapshots from the official pinned controller,
+separate from WireGuard handshakes and counters. Singleton authenticated terminal
+routes preserve policy while exposing trusted opaque identity in matched rules.
+Publication/revocation stamps and live revision checks reject stale observations;
+UI receipt-time expiry and mutation recovery prevent stale green indicators.
+Profile help documents gateway DNS and full-configuration import requirements.
+See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation boundary.
