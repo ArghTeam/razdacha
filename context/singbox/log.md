@@ -309,3 +309,23 @@ the actual panel showed the intended two-hop rule without writes or page errors.
 The [operational record](../../tasks/done/316-owned-reality-warp-chain.md) preserves
 the foreign local FakeIP diagnostic, final-state boundary, rollback and cleanup
 evidence. No runtime code, release or production change accompanies this record.
+
+## 2026-11-06 — Independent DO-hosted WARP exit (#318)
+
+Moved the sandbox WARP leg into a new independently authenticated DO REALITY
+service on TCP2443, restricted to RAC. The existing direct DO443 service retained
+its PID, configuration, unit and credentials. RAC now has two ordinary VLESS
+tunnels; the selected WWW-only CF rule uses DO + WARP with an empty second hop.
+After positive verification, the old native RAC WARP entry was removed and Apply
+completed with zero RAC WARP registrations/endpoints. Historical #316 remains
+unchanged as the record of the earlier topology.
+
+An actual exported client passed selected hostname, public-IP TLS-name, gateway
+FakeIP and temporary-scope UDP STUN checks. Stopping only the new service rejected
+the selected request while original DO IPinfo and RAC direct controls worked;
+recovery and post-cleanup HTTPS passed. Final UDP was observed before restoring
+the WWW-only matcher, not repeated after old-entry deletion. The observed NL/AMS
+Cloudflare exit matched the earlier chain and establishes no location guarantee
+or residential IP claim. No application code, production host, release or host-wide
+route changed. The [operational record](../../tasks/done/318-do-warp-egress.md)
+preserves exact topology, verification, rollback and evidence limits.
