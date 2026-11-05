@@ -123,12 +123,13 @@ type Config struct {
 
 // Server — HTTP-сервер панели.
 type Server struct {
-	addr     string
-	store    *store.Store
-	log      *slog.Logger
-	now      func() time.Time
-	throttle *throttle
-	verify   chan struct{}
+	realityActivity realityActivityCache
+	addr            string
+	store           *store.Store
+	log             *slog.Logger
+	now             func() time.Time
+	throttle        *throttle
+	verify          chan struct{}
 	// sleep выдерживает задержку после неудачного входа; в тестах подменяется,
 	// чтобы проверка блокировки не занимала секунды реального времени.
 	sleep      func(context.Context, time.Duration)

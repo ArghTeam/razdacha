@@ -18,12 +18,13 @@ import (
 // applyGate owns all manual, list and pool publication (ADR 0023).
 // The editable database is never an automatic source of applied routing policy.
 type applyGate struct {
-	store   *store.Store
-	inner   *singbox.Applier
-	log     *slog.Logger
-	mu      sync.Mutex
-	base    store.Snapshot
-	network *networkPublication
+	activityEpoch uint64
+	store         *store.Store
+	inner         *singbox.Applier
+	log           *slog.Logger
+	mu            sync.Mutex
+	base          store.Snapshot
+	network       *networkPublication
 }
 
 func newApplyGate(inner *singbox.Applier, network *networkPublication, log *slog.Logger) *applyGate {
