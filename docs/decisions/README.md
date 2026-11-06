@@ -55,3 +55,4 @@
 - [0039: REALITY open-flow byte observations](0039-reality-open-flow-bytes.md) — nullable current-flow bytes, separate transport scopes and synchronized expiry; partially supersedes 0038's counts-only payload boundary.
 
 - [0040: WireGuard publication admission](0040-wireguard-publication-admission.md) — live peer reconciliation under the publication gate before policy/address release; extends 0023.
+- [0041: REALITY domain-denial preflight](0041-reality-domain-denial-preflight.md) — bounded scoped rejection before shared resolution, preserving positive ordering and captured DNS.
