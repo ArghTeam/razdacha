@@ -19,6 +19,14 @@ a deployed restart, tunnel behavior or external REALITY client connection.
 loads missing canonical sources under a bounded request and checks cancellation
 before publication. Generic failures preserve retry intent without secret output.
 **Beware:** Reopening changes metadata only; legacy configured policy is read-only.
+## 2026-11-06 — REALITY current-flow bytes (#322)
+
+Extended the existing authenticated, bounded connection snapshot with nullable
+per-user upload/download byte sums. Missing directions remain unknown without
+discarding valid flow counts; malformed/negative/overflow snapshots fail closed
+as observations. Admission, publication epoch, freshness and coalescing remain
+unchanged. Global runtime counters and WireGuard traffic are excluded. ADR 0039
+defines current-flow scope and narrows ADR 0038's previous counts-only boundary.
 
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->

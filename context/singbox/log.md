@@ -296,3 +296,65 @@ Publication/revocation stamps and live revision checks reject stale observations
 UI receipt-time expiry and mutation recovery prevent stale green indicators.
 Profile help documents gateway DNS and full-configuration import requirements.
 See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation boundary.
+
+## 2026-11-06 — Owned REALITY to WARP chain verification (#316)
+
+Exercised the existing ADR 0012 userspace WARP clone through the owned VLESS/REALITY
+DO exit using an actual exported client profile with loopback-only diagnostic
+inbounds. Selected HTTPS trace, a real-public-IP TLS-name request, gateway FakeIP
+and UDP STUN reported Cloudflare exits. A configured-disabled WARP leg rejected
+selected requests while the direct control worked; restoring it recovered the
+chain. Four samples over 143.6 seconds remained successful across advancing
+standalone WARP health timestamps; that endpoint's health status stayed unknown
+and is distinct from chain verification. No DO service/route or local-machine
+route/DNS change was required. The run did not test a physical handshake outage,
+indefinite stability or same-exit DNS for shared destination rules.
+
+The existing IPinfo DO-only route was retained after IPinfo returned HTTP 429
+through WARP. The new selected WWW-only Cloudflare check keeps chain verification
+separate. The second client remained direct, client exports were byte-identical,
+protected state was preserved and temporary sessions/exports/processes were
+removed. Final Apply was clean with active services and released checked ingress;
+the actual panel showed the intended two-hop rule without writes or page errors.
+The [operational record](../../tasks/done/316-owned-reality-warp-chain.md) preserves
+the foreign local FakeIP diagnostic, final-state boundary, rollback and cleanup
+evidence. No runtime code, release or production change accompanies this record.
+
+## 2026-11-06 — Independent DO-hosted WARP exit (#318)
+
+Moved the sandbox WARP leg into a new independently authenticated DO REALITY
+service on TCP2443, restricted to RAC. The existing direct DO443 service retained
+its PID, configuration, unit and credentials. RAC now has two ordinary VLESS
+tunnels; the selected WWW-only CF rule uses DO + WARP with an empty second hop.
+After positive verification, the old native RAC WARP entry was removed and Apply
+completed with zero RAC WARP registrations/endpoints. Historical #316 remains
+unchanged as the record of the earlier topology.
+
+An actual exported client passed selected hostname, public-IP TLS-name, gateway
+FakeIP and temporary-scope UDP STUN checks. Stopping only the new service rejected
+the selected request while original DO IPinfo and RAC direct controls worked;
+recovery and post-cleanup HTTPS passed. Final UDP was observed before restoring
+the WWW-only matcher, not repeated after old-entry deletion. The observed NL/AMS
+Cloudflare exit matched the earlier chain and establishes no location guarantee
+or residential IP claim. No application code, production host, release or host-wide
+route changed. The [operational record](../../tasks/done/318-do-warp-egress.md)
+preserves exact topology, verification, rollback and evidence limits.
+
+## 2026-11-06 — Direct DO client profiles (#320)
+
+Added one fresh client user to each existing DO REALITY listener, retaining the
+RAC users, server keys, service units and route/DNS policy. Only the two owned
+services were restarted after checked atomic configuration publication. Additive
+public IPv4 TCP443/TCP2443 permits replace the earlier RAC-only access boundary;
+all original host rules and cloud rule membership/bindings remain. Cloud rule
+list order was provider-normalized, not treated as stable.
+
+Private URI/QR and full sing-box profiles point directly at DO. Actual-profile
+loopback probes passed TCP, UDP STUN and configured proxy DoH: direct exit
+165.22.196.130 with WARP off, versus Cloudflare exits with WARP on. No operator
+TUN or network change was made; Android on-device/import behavior and physical
+carrier path remain untested. The [operational record](../../tasks/done/320-direct-do-clients.md)
+retains rollback, exact evidence and access boundaries. Historical #318 remains
+unchanged. Existing RAC client smoke checks passed after both DO restarts; its
+protected saved-state fingerprint remained exact, Apply was clean and ingress
+released. No application code, production deployment or release changed.

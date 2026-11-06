@@ -6,7 +6,7 @@ description: Static HTML/CSS/ES modules embedded from ui/dist; defaults instead 
 
 ## Invariants
 - Authenticated first login opens setup only from a persisted pending marker, never peer count. The modal guides choice/review/explicit Apply/existing profile delivery/Finish, with a header reopen entry. No mount/selection/poll changes routes. Legacy configured policy is read-only; failed prepared intent retains its choices for retry. Session/modal/navigation guards prevent delayed responses from replacing newer work. QR/private profile copies and download blobs are scoped to modal cleanup. An accepted enabled pool with zero candidates explicitly warns that assigned resources reject until refreshed, without direct fallback; inventory is not runtime health. The existing four-tab panel and design system remain (ADR 0035).
-- Clients shows aggregate gateway received/sent traffic for current clients since interface start, alongside unchanged per-client rows. Each direction is unknown if any current client lacks a finite nonnegative numeric observation, or when no clients exist. Measured zero remains zero; counters are not lifetime history (#291).
+- Clients keeps one transport-specific traffic summary. WG gateway received/sent bytes cover current WG clients since interface start; missing, invalid or absent WG observations stay Unknown. REALITY cards cover current open flows under ADR 0039, separately from WG totals. Measured zero remains zero; neither scope is lifetime history (#291, #322).
 - Интерфейс — статика без сборщика в `ui/dist`, уезжает в бинарник через `go:embed`. Никакого npm и node в цепочке сборки демона.
 - Внешних ссылок в статике нет вовсе: ни CDN, ни шрифтов, ни картинок. Всё, что нужно панели, лежит рядом — иначе оно не попадёт в `go:embed`. Единственный внешний запрос — проверка свежего релиза у GitHub, и её делает **браузер**, а не демон: сервер наружу не ходит, панель работает и без исходящего интернета, а бейдж просто не появляется (#114).
 - Пустота не заполняется выдумкой: нет данных — так и говорим («не проверялся», «данные появятся позже»), а не показываем ноль.
@@ -297,14 +297,13 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
 
 ## RAC-only integration boundary
 
-The RAC candidate's aggregate counters remain WireGuard observations. The combined
-peer inventory filters Reality-only clients out of the aggregate and displays no
-WG counter or reserved WG address on their rows. Missing WG observations stay
-unknown. The aggregate summary identifies WireGuard byte totals. Per-client
-REALITY open-flow observations remain separate and never form a combined measured
-byte total.
+The RAC candidate uses one four-card summary with separate WG cumulative and
+REALITY current-open-flow scopes. REALITY-only clients are excluded from WG
+aggregation and hide reserved WG addresses/counters. Missing or invalid WG row
+observations remain Unknown, including when no WG client is observed; no combined transport byte total is displayed.
+Candidate onboarding and shadow-only probe behavior remain separate from main.
 
-## REALITY activity and DNS guidance (ADR 0038)
+## REALITY activity and DNS guidance (ADRs 0038 and 0039)
 
 - A client dot may use a positive authenticated REALITY open-flow snapshot separately
   from WG handshake/counters. Zero is no open flows observed; missing, stale or
@@ -314,9 +313,22 @@ byte total.
   monotonic clock, avoiding assumptions that server and browser wall clocks agree.
   An activity-only timer expires indicators after thirty seconds without a new
   inventory observation, including while an editor/menu pauses normal polling.
-  It updates only text/dots, preserving focus and unsaved fields, and stops when
+  It expires header byte/count observations and row bytes together, updates only
+  text/dots, preserves focus and unsaved fields, and stops when
   leaving the client screen. These snapshots can miss short-lived flows and do not
   establish recent traffic or idle online presence.
+- Separate cards show cumulative WG gateway received/sent bytes and REALITY
+  current-open-flow received/sent bytes. REALITY received maps to client upload;
+  sent maps to client download. They are never added across transport scopes.
+  REALITY rows use explicit gateway-direction labels; the overview counts clients
+  with fresh positive open-flow observations separately from WG connected clients.
+- REALITY snapshot values can decrease on closure and omit completed short flows,
+  DNS-hijacked/rejected traffic and historical usage. Missing, stale, unsafe-integer
+  observations or unsafe aggregate sums show Unknown. A missing eligible client
+  prevents a complete aggregate instead of silently displaying a partial total.
+  Disabled clients are excluded; enabled pending/guarded/uncertain clients do not
+  turn missing observations into measured zero
+  ([ADR 0039](../../docs/decisions/0039-reality-open-flow-bytes.md)).
 - REALITY profile help requires VPN/TUN capture and UDP gateway DNS `10.8.0.1:53`
   through the proxy. URI import cannot enforce that setup; JSON importers which
   keep only outbounds also need full-configuration mode or explicit DNS setup.

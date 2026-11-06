@@ -1,6 +1,6 @@
 # 0038. Authenticated REALITY flow observations
 
-Date: 2026-11-05 · Status: **accepted** · Tracker: [#312](https://github.com/ArghTeam/razdacha/issues/312)
+Date: 2026-11-05 · Status: **accepted; counts-only payload boundary partially superseded by [ADR 0039](0039-reality-open-flow-bytes.md)** · Tracker: [#312](https://github.com/ArghTeam/razdacha/issues/312)
 
 ## Context
 

@@ -61,6 +61,8 @@ Main lineage:
 
 - [0038: Authenticated REALITY flow observations](0038-authenticated-reality-flow-observations.md) — bounded per-client open-flow counts from singleton authenticated runtime routes.
 
+- [0039: REALITY open-flow byte observations](0039-reality-open-flow-bytes.md) — nullable current-flow bytes, separate transport scopes and synchronized expiry; partially supersedes 0038's counts-only payload boundary.
+
 RAC candidate lineage:
 
 - [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.

@@ -16,8 +16,8 @@ const { fixture, examplePeer } = require('./client.fixture.cjs');
     ]) {
       const t = await fixture(browser, { peers });
       try {
-        assert.equal(await t.page.locator('[data-traffic="received"]').textContent(), received, name);
-        assert.equal(await t.page.locator('[data-traffic="sent"]').textContent(), sent, name);
+        assert.equal(await t.page.locator('.stat').filter({ has: t.page.getByText('WireGuard received', { exact: true }) }).locator('.stat-value').textContent(), received, name);
+        assert.equal(await t.page.locator('.stat').filter({ has: t.page.getByText('WireGuard sent', { exact: true }) }).locator('.stat-value').textContent(), sent, name);
         assert.equal(await t.page.locator('.client-row').count(), peers.length, name);
         const rows = await t.page.locator('.client-traffic').allTextContents();
         const measured = peers.filter(peer => peer.wireguard_enabled !== false);
@@ -25,8 +25,8 @@ const { fixture, examplePeer } = require('./client.fixture.cjs');
         for (let i = 0; i < measured.length; i++) {
           if ([measured[i].rx_bytes, measured[i].tx_bytes].some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) assert(rows[i].includes('Unknown'), `${name}: missing per-client observation shown as zero`);
         }
-        assert.equal(await t.page.evaluate(async () => (await import('/js/screens/peers.js')).aggregateTraffic([], 'rx_bytes')), null);
-        assert(await t.page.getByText('WireGuard byte totals cover current clients', { exact: false }).isVisible());
+        assert.equal(await t.page.locator('.summary .stat').count(), 4, 'one unified transport summary');
+        assert(await t.page.getByText('WG counters and REALITY current-flow snapshots have different scopes', { exact: false }).isVisible());
       } finally { await t.page.close(); }
     }
   } finally { await browser.close(); }

@@ -28,6 +28,13 @@ legacy rule adoption. Per-client missing traffic now remains Unknown, like aggre
 totals without removing per-client rows. Missing/invalid direction observations
 remain unknown; measured zero is preserved. Labels describe current-client and
 interface-reset scope rather than lifetime history.
+## 2026-11-06 — Transport-specific client observations (#322)
+
+Added separate WireGuard cumulative and REALITY current-open-flow traffic cards,
+gateway direction labels, per-client REALITY bytes and a fresh open-flow client
+count. Header and row observations expire together during paused polling without
+replacing modal drafts/focus. Unknown and unsafe/partial observations remain
+explicit; no REALITY history or combined transport total is claimed (ADR 0039).
 
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->

@@ -60,6 +60,7 @@ function scheduleActivityExpiry() {
       const status = editor.modal.querySelector('#client-reality-status');
       if (peer && status) status.textContent = realityRecoveryMessage(peer.id) || realityStatusText(peer);
     }
+    updateRealitySummary();
     scheduleActivityExpiry();
   }, 1000);
 }
@@ -82,7 +83,7 @@ export function view() {
         <div class="client-identity">
           <div class="client-name"><span class="dot ${on ? 'on' : 'off'}" aria-hidden="true"></span><h2>${esc(p.name)}</h2></div>
           ${wireGuardEnabled(p) ? `<div class="mono row-meta">WG · ${esc(p.address)}</div>` : ''}
-          <div class="row-meta">${activity}${wireGuardEnabled(p) ? ` <span class="client-traffic">· ↓ ${observedTraffic(p.rx_bytes)} · ↑ ${observedTraffic(p.tx_bytes)}</span>` : ''}</div>${reality}
+          <div class="row-meta">${activity}${wireGuardEnabled(p) ? ` <span class="client-traffic">· ↓ ${displayBytes(safeBytes(p.rx_bytes))} · ↑ ${displayBytes(safeBytes(p.tx_bytes))}</span>` : ''}</div>${reality}
         </div>
         <div class="client-route"><div class="client-label">Configured route</div>${routingSummary(p)}</div>
         <div class="row-actions client-actions">
@@ -91,17 +92,11 @@ export function view() {
       </article>`;
   }).join('');
 
-  const received = aggregateTraffic(state.peers, 'rx_bytes');
-  const sent = aggregateTraffic(state.peers, 'tx_bytes');
-  return head() + `
-    <section class="summary" aria-label="Aggregate WireGuard client traffic">
-      <div class="stat"><div class="stat-label">WireGuard received</div><div class="stat-value" data-traffic="received">${received === null ? 'Unknown' : bytes(received)}</div></div>
-      <div class="stat"><div class="stat-label">WireGuard sent</div><div class="stat-value" data-traffic="sent">${sent === null ? 'Unknown' : bytes(sent)}</div></div>
-    </section>
-    <p class="screen-sub">WireGuard byte totals cover current clients and reset with the gateway interface. Missing observations are unknown.</p>
+  return head() + trafficSummary() + `
     <div class="client-overview" aria-label="Client inventory summary">
       <span><strong>${state.peers.length}</strong> clients</span>
       <span><strong>${online}</strong> WireGuard connected</span>
+      <span><strong data-reality-summary="clients">${displayCount(realitySummary().clients)}</strong> REALITY clients with open flows</span>
       <span><strong>${selected}</strong> selected exit</span>
       <span><strong>${state.peers.length - selected}</strong> shared rules</span>
     </div>
@@ -109,22 +104,59 @@ export function view() {
       <span>Saved routes need Apply. Device access can change during synchronization before Apply.${state.dirty ? ' Unapplied changes exist.' : ''}</span>
     </div>
     <div class="card client-inventory">${rows || '<div class="empty"><strong>No clients yet</strong><p>Add a device to create its WireGuard configuration, then choose its route.</p><button class="btn" data-act="add-peer">Add client</button></div>'}</div>
-    <p class="screen-sub" style="margin-top:10px">WireGuard traffic counters are measured since the gateway interface started. Reality shows open flows from a server snapshot. Its indicator expires after 30 seconds without a new observation; short connections between polls may be missed.</p>`;
+    <p class="screen-sub" style="margin-top:10px">WireGuard counters cover current clients since the gateway interface started. REALITY shows bytes in currently open flows, not cumulative usage: values can fall when flows close. Short completed flows, DNS-hijacked and rejected traffic are outside this snapshot. REALITY observations expire after 30 seconds without a new observation.</p>`;
 }
 
-const observedTraffic = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? bytes(value) : 'Unknown';
+const safeBytes = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+const displayBytes = value => value === null ? 'Unknown' : bytes(value);
+const displayCount = value => value === null ? 'Unknown' : String(value);
 
-export function aggregateTraffic(peers, key) {
-  const observed = peers.filter(wireGuardEnabled);
-  if (!observed.length) return null;
+function wireGuardTotal(field) {
+  const peers = state.peers.filter(wireGuardEnabled);
+  if (peers.length === 0) return null;
   let total = 0;
-  for (const peer of observed) {
-    const value = peer[key];
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
+  for (const peer of peers) {
+    const value = safeBytes(peer[field]);
+    if (value === null || !Number.isSafeInteger(total + value)) return null;
     total += value;
-    if (!Number.isFinite(total)) return null;
   }
   return total;
+}
+
+function realityBytes(peer, field) {
+  return realityFlowCount(peer) === null ? null : safeBytes(peer.reality_activity[field]);
+}
+
+function realitySummary() {
+  let clients = 0, received = 0, sent = 0;
+  for (const peer of state.peers.filter(p => p.enabled !== false && realityEnabled(p))) {
+    const count = realityFlowCount(peer);
+    if (count === null) clients = null;
+    else if (clients !== null && count > 0) clients++;
+    const upload = realityBytes(peer, 'open_upload_bytes');
+    const download = realityBytes(peer, 'open_download_bytes');
+    received = received === null || upload === null || !Number.isSafeInteger(received + upload) ? null : received + upload;
+    sent = sent === null || download === null || !Number.isSafeInteger(sent + download) ? null : sent + download;
+  }
+  return { clients, received, sent };
+}
+
+function trafficSummary() {
+  const reality = realitySummary();
+  return `<section class="summary" aria-label="Client traffic observations">
+    <div class="stat"><div class="stat-label">WireGuard received</div><div class="stat-value">${displayBytes(wireGuardTotal('rx_bytes'))}</div></div>
+    <div class="stat"><div class="stat-label">WireGuard sent</div><div class="stat-value">${displayBytes(wireGuardTotal('tx_bytes'))}</div></div>
+    <div class="stat"><div class="stat-label">REALITY open-flow received</div><div class="stat-value" data-reality-summary="received">${displayBytes(reality.received)}</div></div>
+    <div class="stat"><div class="stat-label">REALITY open-flow sent</div><div class="stat-value" data-reality-summary="sent">${displayBytes(reality.sent)}</div></div>
+  </section><p class="screen-sub">Received and sent are measured at the gateway. WG counters and REALITY current-flow snapshots have different scopes and are not added together.</p>`;
+}
+
+function updateRealitySummary() {
+  const summary = realitySummary();
+  for (const node of document.querySelectorAll('[data-reality-summary]')) {
+    const field = node.dataset.realitySummary;
+    node.textContent = field === 'clients' ? displayCount(summary.clients) : displayBytes(summary[field]);
+  }
 }
 
 const head = () => `
@@ -208,14 +240,16 @@ function realityFlowCount(peer) {
   const sample = peer?.reality_activity;
   const time = Date.parse(sample?.observed_at);
   const age = api.peerActivityAge(peer);
-  if (peer?.enabled === false || realityRecovery(peer?.id) || realityStatus(peer) !== 'available' || sample?.state !== 'observed' || !Number.isInteger(sample.open_flows) || sample.open_flows < 0 || !Number.isFinite(time) || age === null || age < 0 || age > 30000) return null;
+  if (peer?.enabled === false || realityRecovery(peer?.id) || realityStatus(peer) !== 'available' || sample?.state !== 'observed' || !Number.isSafeInteger(sample.open_flows) || sample.open_flows < 0 || !Number.isFinite(time) || age === null || age < 0 || age > 30000) return null;
   return sample.open_flows;
 }
 function realityStatusText(peer) {
   switch (realityStatus(peer)) {
     case 'available': {
       const count = realityFlowCount(peer);
-      return count === null ? 'Reality · Activity unavailable' : count > 0 ? `Reality · ${count} open ${count === 1 ? 'flow' : 'flows'}` : 'Reality · No open flows observed';
+      if (count === null) return 'Reality · Activity unavailable';
+      const activity = count > 0 ? `Reality · ${count} open ${count === 1 ? 'flow' : 'flows'}` : 'Reality · No open flows observed';
+      return `${activity} · Open-flow received ${displayBytes(realityBytes(peer, 'open_upload_bytes'))} · sent ${displayBytes(realityBytes(peer, 'open_download_bytes'))}`;
     }
     case 'pending': return peer?.reality_profile_downloadable === true ? 'Works after Apply. Import this profile now, then close this dialog and Apply saved changes to activate access.' : 'Complete and save Reality settings and the public gateway endpoint in Network to obtain a profile. Reload Reality status after saving. Then Apply to activate access.';
     case 'guarded': return 'Reality ingress is guarded. Resolve the server error and Apply before requesting a profile.';

@@ -170,11 +170,14 @@ Configure and Finish retain their existing publication lock and also treat a
 guarded public-ingress manifest as uncertain. An independent runtime start cannot
 permit setup completion before checked Apply repairs and releases that ingress.
 
-## Authenticated REALITY flow observations (ADR 0038)
+## Authenticated REALITY flow observations (ADRs 0038 and 0039)
 
-- Client inventory adds `reality_activity` with `state`, nullable `open_flows` and
-  nullable `observed_at`. Counts describe open flows in a local runtime snapshot,
-  never idle online presence or byte volume. Missing, pending, disabled, guarded,
+- Client inventory adds `reality_activity` with `state`, nullable `open_flows`,
+  `open_upload_bytes`, `open_download_bytes` and `observed_at`. Counts and bytes
+  describe currently open flows, never idle online presence or cumulative usage.
+  Upload is client to gateway; download is gateway to client
+  ([ADR 0039](../../docs/decisions/0039-reality-open-flow-bytes.md)).
+  Missing, pending, disabled, guarded,
   unsupported and failed observations are unavailable, not measured zero.
 - A bounded `/connections` read accepts only the pinned authenticated singleton
   route prefix and dedicated VLESS inbound. It ignores public addresses as identity
@@ -187,3 +190,9 @@ permit setup completion before checked Apply repairs and releases that ingress.
   admission revisions before and after observation. Apply/revocation advances the
   epoch, including same-byte publication; late or mismatched samples cannot appear
   as fresh activity. The API rechecks available admission before exposing a count.
+- Missing byte fields preserve valid counts but make the corresponding user's
+  direction unknown; a missing field cannot become a partial sum. Present malformed,
+  negative or overflowing counters invalidate the snapshot. A successful fresh
+  snapshot gives admitted absent users zero open flows and zero open-flow bytes.
+  Global controller totals and other inbounds are excluded. Samples replace one
+  another without persistence or accumulation; closed flows reduce current bytes.
