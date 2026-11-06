@@ -167,6 +167,9 @@ func (g *applyGate) PatchPeer(ctx context.Context, st *store.Store, id string, p
 	if err != nil {
 		return store.Peer{}, err
 	}
+	if err := st.ValidatePeerPatch(ctx, old, patch); err != nil {
+		return store.Peer{}, err
+	}
 	revoke := old.RealityEnabled && old.Enabled && ((patch.Enabled != nil && !*patch.Enabled) || (patch.RealityEnabled != nil && !*patch.RealityEnabled))
 	if revoke {
 		if err := g.closeForRevocation(); err != nil {
@@ -232,6 +235,13 @@ func (g *applyGate) RotateReality(ctx context.Context, st *store.Store, id strin
 func (g *applyGate) SaveSettings(ctx context.Context, st *store.Store, next store.Settings) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	return g.saveSettings(ctx, st, next)
+}
+
+func (g *applyGate) saveSettings(ctx context.Context, st *store.Store, next store.Settings) error {
+	if err := next.Validate(); err != nil {
+		return err
+	}
 	old, err := st.Settings(ctx)
 	if err != nil {
 		return err
@@ -249,6 +259,19 @@ func (g *applyGate) SaveSettings(ctx context.Context, st *store.Store, next stor
 		return g.reconcileRevocation(ctx)
 	}
 	return nil
+}
+
+// PatchSettings serializes fresh read, merge, validation and revocation write.
+func (g *applyGate) PatchSettings(ctx context.Context, st *store.Store, merge func(store.Settings) store.Settings) (before, after store.Settings, err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	before, err = st.Settings(ctx)
+	if err != nil {
+		return
+	}
+	after = merge(before)
+	err = g.saveSettings(ctx, st, after)
+	return
 }
 
 func (g *applyGate) RealityStatus(ctx context.Context, st *store.Store, p store.Peer) string {
@@ -294,26 +317,12 @@ func (g *applyGate) realityProfile(ctx context.Context, st *store.Store, id stri
 	if err != nil {
 		return out, err
 	}
-	cfg, p := material.Settings, material.Peer
-	out.State, out.Revision = "pending", p.RealityRevision
-	if g.base.Settings.RealityEnabled {
-		if material.IdentityID != g.base.RealityIdentityID {
-			return out, api.ErrNetworkGuarded
-		}
-		for _, a := range g.base.RealityAdmissions {
-			if a.PeerID != id || a.CredentialID != p.RealityCredentialID || a.Revision != p.RealityRevision {
-				continue
-			}
-			for _, committed := range g.base.Peers {
-				if committed.ID == id && committed.Enabled && committed.RealityEnabled {
-					cfg, out.State = g.base.Settings, "available"
-				}
-			}
-		}
+	p := material.Peer
+	cfg, state, err := g.realityDeliveryPlan(indexRealityPolicy(g.base), material.Settings, p, material.IdentityID, material.PublicKey, material.ShortID, material.UUID != "")
+	if err != nil {
+		return out, err
 	}
-	if err := cfg.ValidateRealityDelivery(); err != nil {
-		return api.RealityProfile{}, err
-	}
+	out.State, out.Revision = state, p.RealityRevision
 	out.JSON, err = singbox.RealityClientProfile(cfg, material.UUID, material.PublicKey, material.ShortID)
 	if err != nil {
 		return api.RealityProfile{}, err
@@ -331,8 +340,8 @@ func (g *applyGate) RealityProfile(ctx context.Context, st *store.Store, id stri
 }
 
 func (g *applyGate) RealityDownloadable(ctx context.Context, st *store.Store, p store.Peer) bool {
-	profile, err := g.RealityProfile(ctx, st, p.ID)
-	return err == nil && profile.Revision == p.RealityRevision
+	entry := g.RealityInventory(ctx, st, []store.Peer{p})[p.ID]
+	return entry.Downloadable && entry.Revision == p.RealityRevision
 }
 
 func (g *applyGate) RealityConfig(ctx context.Context, st *store.Store, id string) (string, error) {

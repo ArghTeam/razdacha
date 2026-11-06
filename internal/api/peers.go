@@ -94,10 +94,22 @@ func (s *Server) handleListPeers(w http.ResponseWriter, r *http.Request) {
 	}
 	stats := s.peerStats(r)
 	activity := s.observeReality(r.Context(), list)
+	var inventory map[string]RealityInventoryEntry
+	_, batched := s.applier.(RealityInventoryPublisher)
+	if pub, ok := s.applier.(RealityInventoryPublisher); ok {
+		inventory = pub.RealityInventory(r.Context(), s.store, list)
+	}
 	now := s.now()
 	out := make([]peerResponse, 0, len(list))
 	for _, p := range list {
-		resp := s.peerResponse(r.Context(), p)
+		resp := newPeerResponse(p)
+		if batched {
+			if e, ok := inventory[p.ID]; ok && e.Revision == p.RealityRevision {
+				resp.RealityProfileStatus, resp.RealityProfileDownloadable = e.Status, e.Downloadable
+			}
+		} else {
+			resp = s.peerResponse(r.Context(), p)
+		}
 		if a, ok := activity[p.ID]; ok && resp.RealityProfileStatus == "available" {
 			resp.RealityActivity = &a
 		}

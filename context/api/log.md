@@ -1,5 +1,16 @@
 # Api — log
 
+## 2026-11-06 — coherent REALITY control and inventory (#327)
+
+Moved settings partial merges and pure revocation validation inside the publication
+gate, before guard/authentication mutation. Invalid disable requests leave unrelated
+clients available; write/restart failures after guarding still remain closed.
+Inventory now reads one request-local metadata snapshot and indexes admission once,
+without exporting secret profiles for downloadability. Dedicated delivery and boolean
+eligibility share pending/committed endpoint validation. Observation epoch/live checks
+remain unchanged. Deterministic regressions cover concurrent saves, invalid HTTP 400
+requests, guarded write failure, 100-client inventory and fixed query/export counts.
+
 ## 2026-11-06 — REALITY current-flow bytes (#322)
 
 Extended the existing authenticated, bounded connection snapshot with nullable
