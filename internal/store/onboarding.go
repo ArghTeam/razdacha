@@ -325,3 +325,36 @@ func (s *Store) AcceptOnboarding(ctx context.Context, expected string, finish bo
 		return saveOnboarding(ctx, tx, state)
 	})
 }
+
+// ReviewOnboarding refreshes metadata only after explicit accepted-policy review.
+func (s *Store) ReviewOnboarding(ctx context.Context, revision, expected string) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		state, err := onboardingState(ctx, tx)
+		if err != nil {
+			return err
+		}
+		snap, err := onboardingSnapshot(ctx, tx)
+		if err != nil {
+			return err
+		}
+		actual, err := PolicyFingerprint(snap)
+		if err != nil {
+			return err
+		}
+		if !state.Pending || !state.Prepared || state.Expected != revision || actual != expected {
+			return ErrOnboardingConflict
+		}
+		found := false
+		for _, peer := range snap.Peers {
+			if peer.ID == state.PeerID {
+				found = true
+			}
+		}
+		if !found {
+			return ErrOnboardingConflict
+		}
+		state.Expected = expected
+		state.Applied = false
+		return saveOnboarding(ctx, tx, state)
+	})
+}

@@ -380,6 +380,7 @@ export const apply = {
 };
 
 export const onboarding = {
+  review: (body = {}) => post('/api/onboarding/review', body),
   get: () => get('/api/onboarding'),
   reopen: (peerId = '') => post('/api/onboarding/reopen', { peer_id: peerId }),
   configure: (mode, country) => post('/api/onboarding/configure', { mode, country }),

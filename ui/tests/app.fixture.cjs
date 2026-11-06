@@ -30,6 +30,7 @@ function createAppModel(overrides = {}) {
     if (key === 'GET /api/onboarding') return json(state.onboarding);
     if (key === 'POST /api/onboarding/reopen') { if (!state.onboarding.pending) { state.onboarding.prepared = false; state.onboarding.applied = false; } state.onboarding.pending = true; state.onboarding.peer_id ||= state.peers[0]?.id; return json(state.onboarding); }
     if (key === 'POST /api/onboarding/configure') { Object.assign(state.onboarding, entry.body, { prepared: true, applied: false }); state.dirty = true; return json(state.onboarding); }
+    if (key === 'POST /api/onboarding/review') return json({ revision: 'synthetic-old', fingerprint: 'synthetic-current', client_mtu: state.settings.client_mtu || 1320, clients: state.peers.length, rules: state.rules.length });
     if (key === 'POST /api/onboarding/apply') { state.onboarding.applied = true; state.dirty = false; return json({ configuration: 'accepted', connectivity: 'not_verified' }); }
     if (key === 'POST /api/onboarding/finish') { state.onboarding.pending = false; return json({ completed: true }); }
     if (key === 'POST /api/login') { state.authenticated = true; return json({}); }

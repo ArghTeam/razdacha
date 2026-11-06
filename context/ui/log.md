@@ -536,3 +536,7 @@ Publication/revocation stamps and live revision checks reject stale observations
 UI receipt-time expiry and mutation recovery prevent stale green indicators.
 Profile help documents gateway DNS and full-configuration import requirements.
 See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation boundary.
+
+## 2026-11-06 — #330 onboarding recovery review
+
+Added explicit accepted-policy preview and revision-checked metadata confirmation for prepared setup after separately accepted policy changes. Existing guarded Apply and fingerprint conflict checks remain authoritative; policy and credentials are preserved. Failed confirmation keeps recovery visible even when setup had previously been applied.

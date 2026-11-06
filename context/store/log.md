@@ -189,3 +189,7 @@ Implementation and verification record: [task 231](../../tasks/done/231-peer-egr
 ## 2026-11-04 — #297 parallel authenticated client ingress
 
 Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The store invariants record final behavior; this entry does not claim deployment or general DPI resistance.
+
+## 2026-11-06 — #330 metadata recovery confirmation
+
+Added transaction-local comparison of old onboarding expectation and reviewed complete policy fingerprint. Explicit confirmation preserves policy and client identities and requires pending prepared metadata plus an existing client.
