@@ -11,9 +11,14 @@ import (
 // compiledDestination shares the original compiler's source, action and exact
 // projections; preflight never reads a list or reinterprets tunnel availability.
 type compiledDestination struct {
-	route          option.Rule
-	dnsTags        []string
-	addressCapable bool
+	tunnelID, viaTunnelID string
+	denied                bool
+	route                 option.Rule
+	dnsTags               []string
+	addressCapable        bool
+	id, name              string
+	domains               []string
+	native                bool
 }
 
 // Bound both matcher nodes and referenced strings before producing a candidate.

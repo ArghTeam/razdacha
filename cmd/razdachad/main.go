@@ -146,7 +146,8 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		// Заливка nft уходит в слой api замыканием: `POST /api/apply`
 		// применяет обе половины — конфиг sing-box и таблицу (issue #119).
 
-		Applier: apply,
+		Applier:        apply,
+		RouteExplainer: apply,
 		// Содержимое plain-списков — тем же приёмом: генератор берёт домены и
 		// подсети из кэша планировщика, иначе они никуда не попадают
 		// (issue #125). Применению они уже отданы в startApply; здесь их берёт

@@ -37,6 +37,8 @@ type ruleSets struct {
 	Missing        []string
 	Err            error
 	AddressCapable bool
+	Domains        []string
+	Native         bool
 }
 
 // buildRuleSets reads each source once for full routing and exact DNS projections.
@@ -48,6 +50,7 @@ func buildRuleSets(r store.Rule, s store.Settings, plain PlainLists) ruleSets {
 		if !ok {
 			return false
 		}
+		result.Domains = append(result.Domains, content.Domains...)
 		result.Sets = append(result.Sets, set)
 		result.RouteTags = append(result.RouteTags, tag)
 		result.AddressCapable = result.AddressCapable || len(content.Subnets) > 0
@@ -70,6 +73,7 @@ func buildRuleSets(r store.Rule, s store.Settings, plain PlainLists) ruleSets {
 			result.Err = fmt.Errorf("required native list is not loaded")
 			return
 		}
+		result.Native = true
 		artifact := content.Native
 		result.AddressCapable = result.AddressCapable || !content.NativeSummaryComplete || artifact.Version != lists.ProjectionVersion || len(content.Subnets) > 0 || len(content.TransportSubnets) > 0
 		format := C.RuleSetFormatSource

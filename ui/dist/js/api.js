@@ -412,3 +412,6 @@ function observePeerReceipts(peers) {
   for (const peer of peers) if (peer?.reality_activity) peerActivityReceipts.set(peer, received);
   return peers;
 }
+
+/** Read-only committed domain policy; independent of shared route probes. */
+export const explainWebPolicy = body => post('/api/route/explain', body);

@@ -328,3 +328,9 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   observation boundary: absent, null, string, negative and unsafe values display
   Unknown; numeric zero displays 0 B. REALITY-only rows omit WireGuard counters.
   Gateway directions and existing observation freshness semantics are unchanged.
+
+## Clients Web policy (ADR 0042)
+
+- Each existing client offers one Web policy action, fixed to domain-bearing HTTPS/TCP443 with WG/REALITY ingress selection. Routing, committed exit/chain names and conditional gateway A-query policy render separately with plain-English reasons and ordered uncertain candidates. Global pending edits are explicitly separate from applied policy; missing authority never claims an applied snapshot. Detailed scope limits remain collapsed.
+- A dialog owns its session, modal revision, request token, inputs and navigation lifetime. Input changes, close/replacement, client replacement, any hash navigation (including leaving and returning), expiry and a new login permanently reject stale success/error results. Enter and pointer share one in-flight gate. Displayed values are escaped. No network probes or mutations are initiated, and existing client/rule editor drafts retain their behavior.
+- Synthetic actual-module Chromium tests cover empty/error/disabled/unknown/pending states, escaping, transport/domain/client changes, closure/replacement, navigation return and session transitions. They prove UI lifetime and rendering only, not installed networking or client quality.

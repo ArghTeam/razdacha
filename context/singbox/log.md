@@ -366,3 +366,7 @@ A post-restart unselected-user request to that exact FakeIP produces one upstrea
 question and reaches the direct sink, proving the mapping was restored.
 Only ingress TLS and terminal dials are adapted; no external provider, host route,
 public listener or operating-system client profile is exercised.
+
+## 2026-11-07 — Client applied web policy (#339)
+
+Added the bounded read-only client domain explanation contract from [ADR 0042](../../docs/decisions/0042-client-applied-policy-explanations.md). Committed policy/frozen lists, current eligibility and coherent rechecks remain separate from global pending edits. Conditional TCP/443 routing and gateway A-query outcomes preserve ordering, uncertainty and C1; no probes, profile exports or deployment/quality claims are introduced. The maintained invariants record the layer-specific behavior and validation boundary.
