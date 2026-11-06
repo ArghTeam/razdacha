@@ -90,12 +90,15 @@ func GeneratePolicyWithDiag(snap store.Snapshot, plain PlainLists) (option.Optio
 }
 
 func generatePolicyWithPlan(snap store.Snapshot, plain PlainLists, plan *[]compiledDestination) (option.Options, []RuleDiag, error) {
+	return generatePolicyWithLogger(snap, plain, plan, slog.Default())
+}
+
+func generatePolicyWithLogger(snap store.Snapshot, plain PlainLists, plan *[]compiledDestination, log *slog.Logger) (option.Options, []RuleDiag, error) {
 	tunnels := make(map[string]store.Tunnel, len(snap.Tunnels))
 	for _, t := range snap.Tunnels {
 		tunnels[t.ID] = t
 	}
 
-	log := slog.Default()
 	endpoints, outbounds, skipped, err := buildTunnels(snap.Tunnels, store.PoolFilterFrom(snap.Settings), log)
 	if err != nil {
 		return option.Options{}, nil, err
@@ -249,11 +252,13 @@ func generatePolicyWithPlan(snap store.Snapshot, plain PlainLists, plan *[]compi
 		diags = append(diags, RuleDiag{ID: r.ID, Name: r.Name, Reason: unavailable})
 		compiled := routeRule(r, tags, sources, tunnelTag, denied)
 		routeRules = append(routeRules, compiled)
-		if plan != nil {
-			*plan = append(*plan, compiledDestination{route: compiled, dnsTags: built.DNSTags, addressCapable: built.AddressCapable})
-		}
-		if dnsRule, ok := dnsRuleFor(r, built.DNSTags, sources, denied); ok {
+		dnsRule, hasDNS := dnsRuleFor(r, built.DNSTags, sources, denied)
+		if hasDNS {
 			dns.Rules = append(dns.Rules, dnsRule)
+		}
+		if plan != nil {
+			entry := compiledDestination{route: compiled, dnsTags: built.DNSTags, addressCapable: built.AddressCapable, id: r.ID, name: r.Name, domains: built.Domains, native: built.Native, tunnelID: r.TunnelID, viaTunnelID: r.ViaTunnelID, denied: denied}
+			*plan = append(*plan, entry)
 		}
 	}
 
