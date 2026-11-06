@@ -138,34 +138,57 @@ func settings(ctx context.Context, q querier) (Settings, error) {
 	return out, nil
 }
 
+// Validate checks settings without creating identities or changing stored state.
+func (v Settings) Validate() error { return v.validate() }
+
+// UpdateSettings applies a pure merge against a fresh transactional read.
+// Network-aware callers hold the publication gate around revocation instead.
+func (s *Store) UpdateSettings(ctx context.Context, merge func(Settings) Settings) (before, after Settings, err error) {
+	err = s.tx(ctx, func(tx *sql.Tx) error {
+		var e error
+		before, e = settings(ctx, tx)
+		if e != nil {
+			return e
+		}
+		after = merge(before)
+		if e = after.validate(); e != nil {
+			return e
+		}
+		return saveSettings(ctx, tx, after)
+	})
+	return
+}
+
 // SaveSettings перезаписывает все настройки целиком.
 func (s *Store) SaveSettings(ctx context.Context, v Settings) error {
 	if err := v.validate(); err != nil {
 		return err
 	}
-	return s.tx(ctx, func(tx *sql.Tx) error {
-		old, err := settings(ctx, tx)
-		if err != nil {
+	return s.tx(ctx, func(tx *sql.Tx) error { return saveSettings(ctx, tx, v) })
+}
+
+func saveSettings(ctx context.Context, tx *sql.Tx, v Settings) error {
+	old, err := settings(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if old.RealityEnabled && !v.RealityEnabled {
+		if err := invalidateReality(ctx, tx, ""); err != nil {
 			return err
 		}
-		if old.RealityEnabled && !v.RealityEnabled {
-			if err := invalidateReality(ctx, tx, ""); err != nil {
-				return err
-			}
-		}
-		for key, value := range v.values() {
-			if _, err := tx.ExecContext(ctx,
-				`INSERT INTO settings (key, value) VALUES (?, ?)
+	}
+	for key, value := range v.values() {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO settings (key, value) VALUES (?, ?)
 				 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-				key, value); err != nil {
-				return fmt.Errorf("запись настройки %s: %w", key, err)
-			}
+			key, value); err != nil {
+			return fmt.Errorf("запись настройки %s: %w", key, err)
 		}
-		if v.RealityEnabled {
-			return ensureRealityIdentity(ctx, tx)
-		}
-		return nil
-	})
+	}
+	if v.RealityEnabled {
+		return ensureRealityIdentity(ctx, tx)
+	}
+	return nil
 }
 
 // values раскладывает настройки по ключам таблицы.
