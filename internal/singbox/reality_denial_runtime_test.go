@@ -473,7 +473,22 @@ func TestRealityDenialRetainedFakeIPPinnedRuntime(t *testing.T) {
 		t.Fatalf("retained FakeIP reached %s sink", sink)
 	case <-time.After(50 * time.Millisecond):
 	}
-	t.Logf("retained %s -> %s across checked policy restart: TCP+UDP questions=0 sinks=0", fake.A, host)
+	// Missing cache records also reject FakeIP before routing in the pinned
+	// runtime. A post-restart admitted unselected user's successful request to
+	// this exact fake address proves that the mapping was actually restored.
+	denialPayload(t, port, live.Users[1], fake.A.String(), false)
+	select {
+	case sink := <-events:
+		if sink != "direct" {
+			t.Fatalf("retained mapping control sink=%s", sink)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("retained mapping positive control reached no sink")
+	}
+	if got := upstream.count(host); got != 1 {
+		t.Fatalf("retained mapping positive control questions=%d want=1", got)
+	}
+	t.Logf("retained %s -> %s: denied TCP+UDP questions=0 sinks=0; post-restart unselected control questions=1 direct sink=1", fake.A, host)
 }
 
 func TestRealityDenialCapturedDNSPinnedRuntime(t *testing.T) {

@@ -362,5 +362,7 @@ TCP/UDP terminal sinks. Manual/plain/native/OR denials, disabled/empty targets,
 scoped earlier positive precedence, CIDR deferral and private post-resolve rejection
 are covered. A gateway FakeIP mapping persists across checked policy restart and
 its denied TCP/UDP payloads send zero upstream questions and reach zero sinks.
+A post-restart unselected-user request to that exact FakeIP produces one upstream
+question and reaches the direct sink, proving the mapping was restored.
 Only ingress TLS and terminal dials are adapted; no external provider, host route,
 public listener or operating-system client profile is exercised.

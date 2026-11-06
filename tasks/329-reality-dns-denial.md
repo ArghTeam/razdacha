@@ -27,6 +27,8 @@ positive ordering, private answers and ordinary DNS equivalence.
   Private/loopback/metadata/local answers reject after lookup for both protocols.
 - Retained gateway FakeIP survives a checked runtime restart across deny policy
   publication; new TCP/UDP payloads send zero upstream questions and reach no sink.
+  An unselected user then resolves that exact retained FakeIP and reaches the
+  direct sink, excluding the missing-record rejection false positive.
 - Ordinary captured TCP/UDP A, AAAA and HTTPS controls preserve real/FakeIP/reject
   behavior; structural comparison preserves the complete ordinary DNS options.
 - Existing numeric TCP/sniff and singleton activity pinned fixtures pass with race

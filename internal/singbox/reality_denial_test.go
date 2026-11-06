@@ -86,12 +86,17 @@ func TestRealityDenialNativeCapability(t *testing.T) {
 	}{
 		{name: "unknown", want: true},
 		{name: "complete-domain-only", complete: true},
+		{name: "legacy", complete: true, want: true},
 		{name: "ordinary", complete: true, ordinary: []string{"203.0.113.0/24"}, want: true},
 		{name: "transport", complete: true, transport: []string{"203.0.113.0/24"}, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			version := lists.ProjectionVersion
+			if tc.name == "legacy" {
+				version = 1
+			}
 			b := buildRuleSets(r, store.Settings{}, func(string) (PlainList, bool) {
-				return PlainList{Native: &lists.NativeArtifact{DNSPath: "dns.json", Path: "original.json"}, Subnets: tc.ordinary, TransportSubnets: tc.transport, NativeSummaryComplete: tc.complete}, true
+				return PlainList{Native: &lists.NativeArtifact{Version: version, DNSPath: "dns.json", Path: "original.json"}, Subnets: tc.ordinary, TransportSubnets: tc.transport, NativeSummaryComplete: tc.complete}, true
 			})
 			if b.AddressCapable != tc.want {
 				t.Fatalf("capability=%v want=%v", b.AddressCapable, tc.want)

@@ -64,7 +64,8 @@ func realityDenialPreflight(plan []compiledDestination, selected func([]string) 
 			children := []option.Rule{denialLeaf(option.RawDefaultRule{Inbound: []string{TagRealityIn}}), source, hostname, denialLeaf(option.RawDefaultRule{RuleSet: p.dnsTags})}
 			n := 8 + len(auth) + len(p.dnsTags)
 			if len(positives) > 0 {
-				// Copy the slice: later appends must not change an earlier rejection.
+				// Snapshot each grouped projection so later policies cannot change
+				// an earlier rejection.
 				shadow := make([]option.Rule, 0, len(positives))
 				for _, group := range positives {
 					predicate := denialLeaf(option.RawDefaultRule{AuthUser: group.auth})

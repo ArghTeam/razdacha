@@ -71,7 +71,7 @@ func buildRuleSets(r store.Rule, s store.Settings, plain PlainLists) ruleSets {
 			return
 		}
 		artifact := content.Native
-		result.AddressCapable = result.AddressCapable || !content.NativeSummaryComplete || len(content.Subnets) > 0 || len(content.TransportSubnets) > 0
+		result.AddressCapable = result.AddressCapable || !content.NativeSummaryComplete || artifact.Version != lists.ProjectionVersion || len(content.Subnets) > 0 || len(content.TransportSubnets) > 0
 		format := C.RuleSetFormatSource
 		if artifact.Format == lists.FormatSRS {
 			format = C.RuleSetFormatBinary
