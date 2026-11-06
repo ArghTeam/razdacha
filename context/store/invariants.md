@@ -52,3 +52,5 @@ description: "SQLite: схема четырёх сущностей, миграц
   It returns no private server key, initializes nothing and changes no admission.
   Missing/disabled/deleted material is refused. `RealityRuntime` remains unchanged;
   pending export never authorizes runtime users (ADR 0036).
+
+- Staged CLI restore atomically deletes all panel sessions and rotates the private authentication generation before publication, preserving the restored password hash. Saved cookies and pre-restore login verification never become valid again. Automatic pool filtering admits Shadowsocks only with a recognized encrypted cipher and well-formed plain/base64 userinfo; plaintext none, unknown methods and undecidable forms are excluded at catalog admission, merge and stored-member generation. Manual tunnel parsing remains unchanged (#326).
