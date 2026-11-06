@@ -293,7 +293,7 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   and DNS routing. Browser regressions validate delivery/lifetime, not actual TUN
   startup, operating-system routing, DNS capture or end-to-end client connectivity.
 
-## REALITY activity and DNS guidance (ADR 0038)
+## REALITY activity and DNS guidance (ADRs 0038 and 0039)
 
 - A client dot may use a positive authenticated REALITY open-flow snapshot separately
   from WG handshake/counters. Zero is no open flows observed; missing, stale or
@@ -303,9 +303,22 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   monotonic clock, avoiding assumptions that server and browser wall clocks agree.
   An activity-only timer expires indicators after thirty seconds without a new
   inventory observation, including while an editor/menu pauses normal polling.
-  It updates only text/dots, preserving focus and unsaved fields, and stops when
+  It expires header byte/count observations and row bytes together, updates only
+  text/dots, preserves focus and unsaved fields, and stops when
   leaving the client screen. These snapshots can miss short-lived flows and do not
   establish recent traffic or idle online presence.
+- Separate cards show cumulative WG gateway received/sent bytes and REALITY
+  current-open-flow received/sent bytes. REALITY received maps to client upload;
+  sent maps to client download. They are never added across transport scopes.
+  REALITY rows use explicit gateway-direction labels; the overview counts clients
+  with fresh positive open-flow observations separately from WG connected clients.
+- REALITY snapshot values can decrease on closure and omit completed short flows,
+  DNS-hijacked/rejected traffic and historical usage. Missing, stale, unsafe-integer
+  observations or unsafe aggregate sums show Unknown. A missing eligible client
+  prevents a complete aggregate instead of silently displaying a partial total.
+  Disabled clients are excluded; enabled pending/guarded/uncertain clients do not
+  turn missing observations into measured zero
+  ([ADR 0039](../../docs/decisions/0039-reality-open-flow-bytes.md)).
 - REALITY profile help requires VPN/TUN capture and UDP gateway DNS `10.8.0.1:53`
   through the proxy. URI import cannot enforce that setup; JSON importers which
   keep only outbounds also need full-configuration mode or explicit DNS setup.

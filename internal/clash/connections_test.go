@@ -3,6 +3,8 @@ package clash
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -60,7 +62,7 @@ func TestRealityConnectionsSeparateAuthenticatedUsers(t *testing.T) {
 	}))
 	defer srv.Close()
 	counts, err := New(Options{Addr: srv.URL}).RealityConnections(context.Background())
-	if err != nil || counts[flowUserA] != 2 || counts[flowUserB] != 1 || len(counts) != 2 {
+	if err != nil || counts[flowUserA].OpenFlows != 2 || counts[flowUserB].OpenFlows != 1 || len(counts) != 2 {
 		t.Fatalf("counts=%v err=%v", counts, err)
 	}
 }
@@ -94,5 +96,87 @@ func TestRealityConnectionsDeadline(t *testing.T) {
 	defer cancel()
 	if _, err := New(Options{Addr: srv.URL}).RealityConnections(ctx); err == nil {
 		t.Fatal("canceled read accepted")
+	}
+}
+
+func realityFlow(id, user, counters string) string {
+	return `{"id":"` + id + `","metadata":{"type":"vless/reality-in"},"rule":"inbound=reality-in auth_user=` + user + ` => route(direct-out)"` + counters + `}`
+}
+
+func readRealityFixture(t *testing.T, rows ...string) (map[string]RealityConnectionObservation, error) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Global counters and unrelated inbound byte types are not REALITY authority.
+		_, _ = fmt.Fprintf(w, `{"uploadTotal":999999999,"downloadTotal":999999999,"connections":[%s]}`, strings.Join(rows, ","))
+	}))
+	defer srv.Close()
+	return New(Options{Addr: srv.URL}).RealityConnections(context.Background())
+}
+
+func TestRealityConnectionBytesRetainDirectionsAndUserIsolation(t *testing.T) {
+	rows := []string{
+		realityFlow("tcp-a", flowUserA, `,"upload":10,"download":100`),
+		realityFlow("udp-a", flowUserA, `,"upload":7,"download":70`),
+		realityFlow("tcp-b", flowUserB, `,"upload":3,"download":30`),
+		`{"id":"wg","metadata":{"type":"tproxy/tproxy-in"},"upload":"not a REALITY counter","download":-1}`,
+	}
+	got, err := readRealityFixture(t, rows...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for user, want := range map[string][3]int64{flowUserA: {2, 17, 170}, flowUserB: {1, 3, 30}} {
+		value := got[user]
+		if int64(value.OpenFlows) != want[0] || value.OpenUploadBytes == nil || *value.OpenUploadBytes != want[1] || value.OpenDownloadBytes == nil || *value.OpenDownloadBytes != want[2] {
+			t.Fatalf("wrong user/direction totals for %s: %+v", user, value)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatal("unrelated inbound attributed to REALITY")
+	}
+	// A second snapshot replaces the previous observation; closed flows disappear.
+	closed, err := readRealityFixture(t, rows[0])
+	if err != nil || closed[flowUserA].OpenFlows != 1 || *closed[flowUserA].OpenUploadBytes != 10 || *closed[flowUserA].OpenDownloadBytes != 100 {
+		t.Fatalf("closed flow remained in snapshot: %+v, %v", closed, err)
+	}
+}
+
+func TestRealityConnectionMissingBytesPreserveCountsPerDirection(t *testing.T) {
+	for _, missing := range []string{``, `,"upload":null`, `,"download":5`} {
+		got, err := readRealityFixture(t,
+			realityFlow("old", flowUserA, missing),
+			realityFlow("new", flowUserA, `,"upload":4,"download":40`),
+			realityFlow("other", flowUserB, `,"upload":2,"download":20`))
+		if err != nil || got[flowUserA].OpenFlows != 2 || got[flowUserA].OpenUploadBytes != nil || *got[flowUserB].OpenUploadBytes != 2 {
+			t.Fatalf("missing bytes corrupted counts or another user: %+v, %v", got, err)
+		}
+		if missing == `,"download":5` {
+			if got[flowUserA].OpenDownloadBytes == nil || *got[flowUserA].OpenDownloadBytes != 45 {
+				t.Fatal("known direction discarded")
+			}
+		} else if got[flowUserA].OpenDownloadBytes != nil {
+			t.Fatal("missing direction became a partial sum")
+		}
+	}
+}
+
+func TestRealityConnectionInvalidBytesAndDuplicatesInvalidateSnapshot(t *testing.T) {
+	for _, invalid := range []string{`-1`, `1.5`, `"2"`, `true`, `{}`, `9223372036854775808`} {
+		for _, direction := range []string{"upload", "download"} {
+			_, err := readRealityFixture(t, realityFlow("bad", flowUserA, `,"`+direction+`":`+invalid))
+			if err == nil {
+				t.Fatalf("invalid %s=%s accepted", direction, invalid)
+			}
+		}
+	}
+	for _, rows := range [][]string{
+		{realityFlow("same", flowUserA, `,"upload":1`), realityFlow("same", flowUserB, `,"upload":2`)},
+		{realityFlow("a", flowUserA, fmt.Sprintf(`,"upload":%d`, int64(math.MaxInt64))), realityFlow("b", flowUserA, `,"upload":1`)},
+		{realityFlow("a", flowUserA, fmt.Sprintf(`,"download":%d`, int64(math.MaxInt64))), realityFlow("b", flowUserA, `,"download":1`)},
+		// A missing earlier counter cannot hide a malformed later counter.
+		{realityFlow("a", flowUserA, ``), realityFlow("b", flowUserA, `,"upload":-1`)},
+	} {
+		if _, err := readRealityFixture(t, rows...); err == nil {
+			t.Fatal("duplicate or overflow snapshot accepted")
+		}
 	}
 }
