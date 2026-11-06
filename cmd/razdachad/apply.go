@@ -176,6 +176,9 @@ func (g *applyGate) recover(ctx context.Context, seedPath string) error {
 			}
 		}
 		g.base = committed.Policy
+		if g.network.manager != nil {
+			g.network.manager.SetCommittedSources(lists.Sources(committed.Policy))
+		}
 		g.network.contents = committed.Lists
 		g.network.initialized = true
 		if _, err := g.publish(ctx, committed.Policy, true, false); err != nil {

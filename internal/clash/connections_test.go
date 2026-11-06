@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -178,5 +179,51 @@ func TestRealityConnectionInvalidBytesAndDuplicatesInvalidateSnapshot(t *testing
 		if _, err := readRealityFixture(t, rows...); err == nil {
 			t.Fatal("duplicate or overflow snapshot accepted")
 		}
+	}
+}
+
+func TestRealityConnectionsRequireClassificationBeforeFiltering(t *testing.T) {
+	valid := realityFlow("real", flowUserA, `,"upload":5,"download":8`)
+	for _, invalid := range []string{
+		`null`, `{}`, `{"metadata":null}`, `{"metadata":{}}`,
+		`{"metadata":{"type":null}}`, `{"metadata":{"type":""}}`,
+		`{"metadata":{"type":" "}}`, `{"metadata":[]}`, `{"metadata":7}`,
+		`{"metadata":{"type":5}}`, `true`, `42`, `"row"`, `[]`,
+	} {
+		for _, rows := range [][]string{{invalid}, {valid, invalid}, {`{"metadata":{"type":"tproxy/tproxy-in"}}`, invalid}} {
+			if got, err := readRealityFixture(t, rows...); err == nil || got != nil {
+				t.Fatalf("unclassifiable row accepted: %s", invalid)
+			}
+		}
+	}
+	// Other inbounds require classification, not REALITY route/authentication fields.
+	got, err := readRealityFixture(t, `{"metadata":{"type":"tproxy/tproxy-in"}}`, valid)
+	if err != nil || got[flowUserA].OpenFlows != 1 {
+		t.Fatalf("valid other inbound contaminated snapshot: %v, %v", got, err)
+	}
+	got, err = readRealityFixture(t)
+	if err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("valid empty snapshot must observe zero: %v, %v", got, err)
+	}
+}
+
+func TestRealityConnectionsFreshEmptyReplacesPreviousSnapshot(t *testing.T) {
+	var payload atomic.Value
+	body := `{"connections":[` + realityFlow("previous", flowUserA, `,"upload":9,"download":12`) + `]}`
+	payload.Store(body)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprint(w, payload.Load().(string)) }))
+	defer srv.Close()
+	client := New(Options{Addr: srv.URL})
+	first, err := client.RealityConnections(context.Background())
+	if err != nil || first[flowUserA].OpenFlows != 1 {
+		t.Fatalf("valid first snapshot: %v", err)
+	}
+	payload.Store(`{"connections":[null]}`)
+	if got, err := client.RealityConnections(context.Background()); err == nil || got != nil {
+		t.Fatal("malformed sample became observed zero")
+	}
+	payload.Store(`{"connections":[]}`)
+	if got, err := client.RealityConnections(context.Background()); err != nil || got == nil || len(got) != 0 {
+		t.Fatal("fresh empty snapshot did not replace previous flows")
 	}
 }

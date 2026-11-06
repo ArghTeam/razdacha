@@ -323,3 +323,8 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   through the proxy. URI import cannot enforce that setup; JSON importers which
   keep only outbounds also need full-configuration mode or explicit DNS setup.
   QUIC/encrypted-name domain routing relies on that DNS path, not TCP sniffing.
+
+- WireGuard inventory row counters share the summary's nonnegative safe-integer
+  observation boundary: absent, null, string, negative and unsafe values display
+  Unknown; numeric zero displays 0 B. REALITY-only rows omit WireGuard counters.
+  Gateway directions and existing observation freshness semantics are unchanged.
