@@ -9,6 +9,10 @@ import (
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
+type settingsPatchPublisher interface {
+	PatchSettings(context.Context, *store.Store, func(store.Settings) store.Settings) (store.Settings, store.Settings, error)
+}
+
 // settingsResponse — настройки для UI.
 //
 // `list_update_interval` уходит в секундах, а не наносекундами time.Duration:
@@ -206,19 +210,18 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if !s.decodeBody(w, r, &req) {
 		return
 	}
-	current, err := s.store.Settings(r.Context())
+	var current, next store.Settings
+	var err error
+	if publisher, ok := s.applier.(settingsPatchPublisher); ok {
+		current, next, err = publisher.PatchSettings(r.Context(), s.store, req.apply)
+	} else if _, ok := s.applier.(RealityPublisher); ok {
+		// An older publisher cannot merge safely outside its gate.
+		err = ErrNetworkGuarded
+	} else {
+		current, next, err = s.store.UpdateSettings(r.Context(), req.apply)
+	}
 	if err != nil {
-		s.storeError(w, err, "Настройки не найдены")
-		return
-	}
-
-	next := req.apply(current)
-	save := s.store.SaveSettings
-	if publisher, ok := s.applier.(RealityPublisher); ok {
-		save = func(ctx context.Context, v store.Settings) error { return publisher.SaveSettings(ctx, s.store, v) }
-	}
-	if err := save(r.Context(), next); err != nil {
-		s.storeError(w, err, "Настройки не найдены")
+		s.storeError(w, err, "Settings update failed")
 		return
 	}
 	key, err := s.serverPublicKey(r)

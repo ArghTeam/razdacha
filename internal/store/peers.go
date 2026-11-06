@@ -143,6 +143,36 @@ type PeerPatch struct {
 	EgressTunnelID   *string
 }
 
+// Apply merges and validates a prospective peer without mutating authentication.
+func (patch PeerPatch) Apply(p Peer) (Peer, error) {
+	if patch.WireGuardEnabled != nil {
+		p.WireGuardDisabled = !*patch.WireGuardEnabled
+	}
+	if patch.RealityEnabled != nil {
+		p.RealityEnabled = *patch.RealityEnabled
+	}
+	if patch.Name != nil {
+		p.Name = strings.TrimSpace(*patch.Name)
+	}
+	if patch.Enabled != nil {
+		p.Enabled = *patch.Enabled
+	}
+	if patch.SetEgressTunnel {
+		p.EgressTunnelID = patch.EgressTunnelID
+	}
+	return p, p.validate()
+}
+
+// ValidatePeerPatch is read-only. Callers serialize this read and the subsequent
+// write with the publication gate; the write repeats validation transactionally.
+func (s *Store) ValidatePeerPatch(ctx context.Context, p Peer, patch PeerPatch) error {
+	next, err := patch.Apply(p)
+	if err != nil {
+		return err
+	}
+	return s.tx(ctx, func(tx *sql.Tx) error { return validatePeerEgress(ctx, tx, next.EgressTunnelID) })
+}
+
 // PatchPeer reads and modifies only supplied fields in one transaction. A rename
 // or enable toggle cannot overwrite a concurrently saved routing choice.
 func (s *Store) PatchPeer(ctx context.Context, id string, patch PeerPatch) (Peer, error) {
@@ -157,28 +187,14 @@ func (s *Store) PatchPeer(ctx context.Context, id string, patch PeerPatch) (Peer
 			return fmt.Errorf("read peer for patch: %w", err)
 		}
 		wasActive := p.Enabled && p.RealityEnabled
-		if patch.WireGuardEnabled != nil {
-			p.WireGuardDisabled = !*patch.WireGuardEnabled
-		}
-		if patch.RealityEnabled != nil {
-			p.RealityEnabled = *patch.RealityEnabled
+		p, err = patch.Apply(p)
+		if err != nil {
+			return err
 		}
 		if p.RealityEnabled {
 			if err := ensurePeerReality(ctx, tx, &p); err != nil {
 				return err
 			}
-		}
-		if patch.Name != nil {
-			p.Name = strings.TrimSpace(*patch.Name)
-		}
-		if patch.Enabled != nil {
-			p.Enabled = *patch.Enabled
-		}
-		if patch.SetEgressTunnel {
-			p.EgressTunnelID = patch.EgressTunnelID
-		}
-		if err := p.validate(); err != nil {
-			return err
 		}
 		if err := updatePeer(ctx, tx, p); err != nil {
 			return err
