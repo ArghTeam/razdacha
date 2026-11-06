@@ -22,8 +22,10 @@ func (s *Store) Snapshot(ctx context.Context) (Snapshot, error) {
 	return snap, nil
 }
 
-// snapshotInTransaction shares complete non-secret policy authority with callers
+// snapshotInTransaction shares private complete policy authority with callers
 // that already own a transaction, including the RAC onboarding fingerprint path.
+// WG keys and manual tunnel secrets remain private fingerprint inputs; REALITY
+// bearer UUIDs and server private keys are excluded.
 func snapshotInTransaction(ctx context.Context, tx *sql.Tx) (Snapshot, error) {
 	var snap Snapshot
 	var err error

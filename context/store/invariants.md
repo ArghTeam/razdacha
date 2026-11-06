@@ -61,8 +61,10 @@ description: "SQLite: схема четырёх сущностей, миграц
 ## RAC-only onboarding composition
 
 Onboarding fingerprints share the ordinary transaction-local complete Snapshot
-reader. They include opaque Reality identity/admission IDs and revisions, never
-UUIDs/private keys, including a retained identity while the listener is disabled.
+reader. They include opaque REALITY identity/admission IDs and revisions, excluding
+REALITY bearer UUIDs and server private keys, even while the listener is disabled.
+WG keys and manual tunnel secrets remain private fingerprint inputs; the complete
+Snapshot must never be exported as public or non-secret policy metadata.
 An accepted transport policy must not become an artificial onboarding conflict
 because a second reader omitted admission authority.
 
