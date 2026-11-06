@@ -65,7 +65,7 @@ description: wg0, nft-правила и маршрутизация через ne
   denial with independent sink controls and unchanged periodic handshakes. It
   does not extend the ordinary quality/coexistence case's two-source adapter
   evidence. Execution conditions and results belong to
-  [task 325](../../tasks/325-wg-publication-admission.md).
+  [task 325](../../tasks/done/325-wg-publication-admission.md).
 
 ## Public client safety boundary (ADR 0032)
 
