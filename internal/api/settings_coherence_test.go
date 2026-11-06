@@ -121,3 +121,24 @@ func TestSettingsPatchMergesFreshStateAndReturnsSavedSettings(t *testing.T) {
 	}
 	requireCode(t, ts.auth(t, cookie, http.MethodGet, "/api/settings", ""), http.StatusOK)
 }
+
+func TestSettingsLegacyRealityPublisherRefusesUnsafePartialMerge(t *testing.T) {
+	ts := newTestServer(t)
+	cookie := ts.login(t)
+	ctx := context.Background()
+	before, err := ts.st.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A legacy publication capability cannot serialize a fresh read/merge callback.
+	ts.applier = &realityDeliveryApplier{}
+	result := ts.auth(t, cookie, http.MethodPatch, "/api/settings", `{"log_level":"error"}`)
+	requireCode(t, result, http.StatusServiceUnavailable)
+	after, err := ts.st.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("legacy capability refusal mutated settings")
+	}
+}
