@@ -37,9 +37,9 @@ A narrow store metadata transaction avoids private live REALITY material and WG 
 - `go test ./...`: passed.
 - Full scoped package checks for store, singbox, API and daemon: passed.
 - `go test -race ./internal/store ./internal/singbox ./internal/api ./cmd/razdachad`: passed.
-- Targeted committed/pending/repeated-source budget and available-chain checks: passed; final focused race check runs after the last style changes.
+- Targeted committed/pending/repeated-source budget, available-chain and outside-gate/changed-authority checks: passed, including the final focused race run.
 - Full actual-module Chromium runner: all 18 suites passed, including 20 Web policy cases and existing Clients/rules/tunnel/shell regressions.
-- Exact Linux `golangci/golangci-lint:v2.12.2`: first run reported only style/import findings; corrected, final rerun in progress.
+- Exact Linux `golangci/golangci-lint:v2.12.2`: final full run passed with `0 issues` after correcting style/import findings.
 - `git diff --check`: passed.
 
 These are local deterministic/synthetic checks, not a deployed client path or quality observation. Independent review, merge, primary synchronization and any controlled RAC deployment remain the primary agent's responsibility. No worker merge/deployment is performed.
