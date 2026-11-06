@@ -99,7 +99,7 @@ from the exact state preservation established during the binary upgrade.
 | WARP | `104.28.219.140`, WARP on, NL/AMS | UDP STUN and gateway DNS A passed. |
 
 The API exposed live open-flow byte observations. Read-only checks of the actual
-served panel verified four client cards, two live clients and the mobile layout.
+served panel verified four transport summary cards, two live clients and the mobile layout.
 All owned proof processes, temporary profile copies and administrative proof
 sessions were cleaned up. Production was untouched. These are bounded observations
 for the tested Direct/WARP clients, not a claim about every protocol or provider.
@@ -111,6 +111,6 @@ and live UI checks; credentials and profile contents are not included here.
 Captured-DNS priority inconsistency C1 is a separate documented design question,
 not one of the thirteen confirmed defects. Its behavior is not silently changed
 by the REALITY preflight fix. These finite proofs do not establish universal DNS
-confidentiality, Android compatibility, physical DPI resistance, working external
-providers, media/UDP quality or general absence of leakage. No production changes
+confidentiality, Android compatibility, physical DPI resistance, arbitrary external
+provider availability, media/UDP quality or general absence of leakage. No production changes
 or candidate-to-main feature promotion are included.
