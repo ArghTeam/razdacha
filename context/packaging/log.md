@@ -3,6 +3,12 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-11-06
+
+### #326 — restore authentication and pool safety
+
+**Changed:** CLI restore sanitizes panel sessions and authentication generation in the staged database before replacing live state; the restored password and WireGuard identities remain intact. Completion guidance requires fresh login and distinguishes reusable WireGuard profiles from mandatory REALITY reconfiguration, fresh profiles and explicit Apply. Public endpoint changes require updated profiles independently (#326).
+
 ## 2026-10-22
 
 ### #273 — checked pool config and coherent stopped snapshot proofs
