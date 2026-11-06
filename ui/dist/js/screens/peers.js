@@ -83,7 +83,7 @@ export function view() {
         <div class="client-identity">
           <div class="client-name"><span class="dot ${on ? 'on' : 'off'}" aria-hidden="true"></span><h2>${esc(p.name)}</h2></div>
           ${wireGuardEnabled(p) ? `<div class="mono row-meta">WG · ${esc(p.address)}</div>` : ''}
-          <div class="row-meta">${activity}${wireGuardEnabled(p) ? ` <span class="client-traffic">· ↓ ${bytes(p.rx_bytes)} · ↑ ${bytes(p.tx_bytes)}</span>` : ''}</div>${reality}
+          <div class="row-meta">${activity}${wireGuardEnabled(p) ? ` <span class="client-traffic">· ↓ ${displayBytes(safeBytes(p.rx_bytes))} · ↑ ${displayBytes(safeBytes(p.tx_bytes))}</span>` : ''}</div>${reality}
         </div>
         <div class="client-route"><div class="client-label">Configured route</div>${routingSummary(p)}</div>
         <div class="row-actions client-actions">
