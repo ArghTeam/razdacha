@@ -795,6 +795,8 @@ func TestNetworkGenerationWire(t *testing.T) {
 		wireMust(t, unix.Mount("tmpfs", "/run", "tmpfs", 0, "size=1m"))
 	}
 	switch {
+	case os.Getenv("RAZDACHA_WIRE_WG_ADMISSION") == "1":
+		wgAdmissionWireExercise(t)
 	case os.Getenv("RAZDACHA_WIRE_REALITY_COEXIST") == "1":
 		realityCoexistExercise(t)
 	case wireQualityEnabled():
