@@ -348,3 +348,19 @@ retains rollback, exact evidence and access boundaries. Historical #318 remains
 unchanged. Existing RAC client smoke checks passed after both DO restarts; its
 protected saved-state fingerprint remained exact, Apply was clean and ingress
 released. No application code, production deployment or release changed.
+
+## 2026-11-06 — REALITY domain-denial preflight (#329)
+
+Added grouped reject-only preflight using the same compiled exact DNS projections,
+source scopes and unavailable actions, before shared resolution. Earlier positive
+address capability conservatively defers denial; unknown native metadata never
+proves domain-only. Candidate construction has a one-million node/reference bound.
+ADR 0041 records the coverage and unchanged captured-DNS C1 boundary.
+
+Pinned sing-box 1.12.25 loopback VLESS fixtures count actual upstream questions and
+TCP/UDP terminal sinks. Manual/plain/native/OR denials, disabled/empty targets,
+scoped earlier positive precedence, CIDR deferral and private post-resolve rejection
+are covered. A gateway FakeIP mapping persists across checked policy restart and
+its denied TCP/UDP payloads send zero upstream questions and reach zero sinks.
+Only ingress TLS and terminal dials are adapted; no external provider, host route,
+public listener or operating-system client profile is exercised.

@@ -16,9 +16,12 @@ import (
 
 // PlainList supplies one frozen source: inline plain content or native artifact authority.
 type PlainList struct {
-	Domains []string
-	Subnets []string
-	Native  *lists.NativeArtifact
+	Domains          []string
+	Subnets          []string
+	Native           *lists.NativeArtifact
+	TransportSubnets []string
+	// NativeSummaryComplete requires verified ordinary and transport projections.
+	NativeSummaryComplete bool
 }
 
 // PlainLists is the compatibility callback for one frozen source read per generation.
@@ -28,11 +31,12 @@ type PlainLists func(url string) (PlainList, bool)
 // ruleSets separates full destination matching from immediate DNS matching.
 // Missing contains unavailable or empty plain sources, preserving diagnostics.
 type ruleSets struct {
-	Sets      []option.RuleSet
-	RouteTags []string
-	DNSTags   []string
-	Missing   []string
-	Err       error
+	Sets           []option.RuleSet
+	RouteTags      []string
+	DNSTags        []string
+	Missing        []string
+	Err            error
+	AddressCapable bool
 }
 
 // buildRuleSets reads each source once for full routing and exact DNS projections.
@@ -46,6 +50,7 @@ func buildRuleSets(r store.Rule, s store.Settings, plain PlainLists) ruleSets {
 		}
 		result.Sets = append(result.Sets, set)
 		result.RouteTags = append(result.RouteTags, tag)
+		result.AddressCapable = result.AddressCapable || len(content.Subnets) > 0
 		if dns, ok := inlineRuleSet(tag+"-dns", PlainList{Domains: content.Domains}); ok {
 			result.Sets = append(result.Sets, dns)
 			result.DNSTags = append(result.DNSTags, dns.Tag)
@@ -66,6 +71,7 @@ func buildRuleSets(r store.Rule, s store.Settings, plain PlainLists) ruleSets {
 			return
 		}
 		artifact := content.Native
+		result.AddressCapable = result.AddressCapable || !content.NativeSummaryComplete || len(content.Subnets) > 0 || len(content.TransportSubnets) > 0
 		format := C.RuleSetFormatSource
 		if artifact.Format == lists.FormatSRS {
 			format = C.RuleSetFormatBinary

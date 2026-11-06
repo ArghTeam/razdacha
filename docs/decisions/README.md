@@ -53,3 +53,5 @@
 - [0038: Authenticated REALITY flow observations](0038-authenticated-reality-flow-observations.md) — bounded per-client open-flow counts from singleton authenticated runtime routes.
 
 - [0039: REALITY open-flow byte observations](0039-reality-open-flow-bytes.md) — nullable current-flow bytes, separate transport scopes and synchronized expiry; partially supersedes 0038's counts-only payload boundary.
+
+- [0041: REALITY domain-denial preflight](0041-reality-domain-denial-preflight.md) — bounded scoped rejection before shared resolution, preserving positive ordering and captured DNS.

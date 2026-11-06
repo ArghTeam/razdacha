@@ -81,3 +81,14 @@ description: генерация option.Options из состояния БД, п�
   allowing the pinned controller's matched-rule metadata to identify open flows
   without credentials or public-address attribution (ADR 0038). Only terminal
   routes expand; DNS, resolve and reject alternatives keep their existing scope.
+
+- REALITY shared hostname/FakeIP denial uses bounded reject-only preflight before
+  explicit resolution and after whole-client terminal rules (ADR 0041). Reuse
+  the single compilation pass's exact domain projections and source/availability
+  outcomes. Earlier applicable domain positives shadow by exact projection;
+  possible positive address branches (including unknown native summaries) defer
+  early rejection for their scope. Complete verified native ordinary and transport
+  summaries are required to prove domain-only. This conservative coverage is not
+  universal zero-query rejection. Ordinary DNS/FakeIP/C1 semantics, full matcher
+  order, singleton positive attribution, numeric sniffing and post-resolve private
+  guards remain unchanged. Exhausting the construction budget fails preparation.
