@@ -63,7 +63,9 @@ Main lineage:
 
 - [0039: REALITY open-flow byte observations](0039-reality-open-flow-bytes.md) — nullable current-flow bytes, separate transport scopes and synchronized expiry; partially supersedes 0038's counts-only payload boundary.
 
-<<<<<<< HEAD
+- [0040: WireGuard publication admission](0040-wireguard-publication-admission.md) — live peer reconciliation under the publication gate before policy/address release; extends 0023.
+- [0041: REALITY domain-denial preflight](0041-reality-domain-denial-preflight.md) — bounded scoped rejection before shared resolution, preserving positive ordering and captured DNS.
+
 RAC candidate lineage:
 
 - [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.
@@ -73,7 +75,3 @@ RAC candidate lineage:
 - [0034: Fresh-install panel bootstrap](0034-fresh-panel-bootstrap.md) — public authenticated HTTPS before VPN setup for both installation choices; supersedes only the private fresh default, preserving explicit private and saved modes.
 
 - [0035: Authenticated first-login web setup](0035-first-login-web-setup.md) — persisted wizard, explicit guarded Apply, ownership/conflict checks, existing client delivery and honest aggregate counters; supersedes terminal-first/no-wizard assumptions.
-=======
-- [0040: WireGuard publication admission](0040-wireguard-publication-admission.md) — live peer reconciliation under the publication gate before policy/address release; extends 0023.
-- [0041: REALITY domain-denial preflight](0041-reality-domain-denial-preflight.md) — bounded scoped rejection before shared resolution, preserving positive ordering and captured DNS.
->>>>>>> origin/main

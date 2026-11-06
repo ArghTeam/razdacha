@@ -56,7 +56,8 @@ description: "SQLite: схема четырёх сущностей, миграц
   Missing/disabled/deleted material is refused. `RealityRuntime` remains unchanged;
   pending export never authorizes runtime users (ADR 0036).
 
-<<<<<<< HEAD
+- Staged CLI restore atomically deletes all panel sessions and rotates the private authentication generation before publication, preserving the restored password hash. Saved cookies and pre-restore login verification never become valid again. Automatic pool filtering admits Shadowsocks only with a recognized encrypted cipher and well-formed plain/base64 userinfo; plaintext none, unknown methods and undecidable forms are excluded at catalog admission, merge and stored-member generation. Manual tunnel parsing remains unchanged (#326).
+
 ## RAC-only onboarding composition
 
 Onboarding fingerprints share the ordinary transaction-local complete Snapshot
@@ -70,6 +71,3 @@ both the prior expectation and current complete policy fingerprint. Pending prep
 setup and its existing client are required. The daemon additionally requires the
 reviewed policy to equal the accepted generation under the publication gate; no
 routing, settings, client or credential mutations occur during confirmation (#330).
-=======
-- Staged CLI restore atomically deletes all panel sessions and rotates the private authentication generation before publication, preserving the restored password hash. Saved cookies and pre-restore login verification never become valid again. Automatic pool filtering admits Shadowsocks only with a recognized encrypted cipher and well-formed plain/base64 userinfo; plaintext none, unknown methods and undecidable forms are excluded at catalog admission, merge and stored-member generation. Manual tunnel parsing remains unchanged (#326).
->>>>>>> origin/main
