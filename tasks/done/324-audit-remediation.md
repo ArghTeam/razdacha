@@ -27,3 +27,7 @@ The RAC candidate retains its separate onboarding lineage and draft PR306. It is
 The isolated Linux F02 proof executed source `31dfbcd17c20298276f231f10f4e31b03899669f`, test binary SHA256 `4e8609207c420f433dbcd13b421725d7afe42c790d4ee1112d44a0d85b39a9bc`. It passed without changing installed service PIDs, configuration, authority, host interfaces/default route or protected saved state. The final combined source receives its own checks before installation.
 
 Only `193.233.112.227` is an authorized deployment target. Replace static daemon/CLI binaries, then use normal guarded startup. Preserve current clients, WG/REALITY credentials, settings, routes, tunnel definitions, password and committed policy. Verify the current healthy-only RAC configuration and authority remain byte-identical; F11 adds no preflight without shared domain rejection. Any rollback replaces verified previous binaries only; it never restores an older database or authentication snapshot. Production and DO services are outside this deployment.
+
+## Completed acceptance
+
+The pending statements above record the source-freeze stage. Final acceptance is recorded in [audit verification](324-audit-verification.md). RAC runs verified RC14 source `c1e8ef1a6e6cfbdfe74dcba222092383b8041c2e`; all thirteen findings and issues324–330 are closed. This final relocation and main documentation synchronization change no deployed executable files.
