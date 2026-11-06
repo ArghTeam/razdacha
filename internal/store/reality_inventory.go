@@ -6,7 +6,8 @@ import (
 )
 
 // RealityInventoryState is request-local eligibility metadata, never a bearer export.
-// Read it under the publication gate. UUIDs and private keys are not retained.
+// Read it under the publication gate. REALITY UUIDs/server private keys are not retained.
+// Peer rows still contain private WG key material and must never be serialized.
 type RealityInventoryState struct {
 	Settings                       Settings
 	Peers                          []Peer

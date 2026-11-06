@@ -161,3 +161,16 @@ Implementation and verification record: [task 231](../../tasks/done/231-peer-egr
 ## 2026-11-04 — #297 parallel authenticated client ingress
 
 Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The netstack invariants record final behavior; this entry does not claim deployment or general DPI resistance.
+
+## 2026-11-06 — #324 final isolated WireGuard admission verification
+
+The final integrated candidate source `c1e8ef1a6e6cfbdfe74dcba222092383b8041c2e`
+passed the isolated encrypted WG admission fixture in 3.184 seconds. The Linux test
+executable SHA-256 was
+`b80d50d79e8c50ed3578213e7499e82ac2c40f411fd6352b7fa2e75efc298019`.
+Independent capture barriers and sink controls verified removal before guard
+release, old-key TCP/UDP denial and unchanged periodic handshakes. Installed
+state and service PIDs were preserved. This was a namespace-isolated synthetic
+proof, not an installed-key mutation or production/client lifecycle proof.
+See the [audit verification record](../../tasks/done/324-audit-verification.md)
+and [completed task 325](../../tasks/done/325-wg-publication-admission.md).
