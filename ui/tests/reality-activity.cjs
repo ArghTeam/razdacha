@@ -31,6 +31,20 @@ const traffic = (count, upload, download) => ({ ...observed(count), open_upload_
       assert.equal(await t.page.locator('[data-reality-summary="clients"]').innerText(), '0');
       assert.match(await t.page.locator('.summary').innerText(), /WireGuard received\nUnknown/);
     });
+    for (const value of [undefined, null, '0', -1, Number.MAX_SAFE_INTEGER + 1, 0]) {
+      for (const methods of [
+        { wireguard_enabled: true, reality_enabled: false },
+        { wireguard_enabled: true, reality_enabled: true },
+        { wireguard_enabled: false, reality_enabled: true },
+      ]) await check({ ...dual, ...methods, rx_bytes: value, tx_bytes: value }, async t => {
+        const row = await t.page.locator('.client-row').innerText();
+        if (!methods.wireguard_enabled) {
+          assert.equal(await t.page.locator('.client-traffic').count(), 0);
+        } else {
+          assert.match(row, value === 0 ? /↓ 0 B · ↑ 0 B/ : /↓ Unknown · ↑ Unknown/);
+        }
+      });
+    }
     for (const bad of [null, -1, 0.5, '100', Number.MAX_SAFE_INTEGER + 1]) {
       await check({ ...dual, reality_activity: traffic(1, bad, 25) }, async t => {
         assert.equal(await t.page.locator('[data-reality-summary="received"]').innerText(), 'Unknown');

@@ -225,6 +225,9 @@ func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, 
 		return res, fmt.Errorf("clients remain guarded: %w", err)
 	}
 	g.base = snap
+	if n.manager != nil {
+		n.manager.SetCommittedSources(lists.Sources(snap))
+	}
 	n.contents = selected
 	n.initialized = true
 	if err := ctx.Err(); err != nil {

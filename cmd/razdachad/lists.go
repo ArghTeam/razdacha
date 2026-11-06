@@ -120,7 +120,13 @@ func plainLists(m *lists.Manager) singbox.PlainLists {
 func frozenPlainLists(contents map[string]lists.List) singbox.PlainLists {
 	return func(url string) (singbox.PlainList, bool) {
 		l, ok := contents[url]
-		return singbox.PlainList{Domains: append([]string(nil), l.Domains...), Subnets: append([]string(nil), l.Subnets...), Native: l.Native}, ok
+		// Current native authority has verified both ordinary and transport
+		// projections; legacy snapshots remain conservative in route preflight.
+		return singbox.PlainList{
+			Domains: append([]string(nil), l.Domains...), Subnets: append([]string(nil), l.Subnets...),
+			Native: l.Native, TransportSubnets: append([]string(nil), l.TransportSubnets...),
+			NativeSummaryComplete: l.Native != nil && l.Native.Version == lists.ProjectionVersion,
+		}, ok
 	}
 }
 

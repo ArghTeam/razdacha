@@ -110,7 +110,6 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		return err
 	}
 	defer func() { _ = wg.Close() }()
-	go syncWGPeers(ctx, st, wg)
 	listsMgr := startLists(ctx, st, dbPath, slog.Default())
 	ensureBuiltinPool(ctx, st, slog.Default())
 	poolsMgr := startPools(ctx, st, slog.Default())
@@ -122,6 +121,8 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	if err != nil {
 		return err
 	}
+
+	go syncWGPeers(ctx, st, wg, apply)
 
 	// Без пароля демон не стартует: панель доступна из интернета, и запуск
 	// «пока без авторизации» отдал бы наружу root-демон (ADR 0009).
@@ -245,12 +246,8 @@ func listsDiag(st *store.Store, m *lists.Manager) func(context.Context) (api.Dia
 	}
 }
 
-// wgSyncInterval — как часто состояние БД сверяется с интерфейсом.
-//
-// Сверка идёт диффом: на неизменном состоянии не выполняется ни одной записи и
-// живые хендшейки не страдают. Событийная перевыдача пиров приедет вместе с
-// применением конфига (issue #30), до неё периодическая сверка — способ не
-// заставлять пользователя перезапускать демон после добавления устройства.
+// wgSyncInterval preserves periodic admission of pending live peer edits.
+// Unchanged peers use a minimal diff and retain their live handshakes.
 const wgSyncInterval = 10 * time.Second
 
 // startWG поднимает wg0 по настройкам из БД. Интерфейс — не опция: без него
@@ -271,18 +268,14 @@ func startWG(ctx context.Context, st *store.Store, settings store.Settings) (*ne
 	return wg, nil
 }
 
-// syncWGPeers держит набор пиров на интерфейсе равным состоянию БД.
-// Интерфейс при остановке демона не снимается: рестарт не должен рвать клиентам
-// связь, а возврат системы в исходное состояние — дело удаления пакета.
-func syncWGPeers(ctx context.Context, st *store.Store, wg *netstack.WGManager) {
+// syncWGPeers reads and reconciles live credentials under the publication gate.
+// The interface survives daemon exit; reset/uninstall owns interface removal.
+func syncWGPeers(ctx context.Context, st *store.Store, wg *netstack.WGManager, gate *applyGate) {
 	ticker := time.NewTicker(wgSyncInterval)
 	defer ticker.Stop()
 	for {
-		peers, err := st.Peers(ctx)
-		if err != nil {
-			slog.Error("чтение пиров", "ошибка", err)
-		} else if _, err := wg.SyncPeers(ctx, peers); err != nil {
-			slog.Error("синхронизация пиров", "ошибка", err)
+		if err := gate.syncWGPeers(ctx, st, wg); err != nil && ctx.Err() == nil {
+			slog.Error("Reconcile live WireGuard peers", "error", err)
 		}
 		select {
 		case <-ctx.Done():

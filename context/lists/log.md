@@ -1,5 +1,15 @@
 # Lists — log
 
+## 2026-11-06 — Plain-list consumer retention (#328)
+
+Plain list content/status now retire once scheduler and independent accepted-policy
+owners release the URL. Durable publication and recovery update accepted pins;
+pre-acceptance failures leave the prior owner intact; a release failure keeps the
+newly accepted owner. Ownership incarnation checks reject
+late removed/re-added fetch results, including status failures. Native artifacts,
+native memory retention and disk caches keep their existing retention contracts.
+
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 

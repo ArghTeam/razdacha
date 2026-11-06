@@ -38,6 +38,12 @@ blocklist evidence. Unknown structured country retains the existing title check.
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-11-06
+
+### #326 — restore authentication and pool safety
+
+**Changed:** Staged CLI restore atomically deletes all panel sessions and rotates the private authentication generation before publication, preserving the restored password hash. Saved cookies and pre-restore login verification never become valid again. Automatic pool filtering admits Shadowsocks only with a recognized encrypted cipher and well-formed plain/base64 userinfo; plaintext none, unknown methods and undecidable forms are excluded at catalog admission, merge and stored-member generation. Manual tunnel parsing remains unchanged (#326).
+
 ## 2026-11-05
 
 ### #308 — pending REALITY profile delivery

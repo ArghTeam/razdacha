@@ -97,13 +97,13 @@ func startApply(ctx context.Context, st *store.Store, pools *lists.PoolManager,
 		return validateWGPolicy(settings, peers)
 	}
 	g.network.wg = func(ctx context.Context, settings store.Settings) error {
-		wg, err := startWG(ctx, st, settings)
-		if err != nil {
-			return err
-		}
-		return wg.Close()
+		return configureLiveWG(ctx, st, settings)
 	}
-	if err := g.recover(ctx, filepath.Join(filepath.Dir(dbPath), networkstate.BootstrapFile)); err != nil {
+	// Recovery owns the same admission gate before any watcher or periodic sync.
+	g.mu.Lock()
+	err := g.recover(ctx, filepath.Join(filepath.Dir(dbPath), networkstate.BootstrapFile))
+	g.mu.Unlock()
+	if err != nil {
 		return nil, err
 	}
 	if mgr != nil {
@@ -177,6 +177,9 @@ func (g *applyGate) recover(ctx context.Context, seedPath string) error {
 			}
 		}
 		g.base = committed.Policy
+		if g.network.manager != nil {
+			g.network.manager.SetCommittedSources(lists.Sources(committed.Policy))
+		}
 		g.network.contents = committed.Lists
 		g.network.initialized = true
 		if _, err := g.publish(ctx, committed.Policy, true, false); err != nil {

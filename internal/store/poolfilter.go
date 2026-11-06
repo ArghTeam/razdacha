@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/base64"
 	"net/url"
 	"strings"
 	"unicode"
@@ -21,7 +22,7 @@ import (
 // Причины отбраковки. Текст уходит в панель как есть — как и все ошибки, доходящие
 // до UI.
 const (
-	poolReasonNoEncryption = "транспорт без шифрования (security=none)"
+	poolReasonNoEncryption = "transport encryption is absent or cannot be verified"
 	poolReasonCountry      = "страна в чёрном списке: "
 )
 
@@ -186,21 +187,8 @@ func boundaryAfter(s string, i int) bool {
 
 func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
-// poolKeyUnencrypted — уходит ли ключ в открытый текст.
-//
-// Касается только vless и trojan: у обоих TLS включается параметром `security`, и без
-// него sing-box поднимает outbound без шифрования вовсе (`parse_url.go`, ветка
-// `case "", "none"` отдаёт nil-секцию TLS). Такой «туннель» через чужой сервер хуже
-// прямого выхода: посредник добавлен, а защиты не прибавилось (ADR 0020).
-//
-// Shadowsocks и hysteria2 сюда не попадают: у первого шифрование в самом протоколе, у
-// второго транспорт всегда поверх QUIC с TLS.
-//
-// Разбор ручной, а не через [url.Parse] целиком: в логин-части ссылок каталога бывает
-// не-ASCII (`trojan://пароль@…`), на котором `net/url` спотыкается, а нужна отсюда
-// только строка запроса. Неразборчивый запрос считается небезопасным: ключ, который мы
-// не смогли прочесть, генератор конфига всё равно отвергнет, и держать его в пуле не за
-// чем.
+// poolKeyUnencrypted rejects automatic members without verifiable encryption.
+// Manual tunnel parsing is deliberately independent of this catalog policy.
 func poolKeyUnencrypted(rawURL string) bool {
 	s := strings.TrimSpace(rawURL)
 	i := strings.Index(s, "://")
@@ -208,6 +196,8 @@ func poolKeyUnencrypted(rawURL string) bool {
 		return false
 	}
 	switch strings.ToLower(s[:i]) {
+	case "ss":
+		return !poolShadowsocksEncrypted(s[i+3:])
 	case "vless", "trojan":
 	default:
 		return false
@@ -253,4 +243,52 @@ func SplitPool(pool []PoolServer, f PoolFilter) (keep []PoolServer, excluded []P
 type PoolExclusion struct {
 	Server PoolServer
 	Reason string
+}
+
+// poolShadowsocksEncrypted accepts known encrypted methods of the pinned runtime.
+// Userinfo parsing matches singbox, including '/' within a password.
+func poolShadowsocksEncrypted(rest string) bool {
+	rest, _, _ = strings.Cut(rest, "#")
+	rest, query, _ := strings.Cut(rest, "?")
+	if _, err := url.ParseQuery(query); err != nil {
+		return false
+	}
+	at := strings.LastIndex(rest, "@")
+	if at < 0 {
+		return false
+	}
+	userinfo, err := url.PathUnescape(rest[:at])
+	if err != nil {
+		return false
+	}
+	if !strings.Contains(userinfo, ":") {
+		decoded := false
+		for _, enc := range []*base64.Encoding{base64.RawURLEncoding, base64.URLEncoding, base64.RawStdEncoding, base64.StdEncoding} {
+			if b, err := enc.DecodeString(userinfo); err == nil {
+				userinfo, decoded = string(b), true
+				break
+			}
+		}
+		if !decoded {
+			return false
+		}
+	}
+	parts := strings.Split(userinfo, ":")
+	if len(parts) != 2 && len(parts) != 3 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+	}
+	// The runtime does not normalize cipher names.
+	switch parts[0] {
+	case "aes-128-gcm", "aes-192-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305",
+		"2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305",
+		"aes-128-ctr", "aes-192-ctr", "aes-256-ctr", "aes-128-cfb", "aes-192-cfb", "aes-256-cfb", "rc4-md5", "chacha20-ietf", "xchacha20":
+		return true
+	default:
+		return false
+	}
 }

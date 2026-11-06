@@ -52,9 +52,9 @@ func (c *Client) RealityConnections(ctx context.Context) (map[string]RealityConn
 		return nil, fmt.Errorf("%w: connection response too large", ErrBadResponse)
 	}
 	var out struct {
-		Connections *[]struct {
+		Connections *[]*struct {
 			ID       string `json:"id"`
-			Metadata struct {
+			Metadata *struct {
 				Type string `json:"type"`
 			} `json:"metadata"`
 			Rule     string          `json:"rule"`
@@ -71,6 +71,11 @@ func (c *Client) RealityConnections(ctx context.Context) (map[string]RealityConn
 	observations := make(map[string]RealityConnectionObservation)
 	seen := make(map[string]bool)
 	for _, conn := range *out.Connections {
+		// The pinned controller emits inbound type/tag for every connection.
+		// Missing classification must not turn an unreadable row into observed zero.
+		if conn == nil || conn.Metadata == nil || strings.TrimSpace(conn.Metadata.Type) == "" {
+			return nil, fmt.Errorf("%w: unclassifiable connection", ErrBadResponse)
+		}
 		if conn.Metadata.Type != "vless/reality-in" {
 			continue
 		}

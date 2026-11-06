@@ -334,4 +334,11 @@ Candidate onboarding and shadow-only probe behavior remain separate from main.
   keep only outbounds also need full-configuration mode or explicit DNS setup.
   QUIC/encrypted-name domain routing relies on that DNS path, not TCP sniffing.
 
+<<<<<<< HEAD
 - Prepared onboarding exposes explicit Review current settings recovery. Preview reads accepted current MTU/client/rule counts; Confirm review & apply refreshes metadata before guarded Apply, preserving current policy and keys. Cancellation does not confirm. Failed confirmation discards its local review and keeps explicit re-review reachable for every prepared setup, including previously applied setup. Review/configure callbacks cannot replace newer modal/session state; confirmed configure retains same-session pending effects after closure (#330).
+=======
+- WireGuard inventory row counters share the summary's nonnegative safe-integer
+  observation boundary: absent, null, string, negative and unsafe values display
+  Unknown; numeric zero displays 0 B. REALITY-only rows omit WireGuard counters.
+  Gateway directions and existing observation freshness semantics are unchanged.
+>>>>>>> origin/main

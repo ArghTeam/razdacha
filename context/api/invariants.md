@@ -196,3 +196,26 @@ permit setup completion before checked Apply repairs and releases that ingress.
   snapshot gives admitted absent users zero open flows and zero open-flow bytes.
   Global controller totals and other inbounds are excluded. Samples replace one
   another without persistence or accumulation; closed flows reduce current bytes.
+
+## REALITY control validation and inventory coherence (#327)
+
+- The publication gate covers settings PATCH fresh read, partial merge, complete
+  validation and save/revocation. Omitted fields retain the latest saved values,
+  including a concurrent REALITY disable; responses describe the saved object.
+  Settings serialization never includes or overwrites authentication secrets.
+- Peer/settings revocations validate the prospective object and exit references
+  before guard installation. Invalid requests return 400 without changing ingress
+  or credentials. The transactional write repeats validation. Once revocation
+  enters the guarded write path, failures retain the existing closed-ingress rule.
+- Peer inventory uses one gated request-local eligibility snapshot with four SQL
+  reads and indexed committed peers/admissions. Credential metadata is read once;
+  UUIDs are not loaded, and no URI/client JSON is serialized for booleans. Only
+  dedicated authenticated delivery endpoints construct secret profiles. Batch
+  results must match the inventory revision; legacy publishers use the explicit
+  per-peer compatibility path.
+- Eligibility and dedicated delivery share the same pure plan validation. Pending
+  profiles use saved endpoints; admitted profiles use committed endpoints. Global
+  or peer disable, missing credentials/identity, stale revision, guarded/uncertain
+  authority and invalid pending settings cannot become downloadable. Activity
+  observations keep their independent before/after epoch and live-admission checks
+  around the bounded controller cache (ADRs 0036, 0038 and 0039).

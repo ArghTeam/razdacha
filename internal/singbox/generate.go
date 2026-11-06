@@ -86,6 +86,10 @@ func GenerateWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []
 // GeneratePolicyWithDiag inspects shared policy without emitting a public listener.
 // Publication must use GenerateWithReality when alternative ingress is enabled.
 func GeneratePolicyWithDiag(snap store.Snapshot, plain PlainLists) (option.Options, []RuleDiag, error) {
+	return generatePolicyWithPlan(snap, plain, nil)
+}
+
+func generatePolicyWithPlan(snap store.Snapshot, plain PlainLists, plan *[]compiledDestination) (option.Options, []RuleDiag, error) {
 	tunnels := make(map[string]store.Tunnel, len(snap.Tunnels))
 	for _, t := range snap.Tunnels {
 		tunnels[t.ID] = t
@@ -243,7 +247,11 @@ func GeneratePolicyWithDiag(snap store.Snapshot, plain PlainLists) (option.Optio
 		}
 		denied := unavailable != ""
 		diags = append(diags, RuleDiag{ID: r.ID, Name: r.Name, Reason: unavailable})
-		routeRules = append(routeRules, routeRule(r, tags, sources, tunnelTag, denied))
+		compiled := routeRule(r, tags, sources, tunnelTag, denied)
+		routeRules = append(routeRules, compiled)
+		if plan != nil {
+			*plan = append(*plan, compiledDestination{route: compiled, dnsTags: built.DNSTags, addressCapable: built.AddressCapable})
+		}
 		if dnsRule, ok := dnsRuleFor(r, built.DNSTags, sources, denied); ok {
 			dns.Rules = append(dns.Rules, dnsRule)
 		}

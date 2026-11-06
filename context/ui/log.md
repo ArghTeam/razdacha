@@ -28,6 +28,13 @@ legacy rule adoption. Per-client missing traffic now remains Unknown, like aggre
 totals without removing per-client rows. Missing/invalid direction observations
 remain unknown; measured zero is preserved. Labels describe current-client and
 interface-reset scope rather than lifetime history.
+## 2026-11-06 — Nullable WireGuard row observations (#328)
+
+WireGuard row bytes now use the same nonnegative safe-integer boundary as summary
+cards. Unknown samples remain Unknown, numeric zero remains measured zero, and
+REALITY-only rows still omit WireGuard counters. Directions and TTL are unchanged.
+
+
 ## 2026-11-06 — Transport-specific client observations (#322)
 
 Added separate WireGuard cumulative and REALITY current-open-flow traffic cards,
