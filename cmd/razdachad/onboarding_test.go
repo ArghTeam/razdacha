@@ -163,6 +163,32 @@ func TestOnboardingGateFreeApplyAcquiresCanonicalSources(t *testing.T) {
 		t.Fatal("slow acquisition published after cancellation")
 	}
 	slow = false
+	settings, _ := st.Settings(ctx)
+	settings.ClientMTU = 1320
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := st.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.g.network.manager.SetSources(lists.Sources(pending))
+	if err := f.g.network.manager.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ApplyOnboarding(ctx, st); !errors.Is(err, store.ErrOnboardingConflict) {
+		t.Fatal("raw retry accepted changed policy", err)
+	}
+	review, err := f.g.ReviewOnboarding(ctx, st, api.OnboardingReviewRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ReviewOnboarding(ctx, st, api.OnboardingReviewRequest{Revision: review.Revision, Fingerprint: review.Fingerprint, Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := f.g.ApplyOnboarding(ctx, st); err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +221,9 @@ func TestOnboardingCannotCompleteWhilePublicIngressIsGuarded(t *testing.T) {
 	if err := f.g.emergencyPublicGuard(); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.g.ReviewOnboarding(ctx, f.st, api.OnboardingReviewRequest{}); !errors.Is(err, api.ErrNetworkGuarded) {
+		t.Fatal("guarded review accepted", err)
+	}
 	before, err := f.st.Onboarding(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -218,5 +247,90 @@ func TestOnboardingCannotCompleteWhilePublicIngressIsGuarded(t *testing.T) {
 	}
 	if err := f.g.FinishOnboarding(ctx, f.st); err != nil {
 		t.Fatal("checked repair did not restore setup completion", err)
+	}
+}
+
+func TestOnboardingReviewAcceptedPolicyAfterFailure(t *testing.T) {
+	f, st := setupGateFixture(t)
+	ctx := context.Background()
+	if _, err := f.g.ConfigureOnboarding(ctx, st, api.OnboardingRequest{Mode: "skip", Country: "AUTO"}); err != nil {
+		t.Fatal(err)
+	}
+	// A canceled first attempt leaves the prepared intent retryable.
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := f.g.ApplyOnboarding(canceled, st); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	settings, _ := st.Settings(ctx)
+	settings.ClientMTU = 1320
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ReviewOnboarding(ctx, st, api.OnboardingReviewRequest{}); !errors.Is(err, store.ErrOnboardingConflict) {
+		t.Fatal("unaccepted policy reviewed", err)
+	}
+	if _, err := f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := st.Snapshot(ctx)
+	fingerprint, _ := store.PolicyFingerprint(before)
+	if _, err := f.g.ApplyOnboarding(ctx, st); !errors.Is(err, store.ErrOnboardingConflict) {
+		t.Fatal("raw retry accepted", err)
+	}
+	review, err := f.g.ReviewOnboarding(ctx, st, api.OnboardingReviewRequest{})
+	if err != nil || review.ClientMTU != 1320 {
+		t.Fatal(review, err)
+	}
+	state, _ := st.Onboarding(ctx)
+	if state.Expected != review.Revision || state.Expected == review.Fingerprint {
+		t.Fatal("preview mutated expectation")
+	}
+	request := api.OnboardingReviewRequest{Revision: review.Revision, Fingerprint: review.Fingerprint, Confirm: true}
+	stale := request
+	stale.Revision = "stale"
+	if _, err := f.g.ReviewOnboarding(ctx, st, stale); !errors.Is(err, store.ErrOnboardingConflict) {
+		t.Fatal("stale revision accepted", err)
+	}
+	if _, err := f.g.ReviewOnboarding(ctx, st, request); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := st.Snapshot(ctx)
+	afterFingerprint, _ := store.PolicyFingerprint(after)
+	if fingerprint != afterFingerprint {
+		t.Fatal("review changed policy or credentials")
+	}
+	settings.ClientMTU = 1340
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ApplyOnboarding(ctx, st); !errors.Is(err, store.ErrOnboardingConflict) {
+		t.Fatal("concurrent change accepted", err)
+	}
+	if _, err := f.g.ReviewOnboarding(ctx, st, request); !errors.Is(err, store.ErrOnboardingConflict) {
+		t.Fatal("old confirmation accepted", err)
+	}
+	if _, err := f.g.ApplyCurrent(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ReviewOnboarding(ctx, st, request); !errors.Is(err, store.ErrOnboardingConflict) {
+		t.Fatal("accepted concurrent policy bypassed review fingerprint", err)
+	}
+	review, err = f.g.ReviewOnboarding(ctx, st, api.OnboardingReviewRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ReviewOnboarding(ctx, st, api.OnboardingReviewRequest{Revision: review.Revision, Fingerprint: review.Fingerprint, Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.g.ApplyOnboarding(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.g.FinishOnboarding(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	final, _ := st.Snapshot(ctx)
+	if final.Settings.ClientMTU != 1340 || final.Peers[0].PrivateKey != before.Peers[0].PrivateKey {
+		t.Fatal("accepted settings or identity lost")
 	}
 }

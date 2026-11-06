@@ -246,3 +246,40 @@ func TestOnboardingFingerprintIncludesRealityAuthority(t *testing.T) {
 		})
 	}
 }
+
+func TestOnboardingReviewMetadataCompareAndSwap(t *testing.T) {
+	st, peer := onboardingStore(t)
+	ctx := context.Background()
+	prepared, err := st.ConfigureOnboarding(ctx, fingerprint(t, st), "skip", "AUTO", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, _ := st.Settings(ctx)
+	settings.ClientMTU = 1320
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	reviewed := fingerprint(t, st)
+	if err := st.ReviewOnboarding(ctx, "obsolete", reviewed); !errors.Is(err, ErrOnboardingConflict) {
+		t.Fatal("stale metadata accepted", err)
+	}
+	if err := st.ReviewOnboarding(ctx, prepared.Expected, prepared.Expected); !errors.Is(err, ErrOnboardingConflict) {
+		t.Fatal("stale policy accepted", err)
+	}
+	if err := st.ReviewOnboarding(ctx, prepared.Expected, reviewed); err != nil {
+		t.Fatal(err)
+	}
+	state, _ := st.Onboarding(ctx)
+	if state.Expected != reviewed || !state.Pending || !state.Prepared || state.Applied || state.PeerID != peer.ID || fingerprint(t, st) != reviewed {
+		t.Fatal("review changed more than metadata")
+	}
+	if err := st.AcceptOnboarding(ctx, reviewed, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AcceptOnboarding(ctx, reviewed, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReviewOnboarding(ctx, reviewed, reviewed); !errors.Is(err, ErrOnboardingConflict) {
+		t.Fatal("completed setup reviewed", err)
+	}
+}

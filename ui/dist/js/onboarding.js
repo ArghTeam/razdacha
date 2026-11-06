@@ -26,15 +26,16 @@ function render(ctx) {
     foot = '<button class="btn" data-act="close-modal">Later</button><button class="btn btn-primary" data-act="setup-review">Review setup</button>';
   } else if (step === 1) {
     const peer = state.peers.find(p => p.id === ctx.status.peer_id);
-    body = `${indicator}<h3>Review before applying</h3><dl class="setup-review"><dt>Client</dt><dd>${esc(peer?.name || 'Initial client')}</dd><dt>Choice</dt><dd>${ctx.mode === 'free' ? 'Free selective starter rules' : 'Keep existing policy; no free setup changes'}</dd><dt>Country</dt><dd>${ctx.mode === 'free' ? esc(ctx.country) : 'Unchanged'}</dd></dl>
+    body = `${indicator}<h3>Review before applying</h3><dl class="setup-review"><dt>Client</dt><dd>${esc(peer?.name || 'Initial client')}</dd><dt>Choice</dt><dd>${ctx.review ? 'Keep currently accepted policy' : ctx.mode === 'free' ? 'Free selective starter rules' : 'Keep existing policy; no free setup changes'}</dd><dt>Country</dt><dd>${ctx.review ? 'Keep currently accepted policy' : ctx.mode === 'free' ? esc(ctx.country) : 'Unchanged'}</dd></dl>
       <p class="hint">Only this explicit action saves and applies setup through the server's guarded publication. Other clients are not assigned. Unrelated pending changes must be reviewed separately.</p>
-      ${locked ? '<p class="hint">Setup choices are saved. Retry Apply to finish this configuration; closing does not discard pending intent.</p>' : ''}`;
-    foot = `<button class="btn" data-act="setup-back">Back</button><button class="btn btn-primary" data-act="setup-apply">${locked ? 'Retry Apply' : 'Apply setup'}</button>`;
+      ${ctx.review ? `<p class="hint">Keep accepted policy: MTU ${esc(ctx.review.client_mtu)}, ${esc(ctx.review.clients)} clients, ${esc(ctx.review.rules)} rules. Routes and credentials remain unchanged. Apply confirms this review.</p>` : ''}
+      ${locked ? '<button class="btn" data-act="setup-current">Review current settings</button><p class="hint">Setup choices are saved. Retry Apply to finish this configuration; closing does not discard pending intent.</p>' : ''}`;
+    foot = `<button class="btn" data-act="setup-back">Back</button><button class="btn btn-primary" data-act="setup-apply">${ctx.review ? 'Confirm review & apply' : locked ? 'Retry Apply' : 'Apply setup'}</button>`;
   } else {
     const peer = state.peers.find(p => p.id === ctx.status.peer_id);
     body = `${indicator}<h3>Your client is ready to import</h3><p class="screen-sub">Configuration accepted. Tunnel connectivity, video and calls are not verified. Import this saved profile into WireGuard.</p><p><strong>${esc(peer?.name || 'Initial client')}</strong></p>
       ${ctx.status.pool_enabled && ctx.status.candidate_count === 0 ? '<div class="client-apply-note" role="status"><strong>No eligible free exits are available.</strong><span>Resources assigned to this pool reject until it refreshes; they do not fall back to direct routing. Open Tunnels and explicitly Refresh the built-in pool, then check its runtime health.</span></div>' : ''}
-      <button class="btn" data-act="setup-profile">${ctx.config ? 'Reload saved profile' : 'Show QR & download profile'}</button>
+      <button class="btn" data-act="setup-current">Review current settings</button><button class="btn" data-act="setup-profile">${ctx.config ? 'Reload saved profile' : 'Show QR & download profile'}</button>
       <div id="setup-profile-result" class="setup-profile" ${ctx.config ? '' : 'hidden'}><canvas id="setup-qr" aria-label="Private WireGuard profile QR"></canvas><p class="hint">This QR contains private connection keys. Share only with this client.</p><button class="btn" data-act="setup-download" ${ctx.config ? '' : 'disabled'}>Download .conf</button></div>`;
     foot = '<button class="btn" data-act="close-modal">Later</button><button class="btn btn-primary" data-act="setup-finish">Finish setup</button>';
   }
@@ -99,10 +100,17 @@ async function applySetup() {
   busyControls(ctx, true);
   setStatus(ctx, ctx.status.prepared ? 'Checking and applying saved setup…' : 'Saving setup and acquiring candidates…');
   try {
-    if (!ctx.status.prepared) {
-      ctx.status = await api.onboarding.configure(ctx.mode, ctx.country);
+    if (ctx.review) {
+      await api.onboarding.review({ revision: ctx.review.revision, fingerprint: ctx.review.fingerprint, confirm: true });
       if (!current(ctx)) return;
-      markDirty();
+      ctx.review = null;
+      ctx.status.applied = false;
+    } else if (!ctx.status.prepared) {
+      const status = await api.onboarding.configure(ctx.mode, ctx.country);
+      if (ctx.session()) markDirty();
+      if (!current(ctx)) return;
+      ctx.status = status;
+      render(ctx);
     }
     setStatus(ctx, 'Applying configuration. Sources may need time to load…');
     await api.onboarding.apply();
@@ -112,8 +120,8 @@ async function applySetup() {
     if (!current(ctx)) return;
     ctx.step = 2;
     render(ctx);
-  } catch (error) { if (current(ctx)) setStatus(ctx, error.message || 'Setup was not applied. Retry when sources are ready.', true); }
-  finally { if (current(ctx)) { busyControls(ctx, false); if (ctx.status.prepared && !ctx.status.applied) ctx.modal.querySelector('[data-act="setup-apply"]').textContent = 'Retry Apply'; } }
+  } catch (error) { if (current(ctx)) { ctx.review = null; render(ctx); setStatus(ctx, error.message || 'Setup was not applied. Retry when sources are ready.', true); } }
+  finally { if (current(ctx)) { busyControls(ctx, false); if (ctx.status.prepared && !ctx.status.applied) ctx.modal.querySelector('[data-act="setup-apply"]').textContent = ctx.review ? 'Confirm review & apply' : 'Retry Apply'; } }
 }
 
 async function profile() {
@@ -133,7 +141,25 @@ async function finish() {
   catch (error) { if (current(ctx)) { busyControls(ctx, false); setStatus(ctx, error.message || 'Setup was not completed. Retry.', true); } }
 }
 
+async function reviewCurrent() {
+  const ctx = wizard;
+  if (!ctx || !current(ctx) || ctx.busy) return;
+  busyControls(ctx, true);
+  ctx.review = null;
+  try {
+    const review = await api.onboarding.review();
+    if (!current(ctx)) return;
+    ctx.review = review;
+    ctx.config = null;
+    ctx.step = 1;
+    render(ctx);
+    setStatus(ctx, 'Current policy is accepted. Review it before confirming Apply.');
+  } catch (error) { if (current(ctx)) { render(ctx); setStatus(ctx, error.message || 'Review unavailable. Apply pending policy in the panel first.', true); } }
+  finally { if (current(ctx)) busyControls(ctx, false); }
+}
+
 export const actions = {
+  'setup-current': reviewCurrent,
   'open-setup': reopen,
   'setup-review': () => {
     const ctx = wizard; if (!ctx || !current(ctx) || ctx.busy) return;

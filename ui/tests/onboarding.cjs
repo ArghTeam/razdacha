@@ -71,6 +71,74 @@ async function capture(page, name) { if (screenshots) { fs.mkdirSync(screenshots
       retry.assertClean();
     } finally { await retry.page.close(); }
 
+    const recovery = await appFixture(browser, { state: { onboarding: { ...pending, prepared: true, mode: 'free', country: 'DE' } } });
+    try {
+      await recovery.page.getByText('Review before applying', { exact: true }).waitFor();
+      recovery.fail('POST', '/api/onboarding/apply', { error: 'Synthetic policy conflict' }, 409);
+      await recovery.page.locator('[data-act="setup-apply"]').click();
+      await recovery.page.getByText('Synthetic policy conflict', { exact: true }).waitFor();
+      await recovery.page.locator('[data-act="setup-current"]').click();
+      await recovery.page.getByText('Keep accepted policy:', { exact: false }).waitFor();
+      assert.equal(writes(recovery).filter(e => e.pathname.endsWith('/configure')).length, 0);
+      assert.deepEqual(writes(recovery).at(-1).body, {}, 'preview confirmed metadata');
+      await recovery.page.keyboard.press('Escape');
+      await recovery.page.locator('[data-act="open-setup"]').click();
+      await recovery.page.getByText('Review before applying', { exact: true }).waitFor();
+      assert.equal(await recovery.page.getByText('Confirm review & apply', { exact: true }).count(), 0, 'canceled review persisted');
+      await recovery.page.locator('[data-act="setup-current"]').click();
+      await recovery.page.getByText('Confirm review & apply', { exact: true }).waitFor();
+      recovery.recover('POST', '/api/onboarding/apply');
+      await recovery.page.locator('[data-act="setup-apply"]').click();
+      await recovery.page.getByText('Your client is ready to import', { exact: true }).waitFor();
+      assert.deepEqual(writes(recovery).filter(e => e.pathname.endsWith('/review')).at(-1).body, { revision: 'synthetic-old', fingerprint: 'synthetic-current', confirm: true });
+      assert.equal(writes(recovery).filter(e => e.pathname.endsWith('/configure')).length, 0);
+      recovery.assertClean();
+    } finally { await recovery.page.close(); }
+
+    const obsolete = await appFixture(browser, { state: { onboarding: { ...pending, prepared: true } } });
+    try {
+      await obsolete.page.getByText('Review before applying', { exact: true }).waitFor();
+      obsolete.hold('POST', '/api/onboarding/review');
+      await obsolete.page.locator('[data-act="setup-current"]').click();
+      await obsolete.waitHeld('POST', '/api/onboarding/review');
+      await obsolete.page.evaluate(async () => { const shell = await import('/js/shell.js'); shell.openModal(shell.modalShell('New draft', '<input id="new-draft" value="Preserved">', '')); });
+      await obsolete.release('POST', '/api/onboarding/review');
+      await obsolete.settle();
+      assert.equal(await obsolete.page.locator('#new-draft').inputValue(), 'Preserved');
+      assert.equal(writes(obsolete).filter(e => e.body?.confirm).length, 0);
+      obsolete.assertClean();
+    } finally { await obsolete.page.close(); }
+
+    const closedConfigure = await appFixture(browser, { state: { onboarding: pending } });
+    try {
+      await closedConfigure.page.getByText('Choose how to start', { exact: true }).waitFor();
+      await closedConfigure.page.locator('[data-act="setup-review"]').click();
+      closedConfigure.hold('POST', '/api/onboarding/configure');
+      await closedConfigure.page.locator('[data-act="setup-apply"]').click();
+      await closedConfigure.waitHeld('POST', '/api/onboarding/configure');
+      await closedConfigure.page.keyboard.press('Escape');
+      await closedConfigure.release('POST', '/api/onboarding/configure');
+      await closedConfigure.settle();
+      assert.equal((await closedConfigure.snapshot()).dirty, true, 'confirmed closed configuration lost pending effect');
+      assert.equal(writes(closedConfigure).filter(e => e.pathname.endsWith('/apply')).length, 0, 'closed dialog continued Apply');
+      closedConfigure.assertClean();
+    } finally { await closedConfigure.page.close(); }
+
+    const oldSession = await appFixture(browser, { state: { onboarding: { ...pending, prepared: true } } });
+    try {
+      await oldSession.page.getByText('Review before applying', { exact: true }).waitFor();
+      oldSession.hold('POST', '/api/onboarding/review');
+      await oldSession.page.locator('[data-act="setup-current"]').click();
+      await oldSession.waitHeld('POST', '/api/onboarding/review');
+      await oldSession.logout();
+      await oldSession.login();
+      await oldSession.page.getByText('Review before applying', { exact: true }).waitFor();
+      await oldSession.release('POST', '/api/onboarding/review');
+      await oldSession.settle();
+      assert.equal(await oldSession.page.getByText('Confirm review & apply', { exact: true }).count(), 0, 'previous session replaced recovery');
+      oldSession.assertClean();
+    } finally { await oldSession.page.close(); }
+
     const keep = await appFixture(browser, { state: { onboarding: { ...pending, read_only: true } } });
     try {
       await keep.page.getByText('Choose how to start', { exact: true }).waitFor();

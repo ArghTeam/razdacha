@@ -17,6 +17,11 @@ type onboardingGateStub struct {
 	calls int
 }
 
+func (g *onboardingGateStub) ReviewOnboarding(context.Context, *store.Store, OnboardingReviewRequest) (OnboardingReview, error) {
+	g.calls++
+	return OnboardingReview{}, g.fail
+}
+
 func (g *onboardingGateStub) ConfigureOnboarding(context.Context, *store.Store, OnboardingRequest) (store.OnboardingState, error) {
 	g.calls++
 	return store.OnboardingState{Pending: true, Prepared: true, Expected: "secret-internal-fingerprint"}, g.fail
@@ -44,7 +49,7 @@ func TestOnboardingRequiresAuthenticationAndDoesNotFetchOnRead(t *testing.T) {
 	ts := newTestServer(t)
 	gate := &onboardingGateStub{}
 	ts.applier = gate
-	for _, path := range []string{"/api/onboarding", "/api/onboarding/reopen", "/api/onboarding/configure", "/api/onboarding/apply", "/api/onboarding/finish"} {
+	for _, path := range []string{"/api/onboarding", "/api/onboarding/reopen", "/api/onboarding/configure", "/api/onboarding/apply", "/api/onboarding/finish", "/api/onboarding/review"} {
 		method := http.MethodPost
 		if path == "/api/onboarding" {
 			method = http.MethodGet

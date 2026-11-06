@@ -15,8 +15,23 @@ type OnboardingRequest struct {
 	Country string `json:"country"`
 }
 
+// OnboardingReview exposes safe observations and opaque review revisions.
+type OnboardingReview struct {
+	Revision    string `json:"revision"`
+	Fingerprint string `json:"fingerprint"`
+	ClientMTU   int    `json:"client_mtu"`
+	Clients     int    `json:"clients"`
+	Rules       int    `json:"rules"`
+}
+type OnboardingReviewRequest struct {
+	Revision    string `json:"revision"`
+	Fingerprint string `json:"fingerprint"`
+	Confirm     bool   `json:"confirm"`
+}
+
 // OnboardingApplier extends the same guarded daemon authority, never a second publisher.
 type OnboardingApplier interface {
+	ReviewOnboarding(context.Context, *store.Store, OnboardingReviewRequest) (OnboardingReview, error)
 	ConfigureOnboarding(context.Context, *store.Store, OnboardingRequest) (store.OnboardingState, error)
 	ApplyOnboarding(context.Context, *store.Store) (singbox.ApplyResult, error)
 	FinishOnboarding(context.Context, *store.Store) error
@@ -68,6 +83,17 @@ func (s *Server) handleOnboardingAction(w http.ResponseWriter, r *http.Request) 
 		}
 		state.Expected = ""
 		writeJSON(w, s.log, http.StatusOK, state)
+	case "review":
+		var body OnboardingReviewRequest
+		if !s.decodeInto(w, r, &body) {
+			return
+		}
+		review, err := gate.ReviewOnboarding(r.Context(), s.store, body)
+		if err != nil {
+			s.onboardingError(w, err)
+			return
+		}
+		writeJSON(w, s.log, http.StatusOK, review)
 	case "configure":
 		var body OnboardingRequest
 		if !s.decodeInto(w, r, &body) {

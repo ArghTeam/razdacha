@@ -185,3 +185,48 @@ func (g *applyGate) ReopenOnboarding(ctx context.Context, st *store.Store, peerI
 	defer g.mu.Unlock()
 	return st.ReopenOnboarding(ctx, peerID)
 }
+
+// ReviewOnboarding never changes policy or publishes a generation.
+func (g *applyGate) ReviewOnboarding(ctx context.Context, st *store.Store, request api.OnboardingReviewRequest) (api.OnboardingReview, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var review api.OnboardingReview
+	if err := ctx.Err(); err != nil {
+		return review, err
+	}
+	if !g.network.initialized || g.network.uncertain || (g.store != nil && g.publicGuarded()) {
+		return review, api.ErrNetworkGuarded
+	}
+	state, err := st.Onboarding(ctx)
+	if err != nil {
+		return review, err
+	}
+	if !state.Pending || !state.Prepared {
+		return review, store.ErrOnboardingConflict
+	}
+	snap, err := st.Snapshot(ctx)
+	if err != nil {
+		return review, err
+	}
+	fingerprint, err := store.PolicyFingerprint(snap)
+	if err != nil {
+		return review, err
+	}
+	base, err := store.PolicyFingerprint(g.base)
+	if err != nil {
+		return review, err
+	}
+	if fingerprint != base {
+		return review, store.ErrOnboardingConflict
+	}
+	review = api.OnboardingReview{Revision: state.Expected, Fingerprint: fingerprint, ClientMTU: snap.Settings.ClientMTU, Clients: len(snap.Peers), Rules: len(snap.Rules)}
+	if request.Confirm {
+		if request.Revision == "" || request.Fingerprint != fingerprint {
+			return review, store.ErrOnboardingConflict
+		}
+		if err := st.ReviewOnboarding(ctx, request.Revision, fingerprint); err != nil {
+			return review, err
+		}
+	}
+	return review, nil
+}

@@ -63,3 +63,9 @@ reader. They include opaque Reality identity/admission IDs and revisions, never
 UUIDs/private keys, including a retained identity while the listener is disabled.
 An accepted transport policy must not become an artificial onboarding conflict
 because a second reader omitted admission authority.
+
+Explicit onboarding recovery refreshes only metadata in a transaction comparing
+both the prior expectation and current complete policy fingerprint. Pending prepared
+setup and its existing client are required. The daemon additionally requires the
+reviewed policy to equal the accepted generation under the publication gate; no
+routing, settings, client or credential mutations occur during confirmation (#330).
