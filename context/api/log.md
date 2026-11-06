@@ -324,3 +324,21 @@ See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation bo
 ## 2026-11-07 — Client applied web policy (#339)
 
 Added the bounded read-only client domain explanation contract from [ADR 0042](../../docs/decisions/0042-client-applied-policy-explanations.md). Committed policy/frozen lists, current eligibility and coherent rechecks remain separate from global pending edits. Conditional TCP/443 routing and gateway A-query outcomes preserve ordering, uncertainty and C1; no probes, profile exports or deployment/quality claims are introduced. The maintained invariants record the layer-specific behavior and validation boundary.
+
+## 2026-11-07 — RAC acceptance of client Web policy (#339)
+
+Milestone 1a is accepted on RAC `0.11.0-rc.15.rac.b5b8e153cdd1`, source
+`b5b8e153cdd1709c9c60e949a91f9b1b23983704`, after main PR #340 and successful
+source/combined CI. The normal guarded upgrade preserved schema 13, all four clients,
+protected credentials/settings/routes/tunnels and byte-identical runtime config/
+committed authority. Actual API and desktop/mobile Clients UI checks confirmed
+committed whole-client exit names, separate same-exit gateway A-query policy,
+strict invalid-input/missing-client behavior and explicit disabled WG state.
+Read-only checks produced no target traffic/probes and preserved protected state;
+the subsequent installed-version-only metadata CAS is recorded separately.
+
+The [completed task](../../tasks/done/339-client-route-explanations.md#final-acceptance--2026-11-07)
+contains provenance, hashes and bounded proof. The [roadmap](../../tasks/338-client-connectivity-roadmap.md)
+remains open with 1b next; subscriptions, remote exits, failover and protocol
+experiments remain planned. This is served policy/UI acceptance, not a measured
+client connection, DNS query, quality or DPI-resistance guarantee.
