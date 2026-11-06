@@ -15,7 +15,7 @@ description: wg0, nft-правила и маршрутизация через ne
 - Приватный ключ сервера лежит в `settings` вне структуры `Settings`: сохранение настроек из UI его не затирает и наружу он не отдаётся.
 - Routing rules and the separate `inet razdacha_guard` table survive daemon exit. Startup installs the early wg0 ingress DROP guard before WG setup, and releases it only after a checked, durably committed generation. Normal direct routing resumes after recovery; daemon restart can interrupt clients. Explicit reset/uninstall removes those WG routing tables (ADR 0023); the separate public ingress guard has the lifecycle restrictions below (ADR 0032).
 
-- Candidate WG address, listen port and MTU are validated before publication and reconciled under the guard before route/runtime/nft. Temporary managers use live key storage and never replay peers; the long-lived peer-sync/stat manager retains its fixed interface identity. Startup uses trusted committed/seed WG settings; only genuine legacy absence allows guarded DB initialization for administrative access. All stored peers, including disabled peers, must fit usable pool addresses without server collision.
+- Candidate WG address, listen port and MTU are validated before publication and reconciled under the guard before route/runtime/nft. Temporary managers use live key storage and reconcile current live peer rows, never committed authentication; the long-lived peer-sync/stat manager retains its fixed interface identity. Startup uses trusted committed/seed WG settings; only genuine legacy absence allows guarded DB initialization for administrative access. All stored peers, including disabled peers, must fit usable pool addresses without server collision.
 - Explicit unchanged Apply guards and repairs WG/route/nft without restarting a known runtime. Healthy background no-ops may skip mutation.
 - Guard and routing publications use fresh netlink connections per attempt so a rejected batch cannot contaminate a later transaction. The ingress guard is a separate early-prerouting DROP table, covering forwarded traffic, DNS and tproxy; SSH/public-panel traffic does not enter through wg0. No cross-process atomic-transaction claim is made (ADR 0023).
 - Private routing-generation records belong to `internal/networkstate`; they preserve policy/list content, never restore live peer/authentication database rows, and reject symlinks, non-owner files, non-0600 permissions and malformed envelopes. Interrupted publication/recovery leaves the kernel guard installed.
@@ -58,9 +58,18 @@ description: wg0, nft-правила и маршрутизация через ne
   [coexistence record](../../tasks/297-wg-reality-coexistence.md) pins its execution
   and preserves the existing WG address/MTU publication-adapter limitation.
 
+- The separate `RAZDACHA_WIRE_WG_ADMISSION=1` case requires both quality
+  opt-ins and the same fresh namespace checks. It replaces only its disposable
+  client identity with a fresh DB key, then uses production `Up` and live peer
+  reconciliation. It asserts removal before ingress release, old-key TCP/UDP
+  denial with independent sink controls and unchanged periodic handshakes. It
+  does not extend the ordinary quality/coexistence case's two-source adapter
+  evidence. Execution conditions and results belong to
+  [task 325](../../tasks/325-wg-publication-admission.md).
+
 ## Public client safety boundary (ADR 0032)
 
-- WireGuard peer synchronization excludes `WireGuardDisabled` peers without changing keys/addresses or existing ten-second synchronization semantics.
+- WireGuard peer synchronization excludes `WireGuardDisabled` peers without changing keys/addresses. The entire periodic live-row read and kernel diff shares the publication gate. Guarded publication reconciles live kernel admission before route/runtime/nft, durable authority and guard release; read/sync failure retains the guard and committed address reservations. Startup starts the ten-second periodic loop only after recovery. Committed policy never supplies authentication (ADR 0040).
 - Reality uses the separately owned early inet INPUT TCP guard, covering established traffic and the union of previous/candidate listener endpoints. It does not change forwarded outgoing-tunnel traffic or rely on wg0 prerouting checks. The daemon guards saved public listeners before network startup.
 - A private versioned safety manifest approves exact checked config hashes and listener coverage. Publication uses short shared locks to stage manifest+kernel guard, releases the lock before runtime restart, commits policy and discards bootstrap authority, then releases guards last. Helper starts cannot resurrect a stale public config without valid manifest/hash/coverage.
 - Any uncertainty after guarding leaves both client paths closed. Active native-artifact corruption also closes public ingress. Explicit reset retains the public manifest/barrier; uninstall requires verified WG-only state first.

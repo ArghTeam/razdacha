@@ -3,6 +3,18 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-11-06
+
+### #325 — WireGuard admission inside guarded publication
+
+**Changed:** Guarded publication reconciles live WireGuard peer rows after interface
+setup and before replacing source policy or releasing ingress. Periodic reads and
+kernel diffs share the publication gate; startup starts that loop after recovery.
+**New surface:** ADR 0040 extends ADR 0023 with kernel admission coherence and
+failure/reservation ordering. Recovery cannot replay committed credentials.
+**Beware:** Pending live peer edits retain the ten-second minimal-diff schedule.
+Unit regressions establish ordering and serialization, not external packet delivery.
+
 ## 2026-11-04
 
 ### #297 — Isolated encrypted WG and REALITY coexistence
