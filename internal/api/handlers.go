@@ -51,6 +51,10 @@ func (s *Server) routes() http.Handler {
 	// Пробник маршрута живёт рядом с правилами, но не под `/api/rules/`:
 	// он спрашивает работающее ядро, а не читает и не меняет правила в базе.
 	s.protect(mux, "POST /api/route/test", s.handleRouteTest)
+	mux.Handle("POST /api/route/explain", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		s.requireSession(http.HandlerFunc(s.handleRouteExplain)).ServeHTTP(w, r)
+	}))
 
 	// Проба доступности домена: сосед пробника маршрута, но вопрос другой —
 	// открывается ли домен напрямую, с адреса сервера, или отдаёт геоблок.

@@ -963,3 +963,19 @@ DNS through the proxy, IPv4-only DNS/AAAA rejection and local IPv6 default-route
 capture/rejection. It uses local DNS only to bootstrap the gateway hostname.
 Compatible privileged TUN support is required; arbitrary L3, ICMP and IPv6 Internet
 service are not provided, and this does not identify every application DoH request.
+
+## Client applied web policy
+
+`POST /api/route/explain` requires a panel session and always uses `Cache-Control: no-store`. It is independent of the existing shared route probe.
+
+```json
+{"peer_id":"existing-client-id","transport":"wg","domain":"example.com"}
+```
+
+`transport` is `wg` or `reality`. The strict 1 KiB JSON request accepts no other fields or trailing values. Domains are ASCII hostnames (punycode is accepted), canonicalized to lowercase with an optional final dot removed. IP literals, URLs, ports, paths, wildcard input and CIDRs return 400. The fixed response scope is `Web policy / TCP 443`. Missing current clients return 404; another active explanation returns 429.
+
+The response separates `routing` and `gateway_a`: each has a conditional/unknown state, an action and a machine-readable reason. Matched rules expose `rule_id`/`name`; configured exits expose committed `tunnel_id`/`tunnel_name` and optional `via_tunnel_id`/`via_tunnel_name`. `candidates` preserves earlier unresolved address/native matches before later known rules/default. These are policy possibilities, not observed connections or DNS answers.
+
+Top-level `state` is conditional, unknown or disabled. `pending` describes global saved policy edits, not a predicted client-route change. Only a coherent, rechecked result includes `marker` and `checked_at`; without a marker pending status is not determined. Missing/uninitialized, uncertain, guarded or concurrently changed authority never produces a fabricated Direct result. Live revocations and committed/live admission determine eligibility.
+
+This endpoint uses frozen committed policy/list contents, with bounded compilation outside the publication gate and an eligibility/epoch recheck. It never resolves a name, queries Clash, opens a site, applies policy or exports configurations/credentials. Public/nonlocal resolution is conditional; private/gateway guards may reject first. Gateway A-query policy preserves captured-DNS C1 behavior and is separate from routing. Native matching can remain unknown. No client path, runtime health, dynamic name recovery, UDP/media quality or DPI resistance is measured. See [ADR 0042](decisions/0042-client-applied-policy-explanations.md).

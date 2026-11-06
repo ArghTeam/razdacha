@@ -19,6 +19,7 @@ import (
 // The editable database is never an automatic source of applied routing policy.
 type applyGate struct {
 	activityEpoch     uint64
+	explainCompile    func(store.Snapshot, singbox.PlainLists, singbox.ExplainRequest) (singbox.PolicyExplanation, error)
 	onboardingCatalog func(context.Context, string) ([]store.PoolServer, error)
 	store             *store.Store
 	inner             *singbox.Applier

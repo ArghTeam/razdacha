@@ -219,3 +219,10 @@ permit setup completion before checked Apply repairs and releases that ingress.
   authority and invalid pending settings cannot become downloadable. Activity
   observations keep their independent before/after epoch and live-admission checks
   around the bounded controller cache (ADRs 0036, 0038 and 0039).
+
+## Client applied web policy (ADR 0042)
+
+- Authenticated, no-store `POST /api/route/explain` accepts exactly one strict JSON object with `peer_id`, `transport` (`wg` or `reality`) and a domain. IPs, URLs, ports, paths, CIDRs, unknown fields and trailing JSON are refused. The fixed scope is web TCP/443; existing shared `/api/route/test` remains unchanged.
+- The daemon copies committed policy/frozen lists under the publication gate, compiles outside it and rechecks publication epoch and current admission. Missing current clients return 404. Disabled/nonadmitted methods are explicit; uninitialized, uncertain, guarded or changed authority returns structured unknown without a Direct claim. Global pending edits are separate metadata, never matching input. A marker and `checked_at` exist only after a coherent recheck; subsequent changes need another request.
+- One active synchronous explanation holds capacity through cancellation; concurrent requests return 429. A 1 KiB request cap, bounded authority traversal, 4 MiB copy cap and 100,000-item/1,000-rule/1,000-peer expansion bounds prevent unbounded compilation. Oversized pending comparison returns unknown.
+- Responses contain only allowlisted actions/reasons, rule/exit identities and committed display names, candidates and coherence metadata. No network/controller probes, publication/auth-credential writes or profile/config export occur. Compiler logging is discarded; private internal committed and editable snapshots may contain WG/manual-tunnel material, never public serialization. Live REALITY admission uses metadata-only store reads.

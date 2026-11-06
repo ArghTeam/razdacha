@@ -66,6 +66,8 @@ Main lineage:
 - [0040: WireGuard publication admission](0040-wireguard-publication-admission.md) — live peer reconciliation under the publication gate before policy/address release; extends 0023.
 - [0041: REALITY domain-denial preflight](0041-reality-domain-denial-preflight.md) — bounded scoped rejection before shared resolution, preserving positive ordering and captured DNS.
 
+- [0042: Client applied-policy explanations](0042-client-applied-policy-explanations.md) — conditional committed web TCP/443 and gateway A-query policy without probes.
+
 RAC candidate lineage:
 
 - [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.

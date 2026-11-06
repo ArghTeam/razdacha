@@ -58,6 +58,11 @@ description: "SQLite: схема четырёх сущностей, миграц
 
 - Staged CLI restore atomically deletes all panel sessions and rotates the private authentication generation before publication, preserving the restored password hash. Saved cookies and pre-restore login verification never become valid again. Automatic pool filtering admits Shadowsocks only with a recognized encrypted cipher and well-formed plain/base64 userinfo; plaintext none, unknown methods and undecidable forms are excluded at catalog admission, merge and stored-member generation. Manual tunnel parsing remains unchanged (#326).
 
+## Applied-policy eligibility metadata (ADR 0042)
+
+- `RouteEligibility` is a read-only transaction for one requested client: settings, explicit public peer flags/address/key and admission IDs/revisions, server identity ID and credential presence. It never selects private/preshared WG keys, the REALITY UUID value or server private/short-ID material, and performs no key derivation or initialization. Missing clients return `ErrNotFound`; no migration/schema change is required.
+- Explanation pending comparisons still use internal ordinary snapshots, which can contain WG/manual-tunnel material. Those snapshots are not public response models and contain no live REALITY UUID or server private key. A disposable SQLite regression drops private columns to prove the narrow metadata query does not read them.
+
 ## RAC-only onboarding composition
 
 Onboarding fingerprints share the ordinary transaction-local complete Snapshot
