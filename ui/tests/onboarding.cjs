@@ -95,6 +95,25 @@ async function capture(page, name) { if (screenshots) { fs.mkdirSync(screenshots
       recovery.assertClean();
     } finally { await recovery.page.close(); }
 
+    const appliedRecovery = await appFixture(browser, { state: { onboarding: { ...pending, prepared: true, applied: true, mode: 'free', country: 'DE' } } });
+    try {
+      await appliedRecovery.page.getByText('Your client is ready to import', { exact: true }).waitFor();
+      await appliedRecovery.page.locator('[data-act="setup-current"]').click();
+      await appliedRecovery.page.getByText('Confirm review & apply', { exact: true }).waitFor();
+      appliedRecovery.fail('POST', '/api/onboarding/review', { error: 'Synthetic concurrent accepted policy' }, 409);
+      await appliedRecovery.page.locator('[data-act="setup-apply"]').click();
+      await appliedRecovery.page.getByText('Synthetic concurrent accepted policy', { exact: true }).waitFor();
+      assert(await appliedRecovery.page.locator('[data-act="setup-current"]').isVisible(), 'failed confirmation hid recovery for previously applied setup');
+      assert.equal(writes(appliedRecovery).filter(e => e.pathname.endsWith('/apply')).length, 0, 'rejected confirmation continued Apply');
+      appliedRecovery.recover('POST', '/api/onboarding/review');
+      await appliedRecovery.page.locator('[data-act="setup-current"]').click();
+      await appliedRecovery.page.getByText('Confirm review & apply', { exact: true }).waitFor();
+      await appliedRecovery.page.locator('[data-act="setup-apply"]').click();
+      await appliedRecovery.page.getByText('Your client is ready to import', { exact: true }).waitFor();
+      assert.equal(writes(appliedRecovery).filter(e => e.pathname.endsWith('/configure')).length, 0);
+      appliedRecovery.assertClean();
+    } finally { await appliedRecovery.page.close(); }
+
     const obsolete = await appFixture(browser, { state: { onboarding: { ...pending, prepared: true } } });
     try {
       await obsolete.page.getByText('Review before applying', { exact: true }).waitFor();

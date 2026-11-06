@@ -29,7 +29,8 @@ function render(ctx) {
     body = `${indicator}<h3>Review before applying</h3><dl class="setup-review"><dt>Client</dt><dd>${esc(peer?.name || 'Initial client')}</dd><dt>Choice</dt><dd>${ctx.review ? 'Keep currently accepted policy' : ctx.mode === 'free' ? 'Free selective starter rules' : 'Keep existing policy; no free setup changes'}</dd><dt>Country</dt><dd>${ctx.review ? 'Keep currently accepted policy' : ctx.mode === 'free' ? esc(ctx.country) : 'Unchanged'}</dd></dl>
       <p class="hint">Only this explicit action saves and applies setup through the server's guarded publication. Other clients are not assigned. Unrelated pending changes must be reviewed separately.</p>
       ${ctx.review ? `<p class="hint">Keep accepted policy: MTU ${esc(ctx.review.client_mtu)}, ${esc(ctx.review.clients)} clients, ${esc(ctx.review.rules)} rules. Routes and credentials remain unchanged. Apply confirms this review.</p>` : ''}
-      ${locked ? '<button class="btn" data-act="setup-current">Review current settings</button><p class="hint">Setup choices are saved. Retry Apply to finish this configuration; closing does not discard pending intent.</p>' : ''}`;
+      ${ctx.status.prepared ? '<button class="btn" data-act="setup-current">Review current settings</button>' : ''}
+      ${locked ? '<p class="hint">Setup choices are saved. Retry Apply to finish this configuration; closing does not discard pending intent.</p>' : ''}`;
     foot = `<button class="btn" data-act="setup-back">Back</button><button class="btn btn-primary" data-act="setup-apply">${ctx.review ? 'Confirm review & apply' : locked ? 'Retry Apply' : 'Apply setup'}</button>`;
   } else {
     const peer = state.peers.find(p => p.id === ctx.status.peer_id);
