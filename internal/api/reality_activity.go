@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ArghTeam/razdacha/internal/clash"
 	"github.com/ArghTeam/razdacha/internal/store"
 )
 
@@ -20,15 +21,17 @@ type realityActivityPublisher interface {
 }
 
 type realityActivityResponse struct {
-	State      string     `json:"state"`
-	OpenFlows  *int       `json:"open_flows"`
-	ObservedAt *time.Time `json:"observed_at"`
+	State             string     `json:"state"`
+	OpenFlows         *int       `json:"open_flows"`
+	OpenUploadBytes   *int64     `json:"open_upload_bytes"`
+	OpenDownloadBytes *int64     `json:"open_download_bytes"`
+	ObservedAt        *time.Time `json:"observed_at"`
 }
 
 type activitySample struct {
 	epoch  string
 	at     time.Time
-	counts map[string]int
+	counts map[string]clash.RealityConnectionObservation
 }
 
 type realityActivityCache struct {
@@ -43,7 +46,7 @@ const realityActivityInterval = 5 * time.Second
 
 // observe owns at most one bounded controller read. Waiter cancellation cannot
 // leave duplicate reads running, and superseded epochs cannot publish old samples.
-func (c *realityActivityCache) observe(ctx context.Context, epoch string, now func() time.Time, load func() (map[string]int, error)) activitySample {
+func (c *realityActivityCache) observe(ctx context.Context, epoch string, now func() time.Time, load func() (map[string]clash.RealityConnectionObservation, error)) activitySample {
 	for {
 		c.mu.Lock()
 		c.current = epoch
@@ -104,7 +107,9 @@ func (s *Server) observeReality(ctx context.Context, peers []store.Peer) map[str
 	if err != nil || before.Epoch == "" || len(before.Users) == 0 {
 		return out
 	}
-	sample := s.realityActivity.observe(ctx, before.Epoch, s.now, func() (map[string]int, error) { return s.clash.RealityConnections(context.WithoutCancel(ctx)) })
+	sample := s.realityActivity.observe(ctx, before.Epoch, s.now, func() (map[string]clash.RealityConnectionObservation, error) {
+		return s.clash.RealityConnections(context.WithoutCancel(ctx))
+	})
 	after, err := pub.RealityActivityAuthority(ctx, s.store)
 	if err != nil || after.Epoch != before.Epoch || sample.epoch != before.Epoch || sample.counts == nil {
 		return out
@@ -118,9 +123,15 @@ func (s *Server) observeReality(ctx context.Context, peers []store.Peer) map[str
 		if !p.Enabled || !p.RealityEnabled || after.Users[user] != p.RealityRevision {
 			continue
 		}
-		count := sample.counts[user]
+		observation, exists := sample.counts[user]
+		if !exists {
+			upload, download := int64(0), int64(0)
+			observation.OpenUploadBytes = &upload
+			observation.OpenDownloadBytes = &download
+		}
+		count := observation.OpenFlows
 		at := sample.at.UTC()
-		out[p.ID] = realityActivityResponse{State: "observed", OpenFlows: &count, ObservedAt: &at}
+		out[p.ID] = realityActivityResponse{State: "observed", OpenFlows: &count, OpenUploadBytes: observation.OpenUploadBytes, OpenDownloadBytes: observation.OpenDownloadBytes, ObservedAt: &at}
 	}
 	return out
 }

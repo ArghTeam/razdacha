@@ -191,6 +191,27 @@ func TestRealityActivityPinnedRuntime(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
+			if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			responseHeader := make([]byte, 2)
+			if _, err := io.ReadFull(conn, responseHeader); err != nil {
+				t.Fatal("missing VLESS response", err)
+			}
+			if responseHeader[0] != 0 || responseHeader[1] != 0 {
+				t.Fatal("unexpected VLESS response header")
+			}
+			response := []byte("reply/" + u.Name)
+			if command == 2 {
+				length := make([]byte, 2)
+				if _, err := io.ReadFull(conn, length); err != nil || int(binary.BigEndian.Uint16(length)) != len(response) {
+					t.Fatal("unexpected VLESS UDP response length", err)
+				}
+			}
+			actual := make([]byte, len(response))
+			if _, err := io.ReadFull(conn, actual); err != nil || string(actual) != string(response) {
+				t.Fatal("wrong fixture response", err)
+			}
 		}
 	}
 	wantEvents := map[string]bool{
@@ -212,12 +233,32 @@ func TestRealityActivityPinnedRuntime(t *testing.T) {
 	until = time.Now().Add(3 * time.Second)
 	for {
 		counts, e := client.RealityConnections(context.Background())
-		if e == nil && counts[live.Users[0].Name] == 2 && counts[live.Users[1].Name] == 2 {
+		valid := e == nil
+		for _, user := range live.Users {
+			value := counts[user.Name]
+			valid = valid && value.OpenFlows == 2 && value.OpenUploadBytes != nil && *value.OpenUploadBytes == int64(2*len(user.Name)) && value.OpenDownloadBytes != nil && *value.OpenDownloadBytes == int64(2*len("reply/"+user.Name))
+		}
+		if valid {
 			break
 		}
 		if time.Now().After(until) {
 			out, _ := os.ReadFile(log.Name())
 			t.Fatalf("authenticated TCP/UDP attribution: counts=%v err=%v log=%s", counts, e, out)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// The controller reports the current snapshot, not accumulated samples or
+	// closed-flow history. Other authenticated users retain their own observation.
+	_ = connections[0].Close()
+	until = time.Now().Add(3 * time.Second)
+	for {
+		observations, err := client.RealityConnections(context.Background())
+		first, second := observations[live.Users[0].Name], observations[live.Users[1].Name]
+		if err == nil && first.OpenFlows == 1 && first.OpenUploadBytes != nil && *first.OpenUploadBytes == int64(len(live.Users[0].Name)) && first.OpenDownloadBytes != nil && *first.OpenDownloadBytes == int64(len("reply/"+live.Users[0].Name)) && second.OpenFlows == 2 {
+			break
+		}
+		if time.Now().After(until) {
+			t.Fatalf("closed flow remained in current snapshot: %+v %v", observations, err)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -247,6 +288,7 @@ func activitySink(t *testing.T, name string, events chan<- string) int {
 				data := make([]byte, len("client-00000000-0000-4000-8000-000000000001"))
 				if n, err := io.ReadFull(conn, data); err == nil {
 					events <- name + "/tcp/" + string(data[:n])
+					_, _ = conn.Write(append([]byte("reply/"), data[:n]...))
 				}
 				_, _ = io.Copy(io.Discard, conn)
 			}()
@@ -255,11 +297,12 @@ func activitySink(t *testing.T, name string, events chan<- string) int {
 	go func() {
 		data := make([]byte, 4096)
 		for {
-			n, _, e := udp.ReadFrom(data)
+			n, address, e := udp.ReadFrom(data)
 			if e != nil {
 				return
 			}
 			events <- name + "/udp/" + string(data[:n])
+			_, _ = udp.WriteTo(append([]byte("reply/"), data[:n]...), address)
 		}
 	}()
 	return port

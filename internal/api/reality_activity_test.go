@@ -21,12 +21,12 @@ func TestRealityActivityCoalescesAndExpires(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var reads atomic.Int32
-	load := func() (map[string]int, error) {
+	load := func() (map[string]clash.RealityConnectionObservation, error) {
 		if reads.Add(1) == 1 {
 			close(started)
 		}
 		<-release
-		return map[string]int{"user": 2}, nil
+		return map[string]clash.RealityConnectionObservation{"user": {OpenFlows: 2}}, nil
 	}
 	var wg sync.WaitGroup
 	results := make(chan activitySample, 12)
@@ -42,7 +42,7 @@ func TestRealityActivityCoalescesAndExpires(t *testing.T) {
 	wg.Wait()
 	close(results)
 	for out := range results {
-		if out.counts["user"] != 2 || out.epoch != "a" {
+		if out.counts["user"].OpenFlows != 2 || out.epoch != "a" {
 			t.Fatal(out)
 		}
 	}
@@ -63,18 +63,27 @@ func TestRealityActivityLateEpochCannotPublish(t *testing.T) {
 	release := make(chan struct{})
 	oldDone := make(chan activitySample)
 	go func() {
-		oldDone <- cache.observe(context.Background(), "old", now, func() (map[string]int, error) { close(started); <-release; return map[string]int{"old": 1}, nil })
+		oldDone <- cache.observe(context.Background(), "old", now, func() (map[string]clash.RealityConnectionObservation, error) {
+			close(started)
+			<-release
+			return map[string]clash.RealityConnectionObservation{"old": {OpenFlows: 1}}, nil
+		})
 	}()
 	<-started
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	cache.observe(ctx, "new", now, func() (map[string]int, error) { t.Error("parallel controller read"); return nil, nil })
+	cache.observe(ctx, "new", now, func() (map[string]clash.RealityConnectionObservation, error) {
+		t.Error("parallel controller read")
+		return nil, nil
+	})
 	close(release)
 	if got := <-oldDone; got.counts != nil {
 		t.Fatal("superseded epoch published")
 	}
-	got := cache.observe(context.Background(), "new", now, func() (map[string]int, error) { return map[string]int{"new": 1}, nil })
-	if got.counts["new"] != 1 || got.counts["old"] != 0 {
+	got := cache.observe(context.Background(), "new", now, func() (map[string]clash.RealityConnectionObservation, error) {
+		return map[string]clash.RealityConnectionObservation{"new": {OpenFlows: 1}}, nil
+	})
+	if got.counts["new"].OpenFlows != 1 || got.counts["old"].OpenFlows != 0 {
 		t.Fatal(got)
 	}
 }
@@ -99,7 +108,7 @@ func TestRealityActivityRequiresMatchingAuthorityBeforeAndAfterPoll(t *testing.T
 		t.Run(change, func(t *testing.T) {
 			var calls atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_, _ = w.Write([]byte(`{"connections":[{"id":"flow","metadata":{"type":"vless/reality-in","sourceIP":"192.0.2.4"},"rule":"inbound=reality-in auth_user=` + user + ` => route(direct-out)"}]}`))
+				_, _ = w.Write([]byte(`{"connections":[{"id":"flow","metadata":{"type":"vless/reality-in","sourceIP":"192.0.2.4"},"upload":11,"download":29,"rule":"inbound=reality-in auth_user=` + user + ` => route(direct-out)"}]}`))
 			}))
 			defer srv.Close()
 			s := &Server{now: time.Now, clash: clash.New(clash.Options{Addr: srv.URL})}
@@ -120,12 +129,41 @@ func TestRealityActivityRequiresMatchingAuthorityBeforeAndAfterPoll(t *testing.T
 			}}
 			got := s.observeReality(context.Background(), peers)[id]
 			if change == "none" {
-				if got.State != "observed" || got.OpenFlows == nil || *got.OpenFlows != 1 || got.ObservedAt == nil {
+				if got.State != "observed" || got.OpenFlows == nil || *got.OpenFlows != 1 || got.ObservedAt == nil || got.OpenUploadBytes == nil || *got.OpenUploadBytes != 11 || got.OpenDownloadBytes == nil || *got.OpenDownloadBytes != 29 {
 					t.Fatal(got)
 				}
-			} else if got.State != "unavailable" || got.OpenFlows != nil || got.ObservedAt != nil {
+			} else if got.State != "unavailable" || got.OpenFlows != nil || got.ObservedAt != nil || got.OpenUploadBytes != nil || got.OpenDownloadBytes != nil {
 				t.Fatal("stale authority published", got)
 			}
 		})
+	}
+}
+
+func TestRealityActivityEmptySnapshotZeroRequiresLiveAdmission(t *testing.T) {
+	const id = "00000000-0000-4000-8000-000000000001"
+	user := store.RealityUserName(id)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"connections":[]}`))
+	}))
+	defer srv.Close()
+	for _, admitted := range []bool{true, false} {
+		s := &Server{now: time.Now, clash: clash.New(clash.Options{Addr: srv.URL})}
+		s.applier = activityAuthorityApplier{authority: func() (RealityActivityAuthority, error) {
+			users := map[string]int{}
+			if admitted {
+				users[user] = 3
+			}
+			return RealityActivityAuthority{Epoch: "one", Users: users}, nil
+		}}
+		for _, enabled := range []bool{true, false} {
+			got := s.observeReality(context.Background(), []store.Peer{{ID: id, Enabled: enabled, RealityEnabled: true, RealityRevision: 3}})[id]
+			if admitted && enabled {
+				if got.State != "observed" || got.OpenFlows == nil || *got.OpenFlows != 0 || got.OpenUploadBytes == nil || *got.OpenUploadBytes != 0 || got.OpenDownloadBytes == nil || *got.OpenDownloadBytes != 0 {
+					t.Fatalf("fresh admitted empty snapshot not a measured zero: %+v", got)
+				}
+			} else if got.State != "unavailable" || got.OpenFlows != nil || got.OpenUploadBytes != nil || got.OpenDownloadBytes != nil {
+				t.Fatalf("unadmitted/disabled absence became a measured zero: %+v", got)
+			}
+		}
 	}
 }

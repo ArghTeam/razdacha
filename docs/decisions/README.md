@@ -51,3 +51,5 @@
 - [0037: REALITY visible TCP names](0037-reality-visible-tcp-names.md) — bounded TLS/HTTP matching for numeric IPv4 requests without retargeting; extends 0032.
 
 - [0038: Authenticated REALITY flow observations](0038-authenticated-reality-flow-observations.md) — bounded per-client open-flow counts from singleton authenticated runtime routes.
+
+- [0039: REALITY open-flow byte observations](0039-reality-open-flow-bytes.md) — nullable current-flow bytes, separate transport scopes and synchronized expiry; partially supersedes 0038's counts-only payload boundary.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -15,9 +16,17 @@ const (
 	maxConnectionFlows    = 4096
 )
 
-// RealityConnections returns authenticated singleton user counts, never addresses
-// or destinations. The caller must intersect these users with live admission.
-func (c *Client) RealityConnections(ctx context.Context) (map[string]int, error) {
+// RealityConnectionObservation covers only flows open in one controller snapshot.
+// Upload is client to gateway; download is gateway to client. Nil bytes are unknown.
+type RealityConnectionObservation struct {
+	OpenFlows         int
+	OpenUploadBytes   *int64
+	OpenDownloadBytes *int64
+}
+
+// RealityConnections returns authenticated singleton user observations, never
+// addresses or destinations. The caller must intersect users with live admission.
+func (c *Client) RealityConnections(ctx context.Context) (map[string]RealityConnectionObservation, error) {
 	ctx, cancel := context.WithTimeout(ctx, connectionReadTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/connections", nil)
@@ -48,7 +57,9 @@ func (c *Client) RealityConnections(ctx context.Context) (map[string]int, error)
 			Metadata struct {
 				Type string `json:"type"`
 			} `json:"metadata"`
-			Rule string `json:"rule"`
+			Rule     string          `json:"rule"`
+			Upload   json.RawMessage `json:"upload"`
+			Download json.RawMessage `json:"download"`
 		} `json:"connections"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
@@ -57,7 +68,7 @@ func (c *Client) RealityConnections(ctx context.Context) (map[string]int, error)
 	if out.Connections == nil || len(*out.Connections) > maxConnectionFlows {
 		return nil, fmt.Errorf("%w: missing or excessive connections", ErrBadResponse)
 	}
-	counts := make(map[string]int)
+	observations := make(map[string]RealityConnectionObservation)
 	seen := make(map[string]bool)
 	for _, conn := range *out.Connections {
 		if conn.Metadata.Type != "vless/reality-in" {
@@ -71,9 +82,42 @@ func (c *Client) RealityConnections(ctx context.Context) (map[string]int, error)
 		if !ok {
 			return nil, fmt.Errorf("%w: unsupported authenticated connection rule", ErrBadResponse)
 		}
-		counts[user]++
+		observation, exists := observations[user]
+		if !exists {
+			upload, download := int64(0), int64(0)
+			observation.OpenUploadBytes = &upload
+			observation.OpenDownloadBytes = &download
+		}
+		observation.OpenFlows++
+		observation.OpenUploadBytes, err = addConnectionBytes(observation.OpenUploadBytes, conn.Upload)
+		if err != nil {
+			return nil, err
+		}
+		observation.OpenDownloadBytes, err = addConnectionBytes(observation.OpenDownloadBytes, conn.Download)
+		if err != nil {
+			return nil, err
+		}
+		observations[user] = observation
 	}
-	return counts, nil
+	return observations, nil
+}
+
+func addConnectionBytes(sum *int64, raw json.RawMessage) (*int64, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var value int64
+	if err := json.Unmarshal(raw, &value); err != nil || value < 0 {
+		return nil, fmt.Errorf("%w: invalid connection byte counter", ErrBadResponse)
+	}
+	if sum == nil {
+		return nil, nil
+	}
+	if value > math.MaxInt64-*sum {
+		return nil, fmt.Errorf("%w: connection byte counter overflow", ErrBadResponse)
+	}
+	total := *sum + value
+	return &total, nil
 }
 
 // The pinned runtime emits these first two matchers for generated terminal rules.
