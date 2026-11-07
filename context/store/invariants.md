@@ -63,6 +63,8 @@ description: "SQLite: схема четырёх сущностей, миграц
 - `RouteEligibility` is a read-only transaction for one requested client: settings, explicit public peer flags/address/key and admission IDs/revisions, server identity ID and credential presence. It never selects private/preshared WG keys, the REALITY UUID value or server private/short-ID material, and performs no key derivation or initialization. Missing clients return `ErrNotFound`; no migration/schema change is required.
 - Explanation pending comparisons still use internal ordinary snapshots, which can contain WG/manual-tunnel material. Those snapshots are not public response models and contain no live REALITY UUID or server private key. A disposable SQLite regression drops private columns to prove the narrow metadata query does not read them.
 
+- Selected-client evidence metadata uses the read-only `RouteEligibility` projection, without selecting private WG keys or REALITY UUIDs. Accepted client admission-flag changes advance the publisher's observation lifetime even across a disable/re-enable ABA cycle; this changes no authentication or publication behavior (ADR 0043). Existing trusted REALITY source validation retains its separate private live-admission read.
+
 ## RAC-only onboarding composition
 
 Onboarding fingerprints share the ordinary transaction-local complete Snapshot

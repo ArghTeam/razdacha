@@ -364,3 +364,7 @@ contains provenance, hashes and bounded proof. The [roadmap](../../tasks/338-cli
 remains open with 1b next; subscriptions, remote exits, failover and protocol
 experiments remain planned. This is served policy/UI acceptance, not a measured
 client connection, DNS query, quality or DPI-resistance guarantee.
+
+## 2026-11-07 — selected-client connection evidence (#343, parent #342)
+
+Added strict no-store selected-client ingress observations and independent applied-exit HTTPS evidence (ADR 0043). Publication/boot/admission epochs, shared source caching and before/after checks preserve uncertainty through Apply, revocation and canceled requests. Exact applied chains and explicit Direct use the existing broker; plain pools retain unbound historical evidence. No configuration, authentication or global tunnel-check-cache writes are introduced. Synthetic Go/race checks and Linux lint verify the backend boundary; bounded live RAC acceptance remains the parent task's separate requirement.

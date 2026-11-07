@@ -68,6 +68,8 @@ Main lineage:
 
 - [0042: Client applied-policy explanations](0042-client-applied-policy-explanations.md) — conditional committed web TCP/443 and gateway A-query policy without probes.
 
+- [0043: Client connection evidence](0043-client-connection-evidence.md) — selected-client ingress and independent applied-exit HTTPS observations.
+
 RAC candidate lineage:
 
 - [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.
