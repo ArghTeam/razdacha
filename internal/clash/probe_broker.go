@@ -8,9 +8,11 @@ import (
 )
 
 type probeJob struct {
-	done  chan struct{}
-	delay time.Duration
-	err   error
+	done    chan struct{}
+	delay   time.Duration
+	at      time.Time
+	started time.Time
+	err     error
 }
 type probeBroker struct {
 	mu    sync.Mutex
@@ -24,6 +26,16 @@ func (c *Client) Delay(ctx context.Context, tag string) (time.Duration, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
+	delay, _, _, err := c.DelayObserved(ctx, tag)
+	return delay, err
+}
+
+// DelayObserved returns delay, private monotonic admission time and shared UTC
+// completion time. Coalesced callers preserve the same source identity and times.
+func (c *Client) DelayObserved(ctx context.Context, tag string) (time.Duration, time.Time, time.Time, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, time.Time{}, time.Time{}, err
+	}
 	b := &c.broker
 	b.mu.Lock()
 	if b.jobs == nil {
@@ -34,18 +46,18 @@ func (c *Client) Delay(ctx context.Context, tag string) (time.Duration, error) {
 	if job == nil {
 		if len(b.jobs) >= 32 {
 			b.mu.Unlock()
-			return 0, fmt.Errorf("%w: diagnostic queue full", ErrUnavailable)
+			return 0, time.Time{}, time.Time{}, fmt.Errorf("%w: diagnostic queue full", ErrUnavailable)
 		}
-		job = &probeJob{done: make(chan struct{})}
+		job = &probeJob{done: make(chan struct{}), started: time.Now()}
 		b.jobs[tag] = job
 		go c.runProbe(tag, job)
 	}
 	b.mu.Unlock()
 	select {
 	case <-ctx.Done():
-		return 0, ctx.Err()
+		return 0, time.Time{}, time.Time{}, ctx.Err()
 	case <-job.done:
-		return job.delay, job.err
+		return job.delay, job.started, job.at, job.err
 	}
 }
 
@@ -67,6 +79,7 @@ func (c *Client) runProbe(tag string, job *probeJob) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.deadline)
 	job.delay, job.err = c.delay(ctx, tag)
 	cancel()
+	job.at = time.Now().UTC()
 	close(job.done)
 	// The pinned runtime's background job is not canceled with its HTTP request.
 	if job.err != nil {

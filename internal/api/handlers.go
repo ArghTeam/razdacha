@@ -19,6 +19,15 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /api/login", s.handleLogin)
+	for pattern, handler := range map[string]http.HandlerFunc{
+		"POST /api/clients/observe":    s.handleClientObserve,
+		"POST /api/clients/check-exit": s.handleClientCheckExit,
+	} {
+		mux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			s.requireSession(handler).ServeHTTP(w, r)
+		}))
+	}
 	s.protect(mux, "POST /api/logout", s.handleLogout)
 	s.protect(mux, "GET /api/session", s.handleSession)
 
