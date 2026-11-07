@@ -14,7 +14,9 @@ const checked = extra => ({ scope: 'gateway_exit_https', peer_id: 'example', tra
     try {
       console.log(`Connection evidence case ${count + 1}`);
       await t.page.waitForLoadState('networkidle');
-      await t.page.clock.install(); await t.page.clock.pauseAt(new Date('2026-11-07T12:00:00Z'));
+      // Seed before the fixed sample epoch so wall-clock time cannot make pauseAt rewind.
+      await t.page.clock.install({ time: new Date('2026-11-07T11:59:00Z') });
+      await t.page.clock.pauseAt(new Date('2026-11-07T12:00:00Z'));
       t.overrides.set(observe, { status: 200, body: sample() });
       await t.page.locator('[data-act="menu-peer"]').first().click();
       await t.page.locator('#row-menu [data-act="peer-connection-evidence"]').click();
