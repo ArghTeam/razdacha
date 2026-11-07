@@ -131,7 +131,7 @@ const checked = extra => ({ scope: 'gateway_exit_https', peer_id: 'example', tra
     await check(async t => {
       await t.page.fill('#evidence-domain', 'example.com');
       const value = checked({ epoch: 'after-apply-publication', sampled_at: at(10) });
-      Object.assign(value.https, { source: 'pool_history', reason: 'pool_history_only', observed_at: at(0), age_ms: 10000 });
+      Object.assign(value.https, { scope: 'runtime_pool_history', source: 'pool_history', reason: 'pool_history_only', observed_at: at(0), age_ms: 10000 });
       t.overrides.set(probe, { status: 200, body: value });
       await t.page.click('#evidence-check'); await t.page.getByText(/Historical pool group HTTPS: 47 ms/).waitFor();
       const output = await t.page.textContent('#evidence-exit');
@@ -145,7 +145,7 @@ const checked = extra => ({ scope: 'gateway_exit_https', peer_id: 'example', tra
     for (const mode of ['disabled','pool','not_run','error']) await check(async t => {
       await t.page.fill('#evidence-domain', 'example.com');
       const value = checked();
-      if (mode === 'pool') Object.assign(value.https, { source: 'pool_history', reason: 'stale_source', fresh: false, delay_ms: null });
+      if (mode === 'pool') Object.assign(value.https, { scope: 'runtime_pool_history', source: 'pool_history', reason: 'stale_source', fresh: false, delay_ms: null });
       if (mode === 'not_run' || mode === 'disabled') Object.assign(value.https, { state: 'not_run', source: null, reason: mode === 'disabled' ? 'transport_disabled' : 'policy_reject', delay_ms: null, observed_at: null, fresh: false });
       t.overrides.set(probe, { status: mode === 'error' ? 503 : 200, body: value });
       await t.page.click('#evidence-check'); await t.page.waitForFunction(() => !document.querySelector('#evidence-check').disabled);
