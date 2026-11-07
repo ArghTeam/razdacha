@@ -564,3 +564,16 @@ Web policy domain input, and both dialogs default to an explicitly enabled ingre
 Actual-module synthetic Chromium coverage includes row-menu entry, fake-clock bounds,
 unsafe/missing/decreasing counters, authority changes, escaping and late responses;
 it does not claim real transport or selected-website acceptance.
+
+
+## 2026-11-07 — Connection evidence RAC acceptance (#342)
+
+Backend #346 and UI #345 are merged; [the completed task](../../tasks/done/342-client-connection-evidence.md)
+records exact-source review, Go/vet/scoped race checks and all 21 combined browser
+suites (54 evidence cases). RAC RC16 at `a945231fbf78659c100df5049b5dc77f6a636839`
+preserved four clients/credentials, protected user tables, configuration and applied
+authority. Actual owned REALITY Direct/WARP HTTPS+UDP traffic produced fresh source
+observations; separate fixed-target HTTPS and the served desktop/mobile evidence
+workflow passed. Temporary profiles/processes/session were removed. Positive live WG,
+all-site success and general connection quality are not claimed. Roadmap #338 remains
+open for phase 2 onward; production and DO configuration were unchanged.
