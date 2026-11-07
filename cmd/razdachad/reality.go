@@ -180,6 +180,11 @@ func (g *applyGate) PatchPeer(ctx context.Context, st *store.Store, id string, p
 	if err != nil {
 		return store.Peer{}, err
 	}
+	// Even a WG-only disable/re-enable cycle invalidates observation baselines.
+	// This advances diagnostics lifetime without changing publication semantics.
+	if old.Enabled != p.Enabled || old.WireGuardDisabled != p.WireGuardDisabled || old.RealityEnabled != p.RealityEnabled {
+		g.activityEpoch++
+	}
 	if revoke {
 		err = g.reconcileRevocation(ctx)
 	}

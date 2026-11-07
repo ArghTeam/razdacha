@@ -58,3 +58,5 @@
 - [0041: REALITY domain-denial preflight](0041-reality-domain-denial-preflight.md) — bounded scoped rejection before shared resolution, preserving positive ordering and captured DNS.
 
 - [0042: Client applied-policy explanations](0042-client-applied-policy-explanations.md) — conditional committed web TCP/443 and gateway A-query policy without probes.
+
+- [0043: Client connection evidence](0043-client-connection-evidence.md) — selected-client ingress and independent applied-exit HTTPS observations.
