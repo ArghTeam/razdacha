@@ -5,6 +5,8 @@ description: Static HTML/CSS/ES modules embedded from ui/dist; defaults instead 
 ---
 
 ## Invariants
+- Authenticated first login opens setup only from a persisted pending marker, never peer count. The modal guides choice/review/explicit Apply/existing profile delivery/Finish, with a header reopen entry. No mount/selection/poll changes routes. Legacy configured policy is read-only; failed prepared intent retains its choices for retry. Session/modal/navigation guards prevent delayed responses from replacing newer work. QR/private profile copies and download blobs are scoped to modal cleanup. An accepted enabled pool with zero candidates explicitly warns that assigned resources reject until refreshed, without direct fallback; inventory is not runtime health. The existing four-tab panel and design system remain (ADR 0035).
+- Clients keeps one transport-specific traffic summary. WG gateway received/sent bytes cover current WG clients since interface start; missing, invalid or absent WG observations stay Unknown. REALITY cards cover current open flows under ADR 0039, separately from WG totals. Measured zero remains zero; neither scope is lifetime history (#291, #322).
 - Интерфейс — статика без сборщика в `ui/dist`, уезжает в бинарник через `go:embed`. Никакого npm и node в цепочке сборки демона.
 - Внешних ссылок в статике нет вовсе: ни CDN, ни шрифтов, ни картинок. Всё, что нужно панели, лежит рядом — иначе оно не попадёт в `go:embed`. Единственный внешний запрос — проверка свежего релиза у GitHub, и её делает **браузер**, а не демон: сервер наружу не ходит, панель работает и без исходящего интернета, а бейдж просто не появляется (#114).
 - Пустота не заполняется выдумкой: нет данных — так и говорим («не проверялся», «данные появятся позже»), а не показываем ноль.
@@ -293,6 +295,14 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   and DNS routing. Browser regressions validate delivery/lifetime, not actual TUN
   startup, operating-system routing, DNS capture or end-to-end client connectivity.
 
+## RAC-only integration boundary
+
+The RAC candidate uses one four-card summary with separate WG cumulative and
+REALITY current-open-flow scopes. REALITY-only clients are excluded from WG
+aggregation and hide reserved WG addresses/counters. Missing or invalid WG row
+observations remain Unknown, including when no WG client is observed; no combined transport byte total is displayed.
+Candidate onboarding and shadow-only probe behavior remain separate from main.
+
 ## REALITY activity and DNS guidance (ADRs 0038 and 0039)
 
 - A client dot may use a positive authenticated REALITY open-flow snapshot separately
@@ -323,6 +333,8 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   through the proxy. URI import cannot enforce that setup; JSON importers which
   keep only outbounds also need full-configuration mode or explicit DNS setup.
   QUIC/encrypted-name domain routing relies on that DNS path, not TCP sniffing.
+
+- Prepared onboarding exposes explicit Review current settings recovery. Preview reads accepted current MTU/client/rule counts; Confirm review & apply refreshes metadata before guarded Apply, preserving current policy and keys. Cancellation does not confirm. Failed confirmation discards its local review and keeps explicit re-review reachable for every prepared setup, including previously applied setup. Review/configure callbacks cannot replace newer modal/session state; confirmed configure retains same-session pending effects after closure (#330).
 
 - WireGuard inventory row counters share the summary's nonnegative safe-integer
   observation boundary: absent, null, string, negative and unsafe values display

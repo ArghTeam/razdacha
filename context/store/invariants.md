@@ -5,6 +5,9 @@ description: "SQLite: схема четырёх сущностей, миграц
 ---
 
 ## Invariants
+- Onboarding is private installation metadata separate from editable Settings: pending/completed, initial peer, exact owned starter rule and prepared/applied fingerprint. Missing legacy metadata means completed. Reopening does not mutate policy or adopt rules by name; configured legacy policy is read-only. Configuration atomically compares routing fingerprints and validates exact selected-first-client ownership before editing the built-in pool/rule. Pool membership/time observations alone are excluded from fingerprints. Completion requires accepted current intent; ordinary Settings writes preserve metadata (ADR 0035).
+- Explicit fresh-install free start may seed the one built-in pool enabled at the JSON API and create one selected-first-client starter rule before bootstrap freezes authority. Ordinary disabled igareck creation and existing-installation policy are unchanged. API acquisition failure leaves pool freshness unknown and the pool empty, retaining rejection rather than fallback (ADR 0033).
+- Pool country policy conservatively applies to both normalized structured `PoolServer.Country` and existing title evidence; either blocked-country indication rejects the member. URI encryption remains authoritative and country unknown does not imply a location. No schema change, GeoIP dependency or built-in pool activation is introduced (ADR 0032).
 - Pre-migration `BackupAt` reads existing SQLite state without migrations or journal-mode changes. Its transaction includes committed WAL, preserves schema/installation metadata, and creates a standalone integrity-checked, synced `0600` snapshot. Exclusive reservation refuses existing files/symlinks; failures remove incomplete output. `InstalledVersionAt` uses the same read-only path and never creates an absent source.
 - `PRAGMA foreign_keys = ON` ставится в DSN и действует на каждом соединении: в SQLite внешние ключи выключены по умолчанию, без прагмы `ON DELETE RESTRICT` на `rules.tunnel_id` не работает.
 - Удаление туннеля, на который ссылается правило, отклоняется до обращения к БД и называет эти правила; схемный `RESTRICT` — вторая линия, а не единственная.
@@ -61,3 +64,19 @@ description: "SQLite: схема четырёх сущностей, миграц
 - Explanation pending comparisons still use internal ordinary snapshots, which can contain WG/manual-tunnel material. Those snapshots are not public response models and contain no live REALITY UUID or server private key. A disposable SQLite regression drops private columns to prove the narrow metadata query does not read them.
 
 - Selected-client evidence metadata uses the read-only `RouteEligibility` projection, without selecting private WG keys or REALITY UUIDs. Accepted client admission-flag changes advance the publisher's observation lifetime even across a disable/re-enable ABA cycle; this changes no authentication or publication behavior (ADR 0043). Existing trusted REALITY source validation retains its separate private live-admission read.
+
+## RAC-only onboarding composition
+
+Onboarding fingerprints share the ordinary transaction-local complete Snapshot
+reader. They include opaque REALITY identity/admission IDs and revisions, excluding
+REALITY bearer UUIDs and server private keys, even while the listener is disabled.
+WG keys and manual tunnel secrets remain private fingerprint inputs; the complete
+Snapshot must never be exported as public or non-secret policy metadata.
+An accepted transport policy must not become an artificial onboarding conflict
+because a second reader omitted admission authority.
+
+Explicit onboarding recovery refreshes only metadata in a transaction comparing
+both the prior expectation and current complete policy fingerprint. Pending prepared
+setup and its existing client are required. The daemon additionally requires the
+reviewed policy to equal the accepted generation under the publication gate; no
+routing, settings, client or credential mutations occur during confirmation (#330).

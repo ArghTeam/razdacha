@@ -38,6 +38,7 @@ async function fixture(browser, options = {}) {
     if (holds.has(key)) { if (!held.has(key)) held.set(key, []); held.get(key).push(route); return; }
     if (overrides.has(key)) { const result = overrides.get(key); return json(route, result.body, result.status); }
     if (key === 'GET /api/session') return json(route,{authenticated:true});
+    if (key === 'GET /api/onboarding') return json(route,{pending:false});
     if (key === 'GET /api/peers') return json(route,[{id:'peer1',name:'Example client',address:'192.0.2.2',enabled:true}]);
     if (key === 'GET /api/rules' || url.pathname.includes('/lists/')) return json(route,[]);
     if (key === 'GET /api/settings') return json(route,{client_mtu:1280,wg_pool:'192.0.2.0/24',wg_server_address:'192.0.2.1'});

@@ -175,10 +175,12 @@ address» — юнит уходит в `failed`, панель недоступн
 
 ## Режимы доступа к панели
 
-By default nginx listens only on `10.8.0.1`, so the panel is reachable through the
-VPN ([panel access and privileges](01-architecture.md#privileges-panel-access-and-tls)).
-The installer creates the first peer and prints its configuration before the user
-needs panel access.
+Genuinely fresh setup defaults to authenticated public HTTPS, for both Free start
+and Skip, and prints the real external panel URL/password before the first client
+QR/configuration. Initial access therefore does not require an existing VPN
+connection. Explicit `--public=false` or `RAZDACHA_PUBLIC=0` selects VPN-only access;
+existing installations retain their saved mode without explicit override
+([ADR 0034](decisions/0034-fresh-panel-bootstrap.md)).
 
 В публичном режиме ([ADR 0009](decisions/0009-public-panel-access.md)) nginx слушает
 `443` и `80` на всех интерфейсах; отдельного `listen` на `10.8.0.1` не нужно — он уже
@@ -199,7 +201,7 @@ needs panel access.
 
 | что запустили | что получится |
 | --- | --- |
-| первая установка без флага | приватный режим, ключ не пишется |
+| Fresh installation without a panel override | Public authenticated HTTPS, persisted; access precedes VPN profile import (ADR 0034) |
 | первая установка с `RAZDACHA_PUBLIC=1` | публичный, запоминается |
 | первая установка с `RAZDACHA_PUBLIC=0` | приватный, **запоминается** |
 | обновление без переменных, ключ в БД есть | режим, который был |
@@ -232,7 +234,7 @@ needs panel access.
 | --- | --- |
 | наш конфиг, `listen 443 ssl` (без адреса) | публичный, записывается в БД |
 | наш конфиг, `listen 10.8.0.1:443 ssl` | приватный, записывается в БД |
-| конфига нет вовсе | первая установка: приватный, ничего не пишется |
+| No nginx configuration | Existing-installation legacy fallback is private; genuinely fresh setup supplies a persisted public default before inference (ADR 0034) |
 | конфиг не читается, без маркера или без разбираемого `listen` | приватный, **ничего не пишется**, причина печатается в выводе |
 
 Разбирается та же директива, которую генерирует `SiteConfig.Render`, и по тому же

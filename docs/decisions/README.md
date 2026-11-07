@@ -44,6 +44,15 @@
 
 - [0031: Scoped tunnel observations](0031-scoped-tunnel-observations.md) — HTTPS, DNS, unknown transport and bounded probing.
 
+## RAC-only integration lineage
+
+This sandbox build preserves the independent main and RAC candidate histories.
+The two decisions numbered 0032 remain distinct and are identified by their full
+filenames; neither historical decision is renumbered or superseded by this merge.
+Candidate-only decisions and features are not proposed for main by this branch.
+
+Main lineage:
+
 - [0032: Parallel authenticated client ingress](0032-parallel-authenticated-client-ingress.md) — optional, disabled-by-default VLESS + REALITY alongside WireGuard, shared client policy and guarded lifecycle.
 
 - [0036: Saved REALITY profiles before activation](0036-pending-reality-profile-delivery.md) — pending URI/QR/JSON delivery without runtime admission; partially supersedes 0032 delivery.
@@ -60,3 +69,13 @@
 - [0042: Client applied-policy explanations](0042-client-applied-policy-explanations.md) — conditional committed web TCP/443 and gateway A-query policy without probes.
 
 - [0043: Client connection evidence](0043-client-connection-evidence.md) — selected-client ingress and independent applied-exit HTTPS observations.
+
+RAC candidate lineage:
+
+- [0032: API pool admission and shadow-only probe](0032-api-pool-shadow-probe.md) — experimental; clarifies 0015 endpoint retirement and 0020 country authority without changing the built-in pool.
+
+- [0033: Opt-in fresh-install free-start onboarding](0033-opt-in-free-start-onboarding.md) — experimental staging installation; supersedes 0032 installer deferral, with frozen source authority and first-client scope.
+
+- [0034: Fresh-install panel bootstrap](0034-fresh-panel-bootstrap.md) — public authenticated HTTPS before VPN setup for both installation choices; supersedes only the private fresh default, preserving explicit private and saved modes.
+
+- [0035: Authenticated first-login web setup](0035-first-login-web-setup.md) — persisted wizard, explicit guarded Apply, ownership/conflict checks, existing client delivery and honest aggregate counters; supersedes terminal-first/no-wizard assumptions.

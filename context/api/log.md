@@ -1,5 +1,24 @@
 # Api — log
 
+## 2026-11-04
+
+### #297 — RAC-only guarded onboarding completion
+
+**Changed:** Configure/Finish include public-manifest uncertainty under their
+existing publication lock. Independent runtime guard intent must receive checked
+Apply repair before the wizard can claim coherent completion.
+**Beware:** These are candidate composition changes; source tests do not establish
+a deployed restart, tunnel behavior or external REALITY client connection.
+
+## 2026-10-28
+
+### #290 — Authenticated guarded setup API
+
+**New surface:** Read-only setup status plus explicit reopen/configure/apply/finish.
+**Changed:** The existing daemon publication gate validates prepared fingerprints,
+loads missing canonical sources under a bounded request and checks cancellation
+before publication. Generic failures preserve retry intent without secret output.
+**Beware:** Reopening changes metadata only; legacy configured policy is read-only.
 ## 2026-11-06 — coherent REALITY control and inventory (#327)
 
 Moved settings partial merges and pure revocation validation inside the publication
@@ -321,6 +340,9 @@ UI receipt-time expiry and mutation recovery prevent stale green indicators.
 Profile help documents gateway DNS and full-configuration import requirements.
 See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation boundary.
 
+## 2026-11-06 — #330 onboarding recovery review
+
+Added explicit accepted-policy preview and revision-checked metadata confirmation for prepared setup after separately accepted policy changes. Existing guarded Apply and fingerprint conflict checks remain authoritative; policy and credentials are preserved.
 ## 2026-11-07 — Client applied web policy (#339)
 
 Added the bounded read-only client domain explanation contract from [ADR 0042](../../docs/decisions/0042-client-applied-policy-explanations.md). Committed policy/frozen lists, current eligibility and coherent rechecks remain separate from global pending edits. Conditional TCP/443 routing and gateway A-query outcomes preserve ordering, uncertainty and C1; no probes, profile exports or deployment/quality claims are introduced. The maintained invariants record the layer-specific behavior and validation boundary.

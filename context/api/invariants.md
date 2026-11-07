@@ -5,6 +5,7 @@ description: REST, встроенная SPA, диагностика и клие�
 ---
 
 ## Invariants
+- First-login setup endpoints require the ordinary authenticated session and daemon OnboardingApplier gate; no API-only fallback publisher exists. GET is read-only and ordinary responses omit internal fingerprints/profile secrets. Explicit recovery review exposes only opaque policy revisions and safe counts/MTU; confirmation compares both the prior metadata revision and reviewed accepted policy under the same gate and transaction. It changes only the onboarding expectation, never policy or credentials, and still requires normal Apply. Guarded or unaccepted policy cannot refresh that expectation. Configure owns source URLs, rejects unrelated pending edits and unsafe shared/legacy policy changes; Apply checks the stored intent under the same guarded publication lock, Finish verifies current accepted policy, Reopen changes metadata only. A 45-second request context and 20-second missing-source acquisition budget remain below the HTTP write timeout; cancellation is checked before publication. Generic errors never echo provider/checker secrets (ADR 0035).
 - HTTP-сервер панели слушает `127.0.0.1:8080` и никогда не адрес wg0: наружу его открывает nginx (ADR 0008). Адрес проверяется на старте, не-loopback — выход с кодом 2.
 - TLS терминируется на nginx; демон говорит по обычному HTTP и не знает про сертификаты. Реальный адрес клиента приходит в `X-Real-IP`/`X-Forwarded-For`, схема — в `X-Forwarded-Proto`.
 - Живого канала (WebSocket) нет и не обещается: панель работает опросом REST. Проброс `Upgrade`/`Connection` и `proxy_http_version 1.1` в конфиге nginx оставлены как задел и закреплены тестом в слое packaging — они ничего не стоят, но их отсутствие сломало бы канал молча, если он появится.
@@ -162,6 +163,12 @@ checks that the original job identity remains retained beyond ten seconds.
 - Disable/delete/rotation/global listener disable are serialized with publication. Guarding precedes durable auth mutation and a checked restart closes active TCP/UDP sessions before success. A 503 can follow a committed revocation; clients refresh inventory/settings after failed saves/deletes as well as rotation. Revocation is never undone on failure. New admission still requires Apply.
 
 - An independently guarded runtime start makes Apply status pending and diagnostics guarded. Repair forces a checked restart even when config bytes are unchanged; draft endpoint edits never alter active clients' delivered committed URI/JSON parameters. Pending credentials can export their saved plan before Apply without changing policy, private state or runtime.
+
+## RAC-only onboarding composition
+
+Configure and Finish retain their existing publication lock and also treat a
+guarded public-ingress manifest as uncertain. An independent runtime start cannot
+permit setup completion before checked Apply repairs and releases that ingress.
 
 ## Authenticated REALITY flow observations (ADRs 0038 and 0039)
 

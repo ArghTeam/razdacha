@@ -29,7 +29,7 @@ const traffic = (count, upload, download) => ({ ...observed(count), open_upload_
       assert.equal(await t.page.locator('[data-reality-summary="received"]').innerText(), '0 B');
       assert.equal(await t.page.locator('[data-reality-summary="sent"]').innerText(), '0 B');
       assert.equal(await t.page.locator('[data-reality-summary="clients"]').innerText(), '0');
-      assert.match(await t.page.locator('.summary').innerText(), /WireGuard received\n0 B/);
+      assert.match(await t.page.locator('.summary').innerText(), /WireGuard received\nUnknown/);
     });
     for (const value of [undefined, null, '0', -1, Number.MAX_SAFE_INTEGER + 1, 0]) {
       for (const methods of [

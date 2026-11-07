@@ -22,7 +22,7 @@ const poolTunnelsInterval = 30 * time.Second
 // целиком. Базовый адрес — зеркало CDN githack поверх репозитория
 // igareck/vpn-configs-for-russia; точные файлы и разбор — за драйвером, хранилищу
 // достаточно строки, чтобы пул был засеян.
-const igareckCatalogURL = "https://raw.githack.com/igareck/vpn-configs-for-russia/main/"
+const igareckCatalogURL = lists.BuiltinPoolCatalogURL
 
 // poolCatalogType — тип встроенного пула. Косметичен: участники группы urltest
 // разбираются каждый по своей ссылке (ADR 0010/0015), настоящий протокол ключа

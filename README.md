@@ -34,15 +34,23 @@ The installer runs preflight checks before making changes. To run checks only:
 curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install.sh | sh -s -- --dry-run
 ```
 
-It prints the first client's QR code, panel URL and generated password. Save the password;
-it is printed once. A fresh installation exposes the panel inside the VPN only and uses
-a self-signed certificate. `RAZDACHA_PUBLIC=1` explicitly enables public access;
-`RAZDACHA_PUBLIC=0` returns to VPN-only access. Updates retain the saved mode when no
+It prints the external HTTPS panel URL and generated password before the first client's
+QR code. Save the password; it is printed once. Fresh installations default to a public,
+password-protected panel with a self-signed certificate, so access does not require an
+existing VPN connection. `RAZDACHA_PUBLIC=0` explicitly chooses VPN-only access;
+`RAZDACHA_PUBLIC=1` enables public access. Updates retain the saved mode when no
 override is supplied. See [installation and upgrades](docs/08-install-upgrade.md).
 
-The built-in free-key pool starts disabled. When enabled, it rotates igareck keys,
+The ordinary built-in free-key pool starts disabled. Optional fresh-install Free start
+instead enables the API pool and selective starter rules for the first client only;
+Skip lets you configure personal tunnels through the panel. Ordinary pool activation rotates igareck keys,
 excluding RU/BY by default and keys without transport encryption. Configure tunnels and
 rules in the panel; the starter rule preset is offered for explicit acceptance.
+
+Fresh installations open a guided web setup after password login: choose optional
+free tunnels or keep current policy, review and explicitly Apply, then show/download
+the initial client's saved profile and Finish. Setup can be reopened from the header;
+upgrades preserve existing clients, routing and completion state.
 
 Download a full backup from the panel or schedule encrypted Telegram delivery.
 `razdacha restore <file>` restores peer keys as well as settings, so issued client
