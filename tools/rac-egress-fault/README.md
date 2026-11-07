@@ -3,7 +3,7 @@
 This opt-in test tool is separate from the daemon. Its sole mutation is one owned
 inet OUTPUT DROP table on the explicitly authorized RAC sandbox. It never edits
 application policy/configuration, restarts application services or contacts DO.
-See [task #348](../../tasks/348-reality-exit-reliability.md) for intended evidence,
+See [task #348](../../tasks/done/348-reality-exit-reliability.md) for intended evidence,
 controls and limits. No live acceptance is implied by building or testing it.
 
 The endpoint is fixed to `165.22.196.130`, TCP443 or TCP2443. Every command requires

@@ -93,4 +93,11 @@ description: wg0, nft-правила и маршрутизация через ne
   cleanup remains available without the RAC interface address, and persistence/unit
   failures still attempt exact owned removal while reporting incomplete revocation.
   Only verified table absence permits watchdog cancellation. Evidence and limits
-  are tracked separately in [task #348](../../tasks/348-reality-exit-reliability.md).
+  are tracked separately in [task #348](../../tasks/done/348-reality-exit-reliability.md).
+
+- The completed RC16 fixture evidence is finite: owned Direct/WARP outer-leg
+  blackouts rejected fresh test traffic with no fixed-target direct WAN packets,
+  and fresh matrices recovered without application restart. It does not establish
+  inner-WARP failure behavior or independent-host redundancy. A retained WARP UDP
+  association had no new-transaction reply within three seconds after restoration
+  despite fresh UDP recovery; seamless retained-flow recovery is not a contract.

@@ -19,8 +19,9 @@ remain constraints; stored health never authorizes Direct fallback.
 | --- | --- | --- |
 | 1a | Client-scoped applied web-policy explanations | Complete: PR #340 and controlled RAC acceptance |
 | 1b | Scoped client activity and independent exit evidence | Complete: PRs #346/#345 and controlled RAC acceptance |
-| 2 | Verify selected-exit outage, absence of direct fallback and recovery | In progress: [#348](348-reality-exit-reliability.md), existing owned RAC REALITY clients only |
-| 3 | Explicitly approved reserve exits with bounded health and no implicit Direct fallback | Planned; separate specification after phase 2 evidence |
+| 2 | Verify selected-exit outage, absence of direct fallback and recovery | Complete: [#348](done/348-reality-exit-reliability.md), finite owned RAC Direct/WARP evidence |
+| 3a | Characterize retained UDP recovery after an exit blackout | Next: [#350](https://github.com/ArghTeam/razdacha/issues/350), repeated 3/10/30-second windows plus no-fault idle control; no permanent failure established |
+| 3b | Explicitly approved reserve exits, considering an independent host | Planned after recovery characterization; current Direct/WARP share one DO host, no implicit Direct fallback |
 | 4 | Recovery after network interruption, daemon/runtime failure and reboot | Planned; preserve committed policy and independent live admission |
 | 5 | Real Android/router clients, DNS, UDP and long connections under failure/recovery | Planned; compatible-client and finite-path evidence required |
 
@@ -64,6 +65,27 @@ or server tunnel reconfiguration. Ingress observations and independent applied-e
 HTTPS remain separate; this is not selected-site or general quality proof.
 
 Phase 1 is complete. The user excluded subscriptions and commercial features;
-phase 2 now verifies selected-exit failure/recovery under #348. Approved reserves,
-recovery and real-client testing remain future work; the umbrella issue stays open.
+phase 2 is complete with bounded selected-exit failure/recovery evidence under #348.
+Retained-UDP characterization, approved independent-host reserves, recovery and
+real-client testing remain future work; the umbrella issue stays open.
 Production deployment is not included in this acceptance.
+
+
+## Milestone 2 acceptance and recovery limit
+
+The [completed failure/recovery record](done/348-reality-exit-reliability.md#final-bounded-acceptance--2026-11-08)
+records an accepted Direct case inside a preserved failed combined run and a later
+successful WARP-only retry. Fresh HTTP/HTTPS/STUN/DNS traffic failed through the
+blocked outer exit without finite WAN evidence of direct fallback; the other exit
+remained healthy. Full fresh matrices recovered in about 5.71 seconds over two
+attempts without Apply, application/client restart or DO configuration changes.
+The independent watchdog was exercised before the holder deadline. Protected
+state, checked configuration, authority, service PIDs and released guard remained.
+
+Retained TLS requests resumed after restoration. A new STUN transaction on the
+same retained WARP UDP association had no response within three seconds even though
+fresh UDP worked. Characterize this bounded recovery issue next under [#350](https://github.com/ArghTeam/razdacha/issues/350),
+including longer windows and an idle control; neither permanent
+failure nor seamless application survival is established. Current two-port exits
+share a DO host and provide no independent-host redundancy. Automatic failover,
+independent-host reserve enrollment and broader recovery tests remain unimplemented.

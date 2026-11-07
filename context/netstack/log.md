@@ -182,5 +182,28 @@ netlink installation, durable revocation, private bounded serialization, verifie
 systemd watchdog and isolated kernel roundtrip prerequisite. No production routing,
 admission or automatic fallback behavior changed. The roadmap now prioritizes
 fail-closed access, approved reserve exits, recovery and real family/friend clients;
-subscriptions and commercial access features are excluded. Live failure/recovery
-acceptance remains pending and is recorded in task #348 independently of unit tests.
+subscriptions and commercial access features are excluded. At initial source
+delivery, live acceptance remained pending separately from unit tests; the following
+entry records its later bounded results.
+
+
+## 2026-11-08 — Selected REALITY exit acceptance and retained UDP limit (#348)
+
+The [completed task](../../tasks/done/348-reality-exit-reliability.md) records attested
+helper source `720fc654a7d44fe58e41a1f96a06e71af0926ebf`, isolated kernel roundtrips,
+finite WAN/counter controls and unchanged RC16 application state. Direct succeeded
+as a case within a preserved failed combined run; a WARP-only retry completed that
+case. Fresh five-protocol matrices recovered in 5.710561/5.716319 seconds over two
+attempts. Manual revocation and independent 30-second-watchdog revocation were both
+verified; all five fault tables were absent and journals revoked, fixture units stopped,
+and temporary clients/profiles/session removed. Configuration, seven protected
+user tables, authority, guard and service PIDs were unchanged; no app restart,
+Apply, production or DO service/configuration change occurred.
+
+Both retained TLS requests resumed. A new transaction on the same retained WARP
+UDP association got no reply within three seconds despite fresh UDP recovery;
+this does not establish permanent failure or seamless recovery. Prioritize that
+characterization ([#350](https://github.com/ArghTeam/razdacha/issues/350), with
+3/10/30-second windows and a no-fault idle control) and explicitly approved
+independent-host reserves next. Current
+Direct/WARP share one DO host. No automatic failover or fallback was implemented.
