@@ -100,3 +100,22 @@ func TestTwelveSecondMeasurementIsAcceptedWithinBudget(t *testing.T) {
 		t.Fatalf("measurement %s: %v", delay, err)
 	}
 }
+
+func TestDelayObservedRetainsSourceTimesAcrossFailedLease(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	c := New(Options{Addr: server.URL, ProbeTimeout: 100 * time.Millisecond, HTTPClient: &http.Client{Timeout: 200 * time.Millisecond}})
+	fence := time.Now()
+	_, started, completed, err := c.DelayObserved(context.Background(), "same")
+	if err == nil || !started.After(fence) || completed.Before(started) {
+		t.Fatal(started, completed, err)
+	}
+	_, nextStarted, nextCompleted, nextErr := c.DelayObserved(context.Background(), "same")
+	if nextErr == nil || !started.Equal(nextStarted) || !completed.Equal(nextCompleted) || calls.Load() != 1 {
+		t.Fatal("coalesced job lost source times", nextStarted, nextCompleted, calls.Load())
+	}
+}

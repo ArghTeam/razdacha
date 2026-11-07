@@ -75,3 +75,5 @@ description: wg0, nft-правила и маршрутизация через ne
 - Any uncertainty after guarding leaves both client paths closed. Active native-artifact corruption also closes public ingress. Explicit reset retains the public manifest/barrier; uninstall requires verified WG-only state first.
 
 - After checked restart, release rereads controlled private config bytes under the safety lock and requires exact candidate equality before narrowing manifest coverage or releasing either WG/public barrier. A pre-start hook restoring previously approved bytes retains union authority and both closed paths. A failed release recloses both guards.
+
+- Client connection evidence reads the existing WG peer-stat source without kernel mutation. Gateway receive/transmit are encrypted peer aggregates; missing, reset, future-handshake or unsafe counters do not prove inactivity, application throughput, client latency or a site's success. The API owns bounded source coalescing and private before/after publication checks (ADR 0043).
