@@ -5,21 +5,30 @@ incremental roadmap inspired by the 3x-ui comparison. Existing client identities
 credentials, routing policy, guarded publication and explicit Apply remain constraints.
 Production is excluded from the first delivery; deployment acceptance is RAC-only.
 
+## Product goal and exclusions
+
+The goal is stable Internet access for family and friends, with little manual
+maintenance. Profile subscriptions, billing, tariffs, quotas, paid access and
+commercial distribution are outside this roadmap. Remote fleet management is
+not a prerequisite. Existing identities, explicit Apply and fail-closed selection
+remain constraints; stored health never authorizes Direct fallback.
+
 ## Phases and status
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| 1a | Client-scoped applied web-policy explanations, separate from observations and actual client traffic | Complete: PR #340 merged and controlled RAC acceptance passed |
-| 1b | Scoped quality observations and client-driven connection evidence | Complete: PRs #346/#345 merged and controlled RAC acceptance passed |
-| 2 | Revocable, scoped client subscriptions and compatible-client updates, with independent live admission | Planned; not implemented by #339 |
-| 3 | Remote exit observation/management for explicitly enrolled servers from one panel | Planned; no implicit discovery or production mutation |
-| 4 | Approved exit groups with explicit failover policy, bounded health observations and no implicit Direct fallback | Planned; not implemented by #339 |
-| 5 | Pinned AmneziaWG and Hysteria2 experiments with compatible clients and comparative loss/latency/UDP tests | Planned; existing [#163](https://github.com/ArghTeam/razdacha/issues/163) remains separate |
+| 1a | Client-scoped applied web-policy explanations | Complete: PR #340 and controlled RAC acceptance |
+| 1b | Scoped client activity and independent exit evidence | Complete: PRs #346/#345 and controlled RAC acceptance |
+| 2 | Verify selected-exit outage, absence of direct fallback and recovery | In progress: [#348](348-reality-exit-reliability.md), existing owned RAC REALITY clients only |
+| 3 | Explicitly approved reserve exits with bounded health and no implicit Direct fallback | Planned; separate specification after phase 2 evidence |
+| 4 | Recovery after network interruption, daemon/runtime failure and reboot | Planned; preserve committed policy and independent live admission |
+| 5 | Real Android/router clients, DNS, UDP and long connections under failure/recovery | Planned; compatible-client and finite-path evidence required |
 
-Phase 1 is split into 1a and 1b; the five-phase roadmap remains open after 1a.
-Later phases need concrete specifications, acceptance criteria and independent review
-before implementation. No blanket DPI resistance or connection-quality guarantee
-is implied by the roadmap.
+New transports, including the existing [#163](https://github.com/ArghTeam/razdacha/issues/163)
+AmneziaWG work and Hysteria2 experiments, are optional later investigations only
+when measured availability needs justify them. They are not promised improvements
+or blanket DPI/connection-quality guarantees. Later phases require concrete
+specifications and independent review before implementation.
 
 ## First delivery boundary
 
@@ -54,6 +63,7 @@ REALITY profiles carried controlled HTTPS and UDP STUN traffic without local TUN
 or server tunnel reconfiguration. Ingress observations and independent applied-exit
 HTTPS remain separate; this is not selected-site or general quality proof.
 
-Phase 1 is complete. Phase 2 scoped revocable subscriptions is next and needs its
-own specification and review; phases 2–5 and the umbrella issue remain open.
+Phase 1 is complete. The user excluded subscriptions and commercial features;
+phase 2 now verifies selected-exit failure/recovery under #348. Approved reserves,
+recovery and real-client testing remain future work; the umbrella issue stays open.
 Production deployment is not included in this acceptance.

@@ -174,3 +174,13 @@ state and service PIDs were preserved. This was a namespace-isolated synthetic
 proof, not an installed-key mutation or production/client lifecycle proof.
 See the [audit verification record](../../tasks/done/324-audit-verification.md)
 and [completed task 325](../../tasks/done/325-wg-publication-admission.md).
+
+## 2026-11-08 — Bounded selected-exit reliability fixture (#348)
+
+Added a separate opt-in RAC-only exact-endpoint outage tool with exclusive
+netlink installation, durable revocation, private bounded serialization, verified
+systemd watchdog and isolated kernel roundtrip prerequisite. No production routing,
+admission or automatic fallback behavior changed. The roadmap now prioritizes
+fail-closed access, approved reserve exits, recovery and real family/friend clients;
+subscriptions and commercial access features are excluded. Live failure/recovery
+acceptance remains pending and is recorded in task #348 independently of unit tests.
