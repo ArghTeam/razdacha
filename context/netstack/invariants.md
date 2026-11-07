@@ -77,3 +77,27 @@ description: wg0, nft-правила и маршрутизация через ne
 - After checked restart, release rereads controlled private config bytes under the safety lock and requires exact candidate equality before narrowing manifest coverage or releasing either WG/public barrier. A pre-start hook restoring previously approved bytes retains union authority and both closed paths. A failed release recloses both guards.
 
 - Client connection evidence reads the existing WG peer-stat source without kernel mutation. Gateway receive/transmit are encrypted peer aggregates; missing, reset, future-handshake or unsafe counters do not prove inactivity, application throughput, client latency or a site's success. The API owns bounded source coalescing and private before/after publication checks (ADR 0043).
+
+## Owned RAC exit outage fixture
+
+- The opt-in [RAC exit fixture](../../tools/rac-egress-fault/README.md) is separate
+  test code, not daemon routing or automatic failover. It requires an isolated
+  kernel roundtrip before live use, restricts host/endpoint identity, uses one
+  unpredictable standalone exact IPv4/TCP OUTPUT counter/DROP table and refuses
+  foreign ownership/schema. No application table/configuration is edited.
+- A verified independent monotonic watchdog precedes installation. Durable
+  revocation and kernel operations share a private bounded lock; deadlines are
+  checked immediately before and after exclusive installation. Owned fault unit
+  lifetime/signal cleanup complement the watchdog. Journals remain as tombstones;
+  revocation/status stay bound to the prepared boot/network namespace;
+  cleanup remains available without the RAC interface address, and persistence/unit
+  failures still attempt exact owned removal while reporting incomplete revocation.
+  Only verified table absence permits watchdog cancellation. Evidence and limits
+  are tracked separately in [task #348](../../tasks/done/348-reality-exit-reliability.md).
+
+- The completed RC16 fixture evidence is finite: owned Direct/WARP outer-leg
+  blackouts rejected fresh test traffic with no fixed-target direct WAN packets,
+  and fresh matrices recovered without application restart. It does not establish
+  inner-WARP failure behavior or independent-host redundancy. A retained WARP UDP
+  association had no new-transaction reply within three seconds after restoration
+  despite fresh UDP recovery; seamless retained-flow recovery is not a contract.
