@@ -5,7 +5,7 @@ const { fixture, examplePeer } = require('./client.fixture.cjs');
 const observe = 'POST /api/clients/observe', probe = 'POST /api/clients/check-exit';
 const at = n => `2026-11-07T12:00:${String(n).padStart(2, '0')}Z`;
 const sample = (n = 0, bytes = 0, extra = {}) => ({ scope: 'client_ingress', peer_id: 'example', transport: 'wg', state: 'observed', reason: 'source_observed', epoch: 'boot:publication', sampled_at: at(n), observed_at: at(n), age_ms: 0, fresh: true, source: 'wireguard_kernel', wg: { rx_bytes: bytes, tx_bytes: 0, last_handshake: null }, reality: null, ...extra });
-const checked = extra => ({ scope: 'gateway_exit_https', peer_id: 'example', transport: 'wg', domain: 'example.com', epoch: 'boot:publication', sampled_at: at(5), policy: { marker: 'applied-policy', pending: true, routing: { action: 'tunnel', reason: 'whole_client_exit', tunnel_id: 'exit', tunnel_name: '<img src=x onerror=alert(1)>', via_tunnel_id: 'chain', via_tunnel_name: 'Full chain' }, gateway_a: { action: 'reject', reason: 'generated_dns_action' } }, https: { state: 'observed', reason: 'fixed_target_succeeded', source: 'active_probe', observed_at: at(5), age_ms: 0, fresh: true, delay_ms: 47 }, ...extra });
+const checked = extra => ({ scope: 'gateway_exit_https', peer_id: 'example', transport: 'wg', domain: 'example.com', epoch: 'boot:publication', sampled_at: at(5), policy: { marker: 'applied-policy', pending: true, routing: { action: 'tunnel', reason: 'whole_client_exit', tunnel_id: 'exit', tunnel_name: '<img src=x onerror=alert(1)>', via_tunnel_id: 'chain', via_tunnel_name: 'Full chain' }, gateway_a: { action: 'reject', reason: 'generated_dns_action' } }, https: { scope: 'gateway_fixed_target_https', state: 'observed', reason: 'fixed_target_succeeded', source: 'active_probe', observed_at: at(5), age_ms: 0, fresh: true, delay_ms: 47 }, ...extra });
 (async () => {
   const browser = await chromium.launch({ headless: true });
   let count = 0;
@@ -128,6 +128,20 @@ const checked = extra => ({ scope: 'gateway_exit_https', peer_id: 'example', tra
     await check(async t => {
       assert.equal(await t.page.inputValue('#evidence-transport'), 'reality');
     }, { peers: [{ ...examplePeer, wireguard_enabled: false, reality_enabled: true }] });
+    await check(async t => {
+      await t.page.fill('#evidence-domain', 'example.com');
+      const value = checked({ epoch: 'after-apply-publication', sampled_at: at(10) });
+      Object.assign(value.https, { source: 'pool_history', reason: 'pool_history_only', observed_at: at(0), age_ms: 10000 });
+      t.overrides.set(probe, { status: 200, body: value });
+      await t.page.click('#evidence-check'); await t.page.getByText(/Historical pool group HTTPS: 47 ms/).waitFor();
+      const output = await t.page.textContent('#evidence-exit');
+      assert.match(output, /not a new check or current-generation proof/);
+      assert.match(output, /2026-11-07T12:00:00Z/);
+      assert.match(output, /Gateway fixed-target HTTPS: Unknown/);
+      assert.match(output, /current epoch binds exit selection only/);
+      await t.page.clock.runFor(20000);
+      assert.doesNotMatch(await t.page.textContent('#evidence-exit'), /47 ms/);
+    });
     for (const mode of ['disabled','pool','not_run','error']) await check(async t => {
       await t.page.fill('#evidence-domain', 'example.com');
       const value = checked();

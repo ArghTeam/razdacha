@@ -344,7 +344,7 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
 - Passive observations are serial and start at least five seconds after the preceding
   request finishes. A monotonic ninety-second window bounds dispatch and acceptance.
   No history is persisted. Close/replacement, session dismissal, navigation, input
-  changes and window expiry clear samples/results, abort requests and cancel timers;
+  changes and window expiry clear samples/results, abort requests and cancel pending polls;
   operation tokens also reject late completions. Passive and independent exit requests
   have separate tokens under the same context lifetime.
 - Counter comparisons require the same peer, ingress, source and opaque boot/publication
@@ -366,7 +366,9 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
   escaped; absent authority, null timing, failures and expired data remain unknown.
   HTTPS timing describes gateway to the fixed target through the approved full chain or
   explicitly applied Direct. Existing pool group history is labeled with its source/time
-  and never called a new measurement. No fallback, domain fetch, DNS probe or global
+  and never called a new measurement or current-generation proof, even when its
+  timestamp is recent. Its historical timing remains separate from an active probe;
+  the current epoch binds only the policy selection. No fallback, domain fetch, DNS probe or global
   check-cache mutation is initiated by the UI.
 - Synthetic actual-module Chromium fixtures exercise the real row-menu action, clocks,
   source counters/epochs, escaping and lifecycle races. They establish browser behavior

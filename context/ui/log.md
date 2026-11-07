@@ -526,7 +526,8 @@ Added the Clients menu dialog for ADR 0043: a guided ninety-second passive ingre
 window, source-timestamp and publication-epoch comparisons, conservative thirty-second
 expiry and a separate applied-exit fixed-target HTTPS action. Whole-client WireGuard
 and REALITY scopes remain distinct from conditional domain policy and gateway timing.
-Modal/session/input/navigation lifetimes abort requests and invalidate late results;
+Recent pool history is explicitly historical and cannot prove a new check or the
+current publication. Modal/session/input/navigation lifetimes abort requests and invalidate late results;
 duplicate source timestamps do not renew freshness. Existing style rules now cover the
 Web policy domain input, and both dialogs default to an explicitly enabled ingress.
 Actual-module synthetic Chromium coverage includes row-menu entry, fake-clock bounds,
