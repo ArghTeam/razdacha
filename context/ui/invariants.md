@@ -346,3 +346,42 @@ Candidate onboarding and shadow-only probe behavior remain separate from main.
 - Each existing client offers one Web policy action, fixed to domain-bearing HTTPS/TCP443 with WG/REALITY ingress selection. Routing, committed exit/chain names and conditional gateway A-query policy render separately with plain-English reasons and ordered uncertain candidates. Global pending edits are explicitly separate from applied policy; missing authority never claims an applied snapshot. Detailed scope limits remain collapsed.
 - A dialog owns its session, modal revision, request token, inputs and navigation lifetime. Input changes, close/replacement, client replacement, any hash navigation (including leaving and returning), expiry and a new login permanently reject stale success/error results. Enter and pointer share one in-flight gate. Displayed values are escaped. No network probes or mutations are initiated, and existing client/rule editor drafts retain their behavior.
 - Synthetic actual-module Chromium tests cover empty/error/disabled/unknown/pending states, escaping, transport/domain/client changes, closure/replacement, navigation return and session transitions. They prove UI lifetime and rendering only, not installed networking or client quality.
+
+## Connection evidence (ADR 0043)
+
+- The Clients row menu opens one browser-local Connection evidence dialog. A selected
+  ingress and optional domain identify the context; the administrator generates page
+  or download activity on that client device. The panel never opens or fetches that
+  domain. The default ingress respects an explicitly disabled WireGuard method.
+- Passive observations are serial and start at least five seconds after the preceding
+  request finishes. A monotonic ninety-second window bounds dispatch and acceptance.
+  No history is persisted. Close/replacement, session dismissal, navigation, input
+  changes and window expiry clear samples/results, abort requests and cancel pending polls;
+  operation tokens also reject late completions. Passive and independent exit requests
+  have separate tokens under the same context lifetime.
+- Counter comparisons require the same peer, ingress, source and opaque boot/publication
+  epoch, valid nonnegative safe integers and strictly newer source timestamps (including
+  submillisecond precision). Unknown authority or changed epochs invalidate baselines
+  and independent observations. Freshness expires after thirty seconds using the greater
+  server/source age plus full request duration and local monotonic elapsed time. Repeated
+  source timestamps retain their original local age and never renew freshness or prove
+  new activity. Positive evidence is at most one timestamped local observation; its label
+  becomes historical on expiry and it disappears when the window/context ends.
+- WireGuard increases describe encrypted-peer cumulative gateway received/sent bytes.
+  REALITY increases describe current-open-flow counts/bytes only; closure, decrease,
+  zero, missing or unsafe values cannot establish inactivity, offline status or exact
+  transferred-byte throughput. No client latency, website success or quality score is
+  derived. These scopes remain separate from inventory summaries and Web policy.
+- A separate explicit action asks the server for an independent applied-exit observation
+  using only peer, ingress and a normalized domain. Applied conditional routing/chain
+  names and gateway A-query policy remain separate from HTTPS observations. Names are
+  escaped; absent authority, null timing, failures and expired data remain unknown.
+  HTTPS timing describes gateway to the fixed target through the approved full chain or
+  explicitly applied Direct. Existing pool group history is labeled with its source/time
+  and never called a new measurement or current-generation proof, even when its
+  timestamp is recent. Its historical timing remains separate from an active probe;
+  the current epoch binds only the policy selection. No fallback, domain fetch, DNS probe or global
+  check-cache mutation is initiated by the UI.
+- Synthetic actual-module Chromium fixtures exercise the real row-menu action, clocks,
+  source counters/epochs, escaping and lifecycle races. They establish browser behavior
+  only, not daemon networking, installed client connectivity or live acceptance.

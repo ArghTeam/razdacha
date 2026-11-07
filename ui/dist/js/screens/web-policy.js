@@ -14,9 +14,9 @@ const reasons = {
   authority_read_failed: 'Applied authority could not be read', compiler_unavailable: 'Applied policy cannot be explained', construction_budget: 'Policy exceeds the explanation work limit',
   pending_construction_budget: 'Saved policy exceeds the comparison work limit', pending_read_failed: 'Pending status is unavailable', eligibility_changed: 'Client access changed while explaining',
 };
-const reasonText = code => reasons[code] || 'Policy information is unavailable';
-const actionText = action => ({ direct: 'Direct', tunnel: 'Selected exit', reject: 'Reject', fakeip: 'FakeIP', upstream: 'Upstream DNS', same_exit_upstream: 'DNS through the client exit', unknown: 'Unknown' }[action] || 'Unknown');
-const exitText = item => item?.tunnel_id ? ` · ${esc(item.tunnel_name || item.tunnel_id)}${item.via_tunnel_id ? ` → ${esc(item.via_tunnel_name || item.via_tunnel_id)}` : ''}` : '';
+export const reasonText = code => reasons[code] || 'Policy information is unavailable';
+export const actionText = action => ({ direct: 'Direct', tunnel: 'Selected exit', reject: 'Reject', fakeip: 'FakeIP', upstream: 'Upstream DNS', same_exit_upstream: 'DNS through the client exit', unknown: 'Unknown' }[action] || 'Unknown');
+export const exitText = item => item?.tunnel_id ? ` · ${esc(item.tunnel_name || item.tunnel_id)}${item.via_tunnel_id ? ` → ${esc(item.via_tunnel_name || item.via_tunnel_id)}` : ''}` : '';
 
 export function openWebPolicy(id) {
   const peer = peerById(id);
@@ -29,7 +29,7 @@ export function openWebPolicy(id) {
     <p>Shows applied rules for HTTPS (<strong>TCP 443</strong>). This does not open the site or measure connectivity.</p>
     <details><summary>Scope and limits</summary><p>Routing assumes a domain-bearing request and public, nonlocal resolution. Private/gateway guards can reject first. Gateway A-query policy is conditional, not an actual DNS query. Native and address predicates can remain unknown. Dynamic sniffing, DPI resistance, UDP and media quality are not measured.</p></details>
     <label class="field">Ingress<select id="web-policy-transport"><option value="wg">WireGuard</option><option value="reality">REALITY</option></select></label>
-    <label class="field">Domain<input id="web-policy-domain" placeholder="example.com" autocomplete="off" maxlength="253"></label>
+    <label class="field">Domain<input id="web-policy-domain" type="text" placeholder="example.com" autocomplete="off" maxlength="253"></label>
     <div id="web-policy-result" role="status">Enter a domain to explain applied policy. Saved edits are not applied by this action.</div>`,
     '<button class="btn" id="web-policy-submit">Explain web policy</button><button class="btn" data-act="close-modal">Close</button>'), element => { modal = element; });
   revision = currentModalRevision();
@@ -37,6 +37,7 @@ export function openWebPolicy(id) {
   const button = modal.querySelector('#web-policy-submit');
   const domain = modal.querySelector('#web-policy-domain');
   const transport = modal.querySelector('#web-policy-transport');
+  transport.value = peer.wireguard_enabled === false && peer.reality_enabled === true ? 'reality' : 'wg';
   const invalidate = () => { request++; result.textContent = 'Input changed. Explain again to view applied policy.'; };
   domain.addEventListener('input', invalidate);
   transport.addEventListener('change', invalidate);

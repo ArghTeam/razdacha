@@ -2,6 +2,7 @@
 
 import * as api from '../api.js';
 import { openWebPolicy } from './web-policy.js';
+import { openConnectionEvidence } from './connection-evidence.js';
 import * as qr from '../qr.js';
 import { beginInventoryRead } from './tunnels.js';
 import { beginInventoryRead as beginRuleInventoryRead } from './rules.js';
@@ -878,10 +879,12 @@ export const actions = {
   'menu-peer': (id, button) => openMenu(button, [
     { act: 'peer-details', id, label: 'Settings' },
     { act: 'peer-web-policy', id, label: 'Web policy' },
+    { act: 'peer-connection-evidence', id, label: 'Connection evidence' },
     { act: 'peer-configuration', id, label: realityEnabled(peerById(id)) ? 'Connection profiles' : 'WireGuard configuration' },
     { act: 'peer-delete-preview', id, label: 'Delete…', danger: true },
   ]),
   'peer-web-policy': openWebPolicy,
+  'peer-connection-evidence': openConnectionEvidence,
   'peer-details': id => modalPeerDetails(id),
   'peer-configuration': id => modalPeerDetails(id, true),
   'peer-delete-preview': id => { modalPeerDetails(id); inspectClientDelete(); },
