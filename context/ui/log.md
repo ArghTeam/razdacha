@@ -519,3 +519,17 @@ See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation bo
 ## 2026-11-07 — Client applied web policy (#339)
 
 Added the bounded read-only client domain explanation contract from [ADR 0042](../../docs/decisions/0042-client-applied-policy-explanations.md). Committed policy/frozen lists, current eligibility and coherent rechecks remain separate from global pending edits. Conditional TCP/443 routing and gateway A-query outcomes preserve ordering, uncertainty and C1; no probes, profile exports or deployment/quality claims are introduced. The maintained invariants record the layer-specific behavior and validation boundary.
+
+## 2026-11-07 — Browser-local Connection evidence (#344)
+
+Added the Clients menu dialog for ADR 0043: a guided ninety-second passive ingress
+window, source-timestamp and publication-epoch comparisons, conservative thirty-second
+expiry and a separate applied-exit fixed-target HTTPS action. Whole-client WireGuard
+and REALITY scopes remain distinct from conditional domain policy and gateway timing.
+Recent pool history is explicitly historical and cannot prove a new check or the
+current publication. Modal/session/input/navigation lifetimes abort requests and invalidate late results;
+duplicate source timestamps do not renew freshness. Existing style rules now cover the
+Web policy domain input, and both dialogs default to an explicitly enabled ingress.
+Actual-module synthetic Chromium coverage includes row-menu entry, fake-clock bounds,
+unsafe/missing/decreasing counters, authority changes, escaping and late responses;
+it does not claim real transport or selected-website acceptance.

@@ -53,11 +53,12 @@ async function readBody(res) {
  * @param {{body?: any, expect?: 'json'|'text', quiet401?: boolean}} opts
  */
 async function request(method, path, opts = {}) {
-  const { body, expect = 'json', quiet401 = false } = opts;
+  const { body, expect = 'json', quiet401 = false, signal } = opts;
   const revision = sessionRevision;
 
   const init = {
     method,
+    signal,
     // Cookie сессии — HttpOnly и SameSite=Lax; same-origin достаточно и не
     // открывает панель чужому origin.
     credentials: 'same-origin',
@@ -415,3 +416,9 @@ function observePeerReceipts(peers) {
 
 /** Read-only committed domain policy; independent of shared route probes. */
 export const explainWebPolicy = body => post('/api/route/explain', body);
+
+// Passive client evidence and an independent, server-scoped fixed-target check.
+export const clientEvidence = {
+  observe: (body, signal) => post('/api/clients/observe', body, { signal }),
+  checkExit: (body, signal) => post('/api/clients/check-exit', body, { signal }),
+};
