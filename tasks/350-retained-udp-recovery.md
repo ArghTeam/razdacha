@@ -26,19 +26,20 @@ and WARP endpoints share one host.
 
 ## Control-first gate
 
-Before any new outage, run two separately primed associations with no fault: five
-seconds and twelve seconds of idle time. Apply the same sampled recovery windows
-and concurrent fresh controls to each. Inspect the retained SOCKS TCP control
+Before any new outage, run two independent pairs of separately primed associations
+with no fault: five seconds and twelve seconds of idle time per pair. Each gets
+exactly one post-idle transaction with a three-second maximum observation and
+concurrent fresh controls. This avoids adding a later long idle gap to the short
+control. The same local client processes remain running across all four cases. Inspect the retained SOCKS TCP control
 socket passively for EOF with readiness plus `MSG_PEEK`; do not consume control
 bytes or reconnect. Record actual idle/send/response timing and scheduling drift.
-The later 20-second gap between sampled requests is another idle interval and
-must remain explicit when interpreting the last window.
 
 If retained non-response or control EOF occurs without a fault while fresh
 requests work, record that idle confound before deciding whether an outage can
 answer a remaining question. Do not inject a fault merely to repeat an already
-confounded observation. Fault execution is a separate explicitly selected case;
-preparation is not live fault authorization or acceptance.
+confounded observation. The current private runner has no executable fault/capture path; the conditional
+fault design below remains future work if the controls leave a useful question.
+Preparation is not live fault acceptance.
 
 ## Intended fault comparison, if still warranted
 

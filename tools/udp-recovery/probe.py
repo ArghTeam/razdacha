@@ -101,7 +101,7 @@ class RetainedSTUN:
                 self.received.append(item)
                 result["replies"].append(item)
                 if received_key == key:
-                    result["state"] = "response"
+                    result["state"] = "response" if received_at <= deadline else "late_response"
                     result["response_monotonic"] = received_at
                     result["response_elapsed_seconds"] = received_at - start
                     result["received_by_deadline"] = received_at <= deadline

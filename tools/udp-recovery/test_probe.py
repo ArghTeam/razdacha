@@ -105,6 +105,17 @@ class ProbeTests(unittest.TestCase):
         result=self.probe.probe("flood", transaction_id=b"a"*12)
         self.assertEqual(result["state"], "error")
         self.assertIn("ledger exhausted", result["error"])
+    def test_reply_delivered_after_deadline_is_late_not_within_window(self):
+        tx=b"a"*12;self.queue(tx)
+        receive=self.assoc.udp.recvfrom
+        def delayed(limit):
+            self.clock.now+=4
+            return receive(limit)
+        self.assoc.udp.recvfrom=delayed
+        result=self.probe.probe("delayed", transaction_id=tx)
+        self.assertEqual(result["state"], "late_response")
+        self.assertFalse(result["received_by_deadline"])
+        self.assertGreater(result["response_elapsed_seconds"],3)
     def test_declared_stun_length_must_match_whole_datagram(self):
         with self.assertRaises(ValueError):
             decode_reply(frame(b"a"*12)+b"extra", self.assoc.relay,self.assoc.relay)

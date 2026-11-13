@@ -17,7 +17,8 @@ seconds per request. It samples windows ending near 3, 10 and 30 seconds rather
 than continuously observing every instant. Private orchestration must record its
 actual clock origin and drift, concurrent fresh controls and comparable no-fault
 idle duration. The control-first gate uses separately primed five- and twelve-second
-idle cases before considering any new outage. Passive control-socket EOF is
+idle cases, with one post-idle transaction each and two independent pairs, before
+considering any new outage. Passive control-socket EOF is
 recorded separately from a UDP transaction timeout. See [task #350](../../tasks/350-retained-udp-recovery.md) for scope,
 cleanup, fault controls and pending live acceptance. A single STUN transaction
 series does not prove application/media survival or a general recovery bound.
