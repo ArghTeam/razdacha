@@ -207,3 +207,41 @@ characterization ([#350](https://github.com/ArghTeam/razdacha/issues/350), with
 3/10/30-second windows and a no-fault idle control) and explicitly approved
 independent-host reserves next. Current
 Direct/WARP share one DO host. No automatic failover or fallback was implemented.
+
+## 2026-11-13 — Retained UDP characterization preparation (#350)
+
+- Added an inert borrowed-association STUN observer with identity checks, bounded
+  frame parsing and a cross-window transaction ledger; older replies remain
+  distinct from responses to a fresh request.
+- Specified exact RAC outer-leg fault, independently armed watchdog, sampled
+  recovery windows, concurrent fresh controls, comparable no-fault idle control,
+  protected-state comparison and unconditional owned cleanup.
+- A control-first gate compares five- and twelve-second idle cases and passive
+  SOCKS control EOF before any new fault; idle effects must not be labeled outage
+  recovery defects.
+- Offline socket doubles cover timeouts, delayed transactions, malformed/foreign
+  responses, identity replacement and bounded observation. At this preparation
+  stage live characterization was pending; the following entry records its result.
+  No daemon behavior or recovery guarantee changed.
+
+
+## 2026-11-13 — Bounded retained UDP idle-confound acceptance (#350)
+
+- [Task #350](../../tasks/done/350-retained-udp-recovery.md) records two complete
+  no-fault runs and exact observer/operations/proof hashes. Four retained STUN
+  transactions after 5/12/5/12-second idle intervals replied in 0.089–0.247 seconds.
+  Separate 30/45-second idle cases already showed SOCKS control EOF before the
+  post-idle request; the unchanged local UDP sockets then received no reply within
+  three seconds while fresh Direct/WARP associations worked.
+- This is an idle confound for the earlier retained-flow observation, not proof of
+  a closing hop, precise timeout, historical root cause or active-flow outage bug.
+  Nominal ten-second source timeout did not reproduce as failure at twelve seconds.
+  No new outage/capture was executed. Preserve the historical #348 record.
+- Before/after protected user tables, config/authority hashes, released guard,
+  schema/version and application PIDs matched exactly. Owned clients, profiles and
+  temporary sessions were removed and independently audited. RC16 remains running;
+  no product-code change, Apply, application restart or deployment is needed.
+- Next, [#352](https://github.com/ArghTeam/razdacha/issues/352) will characterize
+  active UDP recovery with keepalive and matched no-fault history before approved
+  independent-host reserves. It is planned; no general UDP/media/failover guarantee
+  or implicit Direct fallback is introduced.
