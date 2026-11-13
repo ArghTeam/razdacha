@@ -207,3 +207,18 @@ characterization ([#350](https://github.com/ArghTeam/razdacha/issues/350), with
 3/10/30-second windows and a no-fault idle control) and explicitly approved
 independent-host reserves next. Current
 Direct/WARP share one DO host. No automatic failover or fallback was implemented.
+
+## 2026-11-13 — Retained UDP characterization preparation (#350)
+
+- Added an inert borrowed-association STUN observer with identity checks, bounded
+  frame parsing and a cross-window transaction ledger; older replies remain
+  distinct from responses to a fresh request.
+- Specified exact RAC outer-leg fault, independently armed watchdog, sampled
+  recovery windows, concurrent fresh controls, comparable no-fault idle control,
+  protected-state comparison and unconditional owned cleanup.
+- A control-first gate compares five- and twelve-second idle cases and passive
+  SOCKS control EOF before any new fault; idle effects must not be labeled outage
+  recovery defects.
+- Offline socket doubles cover timeouts, delayed transactions, malformed/foreign
+  responses, identity replacement and bounded observation. Live characterization
+  is pending; no daemon behavior or recovery guarantee changed.

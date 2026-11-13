@@ -101,3 +101,9 @@ description: wg0, nft-правила и маршрутизация через ne
   inner-WARP failure behavior or independent-host redundancy. A retained WARP UDP
   association had no new-transaction reply within three seconds after restoration
   despite fresh UDP recovery; seamless retained-flow recovery is not a contract.
+
+- The separate retained-UDP [probe](../../tools/udp-recovery/README.md) observes
+  exact borrowed SOCKS control/UDP socket identities and unique transaction IDs.
+  Late older replies cannot satisfy newer requests. Its offline tests and prepared
+  3/10/30-second sampled windows are not live recovery acceptance; current scope
+  and the required fresh/idle controls are recorded under [task #350](../../tasks/350-retained-udp-recovery.md).
