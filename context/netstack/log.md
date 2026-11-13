@@ -220,5 +220,28 @@ Direct/WARP share one DO host. No automatic failover or fallback was implemented
   SOCKS control EOF before any new fault; idle effects must not be labeled outage
   recovery defects.
 - Offline socket doubles cover timeouts, delayed transactions, malformed/foreign
-  responses, identity replacement and bounded observation. Live characterization
-  is pending; no daemon behavior or recovery guarantee changed.
+  responses, identity replacement and bounded observation. At this preparation
+  stage live characterization was pending; the following entry records its result.
+  No daemon behavior or recovery guarantee changed.
+
+
+## 2026-11-13 — Bounded retained UDP idle-confound acceptance (#350)
+
+- [Task #350](../../tasks/done/350-retained-udp-recovery.md) records two complete
+  no-fault runs and exact observer/operations/proof hashes. Four retained STUN
+  transactions after 5/12/5/12-second idle intervals replied in 0.089–0.247 seconds.
+  Separate 30/45-second idle cases already showed SOCKS control EOF before the
+  post-idle request; the unchanged local UDP sockets then received no reply within
+  three seconds while fresh Direct/WARP associations worked.
+- This is an idle confound for the earlier retained-flow observation, not proof of
+  a closing hop, precise timeout, historical root cause or active-flow outage bug.
+  Nominal ten-second source timeout did not reproduce as failure at twelve seconds.
+  No new outage/capture was executed. Preserve the historical #348 record.
+- Before/after protected user tables, config/authority hashes, released guard,
+  schema/version and application PIDs matched exactly. Owned clients, profiles and
+  temporary sessions were removed and independently audited. RC16 remains running;
+  no product-code change, Apply, application restart or deployment is needed.
+- Next, [#352](https://github.com/ArghTeam/razdacha/issues/352) will characterize
+  active UDP recovery with keepalive and matched no-fault history before approved
+  independent-host reserves. It is planned; no general UDP/media/failover guarantee
+  or implicit Direct fallback is introduced.

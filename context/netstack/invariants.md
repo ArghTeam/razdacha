@@ -104,6 +104,9 @@ description: wg0, nft-правила и маршрутизация через ne
 
 - The separate retained-UDP [probe](../../tools/udp-recovery/README.md) observes
   exact borrowed SOCKS control/UDP socket identities and unique transaction IDs.
-  Late older replies cannot satisfy newer requests. Its offline tests and prepared
-  3/10/30-second sampled windows are not live recovery acceptance; current scope
-  and the required fresh/idle controls are recorded under [task #350](../../tasks/350-retained-udp-recovery.md).
+  Late older replies cannot satisfy newer requests. The completed no-fault controls
+  responded after 5/12-second idle samples; 30/45-second samples already had SOCKS
+  control EOF and then UDP non-response despite healthy fresh associations. This
+  is an idle confound, not a precise timeout, closing-hop or active-flow recovery
+  guarantee. Conditional 3/10/30-second outage windows were not executed. See
+  [task #350](../../tasks/done/350-retained-udp-recovery.md) and [#352](https://github.com/ArghTeam/razdacha/issues/352).
