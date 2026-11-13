@@ -165,7 +165,8 @@ artifacts; their existence does not extend the measured topology or guarantees.
 
 Each case successfully primed a new WARP SOCKS UDP association, then idled it with
 no traffic on that association. Exactly one post-idle transaction used the same
-UDP/control objects, file descriptors, endpoints and relay; no reconnect occurred.
+UDP/control objects, file descriptors, endpoints and relay; the test did not
+recreate or replace the local association.
 Fresh Direct and WARP STUN controls ran concurrently and were healthy in every
 case. TCP control inspection used readiness plus `MSG_PEEK`, without consuming
 control bytes or changing timeout state.
