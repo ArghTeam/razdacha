@@ -105,6 +105,26 @@ class ActiveTests(unittest.TestCase):
         result=replay_history(observer,lambda _:{"state":"open-no-buffer"},original,99,
                               clock=clock,sleep=clock.sleep)
         self.assertFalse(result["matched_timing"])
+    def test_replay_matching_attempts_but_delayed_original_send_is_not_matched(self):
+        clock=Clock();observer=Observer(clock)
+        item=record(0);item["probe"]["datagram_sent_monotonic"]=1
+        item["probe"]["end_monotonic"]=1.1
+        original={"prime_end":0,"end_time":3,"records":[item]}
+        result=replay_history(observer,lambda _:{"state":"open-no-buffer"},original,100,
+                              clock=clock,sleep=clock.sleep)
+        self.assertEqual(result["maximum_abs_send_drift_seconds"],0)
+        self.assertEqual(result["maximum_abs_local_send_completion_drift_seconds"],1)
+        self.assertFalse(result["matched_timing"])
+    def test_unattributed_worker_exception_does_not_pass_active_history(self):
+        observer=Observer(time.monotonic)
+        series=ActiveSeries(observer,lambda _:{"state":"open-no-buffer"},time.monotonic())
+        series.records=[record(series.prime_end+.001)]
+        series.error="RuntimeError: synthetic observer failure"
+        series.error_monotonic=series.prime_end+.01
+        result=series.stop()
+        self.assertTrue(result["history"]["unattributed_worker_error"])
+        self.assertFalse(result["history"]["bounded_local_send_history"])
+        self.assertFalse(result["history"]["bounded_prefix_until_observed_loss"])
     def test_immediate_marker_keeps_one_socket_owner(self):
         observer=Observer(time.monotonic);seen=threading.Event()
         original_probe=observer.probe

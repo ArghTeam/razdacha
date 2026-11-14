@@ -81,7 +81,7 @@ Negative retained checks join the complete received ledger to original sends,
 including old IDs and responses delivered after a nominal request deadline.
 A pre-recovery request cannot prove a fresh post-recovery transaction.
 
-Thirty-one offline observer/history tests and seven private controller checks pass.
+Thirty-three offline observer/history tests and eight private controller checks pass.
 The controller checks cover first-absence clock origin, exact fault revocation
 when holder stop fails, capture/probe/ledger failure cleanup, matched worker join
 failure and typed generated remote-script syntax. These are offline checks only.

@@ -189,6 +189,10 @@ class ActiveSeries:
         recorded = {r["probe"].get("transaction_id") for r in self.records}
         extra_unknown = sum(t.get("state") == "error" and t.get("transaction_id") not in recorded
                             for t in ledger_transactions)
+        result["history"]["unattributed_worker_error"] = self.error is not None
+        if self.error:
+            result["history"]["bounded_local_send_history"] = False
+            result["history"]["bounded_prefix_until_observed_loss"] = False
         if extra_unknown:
             result["history"]["unattributed_observation_errors"] += extra_unknown
             result["history"]["bounded_local_send_history"] = False
@@ -228,6 +232,9 @@ def replay_history(observer, control_state, original, prime_end, *, clock=time.m
                 "send_drift_seconds": result["send_monotonic"]-scheduled,
                 "probe": result, "control_before": before, "control_after": after,
                 "control_before_monotonic":before_at,"control_after_monotonic":after_at}
+        if record["probe"].get("datagram_sent") is True and result.get("datagram_sent") is True:
+            expected_completion = prime_end + record["probe"]["datagram_sent_monotonic"]-original["prime_end"]
+            item["local_send_completion_drift_seconds"] = result["datagram_sent_monotonic"]-expected_completion
         records.append(item)
         if progress:
             progress(records)
@@ -236,9 +243,12 @@ def replay_history(observer, control_state, original, prime_end, *, clock=time.m
     if remaining > 0:
         sleep(remaining)
     maximum_drift = max(abs(r["send_drift_seconds"]) for r in records)
+    completion_drifts = [abs(r["local_send_completion_drift_seconds"]) for r in records if "local_send_completion_drift_seconds" in r]
+    maximum_completion_drift = max(completion_drifts) if completion_drifts else None
     return {"records": records, "prime_end": prime_end,
             "end_time": clock(), "history": validate_history(records, prime_end, clock()),
             "maximum_abs_send_drift_seconds": maximum_drift,
-            "matched_timing": maximum_drift <= MATCH_TOLERANCE_SECONDS,
+            "maximum_abs_local_send_completion_drift_seconds":maximum_completion_drift,
+            "matched_timing": maximum_drift <= MATCH_TOLERANCE_SECONDS and maximum_completion_drift is not None and maximum_completion_drift <= MATCH_TOLERANCE_SECONDS,
             "all_matching_responses": all(r["probe"]["state"] == "response" for r in records),
             "ledger": observer.summary()}
