@@ -21,8 +21,8 @@ remain constraints; stored health never authorizes Direct fallback.
 | 1b | Scoped client activity and independent exit evidence | Complete: PRs #346/#345 and controlled RAC acceptance |
 | 2 | Verify selected-exit outage, absence of direct fallback and recovery | Complete: [#348](done/348-reality-exit-reliability.md), finite owned RAC Direct/WARP evidence |
 | 3a | Disambiguate retained UDP non-response with no-fault controls | Complete: [#350](done/350-retained-udp-recovery.md), bounded idle confound; long-idle control EOF and UDP non-response without an outage |
-| 3b | Verify active UDP carrier recovery with matched no-fault traffic history | Next: [#352](https://github.com/ArghTeam/razdacha/issues/352); no closing hop, precise timeout or active-flow outage defect established |
-| 3c | Explicitly approved reserve exits, considering an independent host | Planned after active-flow recovery characterization; current Direct/WARP share one DO host, no implicit Direct fallback |
+| 3b | Verify active UDP carrier recovery with matched no-fault traffic history | Complete: [#352](done/352-active-udp-recovery.md), one finite RAC outer-leg case; retained post-origin transactions and matched replay recovered |
+| 3c | Explicitly approved reserve exits, considering an independent host | Next: reviewed policy proposal; current Direct/WARP share one DO host, no implicit Direct fallback |
 | 4 | Recovery after network interruption, daemon/runtime failure and reboot | Planned; preserve committed policy and independent live admission |
 | 5 | Real Android/router clients, DNS, UDP and long connections under failure/recovery | Planned; compatible-client and finite-path evidence required |
 
@@ -67,8 +67,8 @@ HTTPS remain separate; this is not selected-site or general quality proof.
 
 Phase 1 is complete. The user excluded subscriptions and commercial features;
 phase 2 is complete with bounded selected-exit failure/recovery evidence under #348.
-The bounded retained-UDP idle-confound characterization is complete. Active UDP
-outage recovery, approved independent-host reserves, broader recovery and
+The bounded retained-UDP idle-confound and active-history outage comparisons are
+complete. Approved independent-host reserve policy, broader recovery and
 real-client testing remain future work; the umbrella issue stays open.
 Production deployment is not included in this acceptance.
 
@@ -107,7 +107,31 @@ removed. No new fault, Apply, app restart, product-code fix or deployment occurr
 
 This completes only the bounded idle-confound question. Nominal timeout constants
 do not establish the observed closing hop or a precise threshold. The historical
-#348 result remains unchanged; active-flow carrier recovery needs a continuously
-active/keepalive test and matched no-fault history under [#352](https://github.com/ArghTeam/razdacha/issues/352)
-before approved backup exits. No Android/media or general UDP recovery guarantee
+#348 result remains unchanged; interpreting active-flow recovery required a
+continuously active/keepalive test and matched no-fault history. The later [#352 record](done/352-active-udp-recovery.md)
+adds that finite case without identifying the cause of the earlier observations. No Android/media or general UDP recovery guarantee
 follows from these STUN samples.
+
+
+## Milestone 3b bounded active-history acceptance
+
+The [completed active UDP record](done/352-active-udp-recovery.md#final-bounded-acceptance--2026-11-14)
+records one exact RAC outer TCP2443 blackout and independent watchdog removal.
+The same retained association made 22 full local sends at gaps no greater than
+3.010489 seconds with open controls; all ten post-confirmed-absence requests had
+matching replies inside the fixed thirty-second window. A complete 22-request
+no-fault history replay succeeded with healthy independent Direct/WARP controls.
+
+Nine previously timed-out IDs arrived as prior replies during the absence-status
+RPC and were excluded from the genuinely new post-origin transactions.
+The measured +0.172318-second first receipt follows an SSH-confirmed absence
+origin with 1.312007-second roundtrip uncertainty, not exact kernel-removal time.
+Protected state and application PIDs remained equal and all owned test resources
+were removed. No active closed-flow defect was reproduced in this finite case;
+no product fix, Apply, app restart or deployment is justified by it. Historical
+#348/#350 records remain unchanged, and no general UDP/media, Android/router,
+inner-WARP, independent-host or seamless-recovery guarantee follows.
+
+Next is a separate reviewed approved-reserve policy proposal. Current Direct/WARP
+ports share one DO host; health is not route authority and cannot grant implicit
+Direct fallback. Subscriptions/commercial features remain excluded.
