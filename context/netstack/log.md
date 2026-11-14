@@ -245,3 +245,50 @@ Direct/WARP share one DO host. No automatic failover or fallback was implemented
   active UDP recovery with keepalive and matched no-fault history before approved
   independent-host reserves. It is planned; no general UDP/media/failover guarantee
   or implicit Direct fallback is introduced.
+
+
+## 2026-11-14 — Active retained UDP source preparation (#352)
+
+- Added a single-owner active request/history helper and matched offset replay to
+  separate active-flow recovery from the idle confound measured under #350.
+- Observer records successful local datagram completion separately from attempt
+  start. History checks include prime/phase tails and distinguish bounded sends,
+  explicit EOF/send-loss prefixes and unknown malformed/foreign observations.
+- Retained negative checks join the complete received ledger to original send
+  times, including late/prior transaction IDs. Recovery cannot count a request
+  sent before the first verified absence as fresh post-restoration traffic.
+- Specified independently watched exact RAC outer-leg fault, post-capture installed
+  counter recheck, immediate recovery dispatch, matched no-fault history and
+  unconditional exact fault/capture/session/client cleanup. Offline tests pass;
+  root-owned live execution and acceptance remain pending. No runtime code,
+  configuration, automatic failover or general UDP/media guarantee changed.
+
+
+## 2026-11-14 — Bounded active retained UDP acceptance (#352)
+
+- [Task #352](../../tasks/done/352-active-udp-recovery.md) records one completed
+  reviewed RAC outer TCP2443 blackout, independent watchdog removal and matched
+  active-history no-fault replay. The 22 retained local sends had maximum 3.010489-second
+  gaps and no control EOF/errors. All ten requests sent after first confirmed
+  absence received matching replies inside the fixed thirty-second window.
+- Nine timed-out outage IDs arrived as prior replies during the absence-status
+  RPC and were excluded from the ten genuinely new post-origin request results.
+  The first post-origin send/receipt were +0.000490/+0.172318 seconds, measured
+  after an SSH status roundtrip of 1.312007 seconds; no exact kernel-removal latency
+  or SLA is inferred. A separate fresh full matrix succeeded in one attempt with
+  its own 0.669485-second duration from a later start. Replay 22/22 succeeded with
+  maximum successful-send completion drift 0.009575 seconds and healthy controls.
+- Exact DROP counter 0→32, post-capture installed status, zero-drop 138-packet
+  negative oracle, positive other-exit control and trusted watchdog actor record
+  support the finite case. No fixed-target direct TCP/STUN or owned plaintext
+  markers were observed in that capture. This is not an all-site/all-DNS leak proof.
+- Protected user-table/configuration/authority hashes, application PIDs and released
+  guard remained equal. The independent final audit confirmed exact revoked/table
+  absence and cleanup of all owned units, clients, profiles and session. Runtime
+  remains RC16; no product fix, deployment, Apply, service restart or DO/production
+  configuration change occurred.
+- This completes the bounded active-flow comparison without reproducing an active
+  retained-association defect. Historical #348/#350 records remain unchanged;
+  closing hop, precise idle timeout and broader UDP/media/client behavior remain
+  outside this evidence. Next is a reviewed reserve-exit policy proposal, with no
+  implicit Direct fallback or same-host redundancy claim.
