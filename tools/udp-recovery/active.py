@@ -69,17 +69,23 @@ def validate_history(records, prime_end, end_time=None):
             "observation_errors":sum(r["probe"]["state"]=="error" for r in records)}
 
 
-def classify_recovery(records, origin, end_time):
-    after = [r for r in records if origin <= r["probe"]["send_monotonic"] <= end_time]
-    replied = [r for r in after if r["probe"]["state"] == "response"
-               and r["probe"].get("response_monotonic", float("inf")) <= end_time]
-    eof = any(r[side].get("state") == "eof" for r in after
+def classify_recovery(series, origin, end_time):
+    """Attribute all received IDs to original post-origin sends, even late replies."""
+    transactions = {t["transaction_id"]:t for t in series.get("ledger",{}).get("transactions",series.get("available_transactions",[]))}
+    transactions.update({r["probe"]["transaction_id"]:r["probe"] for r in series["records"]})
+    after = sorted((t for t in transactions.values() if origin <= t["send_monotonic"] <= end_time),key=lambda t:t["send_monotonic"])
+    after_records = [r for r in series["records"] if origin <= r["probe"]["send_monotonic"] <= end_time]
+    replied = negative_replies(series, origin, end_time)
+    replied_ids = {item["original_request"]["transaction_id"] for item in replied}
+    eof = any(r[side].get("state") == "eof" for r in after_records
               for side in ("control_before", "control_after"))
     verdict = "matching_post_restore_response" if replied else "control_closed" if eof else "no_matching_post_restore_response"
-    return {"classification": verdict, "post_restore_attempts": len(after),
-            "matching_post_restore_responses": len(replied), "control_eof_seen": eof,
-            "first_send_drift_seconds": after[0]["probe"]["send_monotonic"]-origin if after else None,
-            "first_matching_send_after_origin_seconds": replied[0]["probe"]["send_monotonic"]-origin if replied else None}
+    return {"classification":verdict,"post_restore_attempts":len(after),
+            "matching_post_restore_responses":len(replied_ids),"control_eof_seen":eof,
+            "matching_reply_details":replied,
+            "first_send_drift_seconds":after[0]["send_monotonic"]-origin if after else None,
+            "first_matching_send_after_origin_seconds":min(r["original_request"]["send_monotonic"] for r in replied)-origin if replied else None,
+            "first_matching_receipt_after_origin_seconds":min(r["received_reply"]["received_monotonic"] for r in replied)-origin if replied else None}
 
 
 def negative_replies(series, begin, end):

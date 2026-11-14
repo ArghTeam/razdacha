@@ -10,9 +10,18 @@ def record(send, *, state="response", received=None, sent=True, eof=False, stage
     return {"phase_at_dispatch":"recovery", "probe":{"send_monotonic":send,
         "end_monotonic":send+0.1,"state":state,"datagram_sent":sent,
         "response_monotonic":send+0.1 if received is None else received,
-        "datagram_sent_monotonic":send+0.001,"error_stage":stage,"error_type":"OSError"},
+        "datagram_sent_monotonic":send+0.001,"error_stage":stage,"error_type":"OSError",
+        "transaction_id":"tx-"+str(send)},
         "control_before":{"state":"eof" if eof else "open-no-buffer"},
         "control_after":{"state":"eof" if eof else "open-no-buffer"}}
+
+
+def observed_series(records, received=None):
+    if received is None:
+        received = [{"transaction_id":r["probe"]["transaction_id"],
+                     "received_monotonic":r["probe"]["response_monotonic"],"kind":"current"}
+                    for r in records if r["probe"]["state"] in ("response","late_response")]
+    return {"records":records,"ledger":{"transactions":[r["probe"] for r in records],"received":received}}
 
 
 class Clock:
@@ -64,11 +73,11 @@ class ActiveTests(unittest.TestCase):
         for records,end in [([],1),([record(4),record(3)],5),([record(1)],101)]:
             with self.assertRaises(ValueError):validate_history(records,0,end)
     def test_pre_restore_request_reply_cannot_prove_fresh_recovery(self):
-        result=classify_recovery([record(4,received=6),record(7,state="timeout",eof=True)],5,10)
+        result=classify_recovery(observed_series([record(4,received=6),record(7,state="timeout",eof=True)]),5,10)
         self.assertEqual(result["matching_post_restore_responses"],0)
         self.assertEqual(result["classification"],"control_closed")
     def test_response_outside_series_end_does_not_count(self):
-        result=classify_recovery([record(7,received=12)],5,10)
+        result=classify_recovery(observed_series([record(7,received=12)]),5,10)
         self.assertEqual(result["matching_post_restore_responses"],0)
     def test_negative_guard_joins_prior_and_late_ids_to_original_send(self):
         first=record(4,state="late_response");first["probe"]["transaction_id"]="first"
@@ -85,8 +94,25 @@ class ActiveTests(unittest.TestCase):
         series={"records":[],"available_transactions":[item],"available_received":[
             {"transaction_id":"last","received_monotonic":5,"kind":"current"}]}
         self.assertEqual(len(negative_replies(series,3,8)),1)
+        recovery=classify_recovery(series,3,8)
+        self.assertEqual(recovery["post_restore_attempts"],1)
+        self.assertEqual(recovery["matching_post_restore_responses"],1)
+    def test_post_restore_timeout_reply_received_as_prior_counts_within_global_window(self):
+        original=record(5.2,state="timeout");later=record(8.2,state="timeout")
+        received=[{"transaction_id":original["probe"]["transaction_id"],"received_monotonic":9,"kind":"prior"}]
+        result=classify_recovery(observed_series([original,later],received),5,35)
+        self.assertEqual(result["matching_post_restore_responses"],1)
+        self.assertEqual(result["classification"],"matching_post_restore_response")
+        self.assertEqual(result["matching_reply_details"][0]["original_request"]["state"],"timeout")
+        self.assertEqual(result["matching_reply_details"][0]["received_reply"]["kind"],"prior")
+        self.assertEqual(result["first_matching_receipt_after_origin_seconds"],4)
+    def test_post_restore_late_response_counts_without_claiming_request_deadline(self):
+        original=record(5.2,state="late_response",received=8)
+        result=classify_recovery(observed_series([original]),5,35)
+        self.assertEqual(result["matching_post_restore_responses"],1)
+        self.assertEqual(result["matching_reply_details"][0]["original_request"]["state"],"late_response")
     def test_exact_post_restore_response_has_actual_send_drift(self):
-        result=classify_recovery([record(5.4)],5,10)
+        result=classify_recovery(observed_series([record(5.4)]),5,10)
         self.assertEqual(result["classification"],"matching_post_restore_response")
         self.assertAlmostEqual(result["first_send_drift_seconds"],0.4)
     def test_replay_matches_every_original_offset_and_phase_tail(self):
