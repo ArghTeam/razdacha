@@ -49,6 +49,17 @@ class ProbeTests(unittest.TestCase):
         result=self.probe.probe("prime", transaction_id=tx)
         self.assertEqual(result["state"], "response")
         self.assertEqual(result["replies"][0]["kind"], "current")
+    def test_successful_full_datagram_send_is_distinct_from_attempt(self):
+        tx=b"a"*12;self.queue(tx)
+        result=self.probe.probe("sent", timeout=1.5, transaction_id=tx)
+        self.assertTrue(result["datagram_sent"])
+        self.assertLessEqual(self.assoc.udp.timeout,1.5)
+    def test_short_or_failed_send_never_claims_datagram_sent(self):
+        for send in (lambda *_:1, lambda *_:(_ for _ in ()).throw(ConnectionRefusedError())):
+            self.assoc.udp.sendto=send
+            result=self.probe.probe("failed")
+            self.assertEqual(result["state"],"error")
+            self.assertFalse(result["datagram_sent"])
     def test_timeout_preserves_socket_and_transaction_ledger(self):
         identity=self.probe.identity.copy()
         result=self.probe.probe("first", transaction_id=b"a"*12)

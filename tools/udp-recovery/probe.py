@@ -71,16 +71,21 @@ class RetainedSTUN:
         key = transaction_id.hex()
         start = self.clock()
         result = {"label": label, "transaction_id": key, "send_monotonic": start,
-                  "timeout_seconds": timeout, "state": "unknown", "replies": []}
+                  "timeout_seconds": timeout, "state": "unknown", "datagram_sent": False, "replies": []}
         self.transactions[key] = result
         payload = struct.pack("!HHI", 1, 0, 0x2112A442) + transaction_id
         packet = b"\x00\x00\x00\x01" + ipaddress.ip_address(STUN_TARGET[0]).packed + struct.pack("!H", STUN_TARGET[1]) + payload
         deadline = start + timeout
+        stage = "send"
         try:
+            self.association.udp.settimeout(timeout)
             sent = self.association.udp.sendto(packet, self.association.relay)
             if sent != len(packet):
                 raise RuntimeError("short SOCKS UDP datagram send")
+            result["datagram_sent"] = True
+            result["datagram_sent_monotonic"] = self.clock()
             for _ in range(MAX_REPLIES):
+                stage = "receive"
                 remaining = deadline - self.clock()
                 if remaining <= 0:
                     result["state"] = "timeout"
@@ -92,6 +97,7 @@ class RetainedSTUN:
                     result["state"] = "timeout"
                     break
                 received_at = self.clock()
+                stage = "decode"
                 received_key = decode_reply(data, source, self.association.relay).hex()
                 origin = self.transactions.get(received_key)
                 item = {"transaction_id": received_key, "received_monotonic": received_at,
@@ -107,10 +113,13 @@ class RetainedSTUN:
                     result["received_by_deadline"] = received_at <= deadline
                     break
             else:
+                stage = "ledger"
                 raise RuntimeError("bounded reply ledger exhausted")
         except Exception as exc:
             result["state"] = "error"
             result["error"] = type(exc).__name__ + ": " + str(exc)
+            result["error_stage"] = stage
+            result["error_type"] = type(exc).__name__
         finally:
             result["end_monotonic"] = self.clock()
             self.assert_identity()

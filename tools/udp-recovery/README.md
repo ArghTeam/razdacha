@@ -12,9 +12,9 @@ foreign packets are observation errors, not successful traffic or clean timeouts
 Response timestamps, actual elapsed time and deadline membership are recorded;
 scheduling delays must not be reported as a response within the nominal window.
 
-The intended series starts requests at offsets 0, 7 and 27 seconds with up to three
-seconds per request. It samples windows ending near 3, 10 and 30 seconds rather
-than continuously observing every instant. Private orchestration must record its
+Legacy sample-window constants start requests at offsets 0, 7 and 27 seconds.
+Those idle-separated windows were not used in the accepted active-history run;
+`active.py` instead retains a continuous nominal three-second cadence. Private orchestration must record its
 actual clock origin and drift, concurrent fresh controls and comparable no-fault
 idle duration. The control-first gate uses separately primed five- and twelve-second
 idle cases, with one post-idle transaction each and two independent pairs, before
@@ -35,3 +35,31 @@ The completed no-fault characterization used single post-idle probes after
 had SOCKS control EOF and then timed out while fresh associations worked. This
 establishes an idle confound, not the closing hop, a precise timeout or active-flow
 outage recovery. The conditional 3/10/30-second outage series was not executed.
+
+
+## Active history (#352)
+
+`active.py` adds a single owner for retained socket reads/writes, a nominal
+three-second request cadence with at most 1.5 seconds per transaction, and an
+immediate marker for first verified fault absence. Actual dispatch drift and
+attempt/local-send gaps are recorded; local send completion is not remote-carrier
+liveness. A timestamped successful-send prefix ending in observed EOF or send
+failure is distinct from continued activity. Decode/foreign-frame errors remain
+unknown even if EOF is also observed.
+
+Matched replay uses every measured retained request offset and timeout with new
+transaction IDs, including setup, fault and recovery traffic history. Full received
+IDs are joined to their original request times for negative and recovery checks;
+A late/prior receipt proves only its original transaction; that original send
+must be post-origin to support post-restoration recovery evidence. See
+[task #352](../../tasks/done/352-active-udp-recovery.md) for the bounded controller
+contract and bounded RAC acceptance. This remains test code, not automatic
+failover, client reconnection or a daemon feature.
+
+
+The completed RAC case kept 22 full local sends at no more than 3.010489-second
+send gaps, retained open controls and received all 10 post-origin transaction
+replies within its fixed 30-second window. The matched no-fault replay answered
+all 22 requests. This is one finite outer-leg failure/recovery case, not a product
+fix or general recovery guarantee; artifact provenance and timing uncertainty are
+in the completed task record.
