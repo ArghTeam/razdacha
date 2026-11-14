@@ -42,6 +42,7 @@ async function fixture(browser,options={}) {
    if(key==='GET /api/tunnels')return json(route,tunnels);
    if(key==='GET /api/peers')return json(route,peers);
    if(key==='GET /api/session')return json(route,{authenticated:true});
+   if(key==='GET /api/onboarding')return json(route,{pending:false});
    if(key==='POST /api/login'||key==='POST /api/logout')return json(route,{});
    if(key==='GET /api/settings')return json(route,{client_mtu:1280,wg_pool:'192.0.2.0/24',wg_server_address:'192.0.2.1'});
    if(key==='GET /api/apply/status')return json(route,{dirty:false});

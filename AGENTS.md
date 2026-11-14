@@ -4,7 +4,11 @@
 
 Selective VPN gateway for Debian/Ubuntu. Standard WireGuard clients send traffic to
 `wg0`; selected resources go through configured tunnels and everything else directly.
-No additional client software is required.
+Standard WG clients need no additional software. Optional VLESS + REALITY ingress
+uses compatible client software, independent credentials and the same client policy
+([main-line ADR 0032](docs/decisions/0032-parallel-authenticated-client-ingress.md)).
+This RAC-only integration branch also preserves the recorded candidate onboarding
+and traffic features; it must not be merged into main.
 
 The latest stable daemon release is **v0.10.0** (2026-08-21). This repository also
 contains **razvedka 0.3.0**, a Chrome DevTools extension developed after that release.
@@ -15,7 +19,11 @@ the deployed candidate version from the latest stable release number.
 One built-in pool rotates free igareck keys ([ADR 0018](docs/decisions/0018-unified-pool.md)).
 It excludes blocklisted countries (RU and BY by default) and keys without transport
 encryption ([ADR 0020](docs/decisions/0020-pool-country-blocklist.md)). It starts disabled;
-no catalog requests are made until enabled. Assign clients through peer-scoped rules.
+no catalog requests are made until enabled. Explicit fresh-install free-start
+onboarding may enable the API source and first-client starter rules (ADR 0033).
+The default first-run choice is now an authenticated web wizard with persisted
+pending state; explicit CLI/env automation remains supported (ADR 0035).
+Assign clients through peer-scoped rules.
 
 Tunnel health is checked on a schedule and persisted ([ADR 0011](docs/decisions/0011-tunnel-check-schedule.md)).
 Optional Telegram notifications confirm changes across three checks and start disabled.
@@ -124,7 +132,7 @@ under GPL-2.0-or-later ([ADR 0007](docs/decisions/0007-license-gplv2.md)).
   Supported native sources use immutable local original/DNS artifacts (ADR 0025).
   Bounded positive TCP/UDP and destination-port address branches use separate
   transport interception (ADR 0029); unsupported mixed/context predicates fail
-  before acceptance. Projection v2 and generation v4 pin transport authority;
+  before acceptance. Projection v2 pins transport interception; generation v5 adds client ingress admission;
   supported older projection authority retains legacy verification.
 - Publish plain-list policy through the serialized guarded generation protocol ([ADR 0023](docs/decisions/0023-coherent-network-generation.md)): prepare/check first, guard client ingress, reconcile WG/route/runtime/nft, persist authority, discard bootstrap authority, release last. Post-guard failure remains closed; recovery never restores live peers/authentication. Peer allocation shares the gate and reserves committed addresses. Native JSON/SRS share this protocol through daemon-owned immutable artifacts (ADR 0025). Active artifact corruption closes ingress; legacy v1 native authority requires guarded administrator recovery.
 
@@ -151,6 +159,7 @@ curl -fsSL https://github.com/ArghTeam/razdacha/releases/latest/download/install
 ```
 
 `RAZDACHA_PUBLIC=1` exposes the panel on all interfaces; `RAZDACHA_PUBLIC=0` restricts it
-to the VPN again. With no override, the saved database mode is retained; a fresh install
-is private. `--dry-run` performs preflight checks only. A `v*` tag triggers Linux
+to the VPN again. With no override, the saved database mode is retained; a genuinely
+fresh install defaults to password-authenticated public HTTPS so the panel is
+reachable before importing a VPN profile (ADR 0034). `--dry-run` performs preflight checks only. A `v*` tag triggers Linux
 amd64/arm64 archives, `install.sh` and checksums.

@@ -78,7 +78,9 @@ type PoolDriver interface {
 var (
 	poolDriversMu sync.RWMutex
 	poolDrivers   = map[string]PoolDriver{
-		outlineKeysHost: outlineKeys{},
+		"vpnkeys.me":      apiPool{},
+		"freevpnkeys.com": apiPool{},
+		outlineKeysHost:   outlineKeys{},
 		// Один драйвер igareck на оба зеркала: каталог заведён на основном
 		// (raw.githack.com), но если у пользователя в БД окажется резервный хост —
 		// разбор тот же (ADR 0017).
@@ -129,7 +131,7 @@ func PoolCatalogRetired(catalogURL string) bool {
 	if err != nil {
 		return false
 	}
-	return retiredPoolCatalogs[strings.ToLower(u.Hostname())]
+	return retiredPoolCatalogs[strings.ToLower(u.Hostname())] && !apiPoolURL(u)
 }
 
 // PoolDriverFor выбирает драйвер по хосту каталожной ссылки.
@@ -140,10 +142,15 @@ func PoolDriverFor(catalogURL string) (PoolDriver, *url.URL, error) {
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: адрес каталога %q неразборчив: %w",
-			store.ErrInvalid, catalogURL, err)
+		return nil, nil, fmt.Errorf("%w: invalid catalog URL", store.ErrInvalid)
 	}
 	host := strings.ToLower(u.Hostname())
+	if apiPoolHost(host) && !apiPoolURL(u) {
+		return nil, nil, fmt.Errorf("%w: %s requires the official HTTPS API path", ErrNoPoolDriver, host)
+	}
+	if apiPoolHost(host) {
+		u.Host = host
+	}
 
 	poolDriversMu.RLock()
 	d, ok := poolDrivers[host]
@@ -172,6 +179,8 @@ func PoolKeyType(catalogURL string) (store.TunnelType, error) {
 
 // PoolCatalog обходит каталог ключей и отдаёт серверы для туннеля-пула.
 type PoolCatalog struct {
+	// Observe receives redacted API admission counts, never member identifiers.
+	Observe func(PoolCatalogObservation)
 	// Client — пустой означает клиент с таймаутом по умолчанию.
 	Client HTTPDoer
 	// Log — пустой означает slog.Default().
@@ -240,7 +249,15 @@ func (c *PoolCatalog) timeout() time.Duration {
 
 func (c *PoolCatalog) client() HTTPDoer {
 	if c.Client == nil {
-		return &http.Client{Timeout: c.timeout()}
+		return &http.Client{Timeout: c.timeout(), CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("catalog redirect limit exceeded")
+			}
+			if apiPoolURL(via[0].URL) {
+				return errors.New("API redirects are disabled; mirrors preserve the original query")
+			}
+			return nil
+		}}
 	}
 	return c.Client
 }
@@ -287,9 +304,13 @@ func (c *PoolCatalog) Servers(ctx context.Context, catalogURL string, filter sto
 	// кнопку, получил бы то же самое двумя минутами позже. Молча пропустить нельзя:
 	// без строки в логе удвоенный обход и подавленный выглядят одинаково — никак.
 	key := u.String()
+	logURL := key
+	if apiPoolHost(u.Hostname()) {
+		logURL = "https://" + u.Hostname() + u.Path
+	}
 	if !c.beginCrawl(key) {
-		c.log().Info("каталог уже обходится, второй обход не запущен", "каталог", key)
-		return nil, fmt.Errorf("%w: %s", ErrPoolCrawlBusy, key)
+		c.log().Info("каталог уже обходится, второй обход не запущен", "каталог", logURL)
+		return nil, fmt.Errorf("%w: %s", ErrPoolCrawlBusy, logURL)
 	}
 	defer c.endCrawl(key)
 
@@ -303,8 +324,14 @@ func (c *PoolCatalog) Servers(ctx context.Context, catalogURL string, filter sto
 	started := time.Now()
 	raw, err := d.Servers(ctx, crawl, u)
 	out, dropped := filterPoolServers(raw, filter, crawl)
+	if c.Observe != nil {
+		crawl.observation.Filtered = dropped
+		crawl.observation.Eligible = len(out)
+		crawl.observation.Requests = crawl.requests
+		c.Observe(crawl.observation)
+	}
 	c.log().Info("каталог обойдён",
-		"источник", d.Name(), "каталог", u.String(), "собрано", len(out),
+		"источник", d.Name(), "каталог", logURL, "собрано", len(out),
 		"отбраковано", dropped,
 		"запросов", crawl.requests, "пропущено", crawl.skipped,
 		"за", time.Since(started).Round(time.Millisecond))
@@ -312,7 +339,7 @@ func (c *PoolCatalog) Servers(ctx context.Context, catalogURL string, filter sto
 		return nil, err
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("%w: каталог %s не дал ни одного ключа", ErrBadResponse, u)
+		return nil, fmt.Errorf("%w: каталог %s не дал ни одного ключа", ErrBadResponse, logURL)
 	}
 	return out, nil
 }
@@ -331,7 +358,7 @@ func filterPoolServers(in []store.PoolServer, filter store.PoolFilter, crawl *po
 	for _, srv := range in {
 		if reason := filter.Exclusion(srv); reason != "" {
 			dropped++
-			crawl.skip("нода отбракована фильтром пула", "причина", reason, "карточка", srv.Title)
+			crawl.skip("нода отбракована фильтром пула", "причина", reason)
 			continue
 		}
 		out = append(out, srv)
@@ -342,11 +369,12 @@ func filterPoolServers(in []store.PoolServer, filter store.PoolFilter, crawl *po
 // poolCrawl — общее для всех драйверов: как взять страницу, куда писать, когда
 // остановиться и что считать пригодным ключом.
 type poolCrawl struct {
-	fetch    func(ctx context.Context, pageURL string) (string, error)
-	log      *slog.Logger
-	limit    int
-	pause    time.Duration
-	checkKey func(rawURL string) error
+	observation PoolCatalogObservation
+	fetch       func(ctx context.Context, pageURL string) (string, error)
+	log         *slog.Logger
+	limit       int
+	pause       time.Duration
+	checkKey    func(rawURL string) error
 
 	// requests и skipped ведёт сам обход: они уходят в лог одной строкой на пул.
 	requests int
@@ -404,7 +432,6 @@ func (c *PoolCatalog) page(ctx context.Context, pageURL string) (string, error) 
 		return "", fmt.Errorf("загрузка каталога %s: %w", pageURL, err)
 	}
 	defer func() {
-		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 	}()
 
@@ -412,9 +439,15 @@ func (c *PoolCatalog) page(ctx context.Context, pageURL string) (string, error) 
 		return "", fmt.Errorf("%w: каталог %s: сервер ответил %s",
 			ErrBadResponse, pageURL, resp.Status)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, poolMaxPageBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, poolMaxPageBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("%w: каталог %s: чтение тела: %w", ErrBadResponse, pageURL, err)
+	}
+	if len(body) > poolMaxPageBytes {
+		return "", fmt.Errorf("%w: catalog response exceeds size limit", ErrBadResponse)
+	}
+	if resp.ContentLength > 0 && int64(len(body)) != resp.ContentLength {
+		return "", fmt.Errorf("%w: incomplete catalog response", ErrBadResponse)
 	}
 	return string(body), nil
 }

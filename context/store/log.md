@@ -1,5 +1,40 @@
 # Store — log
 
+## 2026-11-04
+
+### #297 — RAC-only canonical onboarding authority
+
+**Changed:** Transaction-local onboarding policy reads share the ordinary complete
+Snapshot reader, including opaque REALITY identity/admission authority. Enabled
+and retained-disabled identities no longer create false fingerprint conflicts.
+**Beware:** UUIDs/private identity remain live-only; this adds no authentication
+restore source and does not merge candidate onboarding into main.
+
+## 2026-10-28
+
+### #290 — Persisted setup intent and ownership
+
+**Changed:** Private key/value onboarding metadata, legacy-completed default,
+metadata-only reopen and transactionally scoped starter policy. Prepared routing
+fingerprints reject unrelated edits; completion requires current accepted Apply.
+**Beware:** No name-based rule adoption or duplicate clients; existing configured
+legacy policy is read-only. Pool refresh inventory is excluded from policy hashes.
+
+## 2026-10-27
+
+### #288 — Explicit fresh-install pool and selected first-client policy
+
+**Changed:** Fresh opt-in seeds the one built-in pool at the JSON API, enabled,
+and one starter rule scoped exclusively to the new first client.
+**Beware:** Existing installations reject explicit onboarding before database
+opening. Skip retains the ordinary disabled igareck default. No schema change.
+
+### #286 — Structured pool country admission
+
+**Changed:** The shared country filter rejects either structured-country or title
+blocklist evidence. Unknown structured country retains the existing title check.
+**Beware:** No schema, built-in pool default or automatic activation changes (ADR 0032).
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
@@ -164,3 +199,7 @@ Implementation and verification record: [task 231](../../tasks/done/231-peer-egr
 ## 2026-11-04 — #297 parallel authenticated client ingress
 
 Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The store invariants record final behavior; this entry does not claim deployment or general DPI resistance.
+
+## 2026-11-06 — #330 metadata recovery confirmation
+
+Added transaction-local comparison of old onboarding expectation and reviewed complete policy fingerprint. Explicit confirmation preserves policy and client identities and requires pending prepared metadata plus an existing client.

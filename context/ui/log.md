@@ -1,5 +1,33 @@
 # Ui — log
 
+## 2026-11-04
+
+### #297 — RAC-only client transport composition
+
+**Changed:** Retained candidate unknown-aware WG aggregates and the reviewed
+REALITY profile/session lifecycle. Totals and row counters explicitly cover WG;
+Reality-only rows have no reserved WG address or fabricated traffic. Added mixed
+transport regressions and explicit completed-onboarding responses to strict
+application fixtures after relogin.
+**Beware:** Synthetic browser coverage is not deployed client or DPI proof.
+
+## 2026-10-28
+
+### #290 — Actual first-login web setup
+
+**New surface:** Persisted pending choice/review/explicit Apply/profile/finish modal
+with a header reopen entry, using existing controls, QR and authenticated download.
+**Changed:** Session/modal/navigation guards protect new drafts from delayed setup
+responses; cleanup clears private profile/QR/blob copies. Failed intent stays retryable.
+**Beware:** No automatic route changes, no application-usability promise and no
+legacy rule adoption. Per-client missing traffic now remains Unknown, like aggregates.
+
+### #291 — Restore aggregate client traffic
+
+**Changed:** Reuse existing summary/stat components for gateway received/sent
+totals without removing per-client rows. Missing/invalid direction observations
+remain unknown; measured zero is preserved. Labels describe current-client and
+interface-reset scope rather than lifetime history.
 ## 2026-11-06 — Nullable WireGuard row observations (#328)
 
 WireGuard row bytes now use the same nonnegative safe-integer boundary as summary
@@ -516,6 +544,9 @@ UI receipt-time expiry and mutation recovery prevent stale green indicators.
 Profile help documents gateway DNS and full-configuration import requirements.
 See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation boundary.
 
+## 2026-11-06 — #330 onboarding recovery review
+
+Added explicit accepted-policy preview and revision-checked metadata confirmation for prepared setup after separately accepted policy changes. Existing guarded Apply and fingerprint conflict checks remain authoritative; policy and credentials are preserved. Failed confirmation keeps recovery visible even when setup had previously been applied.
 ## 2026-11-07 — Client applied web policy (#339)
 
 Added the bounded read-only client domain explanation contract from [ADR 0042](../../docs/decisions/0042-client-applied-policy-explanations.md). Committed policy/frozen lists, current eligibility and coherent rechecks remain separate from global pending edits. Conditional TCP/443 routing and gateway A-query outcomes preserve ordering, uncertainty and C1; no probes, profile exports or deployment/quality claims are introduced. The maintained invariants record the layer-specific behavior and validation boundary.

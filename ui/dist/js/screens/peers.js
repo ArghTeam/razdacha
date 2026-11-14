@@ -114,8 +114,10 @@ const displayBytes = value => value === null ? 'Unknown' : bytes(value);
 const displayCount = value => value === null ? 'Unknown' : String(value);
 
 function wireGuardTotal(field) {
+  const peers = state.peers.filter(wireGuardEnabled);
+  if (peers.length === 0) return null;
   let total = 0;
-  for (const peer of state.peers.filter(wireGuardEnabled)) {
+  for (const peer of peers) {
     const value = safeBytes(peer[field]);
     if (value === null || !Number.isSafeInteger(total + value)) return null;
     total += value;
