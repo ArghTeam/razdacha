@@ -110,3 +110,13 @@ description: wg0, nft-правила и маршрутизация через ne
   is an idle confound, not a precise timeout, closing-hop or active-flow recovery
   guarantee. Conditional 3/10/30-second outage windows were not executed. See
   [task #350](../../tasks/done/350-retained-udp-recovery.md) and [#352](https://github.com/ArghTeam/razdacha/issues/352).
+
+
+- Active retained-UDP test history uses one socket owner, actual local-send
+  completion times and original transaction/receipt attribution. A bounded
+  successful-send prefix ending in observed EOF/send loss is not a continued
+  active association; decode errors remain unknown. Matched no-fault controls
+  replay the complete attempted history. First verified fault absence is the
+  recovery observation origin before journal/cancellation bookkeeping. Source
+  preparation in [task #352](../../tasks/352-active-udp-recovery.md) is not live
+  acceptance, automatic failover or a product recovery guarantee.

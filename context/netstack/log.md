@@ -245,3 +245,20 @@ Direct/WARP share one DO host. No automatic failover or fallback was implemented
   active UDP recovery with keepalive and matched no-fault history before approved
   independent-host reserves. It is planned; no general UDP/media/failover guarantee
   or implicit Direct fallback is introduced.
+
+
+## 2026-11-14 — Active retained UDP source preparation (#352)
+
+- Added a single-owner active request/history helper and matched offset replay to
+  separate active-flow recovery from the idle confound measured under #350.
+- Observer records successful local datagram completion separately from attempt
+  start. History checks include prime/phase tails and distinguish bounded sends,
+  explicit EOF/send-loss prefixes and unknown malformed/foreign observations.
+- Retained negative checks join the complete received ledger to original send
+  times, including late/prior transaction IDs. Recovery cannot count a request
+  sent before the first verified absence as fresh post-restoration traffic.
+- Specified independently watched exact RAC outer-leg fault, post-capture installed
+  counter recheck, immediate recovery dispatch, matched no-fault history and
+  unconditional exact fault/capture/session/client cleanup. Offline tests pass;
+  root-owned live execution and acceptance remain pending. No runtime code,
+  configuration, automatic failover or general UDP/media guarantee changed.

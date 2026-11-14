@@ -35,3 +35,22 @@ The completed no-fault characterization used single post-idle probes after
 had SOCKS control EOF and then timed out while fresh associations worked. This
 establishes an idle confound, not the closing hop, a precise timeout or active-flow
 outage recovery. The conditional 3/10/30-second outage series was not executed.
+
+
+## Active history preparation (#352)
+
+`active.py` adds a single owner for retained socket reads/writes, a nominal
+three-second request cadence with at most 1.5 seconds per transaction, and an
+immediate marker for first verified fault absence. Actual dispatch drift and
+attempt/local-send gaps are recorded; local send completion is not remote-carrier
+liveness. A timestamped successful-send prefix ending in observed EOF or send
+failure is distinct from continued activity. Decode/foreign-frame errors remain
+unknown even if EOF is also observed.
+
+Matched replay uses every measured retained request offset and timeout with new
+transaction IDs, including setup, fault and recovery traffic history. Full received
+IDs are joined to their original request times for negative and recovery checks;
+late/prior responses cannot become proof of a fresh request. See
+[task #352](../../tasks/352-active-udp-recovery.md) for the bounded controller
+contract and pending live acceptance. This remains test code, not automatic
+failover, client reconnection or a daemon feature.
