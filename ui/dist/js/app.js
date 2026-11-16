@@ -57,6 +57,7 @@ function showGate(message) {
   closeModal({ restoreFocus: false });
   $('#app').hidden = true;
   $('#gate').hidden = false;
+  applyDocTitle('Sign in');
   const err = $('#login-error');
   if (message) {
     err.textContent = message;
@@ -71,6 +72,8 @@ function showApp() {
   $('#gate').hidden = true;
   $('#app').hidden = false;
   $('#password').value = '';
+  fromHash();
+  applyDocTitle(SCREENS[state.screen].title);
 }
 
 /** Блокировка после серии неудач длится минуты, а не секунды: голое число
@@ -218,6 +221,7 @@ async function refreshApplyStatus() {
    ========================================================================== */
 
 function render() {
+  applyDocTitle(SCREENS[state.screen].title);
   $$('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.screen === state.screen)));
   renderVersion();
   renderFreshness();
@@ -407,6 +411,7 @@ async function start() {
 }
 
 async function boot() {
+  applyDocTitle('Sign in');
   // Measure wrapped chrome so native focus scrolling can reserve the actual space.
   const applyBar = $('#apply-bar');
   const topbar = $('.topbar');

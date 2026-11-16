@@ -1,5 +1,31 @@
 # Ui — log
 
+## 2026-11-16
+
+### #294 — RAC title deployment acceptance (#356)
+
+RAC runs `0.11.0-rc.17.rac.e4692e8b2243` from clean source
+`e4692e8b224377ecee3443ebe75e5e402a5865cc`. Compared with deployed RC16,
+the application diff contains only the two title-related JavaScript files;
+onboarding and all Go/runtime/schema code remain unchanged.
+
+A guarded binary-only replacement retained a verified complete current snapshot.
+All protected user state, runtime configuration and committed authority stayed
+equal; only installed-version metadata changed after runtime acceptance.
+Schema 13, generation 5, eleven clients and nine rules remain. No setup, explicit
+Apply, reboot or production deployment occurred. The measured 74.228-second
+maintenance-start-to-service-acceptance interval is not a client outage guarantee.
+
+Actual public-panel Chromium checks passed sign-in, all four screen titles and
+logout, with hostname identity and no page errors or settings writes. Owned
+sessions were removed. Native kernel-WG control at supported MTU 1280 passed
+HTTP, verified default-Python HTTPS, DNS/TCP and both named HTTPS rule contexts.
+Separate isolated protocol checks passed HTTP, HTTPS, STUN and DNS/UDP+TCP at an
+explicit diagnostic test-endpoint MTU 1220; saved client MTU stays 1280.
+Size-sensitive userspace-fixture failures remain recorded in #357, without
+attributing them to a provider, DPI or product regression. These checks do not
+establish Android, carrier, arbitrary-site or media-quality behavior.
+
 ## 2026-11-04
 
 ### #297 — RAC-only client transport composition
