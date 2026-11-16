@@ -3,6 +3,28 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-11-07 — Client applied web policy (#339)
+
+Added the bounded read-only client domain explanation contract from [ADR 0042](../../docs/decisions/0042-client-applied-policy-explanations.md). Committed policy/frozen lists, current eligibility and coherent rechecks remain separate from global pending edits. Conditional TCP/443 routing and gateway A-query outcomes preserve ordering, uncertainty and C1; no probes, profile exports or deployment/quality claims are introduced. The maintained invariants record the layer-specific behavior and validation boundary.
+
+## 2026-11-06
+
+### #326 — restore authentication and pool safety
+
+**Changed:** Staged CLI restore atomically deletes all panel sessions and rotates the private authentication generation before publication, preserving the restored password hash. Saved cookies and pre-restore login verification never become valid again. Automatic pool filtering admits Shadowsocks only with a recognized encrypted cipher and well-formed plain/base64 userinfo; plaintext none, unknown methods and undecidable forms are excluded at catalog admission, merge and stored-member generation. Manual tunnel parsing remains unchanged (#326).
+
+## 2026-11-05
+
+### #308 — pending REALITY profile delivery
+
+**Changed:** Dedicated profile delivery can export validated saved credentials before
+Apply, with independent downloadability and coherent activation/revision headers.
+Active clients retain committed endpoints. Pending exports do not admit runtime users.
+
+**Beware:** Explicit Apply still activates access. Guarded/uncertain/revoked states
+and existing secret lifetime protections remain enforced. See ADR 0036.
+
+
 ## 2026-10-21
 
 ### #264 — WAL-consistent pre-migration upgrade backups
@@ -138,3 +160,7 @@ or an automatic rollback controller. See [task 264](../../tasks/done/264-consist
 Peer egress references are nullable, transactionally validated and protected by FK RESTRICT. Disabled targets remain selected. API-style peer patches read/write only supplied fields transactionally so rename/toggle cannot erase a concurrent exit choice. Backups retain the choice; existing clients migrate to shared rules (ADR 0028).
 
 Implementation and verification record: [task 231](../../tasks/done/231-peer-egress.md). The bounded isolated Linux fixture and independent synthetic-browser checks passed; the completed record retains the failed first attempt and exact evidence boundaries. The fixture uses veth identities and a synthetic SOCKS exit, not encrypted incoming WireGuard or a DO client flow.
+
+## 2026-11-04 — #297 parallel authenticated client ingress
+
+Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The store invariants record final behavior; this entry does not claim deployment or general DPI resistance.

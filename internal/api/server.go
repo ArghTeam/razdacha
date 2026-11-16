@@ -48,6 +48,9 @@ const (
 
 // Config — параметры сервера панели.
 type Config struct {
+	// RouteExplainer supplies committed client policy without network probes.
+	RouteExplainer RouteExplainer
+
 	// Addr — адрес прослушивания, только loopback. Пустой — [DefaultAddr].
 	Addr string
 	// Store — состояние демона; обязателен.
@@ -123,12 +126,18 @@ type Config struct {
 
 // Server — HTTP-сервер панели.
 type Server struct {
-	addr     string
-	store    *store.Store
-	log      *slog.Logger
-	now      func() time.Time
-	throttle *throttle
-	verify   chan struct{}
+	routeExplainer   RouteExplainer
+	explainSlot      chan struct{}
+	exitEvidenceSlot chan struct{}
+	wgEvidence       wgEvidenceCache
+
+	realityActivity realityActivityCache
+	addr            string
+	store           *store.Store
+	log             *slog.Logger
+	now             func() time.Time
+	throttle        *throttle
+	verify          chan struct{}
 	// sleep выдерживает задержку после неудачного входа; в тестах подменяется,
 	// чтобы проверка блокировки не занимала секунды реального времени.
 	sleep      func(context.Context, time.Duration)
@@ -200,26 +209,29 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		addr:        addr,
-		store:       cfg.Store,
-		log:         cfg.Logger,
-		now:         cfg.Now,
-		serverKey:   cfg.ServerPublicKey,
-		peerStat:    cfg.PeerStats,
-		diag:        cfg.Diag,
-		ui:          cfg.UI,
-		applier:     cfg.Applier,
-		plainLists:  cfg.PlainLists,
-		listStates:  cfg.ListStates,
-		clash:       clash.New(clash.Options{Addr: cfg.ClashAddr}),
-		checks:      newCheckCache(),
-		events:      newTunnelEvents(),
-		pools:       cfg.Pools,
-		poolEvery:   cfg.PoolEvery,
-		poolProxies: cfg.PoolProxies,
-		warp:        cfg.WARP,
-		build:       cfg.Build,
-		verify:      make(chan struct{}, maxVerifications),
+		addr:             addr,
+		store:            cfg.Store,
+		log:              cfg.Logger,
+		now:              cfg.Now,
+		serverKey:        cfg.ServerPublicKey,
+		peerStat:         cfg.PeerStats,
+		diag:             cfg.Diag,
+		ui:               cfg.UI,
+		applier:          cfg.Applier,
+		routeExplainer:   cfg.RouteExplainer,
+		explainSlot:      make(chan struct{}, 1),
+		exitEvidenceSlot: make(chan struct{}, 1),
+		plainLists:       cfg.PlainLists,
+		listStates:       cfg.ListStates,
+		clash:            clash.New(clash.Options{Addr: cfg.ClashAddr}),
+		checks:           newCheckCache(),
+		events:           newTunnelEvents(),
+		pools:            cfg.Pools,
+		poolEvery:        cfg.PoolEvery,
+		poolProxies:      cfg.PoolProxies,
+		warp:             cfg.WARP,
+		build:            cfg.Build,
+		verify:           make(chan struct{}, maxVerifications),
 	}
 	if s.ui == nil {
 		s.ui = ui.Files()

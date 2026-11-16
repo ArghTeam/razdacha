@@ -138,3 +138,27 @@ func titles(v []PoolServer) []string {
 	}
 	return out
 }
+
+func TestAutomaticPoolShadowsocksEncryption(t *testing.T) {
+	for _, raw := range []string{
+		"ss://none:password@server.example:8388", "SS://NoNe:password@server.example:8388?",
+		"ss://bm9uZTpwYXNzd29yZA==@server.example:8388", "ss://bm9uZTpwYXNzd29yZA@server.example:8388",
+		"ss://:password@server.example:8388", "ss://aes-256-gcm:@server.example:8388", "ss://unknown:password@server.example:8388",
+		"ss://AES-256-GCM:password@server.example:8388", "ss://%zz:password@server.example:8388",
+		"ss://!!!@server.example:8388", "ss://aes-256-gcm:password@server.example:8388?%zz=1",
+		"ss://bm9uZTpwYXNzQHNlcnZlci5leGFtcGxlOjgzODg=", "ss://aes-256-gcm:password:@server.example:8388",
+	} {
+		if (PoolFilter{}).Allows(PoolServer{URL: raw}) {
+			t.Errorf("unsafe automatic member accepted: %q", raw)
+		}
+	}
+	for _, raw := range []string{
+		"ss://aes-256-gcm:password@server.example:8388?", "SS://aes-128-gcm:password@server.example:8388",
+		"ss://YWVzLTI1Ni1nY206cGFzcw==@server.example:8388", "ss://YWVzLTI1Ni1nY206cGFzcw@server.example:8388",
+		"ss://chacha20-ietf-poly1305:pass%3Aword@server.example:8388", "ss://2022-blake3-aes-256-gcm:a/b+c=:d/e+f=@server.example:8388",
+	} {
+		if !(PoolFilter{}).Allows(PoolServer{URL: raw}) {
+			t.Errorf("encrypted automatic member rejected: %q", raw)
+		}
+	}
+}

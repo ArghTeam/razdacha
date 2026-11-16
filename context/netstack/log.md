@@ -3,6 +3,37 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-11-06
+
+### #325 — WireGuard admission inside guarded publication
+
+**Changed:** Guarded publication reconciles live WireGuard peer rows after interface
+setup and before replacing source policy or releasing ingress. Periodic reads and
+kernel diffs share the publication gate; startup starts that loop after recovery.
+**New surface:** ADR 0040 extends ADR 0023 with kernel admission coherence and
+failure/reservation ordering. Recovery cannot replay committed credentials.
+**Beware:** Pending live peer edits retain the ten-second minimal-diff schedule.
+Unit regressions establish ordering and serialization, not external packet delivery.
+
+## 2026-11-04
+
+### #297 — Isolated encrypted WG and REALITY coexistence
+
+**Changed:** Added a separate opt-in exercise to the existing private kernel WG
+quality topology. The generated REALITY runtime and delivered-profile-derived
+client run alongside the reciprocal encrypted WG peer.
+**New surface:** A reviewed isolated Linux execution passed in 5.31s, requiring
+repeated REALITY TCP/UDP and TCP/UDP DNS controls during WG matrix/persistent
+traffic, a stable WG peer key and increasing encrypted bidirectional counters.
+The supervisor verified unchanged installed binaries/config/service PIDs and
+complete owned process/cgroup cleanup.
+**Beware:** The first frozen attempt safely failed on a fixture-only directory
+mode; production authority checks were retained. The corrected wrapper binds its
+owned direct underlay, while WG address/MTU publication still uses the test adapter.
+This is not full delivered-TUN, systemd, provider/DPI or production key-lifecycle
+evidence. Exact frozen hashes and limitations remain in
+[`tasks/297-wg-reality-coexistence.md`](../../tasks/297-wg-reality-coexistence.md).
+
 ## 2026-10-21
 
 ### #266 — Isolated encrypted client connection-quality fixture
@@ -126,3 +157,138 @@ CI remain merge gates. See the [implementation record](../../tasks/done/220-nati
 Whole-Internet interception uses exact committed IPv4 peer sources, not a global destination catch-all. DNS, configured gateway and canonical local destinations precede source TCP/UDP capture; source return prevents unsupported protocols entering ordinary marks. Residual FORWARD traffic from selected sources is rejected without established-flow exemptions. Gateway INPUT remains available, private forwarding and unsupported protocols fail closed, other peers retain behavior (ADR 0028).
 
 Implementation and verification record: [task 231](../../tasks/done/231-peer-egress.md). The bounded isolated Linux fixture and independent synthetic-browser checks passed; the completed record retains the failed first attempt and exact evidence boundaries. The fixture uses veth identities and a synthetic SOCKS exit, not encrypted incoming WireGuard or a DO client flow.
+
+## 2026-11-04 — #297 parallel authenticated client ingress
+
+Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The netstack invariants record final behavior; this entry does not claim deployment or general DPI resistance.
+
+## 2026-11-06 — #324 final isolated WireGuard admission verification
+
+The final integrated candidate source `c1e8ef1a6e6cfbdfe74dcba222092383b8041c2e`
+passed the isolated encrypted WG admission fixture in 3.184 seconds. The Linux test
+executable SHA-256 was
+`b80d50d79e8c50ed3578213e7499e82ac2c40f411fd6352b7fa2e75efc298019`.
+Independent capture barriers and sink controls verified removal before guard
+release, old-key TCP/UDP denial and unchanged periodic handshakes. Installed
+state and service PIDs were preserved. This was a namespace-isolated synthetic
+proof, not an installed-key mutation or production/client lifecycle proof.
+See the [audit verification record](../../tasks/done/324-audit-verification.md)
+and [completed task 325](../../tasks/done/325-wg-publication-admission.md).
+
+## 2026-11-08 — Bounded selected-exit reliability fixture (#348)
+
+Added a separate opt-in RAC-only exact-endpoint outage tool with exclusive
+netlink installation, durable revocation, private bounded serialization, verified
+systemd watchdog and isolated kernel roundtrip prerequisite. No production routing,
+admission or automatic fallback behavior changed. The roadmap now prioritizes
+fail-closed access, approved reserve exits, recovery and real family/friend clients;
+subscriptions and commercial access features are excluded. At initial source
+delivery, live acceptance remained pending separately from unit tests; the following
+entry records its later bounded results.
+
+
+## 2026-11-08 — Selected REALITY exit acceptance and retained UDP limit (#348)
+
+The [completed task](../../tasks/done/348-reality-exit-reliability.md) records attested
+helper source `720fc654a7d44fe58e41a1f96a06e71af0926ebf`, isolated kernel roundtrips,
+finite WAN/counter controls and unchanged RC16 application state. Direct succeeded
+as a case within a preserved failed combined run; a WARP-only retry completed that
+case. Fresh five-protocol matrices recovered in 5.710561/5.716319 seconds over two
+attempts. Manual revocation and independent 30-second-watchdog revocation were both
+verified; all five fault tables were absent and journals revoked, fixture units stopped,
+and temporary clients/profiles/session removed. Configuration, seven protected
+user tables, authority, guard and service PIDs were unchanged; no app restart,
+Apply, production or DO service/configuration change occurred.
+
+Both retained TLS requests resumed. A new transaction on the same retained WARP
+UDP association got no reply within three seconds despite fresh UDP recovery;
+this does not establish permanent failure or seamless recovery. Prioritize that
+characterization ([#350](https://github.com/ArghTeam/razdacha/issues/350), with
+3/10/30-second windows and a no-fault idle control) and explicitly approved
+independent-host reserves next. Current
+Direct/WARP share one DO host. No automatic failover or fallback was implemented.
+
+## 2026-11-13 — Retained UDP characterization preparation (#350)
+
+- Added an inert borrowed-association STUN observer with identity checks, bounded
+  frame parsing and a cross-window transaction ledger; older replies remain
+  distinct from responses to a fresh request.
+- Specified exact RAC outer-leg fault, independently armed watchdog, sampled
+  recovery windows, concurrent fresh controls, comparable no-fault idle control,
+  protected-state comparison and unconditional owned cleanup.
+- A control-first gate compares five- and twelve-second idle cases and passive
+  SOCKS control EOF before any new fault; idle effects must not be labeled outage
+  recovery defects.
+- Offline socket doubles cover timeouts, delayed transactions, malformed/foreign
+  responses, identity replacement and bounded observation. At this preparation
+  stage live characterization was pending; the following entry records its result.
+  No daemon behavior or recovery guarantee changed.
+
+
+## 2026-11-13 — Bounded retained UDP idle-confound acceptance (#350)
+
+- [Task #350](../../tasks/done/350-retained-udp-recovery.md) records two complete
+  no-fault runs and exact observer/operations/proof hashes. Four retained STUN
+  transactions after 5/12/5/12-second idle intervals replied in 0.089–0.247 seconds.
+  Separate 30/45-second idle cases already showed SOCKS control EOF before the
+  post-idle request; the unchanged local UDP sockets then received no reply within
+  three seconds while fresh Direct/WARP associations worked.
+- This is an idle confound for the earlier retained-flow observation, not proof of
+  a closing hop, precise timeout, historical root cause or active-flow outage bug.
+  Nominal ten-second source timeout did not reproduce as failure at twelve seconds.
+  No new outage/capture was executed. Preserve the historical #348 record.
+- Before/after protected user tables, config/authority hashes, released guard,
+  schema/version and application PIDs matched exactly. Owned clients, profiles and
+  temporary sessions were removed and independently audited. RC16 remains running;
+  no product-code change, Apply, application restart or deployment is needed.
+- Next, [#352](https://github.com/ArghTeam/razdacha/issues/352) will characterize
+  active UDP recovery with keepalive and matched no-fault history before approved
+  independent-host reserves. It is planned; no general UDP/media/failover guarantee
+  or implicit Direct fallback is introduced.
+
+
+## 2026-11-14 — Active retained UDP source preparation (#352)
+
+- Added a single-owner active request/history helper and matched offset replay to
+  separate active-flow recovery from the idle confound measured under #350.
+- Observer records successful local datagram completion separately from attempt
+  start. History checks include prime/phase tails and distinguish bounded sends,
+  explicit EOF/send-loss prefixes and unknown malformed/foreign observations.
+- Retained negative checks join the complete received ledger to original send
+  times, including late/prior transaction IDs. Recovery cannot count a request
+  sent before the first verified absence as fresh post-restoration traffic.
+- Specified independently watched exact RAC outer-leg fault, post-capture installed
+  counter recheck, immediate recovery dispatch, matched no-fault history and
+  unconditional exact fault/capture/session/client cleanup. Offline tests pass;
+  root-owned live execution and acceptance remain pending. No runtime code,
+  configuration, automatic failover or general UDP/media guarantee changed.
+
+
+## 2026-11-14 — Bounded active retained UDP acceptance (#352)
+
+- [Task #352](../../tasks/done/352-active-udp-recovery.md) records one completed
+  reviewed RAC outer TCP2443 blackout, independent watchdog removal and matched
+  active-history no-fault replay. The 22 retained local sends had maximum 3.010489-second
+  gaps and no control EOF/errors. All ten requests sent after first confirmed
+  absence received matching replies inside the fixed thirty-second window.
+- Nine timed-out outage IDs arrived as prior replies during the absence-status
+  RPC and were excluded from the ten genuinely new post-origin request results.
+  The first post-origin send/receipt were +0.000490/+0.172318 seconds, measured
+  after an SSH status roundtrip of 1.312007 seconds; no exact kernel-removal latency
+  or SLA is inferred. A separate fresh full matrix succeeded in one attempt with
+  its own 0.669485-second duration from a later start. Replay 22/22 succeeded with
+  maximum successful-send completion drift 0.009575 seconds and healthy controls.
+- Exact DROP counter 0→32, post-capture installed status, zero-drop 138-packet
+  negative oracle, positive other-exit control and trusted watchdog actor record
+  support the finite case. No fixed-target direct TCP/STUN or owned plaintext
+  markers were observed in that capture. This is not an all-site/all-DNS leak proof.
+- Protected user-table/configuration/authority hashes, application PIDs and released
+  guard remained equal. The independent final audit confirmed exact revoked/table
+  absence and cleanup of all owned units, clients, profiles and session. Runtime
+  remains RC16; no product fix, deployment, Apply, service restart or DO/production
+  configuration change occurred.
+- This completes the bounded active-flow comparison without reproducing an active
+  retained-association defect. Historical #348/#350 records remain unchanged;
+  closing hop, precise idle timeout and broader UDP/media/client behavior remain
+  outside this evidence. Next is a reviewed reserve-exit policy proposal, with no
+  implicit Direct fallback or same-host redundancy claim.

@@ -327,7 +327,7 @@ const diagNameLimit = 3
 // сторону.
 func singboxCheck(snap store.Snapshot, plain singbox.PlainLists) check {
 	c := check{ID: "singbox", Title: "sing-box"}
-	opts, rules, err := singbox.GenerateWithDiag(snap, plain)
+	opts, rules, err := singbox.GeneratePolicyWithDiag(snap, plain)
 	if err != nil {
 		c.Status = statusError
 		c.Detail = err.Error()

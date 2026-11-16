@@ -231,3 +231,149 @@ existing session/interaction guards. ADR 0031 defines backend scope and freshnes
 - Shared destructive confirmation identifies the target and focuses Cancel. Closing,
   Escape, replacement and session dismissal cancel unconfirmed intent; confirmed
   operations retain their existing single-flight and initiating-session checks.
+
+
+## Authenticated Reality connection profiles
+
+- Connection methods are independent per client: legacy responses without method
+  fields retain WireGuard enabled and Reality disabled. Both methods share one
+  identity and configured route. Network settings use the existing independent
+  changed-field save boundary; only public Reality settings are editable. Public
+  key and short ID are read-only; server private keys never enter panel state.
+- Reality profile delivery uses the authenticated text endpoint and the server's
+  per-client activation status plus independent `reality_profile_downloadable` flag.
+  Downloadable pending profiles are requested immediately. Response state/revision
+  headers must be valid and match the observed credential revision. A persistent
+  **Works after Apply** notice remains through QR, copy and both downloads when
+  inventory or delivered metadata is pending. **Close and go to Apply** clears the
+  modal and focuses the existing global action; it cannot save or Apply, and unsaved
+  edits block navigation. Missing setup directs the administrator to Network settings.
+  Saving configuration never claims active admission. WireGuard delivery is unchanged
+  (ADR 0036).
+- Method switching, connection edits, saved identity changes, close/replacement
+  and logout invalidate in-flight profile responses and clear application-held
+  text, QR and object URLs. Unsaved identity or method edits prevent copying and
+  downloading. Actual returned VLESS URIs drive text, QR, clipboard and download;
+  invalid responses never fall back to a synthetic URI. QR size failure leaves
+  text/copy/download available. Clipboard copies remain outside panel control.
+- Reality credential replacement retains the revision observed at confirmation entry,
+  rejects changed revisions on secret delivery, and clears delivered
+  copies before reconciliation. A failed operation may have revoked the credential:
+  the panel blocks another profile until explicit status reload, preserves the
+  server error and never invents successful revocation or a guarded response.
+  Pending/uncertain recovery belongs to the client and initiating session, surviving
+  close/replacement/reopen; reopened dialogs cannot fetch a profile while replacement
+  is pending. Failures invalidate the current same-client dialog even when the
+  initiating dialog is gone. Prior-session completions cannot poison a new login.
+  Only a fresh explicit authoritative reload clears uncertainty; pre-mutation reads
+  cannot clear a newer recovery record or overwrite drafts/intervening writes.
+- Inventory addresses, handshakes and counters describe WireGuard only. Reality-only
+  clients hide the reserved WireGuard address and counters; Reality availability is
+  distinct from the separately observed open-flow count (ADR 0038).
+- Synthetic browser fixtures exercise the actual embedded modules without contacting
+  any daemon, provider or tunnel. Frontend checks do not establish real transport
+  connectivity, DNS behavior, server revocation or ingress guard correctness.
+
+
+### Durable access mutations and full client JSON
+
+- Reality-affecting peer method/enabled saves, peer deletion, and global Reality
+  settings writes can durably revoke credentials before returning an error. Their
+  session-bound pending/uncertain records survive dialogs just like rotation. A
+  failed response never restores cached profile admission. Explicit fresh status
+  reload fetches authoritative peers and, for a global failure, settings; an absent
+  deleted peer is removed and its stale dialog closes. Unrelated rename and legacy
+  WireGuard-only save behavior remains unchanged. Global mutations invalidate all
+  Reality delivery epochs and older status/inventory reads. Successful global settings
+  saves clear cached downloadability until authoritative inventory reload; stale
+  readiness cannot survive a global disable.
+- The optional sing-box download fetches the actual authenticated, no-store JSON
+  endpoint only on demand. Contents stay out of persistent panel state. Download
+  creation checks method, saved draft, modal/session, credential revision and access
+  mutation epoch; close, logout, replacement, rename and revocation invalidate late
+  responses. Existing object URL cleanup applies. The URI remains available as a
+  separate import option and requires app TUN and DNS-through-connection setup; URI
+  import alone cannot enforce DNS capture. The server-generated JSON includes TUN
+  and DNS routing. Browser regressions validate delivery/lifetime, not actual TUN
+  startup, operating-system routing, DNS capture or end-to-end client connectivity.
+
+## REALITY activity and DNS guidance (ADRs 0038 and 0039)
+
+- A client dot may use a positive authenticated REALITY open-flow snapshot separately
+  from WG handshake/counters. Zero is no open flows observed; missing, stale or
+  invalid samples are unavailable. Pending/uncertain peer or global auth mutations
+  immediately suppress cached REALITY activity until authoritative recovery.
+- The API checks server-side sample age. The browser measures receipt age with its
+  monotonic clock, avoiding assumptions that server and browser wall clocks agree.
+  An activity-only timer expires indicators after thirty seconds without a new
+  inventory observation, including while an editor/menu pauses normal polling.
+  It expires header byte/count observations and row bytes together, updates only
+  text/dots, preserves focus and unsaved fields, and stops when
+  leaving the client screen. These snapshots can miss short-lived flows and do not
+  establish recent traffic or idle online presence.
+- Separate cards show cumulative WG gateway received/sent bytes and REALITY
+  current-open-flow received/sent bytes. REALITY received maps to client upload;
+  sent maps to client download. They are never added across transport scopes.
+  REALITY rows use explicit gateway-direction labels; the overview counts clients
+  with fresh positive open-flow observations separately from WG connected clients.
+- REALITY snapshot values can decrease on closure and omit completed short flows,
+  DNS-hijacked/rejected traffic and historical usage. Missing, stale, unsafe-integer
+  observations or unsafe aggregate sums show Unknown. A missing eligible client
+  prevents a complete aggregate instead of silently displaying a partial total.
+  Disabled clients are excluded; enabled pending/guarded/uncertain clients do not
+  turn missing observations into measured zero
+  ([ADR 0039](../../docs/decisions/0039-reality-open-flow-bytes.md)).
+- REALITY profile help requires VPN/TUN capture and UDP gateway DNS `10.8.0.1:53`
+  through the proxy. URI import cannot enforce that setup; JSON importers which
+  keep only outbounds also need full-configuration mode or explicit DNS setup.
+  QUIC/encrypted-name domain routing relies on that DNS path, not TCP sniffing.
+
+- WireGuard inventory row counters share the summary's nonnegative safe-integer
+  observation boundary: absent, null, string, negative and unsafe values display
+  Unknown; numeric zero displays 0 B. REALITY-only rows omit WireGuard counters.
+  Gateway directions and existing observation freshness semantics are unchanged.
+
+## Clients Web policy (ADR 0042)
+
+- Each existing client offers one Web policy action, fixed to domain-bearing HTTPS/TCP443 with WG/REALITY ingress selection. Routing, committed exit/chain names and conditional gateway A-query policy render separately with plain-English reasons and ordered uncertain candidates. Global pending edits are explicitly separate from applied policy; missing authority never claims an applied snapshot. Detailed scope limits remain collapsed.
+- A dialog owns its session, modal revision, request token, inputs and navigation lifetime. Input changes, close/replacement, client replacement, any hash navigation (including leaving and returning), expiry and a new login permanently reject stale success/error results. Enter and pointer share one in-flight gate. Displayed values are escaped. No network probes or mutations are initiated, and existing client/rule editor drafts retain their behavior.
+- Synthetic actual-module Chromium tests cover empty/error/disabled/unknown/pending states, escaping, transport/domain/client changes, closure/replacement, navigation return and session transitions. They prove UI lifetime and rendering only, not installed networking or client quality.
+
+## Connection evidence (ADR 0043)
+
+- The Clients row menu opens one browser-local Connection evidence dialog. A selected
+  ingress and optional domain identify the context; the administrator generates page
+  or download activity on that client device. The panel never opens or fetches that
+  domain. The default ingress respects an explicitly disabled WireGuard method.
+- Passive observations are serial and start at least five seconds after the preceding
+  request finishes. A monotonic ninety-second window bounds dispatch and acceptance.
+  No history is persisted. Close/replacement, session dismissal, navigation, input
+  changes and window expiry clear samples/results, abort requests and cancel pending polls;
+  operation tokens also reject late completions. Passive and independent exit requests
+  have separate tokens under the same context lifetime.
+- Counter comparisons require the same peer, ingress, source and opaque boot/publication
+  epoch, valid nonnegative safe integers and strictly newer source timestamps (including
+  submillisecond precision). Unknown authority or changed epochs invalidate baselines
+  and independent observations. Freshness expires after thirty seconds using the greater
+  server/source age plus full request duration and local monotonic elapsed time. Repeated
+  source timestamps retain their original local age and never renew freshness or prove
+  new activity. Positive evidence is at most one timestamped local observation; its label
+  becomes historical on expiry and it disappears when the window/context ends.
+- WireGuard increases describe encrypted-peer cumulative gateway received/sent bytes.
+  REALITY increases describe current-open-flow counts/bytes only; closure, decrease,
+  zero, missing or unsafe values cannot establish inactivity, offline status or exact
+  transferred-byte throughput. No client latency, website success or quality score is
+  derived. These scopes remain separate from inventory summaries and Web policy.
+- A separate explicit action asks the server for an independent applied-exit observation
+  using only peer, ingress and a normalized domain. Applied conditional routing/chain
+  names and gateway A-query policy remain separate from HTTPS observations. Names are
+  escaped; absent authority, null timing, failures and expired data remain unknown.
+  HTTPS timing describes gateway to the fixed target through the approved full chain or
+  explicitly applied Direct. Existing pool group history is labeled with its source/time
+  and never called a new measurement or current-generation proof, even when its
+  timestamp is recent. Its historical timing remains separate from an active probe;
+  the current epoch binds only the policy selection. No fallback, domain fetch, DNS probe or global
+  check-cache mutation is initiated by the UI.
+- Synthetic actual-module Chromium fixtures exercise the real row-menu action, clocks,
+  source counters/epochs, escaping and lifecycle races. They establish browser behavior
+  only, not daemon networking, installed client connectivity or live acceptance.

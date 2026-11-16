@@ -628,3 +628,56 @@ succeeds. Missing or corrupt v2 authority/artifacts remain fail-closed; the daem
 not fall back to remote fetching, pending database policy or omitted native rules.
 Keep out-of-band administrative access and follow the
 [native recovery contract](11-staging-validation.md#native-rule-set-fixture-and-recovery-contract-220).
+
+## Optional Reality lifecycle
+
+Reality uses a dedicated configurable TCP listener (default 8443); nginx/panel
+ports remain unchanged. A safe TCP bind preflight rejects an occupied new endpoint
+before guard or config mutation, including custom administration ports. Settings
+and client admission require explicit Apply. Existing WG profiles keep their keys
+and addresses.
+
+The managed runtime drop-in invokes the one-shot ingress guard before every
+sing-box start, including a vendor unit. Its owned drop-in resets the runtime
+command to the installer-selected binary and one explicit managed config, preserving
+the vendor file. Existing later overrides of that command or guard are refused before
+unit writes; harmless resource settings are retained. The helper requires private approved
+config/hash/endpoint safety authority and performs no database or API access.
+Publication never holds its short safety lock across a runtime restart. Current
+and candidate endpoints remain protected until durable committed authority and
+bootstrap invalidation complete.
+
+Revocation uses a guarded checked restart of the shared runtime; existing client
+flows can briefly disconnect. A failed restart leaves both ingress paths guarded
+and never restores an old credential. Apply performs recovery. Runtime authentication
+is never replayed from historical routing authority.
+
+Restore clears cloned Reality server/client identity and switches Reality off,
+while preserving WG identity. Reconfigure, enable desired clients, Apply and issue
+new profiles. Uninstall refuses any active/uncertain saved public listener or
+coverage before service/file changes: disable Reality and Apply first. The explicit
+`--reset-network` command retains the public safety manifest/barrier around saved
+listeners. An older binary rejects schema 13/authority v5; rollback needs the
+compatible pre-upgrade database backup and deliberate guarded recovery.
+
+The managed runtime requires the host filesystem and network namespaces. Setup
+refuses unit/drop-in root images, bind/tmpfs/extension remappings, alternate network
+namespaces and post-start hooks, preserving foreign files. Ordinary ProtectSystem,
+read-only restrictions, filters and limits remain supported. Vendor reload hooks
+are cleared; the supported lifecycle uses the guarded restart path. Before final
+release the controller checks that exact candidate bytes still occupy the private
+config path. An earlier pre-start config rewrite leaves both paths guarded and
+requires recovery instead of publishing a stale runtime.
+
+Choose the handshake host:port as an intentionally public TLS service. REALITY's
+native unauthenticated handshake fallback can relay to that fixed endpoint before
+authenticated proxy rules. Loopback/private addresses may reach an already-public
+TLS endpoint, but an admin/controller or intranet-only service must never be used.
+Private destination rejection protects authenticated proxy flows and does not
+remove this deliberate fixed-target fallback. Legacy unit includes and alternate
+service-name aliases are refused; normal same-name distribution links are allowed.
+
+Reality-only restored clients are disabled while their removed credentials are
+reissued. They remain editable; choose a method explicitly and configure/Apply
+before reconnecting. WG-enabled clients retain their enabled flags, keys and
+addresses, including clients that were already disabled.

@@ -503,6 +503,9 @@ func (noopReloader) Reload(context.Context) error { return nil }
 // writeUnits кладёт юниты systemd. Пакетный юнит sing-box не подменяется.
 func writeUnits(opts setupOptions, singboxBinary string, log *slog.Logger) error {
 	u := &packaging.UnitInstaller{Root: opts.root}
+	if err := u.CheckSingboxIngressOverrides(); err != nil {
+		return err
+	}
 	if _, err := u.EnsureDaemonUnit(opts.daemon); err != nil {
 		return err
 	}
@@ -511,6 +514,9 @@ func writeUnits(opts setupOptions, singboxBinary string, log *slog.Logger) error
 	case errors.Is(err, packaging.ErrUnitPackaged):
 		log.Info("юнит sing-box принесён пакетом, свой не пишем")
 	case err != nil:
+		return err
+	}
+	if _, err := u.EnsureSingboxIngressGuard(opts.daemon, singboxBinary, configPath, "/var/lib/razdacha/public-ingress.json"); err != nil {
 		return err
 	}
 	// Рабочий каталог рантайма создаём сами: без него юнит падает на старте, а

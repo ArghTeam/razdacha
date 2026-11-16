@@ -4,14 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 
+	"github.com/ArghTeam/razdacha/internal/api"
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/networkstate"
 	"github.com/ArghTeam/razdacha/internal/store"
@@ -380,5 +385,139 @@ func TestRestoreInvalidatesRoutingAuthorityBeforeRestartingRestoredDatabase(t *t
 	}
 	if got := peerNames(t, dbPath); len(got) != 1 || got[0] != "Fixture restored" {
 		t.Fatal("restored database content missing")
+	}
+}
+
+func TestRestoreRevokesSavedPanelSessions(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "state.db")
+	st, err := store.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := store.DefaultSettings()
+	settings.RealityEnabled = true
+	settings.RealityServerName = "fixture.example"
+	settings.RealityHandshakeServer = "127.0.0.1"
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	peer, err := st.CreatePeer(ctx, store.Peer{Name: "fixture", PublicKey: "public", PrivateKey: "private", PresharedKey: "preshared", Address: "10.8.0.2/32", Enabled: true, RealityEnabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := api.HashPassword("synthetic restore password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetPasswordHash(ctx, hash); err != nil {
+		t.Fatal(err)
+	}
+	server, err := api.New(ctx, api.Config{Store: st})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := func(handler http.Handler) *http.Cookie {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"password":"synthetic restore password"}`)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("login: %d %s", rec.Code, rec.Body.String())
+		}
+		cookies := rec.Result().Cookies()
+		if len(cookies) == 0 {
+			t.Fatal("login missing cookie")
+		}
+		return cookies[0]
+	}
+	loggedOut := login(server.Handler())
+	reset := login(server.Handler())
+	staleState, err := st.PasswordState(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(t.TempDir(), "backup.db")
+	if err := st.Backup(ctx, backup); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/logout", nil)
+	req.AddCookie(loggedOut)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logout: %d", rec.Code)
+	}
+	if err := st.SetPasswordHash(ctx, "later-password-hash"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	guarded := false
+	if err := restore(ctx, restoreOptions{dbPath: path, file: backup, force: true, closeIngress: func() error { guarded = true; return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	if !guarded {
+		t.Fatal("restore did not guard ingress")
+	}
+	restored, err := store.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = restored.Close() }()
+	server, err = api.New(ctx, api.Config{Store: restored})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cookie := range []*http.Cookie{loggedOut, reset} {
+		req := httptest.NewRequest(http.MethodGet, "/api/peers", nil)
+		req.AddCookie(cookie)
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("restored cookie accepted: %d", rec.Code)
+		}
+	}
+	login(server.Handler())
+	now := time.Now()
+	if err := restored.CreateVerifiedSession(ctx, store.Session{TokenHash: "stale-verification", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}, staleState); !errors.Is(err, store.ErrPasswordChanged) {
+		t.Fatalf("stale verification: %v", err)
+	}
+	got, err := restored.Peer(ctx, peer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PrivateKey != peer.PrivateKey || got.PublicKey != peer.PublicKey || got.PresharedKey != peer.PresharedKey || got.Address != peer.Address || !got.Enabled {
+		t.Fatal("WireGuard identity changed")
+	}
+	if got.RealityEnabled || got.RealityCredentialID != "" {
+		t.Fatal("REALITY credentials retained")
+	}
+	identity, err := restored.RealityIdentity(ctx)
+	if err != nil || identity != nil {
+		t.Fatalf("REALITY identity retained: %v", err)
+	}
+}
+
+func TestRestoreGuidance(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := os.Stdout
+	os.Stdout = writer
+	defer func() { os.Stdout = previous }()
+	printRestoreGuidance()
+	_ = writer.Close()
+	data, err := io.ReadAll(reader)
+	_ = reader.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, phrase := range []string{"WireGuard keys and addresses are preserved", "public endpoint is unchanged", "REALITY identities and credentials were cleared", "issue fresh client profiles", "explicitly Apply", "public address changed", "Sign in again"} {
+		if !strings.Contains(text, phrase) {
+			t.Errorf("guidance missing %q", phrase)
+		}
 	}
 }

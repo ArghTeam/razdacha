@@ -153,3 +153,75 @@ checks that the original job identity remains retained beyond ten seconds.
 
 - MTU diagnostics validate the configured global value against `store.MinClientMTU`/`store.MaxClientMTU` (1280–1420), then compare the observed interface MTU to that value. A supported matching value is OK; invalid configuration or mismatch is error; absent/unreadable observations are unknown. This is configuration consistency, not an end-to-end PMTU/reachability measurement. The default remains 1280 (ADR 0004, #277).
 - Password reset atomically rotates a private random authentication generation and deletes sessions. Login captures hash and generation together after Argon2 admission, then inserts only if both still match in one SQLite statement. This prevents stale and same-hash/ABA verification from issuing sessions across independent connections/processes. Legacy hashes without a generation remain supported until reset; settings APIs neither expose nor overwrite authentication state. A reset after insertion revokes that session even if its cookie is delivered later. Already authorized requests are not retroactively canceled (#276, ADR 0009).
+
+## Reality ingress API (ADR 0032)
+
+- Settings expose flat enable/listen/SNI/handshake fields plus public key and short ID. Private server key and UUIDs never appear in ordinary settings/peer responses or logs. Peer flags are additive; global peer enable controls both methods. WG statistics remain WG observations only.
+- Peer `reality_profile_status` is disabled/pending/available/guarded and `reality_revision` is non-secret. Available means applied configuration plus matching live admission and released safety intent, not a measured client connection. Active profiles derive from committed settings. Pending delivery uses validated saved settings without admitting credentials (ADR 0036). The independent `reality_profile_downloadable` boolean describes export readiness, not activation.
+- Authenticated dedicated `reality-config` returns one importable VLESS URI; `reality-client-config` returns a complete sing-box JSON TUN profile. Both successes and refusals use `Cache-Control: no-store`. One gated delivery result supplies raw importable bodies plus `X-Razdacha-Reality-State` and `X-Razdacha-Reality-Revision`; clients reject mismatched revisions. Missing setup returns actionable 400; guarded/uncertain ingress remains 503. Ordinary inventory contains neither credential. Rotation requires `expected_revision`; stale requests return 409.
+- Disable/delete/rotation/global listener disable are serialized with publication. Guarding precedes durable auth mutation and a checked restart closes active TCP/UDP sessions before success. A 503 can follow a committed revocation; clients refresh inventory/settings after failed saves/deletes as well as rotation. Revocation is never undone on failure. New admission still requires Apply.
+
+- An independently guarded runtime start makes Apply status pending and diagnostics guarded. Repair forces a checked restart even when config bytes are unchanged; draft endpoint edits never alter active clients' delivered committed URI/JSON parameters. Pending credentials can export their saved plan before Apply without changing policy, private state or runtime.
+
+## Authenticated REALITY flow observations (ADRs 0038 and 0039)
+
+- Client inventory adds `reality_activity` with `state`, nullable `open_flows`,
+  `open_upload_bytes`, `open_download_bytes` and `observed_at`. Counts and bytes
+  describe currently open flows, never idle online presence or cumulative usage.
+  Upload is client to gateway; download is gateway to client
+  ([ADR 0039](../../docs/decisions/0039-reality-open-flow-bytes.md)).
+  Missing, pending, disabled, guarded,
+  unsupported and failed observations are unavailable, not measured zero.
+- A bounded `/connections` read accepts only the pinned authenticated singleton
+  route prefix and dedicated VLESS inbound. It ignores public addresses as identity
+  and returns no connection destinations. The checked configuration must contain
+  per-user direct fallbacks before empty observations are considered supported.
+- One two-second read is shared across concurrent inventories; successful and failed
+  results have a five-second cache interval. Responses are limited to 1 MiB and
+  4096 flows. Request cancellation cannot create overlapping controller reads.
+- Private authority combines publication epoch, checked configuration and effective
+  admission revisions before and after observation. Apply/revocation advances the
+  epoch, including same-byte publication; late or mismatched samples cannot appear
+  as fresh activity. The API rechecks available admission before exposing a count.
+- Missing byte fields preserve valid counts but make the corresponding user's
+  direction unknown; a missing field cannot become a partial sum. Present malformed,
+  negative or overflowing counters invalidate the snapshot. A successful fresh
+  snapshot gives admitted absent users zero open flows and zero open-flow bytes.
+  Global controller totals and other inbounds are excluded. Samples replace one
+  another without persistence or accumulation; closed flows reduce current bytes.
+
+## REALITY control validation and inventory coherence (#327)
+
+- The publication gate covers settings PATCH fresh read, partial merge, complete
+  validation and save/revocation. Omitted fields retain the latest saved values,
+  including a concurrent REALITY disable; responses describe the saved object.
+  Settings serialization never includes or overwrites authentication secrets.
+- Peer/settings revocations validate the prospective object and exit references
+  before guard installation. Invalid requests return 400 without changing ingress
+  or credentials. The transactional write repeats validation. Once revocation
+  enters the guarded write path, failures retain the existing closed-ingress rule.
+- Peer inventory uses one gated request-local eligibility snapshot with four SQL
+  reads and indexed committed peers/admissions. Credential metadata is read once;
+  UUIDs are not loaded, and no URI/client JSON is serialized for booleans. Only
+  dedicated authenticated delivery endpoints construct secret profiles. Batch
+  results must match the inventory revision; legacy publishers use the explicit
+  per-peer compatibility path.
+- Eligibility and dedicated delivery share the same pure plan validation. Pending
+  profiles use saved endpoints; admitted profiles use committed endpoints. Global
+  or peer disable, missing credentials/identity, stale revision, guarded/uncertain
+  authority and invalid pending settings cannot become downloadable. Activity
+  observations keep their independent before/after epoch and live-admission checks
+  around the bounded controller cache (ADRs 0036, 0038 and 0039).
+
+## Client applied web policy (ADR 0042)
+
+- Authenticated, no-store `POST /api/route/explain` accepts exactly one strict JSON object with `peer_id`, `transport` (`wg` or `reality`) and a domain. IPs, URLs, ports, paths, CIDRs, unknown fields and trailing JSON are refused. The fixed scope is web TCP/443; existing shared `/api/route/test` remains unchanged.
+- The daemon copies committed policy/frozen lists under the publication gate, compiles outside it and rechecks publication epoch and current admission. Missing current clients return 404. Disabled/nonadmitted methods are explicit; uninitialized, uncertain, guarded or changed authority returns structured unknown without a Direct claim. Global pending edits are separate metadata, never matching input. A marker and `checked_at` exist only after a coherent recheck; subsequent changes need another request.
+- One active synchronous explanation holds capacity through cancellation; concurrent requests return 429. A 1 KiB request cap, bounded authority traversal, 4 MiB copy cap and 100,000-item/1,000-rule/1,000-peer expansion bounds prevent unbounded compilation. Oversized pending comparison returns unknown.
+- Responses contain only allowlisted actions/reasons, rule/exit identities and committed display names, candidates and coherence metadata. No network/controller probes, publication/auth-credential writes or profile/config export occur. Compiler logging is discarded; private internal committed and editable snapshots may contain WG/manual-tunnel material, never public serialization. Live REALITY admission uses metadata-only store reads.
+
+## Client connection evidence (ADR 0043)
+
+- Authenticated no-store selected-client POST observations expose only nullable safe WG counters/handshake or authenticated current-open REALITY totals. One five-second WG source cache holds capacity through cancellation; REALITY reuses its existing cache. Missing, future, stale, reset and unsafe values never imply site or transport failure.
+- Before/after I/O private authority checks bind released checked configuration, current narrow live admission, publication lifetime and process boot. Admission flag ABA and same-byte Apply invalidate comparisons. Source cache epochs cannot be relabeled after publication; no network runs under the gate.
+- Independent check-exit derives applied conditional web TCP/443 policy and exact private outbound server-side. Unknown route/DNS, rejection and nonadmission never probe; explicit Direct is not fallback, chains retain full tags, and plain pools only read timestamped historical group evidence. One shared broker preserves source job times, existing capacity and cancellation leases; a preexisting job cannot be claimed by a newer publication. No DNS query or legacy global check-cache write is added. Pool history remains historical even when recent; response epoch binds current selection only. See [ADR 0043](../../docs/decisions/0043-client-connection-evidence.md) and [API contract](../../docs/05-api.md).

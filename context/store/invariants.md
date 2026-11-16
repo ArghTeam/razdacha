@@ -35,3 +35,29 @@ description: "SQLite: схема четырёх сущностей, миграц
 - Peer egress references are nullable, transactionally validated and protected by FK RESTRICT. Disabled targets remain selected. API-style peer patches read/write only supplied fields transactionally so rename/toggle cannot erase a concurrent exit choice. Backups retain the choice; existing clients migrate to shared rules (ADR 0028).
 
 - Password reset atomically rotates a private random authentication generation and deletes sessions. Login captures hash and generation together after Argon2 admission, then inserts only if both still match in one SQLite statement. This prevents stale and same-hash/ABA verification from issuing sessions across independent connections/processes. Legacy hashes without a generation remain supported until reset; settings APIs neither expose nor overwrite authentication state. A reset after insertion revokes that session even if its cookie is delivered later. Already authorized requests are not retroactively canceled (#276, ADR 0009).
+
+## Parallel client ingress (ADR 0032)
+
+- Migration 13 is additive. Legacy peers retain WireGuard through an internal default-false `wireguard_disabled`; Reality defaults off. An enabled peer needs at least one method. Existing WG keys/addresses are preserved.
+- Private singleton REALITY identity and per-peer UUID tables are separate from policy authority. Snapshots contain opaque identity/admission IDs and revisions only; live credentials are intersected with committed admissions under the publication gate. No background refresh admits a new or rotated credential.
+- Peer/global Reality disable atomically replaces live bearers and advances revisions; delete cascades private credentials. Rotation requires a current positive revision (`ErrConflict` on stale requests). Re-enable requires explicit Apply.
+- Full backups include private credentials. Normal CLI restore deletes Reality credentials and server identity and switches Reality off before replacing live state; WG keys/addresses remain unchanged. Explicit reconfiguration creates new credentials and requires profile reissue. Ordinary migration/upgrade never resets identity.
+
+- Legacy full `UpdatePeer` rejects transport/global-enable changes when Reality is present, requiring the gated patch path. Ordinary rename/egress updates and WG-only full writes retain compatibility.
+
+- Restore disables the global peer flag only when its WG method is disabled as Reality is stripped. Such clients remain editable while disabled and require explicit method selection plus configuration/Apply; every WG-enabled peer retains its enabled flag, keys and address.
+
+- `RealityDelivery` reads one export-only transaction under the publication gate:
+  saved settings, enabled peer/current credential revision and public server identity.
+  It returns no private server key, initializes nothing and changes no admission.
+  Missing/disabled/deleted material is refused. `RealityRuntime` remains unchanged;
+  pending export never authorizes runtime users (ADR 0036).
+
+- Staged CLI restore atomically deletes all panel sessions and rotates the private authentication generation before publication, preserving the restored password hash. Saved cookies and pre-restore login verification never become valid again. Automatic pool filtering admits Shadowsocks only with a recognized encrypted cipher and well-formed plain/base64 userinfo; plaintext none, unknown methods and undecidable forms are excluded at catalog admission, merge and stored-member generation. Manual tunnel parsing remains unchanged (#326).
+
+## Applied-policy eligibility metadata (ADR 0042)
+
+- `RouteEligibility` is a read-only transaction for one requested client: settings, explicit public peer flags/address/key and admission IDs/revisions, server identity ID and credential presence. It never selects private/preshared WG keys, the REALITY UUID value or server private/short-ID material, and performs no key derivation or initialization. Missing clients return `ErrNotFound`; no migration/schema change is required.
+- Explanation pending comparisons still use internal ordinary snapshots, which can contain WG/manual-tunnel material. Those snapshots are not public response models and contain no live REALITY UUID or server private key. A disposable SQLite regression drops private columns to prove the narrow metadata query does not read them.
+
+- Selected-client evidence metadata uses the read-only `RouteEligibility` projection, without selecting private WG keys or REALITY UUIDs. Accepted client admission-flag changes advance the publisher's observation lifetime even across a disable/re-enable ABA cycle; this changes no authentication or publication behavior (ADR 0043). Existing trusted REALITY source validation retains its separate private live-admission read.

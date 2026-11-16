@@ -1,7 +1,34 @@
 # Ui — log
 
+## 2026-11-06 — Nullable WireGuard row observations (#328)
+
+WireGuard row bytes now use the same nonnegative safe-integer boundary as summary
+cards. Unknown samples remain Unknown, numeric zero remains measured zero, and
+REALITY-only rows still omit WireGuard counters. Directions and TTL are unchanged.
+
+
+## 2026-11-06 — Transport-specific client observations (#322)
+
+Added separate WireGuard cumulative and REALITY current-open-flow traffic cards,
+gateway direction labels, per-client REALITY bytes and a fresh open-flow client
+count. Header and row observations expire together during paused polling without
+replacing modal drafts/focus. Unknown and unsafe/partial observations remain
+explicit; no REALITY history or combined transport total is claimed (ADR 0039).
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
+
+## 2026-11-05
+
+### #308 — pending REALITY profile delivery
+
+**Changed:** Dedicated profile delivery can export validated saved credentials before
+Apply, with independent downloadability and coherent activation/revision headers.
+Active clients retain committed endpoints. Pending exports do not admit runtime users.
+
+**Beware:** Explicit Apply still activates access. Guarded/uncertain/revoked states
+and existing secret lifetime protections remain enforced. See ADR 0036.
+
 
 ## 2026-10-21
 
@@ -397,3 +424,125 @@ was confirmed revoked and its temporary authentication file deleted. Release ide
 checksum and limits are in the
 [completed delivery record](../../tasks/done/280-dashboard-design-system.md#staging-acceptance).
 This is installed UI/API acceptance, not VPN/media end-to-end or no-outage evidence.
+
+
+## 2026-11-04 — #300 parallel connection interface preview
+
+A standalone [interface preview](../../designs/reality-ingress/index.html) proposes
+optional Reality alongside WireGuard within the existing client dialog and Network
+settings. It uses synthetic English examples, local-only state and no backend calls.
+Transport selections remain independent and share one client identity/routing choice;
+profile delivery distinguishes unsaved drafts and pending Apply.
+
+Current embedded UI and runtime invariants are unchanged. This is a visual proposal,
+not product ingress, revocation or recovery implementation. Local browser checks and independent design evaluation passed, including pending
+key-action wording and opener restoration. The
+[completed preview task](../../tasks/done/300-ingress-ui-preview.md) records scope and acceptance.
+The user accepted the standalone interface and authorized a separate static
+staging delivery under `/preview/reality/`. Deployment/postflight remains pending
+the primary operator; the main panel, API and transport services stay unchanged.
+
+
+## 2026-11-04 — #300 static preview delivered to staging
+
+The accepted standalone preview is served under `/preview/reality/` on designated
+staging. Public/loopback HTTPS and browser postflight passed with exact source identity,
+no external/API requests and no changed application state. A graceful nginx reload
+preserved service process identities; the main panel/API retained their responses.
+The first location attempt was rejected and rolled back before a corrected attempt
+passed. The [delivery record](../../tasks/done/300-ingress-ui-preview.md#static-staging-acceptance)
+retains that qualification and private-backup/postflight bounds. Current embedded
+UI/runtime invariants remain unchanged; this is not functional REALITY ingress.
+
+
+## 2026-11-04 — #297 authenticated Reality client workflow
+
+The embedded client editor now offers independent WireGuard and Reality methods
+within the existing four-screen shell, sharing identity and routing. The Network
+settings section persists public Reality configuration through its existing save
+boundary. Server status gates actual authenticated VLESS profile delivery after
+Apply. Text, QR, copy and download use the returned URI and existing guarded
+modal/session lifetime. Revision-based credential replacement clears old copies,
+retains reconciliation failures and requires fresh status after uncertain outcomes.
+WireGuard profiles retain legacy defaults; addresses and observations explicitly
+describe WireGuard, with no fabricated Reality connection state. The
+[implementation task](../../tasks/297-reality-ui.md) records synthetic acceptance
+and the boundary between browser behavior and actual runtime connectivity.
+
+
+### Independent review correction: recovery survives client dialogs
+
+The review reproduced ambiguous rotation failures being lost after dialog dismissal
+or replacement. Recovery state now belongs to each client and initiating session,
+blocks reads while pending, invalidates any current same-client delivery on failure,
+and survives reopening until a fresh explicit authoritative reload. Mutation epochs
+and recovery identity reject pre-mutation reloads; old-login failures remain silent.
+Four additional browser cases cover failure before/after reopening, stale reload
+ordering and previous-login isolation. No runtime/server actions were involved.
+
+
+### Durable revocation failures and actual sing-box client download
+
+Recovery now also covers Reality-affecting peer enabled/method saves, deletion and
+global Reality settings writes: errors may follow durable revocation. Global
+mutations invalidate all profile admission/response epochs; explicit fresh
+peers/settings reload recovers, and an absent deleted peer removes its stale row.
+The optional authenticated sing-box JSON download uses the real additive endpoint
+on demand with URI-equivalent secret lifetime/revision/mutation guards. URI help
+now explicitly requires app TUN and DNS proxy setup. Full JSON includes those
+routes, but UI/browser checks make no claim that a real TUN client has run. Legacy
+WireGuard defaults and profile delivery remain covered by existing regressions.
+
+### Final backend integration
+
+The UI branch merged fresh main `5158748` containing the reviewed ingress backend
+and safety foundation. Actual API contracts match the embedded UI, including plain
+URI trailing-newline handling, authenticated no-store JSON attachments, statuses,
+revision checks and durable revocation failures. Combined Go tests/vet and pinned
+Linux lint passed. Handshake help clarifies that the public fallback service must
+also be safe for unauthenticated connections originating from this gateway; no
+address prohibition or new approval workflow was added.
+All 16 browser suites, including 36 Reality scenarios, passed on the merged tree;
+these remain synthetic API fixtures rather than deployed networking/TUN evidence.
+
+
+## 2026-11-05 — Authenticated REALITY open-flow observations (#312)
+
+Added bounded per-user open-flow snapshots from the official pinned controller,
+separate from WireGuard handshakes and counters. Singleton authenticated terminal
+routes preserve policy while exposing trusted opaque identity in matched rules.
+Publication/revocation stamps and live revision checks reject stale observations;
+UI receipt-time expiry and mutation recovery prevent stale green indicators.
+Profile help documents gateway DNS and full-configuration import requirements.
+See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation boundary.
+
+## 2026-11-07 — Client applied web policy (#339)
+
+Added the bounded read-only client domain explanation contract from [ADR 0042](../../docs/decisions/0042-client-applied-policy-explanations.md). Committed policy/frozen lists, current eligibility and coherent rechecks remain separate from global pending edits. Conditional TCP/443 routing and gateway A-query outcomes preserve ordering, uncertainty and C1; no probes, profile exports or deployment/quality claims are introduced. The maintained invariants record the layer-specific behavior and validation boundary.
+
+## 2026-11-07 — Browser-local Connection evidence (#344)
+
+Added the Clients menu dialog for ADR 0043: a guided ninety-second passive ingress
+window, source-timestamp and publication-epoch comparisons, conservative thirty-second
+expiry and a separate applied-exit fixed-target HTTPS action. Whole-client WireGuard
+and REALITY scopes remain distinct from conditional domain policy and gateway timing.
+Recent pool history is explicitly historical and cannot prove a new check or the
+current publication. Modal/session/input/navigation lifetimes abort requests and invalidate late results;
+duplicate source timestamps do not renew freshness. Existing style rules now cover the
+Web policy domain input, and both dialogs default to an explicitly enabled ingress.
+Actual-module synthetic Chromium coverage includes row-menu entry, fake-clock bounds,
+unsafe/missing/decreasing counters, authority changes, escaping and late responses;
+it does not claim real transport or selected-website acceptance.
+
+
+## 2026-11-07 — Connection evidence RAC acceptance (#342)
+
+Backend #346 and UI #345 are merged; [the completed task](../../tasks/done/342-client-connection-evidence.md)
+records exact-source review, Go/vet/scoped race checks and all 21 combined browser
+suites (54 evidence cases). RAC RC16 at `a945231fbf78659c100df5049b5dc77f6a636839`
+preserved four clients/credentials, protected user tables, configuration and applied
+authority. Actual owned REALITY Direct/WARP HTTPS+UDP traffic produced fresh source
+observations; separate fixed-target HTTPS and the served desktop/mobile evidence
+workflow passed. Temporary profiles/processes/session were removed. Positive live WG,
+all-site success and general connection quality are not claimed. Roadmap #338 remains
+open for phase 2 onward; production and DO configuration were unchanged.

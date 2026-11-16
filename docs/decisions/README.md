@@ -43,3 +43,20 @@
 | [0030](0030-wireguard-parent-startup-alias.md) | Fixed WireGuard parent aliases avoid hostname chain startup locks | 2026-10-21 | accepted; clarifies 0012 |
 
 - [0031: Scoped tunnel observations](0031-scoped-tunnel-observations.md) — HTTPS, DNS, unknown transport and bounded probing.
+
+- [0032: Parallel authenticated client ingress](0032-parallel-authenticated-client-ingress.md) — optional, disabled-by-default VLESS + REALITY alongside WireGuard, shared client policy and guarded lifecycle.
+
+- [0036: Saved REALITY profiles before activation](0036-pending-reality-profile-delivery.md) — pending URI/QR/JSON delivery without runtime admission; partially supersedes 0032 delivery.
+
+- [0037: REALITY visible TCP names](0037-reality-visible-tcp-names.md) — bounded TLS/HTTP matching for numeric IPv4 requests without retargeting; extends 0032.
+
+- [0038: Authenticated REALITY flow observations](0038-authenticated-reality-flow-observations.md) — bounded per-client open-flow counts from singleton authenticated runtime routes.
+
+- [0039: REALITY open-flow byte observations](0039-reality-open-flow-bytes.md) — nullable current-flow bytes, separate transport scopes and synchronized expiry; partially supersedes 0038's counts-only payload boundary.
+
+- [0040: WireGuard publication admission](0040-wireguard-publication-admission.md) — live peer reconciliation under the publication gate before policy/address release; extends 0023.
+- [0041: REALITY domain-denial preflight](0041-reality-domain-denial-preflight.md) — bounded scoped rejection before shared resolution, preserving positive ordering and captured DNS.
+
+- [0042: Client applied-policy explanations](0042-client-applied-policy-explanations.md) — conditional committed web TCP/443 and gateway A-query policy without probes.
+
+- [0043: Client connection evidence](0043-client-connection-evidence.md) — selected-client ingress and independent applied-exit HTTPS observations.

@@ -53,11 +53,12 @@ async function readBody(res) {
  * @param {{body?: any, expect?: 'json'|'text', quiet401?: boolean}} opts
  */
 async function request(method, path, opts = {}) {
-  const { body, expect = 'json', quiet401 = false } = opts;
+  const { body, expect = 'json', quiet401 = false, signal } = opts;
   const revision = sessionRevision;
 
   const init = {
     method,
+    signal,
     // Cookie сессии — HttpOnly и SameSite=Lax; same-origin достаточно и не
     // открывает панель чужому origin.
     credentials: 'same-origin',
@@ -95,7 +96,7 @@ async function request(method, path, opts = {}) {
     );
   }
 
-  if (expect === 'file') return { text, filename: filenameFrom(res) };
+  if (expect === 'file') return { text, filename: filenameFrom(res), realityState: res.headers.get('X-Razdacha-Reality-State'), realityRevision: Number(res.headers.get('X-Razdacha-Reality-Revision')) };
   return expect === 'text' ? text : json;
 }
 
@@ -149,8 +150,8 @@ export const session = {
 /* --- Пиры ---------------------------------------------------------------- */
 
 export const peers = {
-  list: () => get('/api/peers'),
-  create: (name) => post('/api/peers', { name }),
+  list: () => get('/api/peers').then(observePeerReceipts),
+  create: (name, connections = {}) => post('/api/peers', { name, ...connections }),
   update: (id, patchBody) => patch(`/api/peers/${encodeURIComponent(id)}`, patchBody),
   remove: (id) => del(`/api/peers/${encodeURIComponent(id)}`),
   /** Клиентский .conf — text/plain. Собирает его демон: публичного ключа
@@ -158,6 +159,10 @@ export const peers = {
       файла приходит оттуда же, в `Content-Disposition`. Возвращает
       `{ text, filename }`. */
   config: (id) => get(`/api/peers/${encodeURIComponent(id)}/config`, { expect: 'file' }),
+  // REALITY credentials are disclosed only by this authenticated delivery endpoint.
+  realityClientConfig: (id) => get(`/api/peers/${encodeURIComponent(id)}/reality-client-config`, { expect: 'file' }),
+  realityConfig: (id) => get(`/api/peers/${encodeURIComponent(id)}/reality-config`, { expect: 'file' }),
+  rotateReality: (id, revision) => post(`/api/peers/${encodeURIComponent(id)}/reality/rotate`, { expected_revision: revision }),
 };
 
 /* --- Оповещения -----------------------------------------------------------
@@ -396,3 +401,24 @@ export function logLines(payload) {
   if (payload && Array.isArray(payload.lines)) return payload.lines.map(String);
   return [];
 }
+
+// Monotonic receipt time avoids comparing the browser clock with the server clock.
+const peerActivityReceipts = new WeakMap();
+export function peerActivityAge(peer) {
+  const received = peerActivityReceipts.get(peer);
+  return received === undefined ? null : performance.now() - received;
+}
+function observePeerReceipts(peers) {
+  const received = performance.now();
+  for (const peer of peers) if (peer?.reality_activity) peerActivityReceipts.set(peer, received);
+  return peers;
+}
+
+/** Read-only committed domain policy; independent of shared route probes. */
+export const explainWebPolicy = body => post('/api/route/explain', body);
+
+// Passive client evidence and an independent, server-scoped fixed-target check.
+export const clientEvidence = {
+  observe: (body, signal) => post('/api/clients/observe', body, { signal }),
+  checkExit: (body, signal) => post('/api/clients/check-exit', body, { signal }),
+};

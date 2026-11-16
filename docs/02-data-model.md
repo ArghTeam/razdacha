@@ -381,3 +381,20 @@ with an index for references. Null preserves shared rules; a value selects the c
 whole-Internet exit under ADR 0028. Reads/snapshots/backups retain it. Peer writes validate
 references transactionally; disabling a target never clears the choice. Metadata PATCH
 updates only supplied fields inside its read/write transaction.
+
+## Reality admission and private credentials (schema 13)
+
+Peers add `wireguard_disabled` (default false for legacy compatibility),
+`reality_enabled` (false), `reality_credential_id` and `reality_revision`. Separate
+`reality_identity` and `reality_credentials` tables contain the private X25519
+server identity and per-peer random UUIDs. The credential foreign key cascades on
+peer deletion. Private identity creation happens on explicit configuration only.
+
+Generation version 5 persists opaque server/admission identity and revision, never
+the private server key or UUID. Live runtime authentication is the intersection of
+committed admission and current live enabled peers/credentials. Saved new admission
+or rotation cannot activate through refresh or recovery. Disable atomically
+replaces the bearer and advances its revision; re-enable needs Apply. Full backups
+retain secrets, while normal CLI restore clears Reality secrets/admissions and
+disables it, preserving WG keys/addresses and requiring profile reissue. Ordinary
+same-host upgrades retain credentials. See ADR 0032 for lifecycle rationale.

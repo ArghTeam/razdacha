@@ -49,4 +49,55 @@ description: генерация option.Options из состояния БД, п�
 
 - Whole-Internet peer source policies precede ordinary destination rules after DNS hijack. Same-exit DNS upstream and hostname bootstrap, plus an explicit source resolve action, prevent destination DNS fallback and stale FakeIP leakage. A post-resolve source-scoped private/special CIDR reject precedes the terminal exit. Missing/disabled/empty targets retain source-only route/DNS rejection. Health never authorizes fallback (ADR 0028).
 
+- Verification boundary: the [owned-exit experiment #310](../../tasks/done/310-owned-reality-egress.md) observed an actual sing-box 1.12.25 client through RAC REALITY ingress and an owned VLESS/REALITY exit, covering whole-client IPv4 TCP/UDP, DNS, exit outage without observed direct fallback, recovery and normal DoH/HTTPS. Only local client inbounds replaced exported TUN inbounds; OS TUN startup and selective destination-rule DNS were not verified. Finite packet windows, including a nonexhaustive recovery capture, do not establish universal leakage absence. ADR 0028's earlier synthetic validation remains historical and unchanged.
+
+- The [owned WARP-chain experiment #316](../../tasks/done/316-owned-reality-warp-chain.md) exercises ADR 0012's native userspace WARP clone detoured through an owned VLESS/REALITY first hop. Selected HTTPS, public-numeric TLS-name and gateway FakeIP requests reported WARP, and selected UDP STUN returned a public mapped exit. Configuring the WARP leg disabled retained selected rejection while an unselected direct control worked; this is not a physical handshake-outage proof. Original WARP health is distinct from the detoured client chain, and shared REALITY resolution retains RAC's upstream; the observations do not establish same-exit DNS, Android TUN or general DPI resistance.
+
+- Sandbox topology foundation: [DO-hosted WARP experiment #318](../../tasks/done/318-do-warp-egress.md) retains independent ordinary VLESS entries for direct DO and DO + WARP. The latter owns a separate DO service and userspace WARP endpoint; its RAC rule has no second hop. The earlier #316 native RAC chain remains historical. Selected HTTPS/UDP, new-service stop without observed direct fallback, recovery and preserved direct controls were verified within the recorded finite scope. This adds no product policy contract and establishes no WARP egress-country, residential-IP, shared-rule DNS or general DPI-resistance guarantee.
+
+- Current sandbox direct-client access: [record #320](../../tasks/done/320-direct-do-clients.md) adds one independently authenticated user to each existing DO service and public IPv4 TCP443/TCP2443 permits, preserving RAC users, REALITY server keys, units and route/DNS policies. Direct profiles point at DO, with full JSON proxy DoH, Vision/xudp and IPv6 rejection. Loopback actual-profile TCP, UDP and DNS checks passed; Android device TUN/import behavior and physical carrier path remain untested. The prior #318 RAC-only firewall restriction is historical, not the current access scope.
+
 - Native transport admission (ADR 0029) changes interception capacity, not native matching: immutable originals retain network, destination-port and logical semantics and rule ordering. DNS projections omit address-only transport branches. Recovery verifies projection v1 under the legacy contract and v2 under the transport-aware contract before guarded publication.
+
+## Parallel client ingress (ADR 0032)
+
+- The optional VLESS + REALITY TCP inbound uses the pinned runtime and defaults off. `GenerateWithReality` requires a separate live context; ordinary `Generate` refuses enabled public ingress without one. Diagnostic policy inspection never supplies a listener or private credentials. Outgoing tunnel generation is unchanged.
+- Every selected/all-client destination rule has separate trusted WG-inbound/address and dedicated Reality-inbound/authenticated-user branches. They express source OR through equivalent scoped rules, retaining destination AND predicates, order, selected orphan behavior, native originals/DNS projections and whole-client exit precedence. Public source addresses never grant WG policy identity. Missing/unknown auth users are rejected before final direct routing.
+- Authenticated Reality TCP/UDP port 53 is hijacked with auth metadata intact. Whole-client DNS uses its exit; FakeIP is resolved before policy under that same scope. IPv6/AAAA, port 853, private/loopback/link-local and gateway addresses are rejected; private destination checks follow explicit resolution before any route, so the dialer uses already resolved addresses. No claim covers arbitrary L3/ICMP or detection of every DoH request.
+- Complete client JSON captures both default address families, rejects IPv6 locally, hijacks DNS to gateway `10.8.0.1` through the proxy, uses proxy-only final routing and confines local DNS bootstrap to the gateway endpoint. The virtual IPv6 TUN address enables capture; it does not provide IPv6 Internet support. URI imports additionally require compatible application TUN/DNS settings.
+
+- Private/admin/IPv6 destination rejection applies to authenticated proxy flows. Native REALITY may relay unauthenticated TLS to the single explicitly configured handshake host:port before proxy policy. That target must intentionally be a public TLS exposure, including loopback/private addresses reaching an already-public TLS service; never select an admin/controller or intranet-only target.
+
+- Client profile construction accepts a validated delivery plan, whether committed
+  for active admission or saved for pending export. This does not change server
+  configuration generation, live credential intersection or explicit Apply authority
+  (ADR 0036).
+
+- Numeric IPv4 TCP REALITY flows reaching shared destination sets recover visible TLS/HTTP names with a 300 ms bounded sniff action after authentication/private/resolve guards and whole-client exits. It never overrides the original destination, performs no recovered-name DNS lookup, repeats gateway-name rejection and excludes WG, explicit domain/FakeIP flows and UDP/QUIC. No destination sets means no sniff. Gateway DNS through the authenticated proxy remains the supported selective-routing contract; ECH/opaque names retain existing fallback (ADR 0037).
+
+- Authenticated REALITY positive terminal routes use one opaque user per branch,
+  followed by a per-user direct fallback after all destination policy. This retains
+  WG branches, source scope, ordering, guards and whole-client precedence, while
+  allowing the pinned controller's matched-rule metadata to identify open flows
+  without credentials or public-address attribution (ADR 0038). Only terminal
+  routes expand; DNS, resolve and reject alternatives keep their existing scope.
+
+- REALITY shared hostname/FakeIP denial uses bounded reject-only preflight before
+  explicit resolution and after whole-client terminal rules (ADR 0041). Reuse
+  the single compilation pass's exact domain projections and source/availability
+  outcomes. Earlier applicable domain positives shadow by exact projection;
+  possible positive address branches (including unknown native summaries) defer
+  early rejection for their scope. Complete verified native ordinary and transport
+  summaries are required to prove domain-only. This conservative coverage is not
+  universal zero-query rejection. Ordinary DNS/FakeIP/C1 semantics, full matcher
+  order, singleton positive attribution, numeric sniffing and post-resolve private
+  guards remain unchanged. Exhausting the construction budget fails preparation.
+
+## Client applied-policy explanations (ADR 0042)
+
+- Pure domain web-policy explanations reuse the existing generator pass and its emitted whole-client routes and DNS actions. `buildRuleSets` records exact manual/plain suffix evidence and native uncertainty alongside the existing source scope, ordering and effective rejection. Evidence collection preserves generated bytes and source-read counts. Diagnostic compilation discards generator logs.
+- Suffix matching uses the pinned runtime matcher, including leading-dot boundaries; manual domain/address entries retain OR semantics. Earlier CIDR/native uncertainty prevents naming a later rule or final Direct as a certain winner. Native originals/projections are never flattened into guessed matches.
+- Whole-client exits precede shared destination rules. Missing/disabled/empty exits and disabled chain legs retain rejection. Routing and conditional gateway A-query outcomes are separate, preserving C1: an earlier Direct route does not suppress a later DNS Reject/FakeIP action. Known REALITY gateway-domain rejection remains explicit; public/nonlocal resolution is assumed for other route outcomes.
+- No DNS lookup, artifact read, HTTP/controller probe, live listener context or client profile export is used. This is applied conditional policy, never observed connectivity, runtime health, name recovery, end-to-end routing, DPI resistance or UDP/media quality.
+
+- Exit HTTPS evidence reuses ADR 0042 pure applied-policy compilation only on explicit check-exit requests, not passive activity polls. Known conditional routing and gateway DNS plus checked outbound presence are required. Full chains keep `ChainTag(via, first)`; plain pools consume existing history without probing. The supplied domain is never resolved or contacted, and no generation or routing semantics change (ADR 0043).

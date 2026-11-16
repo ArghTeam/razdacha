@@ -68,6 +68,9 @@ type Reloader interface {
 // и endpoint туннеля меняются вместе, и точечная правка JSON этого не
 // гарантирует.
 type Applier struct {
+	// Reality is live authentication loaded under the daemon publication gate.
+	// It is never persisted in the routing-generation snapshot.
+	Reality *store.RealityRuntime
 	// ConfigPath — путь конфига; пустой означает [DefaultConfigPath].
 	ConfigPath string
 
@@ -150,6 +153,15 @@ func (p *Prepared) Close() {
 // Changed reports a disk change; a guarded recovery can still require reload.
 func (p *Prepared) Changed() bool { return p.temporary != "" }
 
+// ConfigData returns the exact checked candidate bytes for ingress safety approval.
+func (p *Prepared) ConfigData() ([]byte, error) {
+	path := p.result.Path
+	if p.temporary != "" {
+		path = p.temporary
+	}
+	return os.ReadFile(path)
+}
+
 // Commit publishes checked bytes and reloads. Force reload on uncertain recovery,
 // even if a previous failed attempt already wrote identical bytes to disk.
 func (p *Prepared) Commit(ctx context.Context, force bool) (ApplyResult, error) {
@@ -207,7 +219,7 @@ func (a *Applier) prepare(ctx context.Context, snap store.Snapshot, forceCheck b
 	maxDrops := poolServerCount(snap)
 
 	for drop := 0; ; drop++ {
-		opts, err := Generate(snap, a.PlainLists)
+		opts, err := GenerateWithReality(snap, a.PlainLists, a.Reality)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrGenerateFailed, err)
 		}

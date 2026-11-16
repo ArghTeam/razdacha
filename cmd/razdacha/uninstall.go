@@ -57,6 +57,9 @@ func runUninstall(ctx context.Context, args []string) error {
 }
 
 func uninstall(ctx context.Context, opts uninstallOptions, in *os.File) error {
+	if err := packaging.CheckIngressUninstall(opts.root); err != nil {
+		return err
+	}
 	log := slog.Default()
 	var errs []error
 

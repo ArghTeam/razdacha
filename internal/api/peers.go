@@ -31,13 +31,19 @@ var ErrNoAddress = errors.New("в пуле не осталось свободн�
 // означал бы «замерили и там ноль» — для «онлайн» и «последний хендшейк» это
 // противоположные состояния.
 type peerResponse struct {
-	EgressTunnelID *string   `json:"egress_tunnel_id"`
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	PublicKey      string    `json:"public_key"`
-	Address        string    `json:"address"`
-	Enabled        bool      `json:"enabled"`
-	CreatedAt      time.Time `json:"created_at"`
+	RealityActivity            *realityActivityResponse `json:"reality_activity,omitempty"`
+	WireGuardEnabled           bool                     `json:"wireguard_enabled"`
+	RealityEnabled             bool                     `json:"reality_enabled"`
+	RealityProfileStatus       string                   `json:"reality_profile_status"`
+	RealityProfileDownloadable bool                     `json:"reality_profile_downloadable"`
+	RealityRevision            int                      `json:"reality_revision"`
+	EgressTunnelID             *string                  `json:"egress_tunnel_id"`
+	ID                         string                   `json:"id"`
+	Name                       string                   `json:"name"`
+	PublicKey                  string                   `json:"public_key"`
+	Address                    string                   `json:"address"`
+	Enabled                    bool                     `json:"enabled"`
+	CreatedAt                  time.Time                `json:"created_at"`
 
 	Online        *bool      `json:"online"`
 	LastHandshake *time.Time `json:"last_handshake"`
@@ -50,6 +56,7 @@ type peerResponse struct {
 // пока их некому заполнить.
 func newPeerResponse(p store.Peer) peerResponse {
 	return peerResponse{
+		WireGuardEnabled: !p.WireGuardDisabled, RealityEnabled: p.RealityEnabled, RealityRevision: p.RealityRevision, RealityProfileStatus: realityDefaultStatus(p),
 		ID:             p.ID,
 		EgressTunnelID: p.EgressTunnelID,
 		Name:           p.Name,
@@ -86,10 +93,26 @@ func (s *Server) handleListPeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stats := s.peerStats(r)
+	activity := s.observeReality(r.Context(), list)
+	var inventory map[string]RealityInventoryEntry
+	_, batched := s.applier.(RealityInventoryPublisher)
+	if pub, ok := s.applier.(RealityInventoryPublisher); ok {
+		inventory = pub.RealityInventory(r.Context(), s.store, list)
+	}
 	now := s.now()
 	out := make([]peerResponse, 0, len(list))
 	for _, p := range list {
 		resp := newPeerResponse(p)
+		if batched {
+			if e, ok := inventory[p.ID]; ok && e.Revision == p.RealityRevision {
+				resp.RealityProfileStatus, resp.RealityProfileDownloadable = e.Status, e.Downloadable
+			}
+		} else {
+			resp = s.peerResponse(r.Context(), p)
+		}
+		if a, ok := activity[p.ID]; ok && resp.RealityProfileStatus == "available" {
+			resp.RealityActivity = &a
+		}
 		if st, ok := stats[p.PublicKey]; ok {
 			resp = resp.withStat(st, now)
 		}
@@ -101,7 +124,9 @@ func (s *Server) handleListPeers(w http.ResponseWriter, r *http.Request) {
 // createPeerRequest — тело `POST /api/peers`. Ключи и адрес не принимаются:
 // их выдаёт демон, иначе два пира легко получают один адрес.
 type createPeerRequest struct {
-	Name string `json:"name"`
+	Name             string `json:"name"`
+	WireGuardEnabled *bool  `json:"wireguard_enabled"`
+	RealityEnabled   *bool  `json:"reality_enabled"`
 }
 
 // handleCreatePeer — `POST /api/peers`.
@@ -115,6 +140,10 @@ func (s *Server) handleCreatePeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.WireGuardEnabled != nil && !*req.WireGuardEnabled && (req.RealityEnabled == nil || !*req.RealityEnabled) {
+		writeError(w, s.log, http.StatusBadRequest, codeBadRequest, "An enabled client requires at least one connection method")
+		return
+	}
 	var created store.Peer
 	var err error
 	if coherent, ok := s.applier.(CoherentApplier); ok {
@@ -134,7 +163,14 @@ func (s *Server) handleCreatePeer(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err, "Пир не найден")
 		return
 	}
-	writeJSON(w, s.log, http.StatusCreated, newPeerResponse(created))
+	if req.WireGuardEnabled != nil || req.RealityEnabled != nil {
+		created, err = s.patchPeer(r.Context(), created.ID, store.PeerPatch{WireGuardEnabled: req.WireGuardEnabled, RealityEnabled: req.RealityEnabled})
+		if err != nil {
+			s.storeError(w, err, "Peer transport update failed")
+			return
+		}
+	}
+	writeJSON(w, s.log, http.StatusCreated, s.peerResponse(r.Context(), created))
 }
 
 // CreatePeer заводит пира: выдаёт ключи и первый свободный адрес пула.
@@ -180,9 +216,11 @@ func CreatePeerFromSnapshot(ctx context.Context, st *store.Store, name string, n
 // updatePeerRequest — тело `PATCH /api/peers/{id}`. Меняются только имя и признак
 // включения: адрес и ключи пира менять нельзя, это выдача нового конфига.
 type updatePeerRequest struct {
-	EgressTunnelID json.RawMessage `json:"egress_tunnel_id"`
-	Name           *string         `json:"name"`
-	Enabled        *bool           `json:"enabled"`
+	WireGuardEnabled *bool           `json:"wireguard_enabled"`
+	RealityEnabled   *bool           `json:"reality_enabled"`
+	EgressTunnelID   json.RawMessage `json:"egress_tunnel_id"`
+	Name             *string         `json:"name"`
+	Enabled          *bool           `json:"enabled"`
 }
 
 // handleUpdatePeer — `PATCH /api/peers/{id}`.
@@ -196,19 +234,19 @@ func (s *Server) handleUpdatePeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	patch := store.PeerPatch{Name: req.Name, Enabled: req.Enabled, SetEgressTunnel: req.EgressTunnelID != nil}
+	patch := store.PeerPatch{WireGuardEnabled: req.WireGuardEnabled, RealityEnabled: req.RealityEnabled, Name: req.Name, Enabled: req.Enabled, SetEgressTunnel: req.EgressTunnelID != nil}
 	if req.EgressTunnelID != nil {
 		if err := json.Unmarshal(req.EgressTunnelID, &patch.EgressTunnelID); err != nil {
 			writeError(w, s.log, http.StatusBadRequest, codeBadRequest, "egress_tunnel_id must be a tunnel ID or null")
 			return
 		}
 	}
-	p, err := s.store.PatchPeer(r.Context(), id, patch)
+	p, err := s.patchPeer(r.Context(), id, patch)
 	if err != nil {
 		s.storeError(w, err, "Peer not found")
 		return
 	}
-	writeJSON(w, s.log, http.StatusOK, newPeerResponse(p))
+	writeJSON(w, s.log, http.StatusOK, s.peerResponse(r.Context(), p))
 }
 
 // handleDeletePeer — `DELETE /api/peers/{id}`. Ссылки на пира в правилах чистит store.
@@ -217,7 +255,13 @@ func (s *Server) handleDeletePeer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	effects, err := s.store.DeletePeerWithEffects(r.Context(), id)
+	var effects store.PeerDeletion
+	var err error
+	if pub, ok := s.applier.(RealityPublisher); ok {
+		effects, err = pub.DeletePeer(r.Context(), s.store, id)
+	} else {
+		effects, err = s.store.DeletePeerWithEffects(r.Context(), id)
+	}
 	if err != nil {
 		s.storeError(w, err, "Пир не найден")
 		return

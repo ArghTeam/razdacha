@@ -13,9 +13,9 @@ description: wg0, nft-правила и маршрутизация через ne
 - Существование таблицы проверяется до формирования пакета: удаление отсутствующей таблицы отменяет весь пакет вместе с созданием новой.
 - Синхронизация пиров идёт диффом; совпадающие пиры не переписываются, при пустом диффе `ConfigureDevice` не вызывается — живым клиентам не рвутся хендшейки.
 - Приватный ключ сервера лежит в `settings` вне структуры `Settings`: сохранение настроек из UI его не затирает и наружу он не отдаётся.
-- Routing rules and the separate `inet razdacha_guard` table survive daemon exit. Startup installs the early wg0 ingress DROP guard before WG setup, and releases it only after a checked, durably committed generation. Normal direct routing resumes after recovery; daemon restart can interrupt clients. Explicit reset/uninstall removes both tables (ADR 0023).
+- Routing rules and the separate `inet razdacha_guard` table survive daemon exit. Startup installs the early wg0 ingress DROP guard before WG setup, and releases it only after a checked, durably committed generation. Normal direct routing resumes after recovery; daemon restart can interrupt clients. Explicit reset/uninstall removes those WG routing tables (ADR 0023); the separate public ingress guard has the lifecycle restrictions below (ADR 0032).
 
-- Candidate WG address, listen port and MTU are validated before publication and reconciled under the guard before route/runtime/nft. Temporary managers use live key storage and never replay peers; the long-lived peer-sync/stat manager retains its fixed interface identity. Startup uses trusted committed/seed WG settings; only genuine legacy absence allows guarded DB initialization for administrative access. All stored peers, including disabled peers, must fit usable pool addresses without server collision.
+- Candidate WG address, listen port and MTU are validated before publication and reconciled under the guard before route/runtime/nft. Temporary managers use live key storage and reconcile current live peer rows, never committed authentication; the long-lived peer-sync/stat manager retains its fixed interface identity. Startup uses trusted committed/seed WG settings; only genuine legacy absence allows guarded DB initialization for administrative access. All stored peers, including disabled peers, must fit usable pool addresses without server collision.
 - Explicit unchanged Apply guards and repairs WG/route/nft without restarting a known runtime. Healthy background no-ops may skip mutation.
 - Guard and routing publications use fresh netlink connections per attempt so a rejected batch cannot contaminate a later transaction. The ingress guard is a separate early-prerouting DROP table, covering forwarded traffic, DNS and tproxy; SSH/public-panel traffic does not enter through wg0. No cross-process atomic-transaction claim is made (ADR 0023).
 - Private routing-generation records belong to `internal/networkstate`; they preserve policy/list content, never restore live peer/authentication database rows, and reject symlinks, non-owner files, non-0600 permissions and malformed envelopes. Interrupted publication/recovery leaves the kernel guard installed.
@@ -50,3 +50,84 @@ description: wg0, nft-правила и маршрутизация через ne
 - Address/MTU publication still uses the test WG adapter; the fixture does not
   establish production key allocation or live peer-reconciliation lifecycle.
   Its two logical source identities share one synthetic encrypted peer.
+- The additional `RAZDACHA_WIRE_REALITY_COEXIST=1` exercise requires both existing
+  quality opt-ins. It checks concurrent authenticated REALITY TCP/UDP/DNS while
+  that real kernel WG peer retains its key and advances bidirectional encrypted
+  counters. The profile-derived wrapper binds only its synthetic `under1`; it is
+  not a full-TUN, systemd, provider or production WG-key-lifecycle proof. The
+  [coexistence record](../../tasks/297-wg-reality-coexistence.md) pins its execution
+  and preserves the existing WG address/MTU publication-adapter limitation.
+
+- The separate `RAZDACHA_WIRE_WG_ADMISSION=1` case requires both quality
+  opt-ins and the same fresh namespace checks. It replaces only its disposable
+  client identity with a fresh DB key, then uses production `Up` and live peer
+  reconciliation. It asserts removal before ingress release, old-key TCP/UDP
+  denial with independent sink controls and unchanged periodic handshakes. It
+  does not extend the ordinary quality/coexistence case's two-source adapter
+  evidence. Execution conditions and results belong to
+  [task 325](../../tasks/done/325-wg-publication-admission.md).
+
+## Public client safety boundary (ADR 0032)
+
+- WireGuard peer synchronization excludes `WireGuardDisabled` peers without changing keys/addresses. The entire periodic live-row read and kernel diff shares the publication gate. Guarded publication reconciles live kernel admission before route/runtime/nft, durable authority and guard release; read/sync failure retains the guard and committed address reservations. Startup starts the ten-second periodic loop only after recovery. Committed policy never supplies authentication (ADR 0040).
+- Reality uses the separately owned early inet INPUT TCP guard, covering established traffic and the union of previous/candidate listener endpoints. It does not change forwarded outgoing-tunnel traffic or rely on wg0 prerouting checks. The daemon guards saved public listeners before network startup.
+- A private versioned safety manifest approves exact checked config hashes and listener coverage. Publication uses short shared locks to stage manifest+kernel guard, releases the lock before runtime restart, commits policy and discards bootstrap authority, then releases guards last. Helper starts cannot resurrect a stale public config without valid manifest/hash/coverage.
+- Any uncertainty after guarding leaves both client paths closed. Active native-artifact corruption also closes public ingress. Explicit reset retains the public manifest/barrier; uninstall requires verified WG-only state first.
+
+- After checked restart, release rereads controlled private config bytes under the safety lock and requires exact candidate equality before narrowing manifest coverage or releasing either WG/public barrier. A pre-start hook restoring previously approved bytes retains union authority and both closed paths. A failed release recloses both guards.
+
+- Client connection evidence reads the existing WG peer-stat source without kernel mutation. Gateway receive/transmit are encrypted peer aggregates; missing, reset, future-handshake or unsafe counters do not prove inactivity, application throughput, client latency or a site's success. The API owns bounded source coalescing and private before/after publication checks (ADR 0043).
+
+## Owned RAC exit outage fixture
+
+- The opt-in [RAC exit fixture](../../tools/rac-egress-fault/README.md) is separate
+  test code, not daemon routing or automatic failover. It requires an isolated
+  kernel roundtrip before live use, restricts host/endpoint identity, uses one
+  unpredictable standalone exact IPv4/TCP OUTPUT counter/DROP table and refuses
+  foreign ownership/schema. No application table/configuration is edited.
+- A verified independent monotonic watchdog precedes installation. Durable
+  revocation and kernel operations share a private bounded lock; deadlines are
+  checked immediately before and after exclusive installation. Owned fault unit
+  lifetime/signal cleanup complement the watchdog. Journals remain as tombstones;
+  revocation/status stay bound to the prepared boot/network namespace;
+  cleanup remains available without the RAC interface address, and persistence/unit
+  failures still attempt exact owned removal while reporting incomplete revocation.
+  Only verified table absence permits watchdog cancellation. Evidence and limits
+  are tracked separately in [task #348](../../tasks/done/348-reality-exit-reliability.md).
+
+- The completed RC16 fixture evidence is finite: owned Direct/WARP outer-leg
+  blackouts rejected fresh test traffic with no fixed-target direct WAN packets,
+  and fresh matrices recovered without application restart. It does not establish
+  inner-WARP failure behavior or independent-host redundancy. A retained WARP UDP
+  association had no new-transaction reply within three seconds after restoration
+  despite fresh UDP recovery; seamless retained-flow recovery is not a contract.
+
+- The separate retained-UDP [probe](../../tools/udp-recovery/README.md) observes
+  exact borrowed SOCKS control/UDP socket identities and unique transaction IDs.
+  Late older replies cannot satisfy newer requests. The completed no-fault controls
+  responded after 5/12-second idle samples; 30/45-second samples already had SOCKS
+  control EOF and then UDP non-response despite healthy fresh associations. This
+  is an idle confound, not a precise timeout, closing-hop or active-flow recovery
+  guarantee. Conditional 3/10/30-second outage windows were not executed. See
+  [task #350](../../tasks/done/350-retained-udp-recovery.md) and [#352](https://github.com/ArghTeam/razdacha/issues/352).
+
+
+- Active retained-UDP test history uses one socket owner, actual local-send
+  completion times and original transaction/receipt attribution. A bounded
+  successful-send prefix ending in observed EOF/send loss is not a continued
+  active association; decode errors remain unknown. Matched no-fault controls
+  replay the complete attempted history. First verified fault absence is the
+  recovery observation origin before journal/cancellation bookkeeping. Source
+  preparation in [task #352](../../tasks/done/352-active-udp-recovery.md) remains distinct from
+  its bounded live acceptance; neither grants automatic failover or a product
+  recovery guarantee.
+
+
+- The completed #352 outer-leg RAC case retained 22 full local sends with maximum
+  3.010489-second gaps, open controls and ten matching post-confirmed-absence
+  transactions inside a fixed 30-second window; the matched active no-fault replay
+  answered 22/22. The origin is an SSH-confirmed absence observation, not exact
+  kernel-removal time. This finite case did not reproduce an active-flow defect;
+  it does not explain historical #348/#350 observations or imply Android/media,
+  inner-WARP, independent-host or seamless recovery guarantees. See the
+  [completed record](../../tasks/done/352-active-udp-recovery.md).

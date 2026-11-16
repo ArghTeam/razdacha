@@ -896,3 +896,190 @@ to the ten-second runtime timer (twelve seconds total from local admission).
 The runtime timer may start near the HTTP deadline; releasing at ten seconds from
 local start could otherwise overlap a still-running resolver job. A regression
 checks that the original job identity remains retained beyond ten seconds.
+
+## Optional Reality client ingress
+
+Settings GET/PATCH add `reality_enabled` (false), `reality_listen_port` (8443),
+`reality_server_name`, `reality_handshake_server` and `reality_handshake_port` (443).
+`reality_public_key` and `reality_short_id` are read-only. An explicit valid enable
+generates a private server identity; ordinary responses never disclose it.
+
+Peer POST/PATCH accepts `wireguard_enabled` (true for legacy peers) and
+`reality_enabled` (false). Global `enabled` controls both. An enabled client must
+retain a connection method. Responses add `reality_revision` and
+`reality_profile_status`: disabled, pending, available or guarded. Available means
+committed configuration and current admission, not an observed handshake. Existing
+peer statistics describe WireGuard only. `reality_profile_downloadable` independently
+reports whether the current saved credential can be exported; a pending client can
+be downloadable without active runtime admission.
+
+| Method | Path | Response |
+|---|---|---|
+| GET | `/api/peers/{id}/reality-config` | Importable single-line `vless://` URI, `text/plain` |
+| GET | `/api/peers/{id}/reality-client-config` | Complete sing-box TUN client JSON attachment |
+| POST | `/api/peers/{id}/reality/rotate` | Body `{ "expected_revision": 1 }`; standard updated peer response |
+
+All require the panel session. Dedicated profile responses and refusals are
+`Cache-Control: no-store`. Delivery requires enabled global/client access, coherent
+current credentials/public identity, valid connection settings and released guards.
+Pending profiles can be exported before Apply; only explicit Apply activates them.
+Active clients retain committed endpoints; pending clients use validated saved
+settings. Both endpoints derive bodies and headers from one gated delivery result:
+`X-Razdacha-Reality-State: pending|available` and
+`X-Razdacha-Reality-Revision: <positive integer>`. URI bodies remain plain text and
+JSON bodies remain complete engine configurations. A missing gateway endpoint,
+identity or disabled global setup returns an actionable 400; guarded or uncertain
+publication returns 503. No GET creates keys or changes runtime admission (ADR 0036).
+Rotation returns 409 on a stale revision. Replacement admission remains pending
+until Apply. A 503 after revocation can mean the database mutation committed but
+checked reconciliation failed: refresh peers/settings and recover with Apply; do
+not assume the old credential remains usable. Disable, delete and global listener
+disable have the same failure boundary. The first version restarts the shared
+runtime to close active flows, briefly interrupting other clients.
+
+A URI configures an outbound only: the application must enable TUN and DNS through
+the proxy. The complete JSON profile includes proxy-only final routing, gateway
+DNS through the proxy, IPv4-only DNS/AAAA rejection and local IPv6 default-route
+capture/rejection. It uses local DNS only to bootstrap the gateway hostname.
+Compatible privileged TUN support is required; arbitrary L3, ICMP and IPv6 Internet
+service are not provided, and this does not identify every application DoH request.
+
+## Client applied web policy
+
+`POST /api/route/explain` requires a panel session and always uses `Cache-Control: no-store`. It is independent of the existing shared route probe.
+
+```json
+{"peer_id":"existing-client-id","transport":"wg","domain":"example.com"}
+```
+
+`transport` is `wg` or `reality`. The strict 1 KiB JSON request accepts no other fields or trailing values. Domains are ASCII hostnames (punycode is accepted), canonicalized to lowercase with an optional final dot removed. IP literals, URLs, ports, paths, wildcard input and CIDRs return 400. The fixed response scope is `Web policy / TCP 443`. Missing current clients return 404; another active explanation returns 429.
+
+The response separates `routing` and `gateway_a`: each has a conditional/unknown state, an action and a machine-readable reason. Matched rules expose `rule_id`/`name`; configured exits expose committed `tunnel_id`/`tunnel_name` and optional `via_tunnel_id`/`via_tunnel_name`. `candidates` preserves earlier unresolved address/native matches before later known rules/default. These are policy possibilities, not observed connections or DNS answers.
+
+Top-level `state` is conditional, unknown or disabled. `pending` describes global saved policy edits, not a predicted client-route change. Only a coherent, rechecked result includes `marker` and `checked_at`; without a marker pending status is not determined. Missing/uninitialized, uncertain, guarded or concurrently changed authority never produces a fabricated Direct result. Live revocations and committed/live admission determine eligibility.
+
+This endpoint uses frozen committed policy/list contents, with bounded compilation outside the publication gate and an eligibility/epoch recheck. It never resolves a name, queries Clash, opens a site, applies policy or exports configurations/credentials. Public/nonlocal resolution is conditional; private/gateway guards may reject first. Gateway A-query policy preserves captured-DNS C1 behavior and is separate from routing. Native matching can remain unknown. No client path, runtime health, dynamic name recovery, UDP/media quality or DPI resistance is measured. See [ADR 0042](decisions/0042-client-applied-policy-explanations.md).
+
+## Client connection evidence (ADR 0043)
+
+Both authenticated endpoints are `POST`, set `Cache-Control: no-store` even on
+refusal, and accept exactly one JSON object of at most 1024 bytes. Unknown fields,
+unsupported ingress and malformed domains return `400`; a deleted client returns
+`404`, and concurrent exit requests return `429`. Neither endpoint writes policy,
+authentication, profiles or the global tunnel-check cache. No endpoints, flow IDs,
+destinations, keys, UUIDs, private tags or controller errors are returned.
+
+### `POST /api/clients/observe`
+
+Request: `{"peer_id":"<client-id>","transport":"wg"}`. Transport is `wg` or `reality`.
+
+```json
+{
+  "scope": "client_ingress",
+  "peer_id": "<client-id>",
+  "transport": "wg",
+  "state": "observed",
+  "reason": "aggregate_peer_counters",
+  "epoch": "<opaque-lifetime>",
+  "sampled_at": "2026-11-07T12:00:06Z",
+  "observed_at": "2026-11-07T12:00:05Z",
+  "age_ms": 1000,
+  "fresh": true,
+  "source": "wireguard_kernel",
+  "wg": {"rx_bytes": 1234, "tx_bytes": 5678, "last_handshake": null},
+  "reality": null
+}
+```
+
+State is `observed`, `unknown` or `disabled`. `epoch`, `observed_at`, `age_ms`,
+`wg` and `reality` are nullable. WG receive means gateway received encrypted bytes
+from the client; transmit means gateway sent bytes to it. Handshake is nullable
+RFC3339Nano UTC, never a fabricated zero timestamp. Zero counters are distinct from
+an absent peer. Negative or integers above JavaScript's safe maximum are null.
+WG growth proves aggregate encrypted ingress activity, including protocol traffic,
+not application throughput or domain-specific success. A decrease invalidates a
+browser baseline; the server does not compute deltas or rates.
+
+REALITY uses source `authenticated_open_flows` and
+`reality: {"open_flows": 2, "open_upload_bytes": 100, "open_download_bytes": null}`.
+Upload is client to gateway. Each value is nullable. These are totals for flows
+open in one existing authenticated controller snapshot; closures, decreases or
+zero cannot prove no traffic or a transferred-byte rate. Another client's flows
+never provide evidence for the selected client. Duplicate cached polls preserve
+the original source time. Missing data remains unknown, not offline.
+
+A source is fresh for at most 30 seconds, with future timestamps not fresh. The
+opaque comparison epoch binds process boot, publication lifetime (including
+same-byte Apply), checked config, current client identity and transport admission.
+Admission flag cycles invalidate it even if final settings are identical. Both
+sides of source I/O recheck authority; a race removes epoch and measurements.
+WG has one shared five-second device sample and at most one source job, whose
+capacity survives canceled waiters. REALITY reuses its existing five-second cache
+and private authenticated-admission verification. No network runs under the gate.
+
+Reasons include `aggregate_peer_counters`, `current_open_flows`,
+`partial_counters`, `unsafe_counter`, `future_handshake`, `peer_not_in_source`,
+`source_unavailable`, `stale_source`, `authority_changed` and existing publication
+or transport-eligibility reasons. They do not classify site or transport failure.
+
+### `POST /api/clients/check-exit`
+
+Request: `{"peer_id":"<client-id>","transport":"reality","domain":"example.com"}`.
+Only an ASCII domain is accepted; no URL, address, port, path, CIDR, outbound tag
+or target is accepted. Scope is conditional domain web TCP/443 policy.
+
+```json
+{
+  "scope": "gateway_exit_https",
+  "peer_id": "<client-id>",
+  "transport": "reality",
+  "domain": "example.com",
+  "epoch": "<opaque-lifetime>",
+  "sampled_at": "2026-11-07T12:00:06Z",
+  "policy": {},
+  "https": {
+    "state": "observed",
+    "reason": "fixed_target_succeeded",
+    "source": "active_probe",
+    "scope": "gateway_fixed_target_https",
+    "observed_at": "2026-11-07T12:00:05Z",
+    "age_ms": 1000,
+    "fresh": true,
+    "delay_ms": 42
+  }
+}
+```
+
+`policy` is the complete sanitized ADR 0042 `PolicyExplanation` (shown abbreviated
+above). It describes applied conditional policy and separately reports pending
+edits; editable pending choices never select the outbound. Unknown routing or
+unknown gateway DNS, reject, missing checked outbound or absent admission launches
+zero active probes. Explicit applied Direct may select Direct; it is never a
+fallback. Chains use the complete compiled chain tag. The supplied domain is never
+resolved or contacted. The selected ordinary outbound uses the existing shared
+fixed IP-literal HTTPS broker, with its two active jobs, 32 identity capacity and
+cancellation leases. No diagnostic DNS query is added.
+
+`https.state` is `observed`, `unknown` or `not_run`. `source` is `active_probe`,
+`pool_history` or null; source time, age and delay are nullable. Active results are
+fresh for at most 30 seconds. Generic runtime failure is `probe_unconfirmed`,
+never independent transport-down evidence. `source_lifetime_unknown` means a
+preexisting shared job could not be bound to this request's publication; its delay
+and timestamps are omitted. Broker source admission uses private monotonic time
+and completion timestamps are preserved across coalesced callers. Publication
+changes after dispatch invalidate both policy coherence and the result.
+
+Plain pools use `https.scope: runtime_pool_history` and only consume existing group
+history, with the original timestamp and five-minute source recency. Their existing
+group target is separate from the active IP-literal diagnostic target. Positive history uses `pool_history_only`; it remains
+historical and unbound to the current generation even when `fresh` is true. The
+response epoch binds current exit selection, not the historical measurement's
+publication. No pool member fan-out or URL test is triggered. `no_pool_history`,
+`stale_source`, `policy_reject`, `route_not_known`, `authority_unavailable` and
+`authority_changed` preserve uncertainty explicitly.
+
+These are gateway-to-one-fixed-target observations, independent of client ingress
+and user-reported site success. They do not measure client latency, loss, jitter,
+UDP/media, DPI resistance or universal quality. The browser owns the 90-second
+window and expires its display after 30 monotonic seconds, compares only strictly
+later source times in one epoch and serially polls at least five seconds apart.

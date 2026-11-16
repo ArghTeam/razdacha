@@ -1,7 +1,39 @@
 # Api — log
 
+## 2026-11-06 — coherent REALITY control and inventory (#327)
+
+Moved settings partial merges and pure revocation validation inside the publication
+gate, before guard/authentication mutation. Invalid disable requests leave unrelated
+clients available; write/restart failures after guarding still remain closed.
+Inventory now reads one request-local metadata snapshot and indexes admission once,
+without exporting secret profiles for downloadability. Dedicated delivery and boolean
+eligibility share pending/committed endpoint validation. Observation epoch/live checks
+remain unchanged. Deterministic regressions cover concurrent saves, invalid HTTP 400
+requests, guarded write failure, 100-client inventory and fixed query/export counts.
+
+## 2026-11-06 — REALITY current-flow bytes (#322)
+
+Extended the existing authenticated, bounded connection snapshot with nullable
+per-user upload/download byte sums. Missing directions remain unknown without
+discarding valid flow counts; malformed/negative/overflow snapshots fail closed
+as observations. Admission, publication epoch, freshness and coalescing remain
+unchanged. Global runtime counters and WireGuard traffic are excluded. ADR 0039
+defines current-flow scope and narrows ADR 0038's previous counts-only boundary.
+
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
+
+## 2026-11-05
+
+### #308 — pending REALITY profile delivery
+
+**Changed:** Dedicated profile delivery can export validated saved credentials before
+Apply, with independent downloadability and coherent activation/revision headers.
+Active clients retain committed endpoints. Pending exports do not admit runtime users.
+
+**Beware:** Explicit Apply still activates access. Guarded/uncertain/revoked states
+and existing secret lifetime protections remain enforced. See ADR 0036.
+
 
 ## 2026-10-20
 
@@ -273,3 +305,57 @@ and the authenticated API/CLI reported the expected release, schema 12 and sing-
 [acceptance record](../../tasks/done/280-dashboard-design-system.md#staging-acceptance)
 separates installed operator/API/UI checks from the deterministic authentication/MTU
 test matrix; no live race replay or client/media end-to-end claim is made.
+
+## 2026-11-04 — #297 parallel authenticated client ingress
+
+Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The api invariants record final behavior; this entry does not claim deployment or general DPI resistance.
+
+
+## 2026-11-05 — Authenticated REALITY open-flow observations (#312)
+
+Added bounded per-user open-flow snapshots from the official pinned controller,
+separate from WireGuard handshakes and counters. Singleton authenticated terminal
+routes preserve policy while exposing trusted opaque identity in matched rules.
+Publication/revocation stamps and live revision checks reject stale observations;
+UI receipt-time expiry and mutation recovery prevent stale green indicators.
+Profile help documents gateway DNS and full-configuration import requirements.
+See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation boundary.
+
+## 2026-11-07 — Client applied web policy (#339)
+
+Added the bounded read-only client domain explanation contract from [ADR 0042](../../docs/decisions/0042-client-applied-policy-explanations.md). Committed policy/frozen lists, current eligibility and coherent rechecks remain separate from global pending edits. Conditional TCP/443 routing and gateway A-query outcomes preserve ordering, uncertainty and C1; no probes, profile exports or deployment/quality claims are introduced. The maintained invariants record the layer-specific behavior and validation boundary.
+
+## 2026-11-07 — RAC acceptance of client Web policy (#339)
+
+Milestone 1a is accepted on RAC `0.11.0-rc.15.rac.b5b8e153cdd1`, source
+`b5b8e153cdd1709c9c60e949a91f9b1b23983704`, after main PR #340 and successful
+source/combined CI. The normal guarded upgrade preserved schema 13, all four clients,
+protected credentials/settings/routes/tunnels and byte-identical runtime config/
+committed authority. Actual API and desktop/mobile Clients UI checks confirmed
+committed whole-client exit names, separate same-exit gateway A-query policy,
+strict invalid-input/missing-client behavior and explicit disabled WG state.
+Read-only checks produced no target traffic/probes and preserved protected state;
+the subsequent installed-version-only metadata CAS is recorded separately.
+
+The [completed task](../../tasks/done/339-client-route-explanations.md#final-acceptance--2026-11-07)
+contains provenance, hashes and bounded proof. The [roadmap](../../tasks/338-client-connectivity-roadmap.md)
+remains open with 1b next; subscriptions, remote exits, failover and protocol
+experiments remain planned. This is served policy/UI acceptance, not a measured
+client connection, DNS query, quality or DPI-resistance guarantee.
+
+## 2026-11-07 — selected-client connection evidence (#343, parent #342)
+
+Added strict no-store selected-client ingress observations and independent applied-exit HTTPS evidence (ADR 0043). Publication/boot/admission epochs, shared source caching and before/after checks preserve uncertainty through Apply, revocation and canceled requests. Exact applied chains and explicit Direct use the existing broker; plain pools retain unbound historical evidence. No configuration, authentication or global tunnel-check-cache writes are introduced. Synthetic Go/race checks and Linux lint verify the backend boundary; bounded live RAC acceptance remains the parent task's separate requirement.
+
+
+## 2026-11-07 — Connection evidence RAC acceptance (#342)
+
+Backend #346 and UI #345 are merged; [the completed task](../../tasks/done/342-client-connection-evidence.md)
+records exact-source review, Go/vet/scoped race checks and all 21 combined browser
+suites (54 evidence cases). RAC RC16 at `a945231fbf78659c100df5049b5dc77f6a636839`
+preserved four clients/credentials, protected user tables, configuration and applied
+authority. Actual owned REALITY Direct/WARP HTTPS+UDP traffic produced fresh source
+observations; separate fixed-target HTTPS and the served desktop/mobile evidence
+workflow passed. Temporary profiles/processes/session were removed. Positive live WG,
+all-site success and general connection quality are not claimed. Roadmap #338 remains
+open for phase 2 onward; production and DO configuration were unchanged.

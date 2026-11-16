@@ -16,7 +16,7 @@ func TestTransportRequiresVersionFour(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, err := Read(path, kind)
-			if (err == nil) != (version == 4) {
+			if (err == nil) != (version == 4 || version == 5) {
 				t.Fatalf("version %d admission: %v", version, err)
 			}
 		}

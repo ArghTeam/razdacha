@@ -19,6 +19,15 @@ func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /api/login", s.handleLogin)
+	for pattern, handler := range map[string]http.HandlerFunc{
+		"POST /api/clients/observe":    s.handleClientObserve,
+		"POST /api/clients/check-exit": s.handleClientCheckExit,
+	} {
+		mux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			s.requireSession(handler).ServeHTTP(w, r)
+		}))
+	}
 	s.protect(mux, "POST /api/logout", s.handleLogout)
 	s.protect(mux, "GET /api/session", s.handleSession)
 
@@ -27,6 +36,9 @@ func (s *Server) routes() http.Handler {
 	s.protect(mux, "PATCH /api/peers/{id}", s.handleUpdatePeer)
 	s.protect(mux, "DELETE /api/peers/{id}", s.handleDeletePeer)
 	s.protect(mux, "GET /api/peers/{id}/config", s.handlePeerConfig)
+	s.protect(mux, "GET /api/peers/{id}/reality-config", s.handleRealityConfig)
+	s.protect(mux, "GET /api/peers/{id}/reality-client-config", s.handleRealityClientConfig)
+	s.protect(mux, "POST /api/peers/{id}/reality/rotate", s.handleRotateReality)
 
 	s.protect(mux, "GET /api/tunnels", s.handleListTunnels)
 	s.protect(mux, "POST /api/tunnels", s.handleCreateTunnel)
@@ -48,6 +60,10 @@ func (s *Server) routes() http.Handler {
 	// Пробник маршрута живёт рядом с правилами, но не под `/api/rules/`:
 	// он спрашивает работающее ядро, а не читает и не меняет правила в базе.
 	s.protect(mux, "POST /api/route/test", s.handleRouteTest)
+	mux.Handle("POST /api/route/explain", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		s.requireSession(http.HandlerFunc(s.handleRouteExplain)).ServeHTTP(w, r)
+	}))
 
 	// Проба доступности домена: сосед пробника маршрута, но вопрос другой —
 	// открывается ли домен напрямую, с адреса сервера, или отдаёт геоблок.

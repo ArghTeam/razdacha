@@ -39,7 +39,7 @@ func (c WGPeerChanges) Empty() bool { return len(c.Configs) == 0 }
 func wgDesiredPeers(peers []store.Peer) ([]wgDesiredPeer, error) {
 	out := make([]wgDesiredPeer, 0, len(peers))
 	for _, p := range peers {
-		if !p.Enabled {
+		if !p.Enabled || p.WireGuardDisabled {
 			continue
 		}
 		pub, err := wgtypes.ParseKey(p.PublicKey)

@@ -3,6 +3,52 @@
 <!-- Dated entries appended by the scribe agent, newest first. -->
 <!-- Schema: `## YYYY-MM-DD` then `### <ref> — <title>` with Changed / New surface / Beware. -->
 
+## 2026-11-05
+
+### #313 — recover visible names for numeric REALITY TCP destinations
+
+**Changed:** Added bounded TLS/HTTP route sniffing before shared destination sets
+for numeric IPv4 authenticated REALITY flows, retaining the original destination,
+source scope, private/admin guards and whole-client exit precedence.
+
+**Decision:** [ADR 0037](../../docs/decisions/0037-reality-visible-tcp-names.md)
+extends ADR 0032; no decision is superseded.
+
+**Validation:** Full singbox package tests, race-enabled focused regressions and
+Linux-target lint passed. Pinned-runtime synthetic flows covered TLS (including
+delayed fragmented ClientHello), HTTP, source isolation, original IP preservation,
+private/gateway rejection and a silent-stream 300 ms timeout.
+
+**Beware:** This is visible TCP name recovery only. No QUIC sniffing, ECH recovery,
+Android TUN validation or broad IP-based website matching is claimed. Gateway DNS
+through the proxy remains required for the supported selective-routing profile.
+
+
+### #310 — owned REALITY exit verification
+
+**Changed:** Recorded live whole-client IPv4 TCP/UDP and client-facing TCP/UDP DNS observations
+through actual RAC REALITY ingress and a separately owned VLESS/REALITY exit.
+Exit outage failed all four probes while direct controls remained reachable;
+recovery passed fresh probes. Normal DoH and HTTPS returned the DO public address.
+The normal exit and an unassigned reusable tunnel remain; temporary client,
+session, fixtures and test-port exceptions were removed, preserving existing state.
+
+**Beware:** No runtime behavior or ADR contract changed. Client tests replaced
+only exported inbounds with loopback test ports, without OS TUN/system routing.
+Capture claims cover finite windows; recovery captured 102 of 137 filter-received
+packets. Selective destination-rule DNS, reboot, arbitrary L3/IPv6 and general
+DPI resistance were not established. See the [completed record](../../tasks/done/310-owned-reality-egress.md).
+
+### #308 — pending REALITY profile delivery
+
+**Changed:** Dedicated profile delivery can export validated saved credentials before
+Apply, with independent downloadability and coherent activation/revision headers.
+Active clients retain committed endpoints. Pending exports do not admit runtime users.
+
+**Beware:** Explicit Apply still activates access. Guarded/uncertain/revoked states
+and existing secret lifetime protections remain enforced. See ADR 0036.
+
+
 ## 2026-10-21
 
 ### #262 — hostname WireGuard chains initialize fixed parents safely
@@ -203,3 +249,124 @@ CI remain merge gates. See the [implementation record](../../tasks/done/220-nati
 Whole-Internet peer source policies precede ordinary destination rules after DNS hijack. Same-exit DNS upstream and hostname bootstrap, plus an explicit source resolve action, prevent destination DNS fallback and stale FakeIP leakage. A post-resolve source-scoped private/special CIDR reject precedes the terminal exit. Missing/disabled/empty targets retain source-only route/DNS rejection. Health never authorizes fallback (ADR 0028).
 
 Implementation and verification record: [task 231](../../tasks/done/231-peer-egress.md). The bounded isolated Linux fixture and independent synthetic-browser checks passed; the completed record retains the failed first attempt and exact evidence boundaries. The fixture uses veth identities and a synthetic SOCKS exit, not encrypted incoming WireGuard or a DO client flow.
+
+## 2026-11-04 — #297 authenticated REALITY capability proof
+
+The opt-in pinned sing-box 1.12.25 fixture passed twelve subtests and the top-level
+test using synthetic credentials and local sinks in isolated Linux network/mount
+namespaces. Two same-source users retained distinct TCP/UDP routing and DNS identity;
+invalid UUID, unnamed-user, plaintext and wrong-key controls were rejected. Independent
+source, supervisor and final evidence review completed without material findings.
+
+Current runtime invariants are unchanged. Handwritten fixture policy does not prove
+product generation, public ingress protection, credential revocation, startup/recovery,
+WG coexistence or actual DPI resistance. The [completed proof record](../../tasks/done/297-reality-runtime-proof.md)
+preserves exact source/artifact identity, the earlier zero-test execution refusal,
+cleanup, post-test state equality and the file-level backup/recovery limits.
+The product ingress remains open under issue #297.
+
+## 2026-11-04 — #297 parallel authenticated client ingress
+
+Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The singbox invariants record final behavior; this entry does not claim deployment or general DPI resistance.
+
+Validation: independently reviewed isolated Linux generated-policy proof passed
+24.57s; exact delivered full TUN JSON proof passed 1.45s in a second anonymous
+client namespace. Both used only owned synthetic services and pinned sing-box
+1.12.25. HTTP/DNS/IPv6 controls and server-stop no-fallback were observed for the
+delivered client; no operator routes or installed runtime/provider state changed.
+The task retains exact frozen source/binary hashes and compatibility limits.
+
+
+## 2026-11-05 — Authenticated REALITY open-flow observations (#312)
+
+Added bounded per-user open-flow snapshots from the official pinned controller,
+separate from WireGuard handshakes and counters. Singleton authenticated terminal
+routes preserve policy while exposing trusted opaque identity in matched rules.
+Publication/revocation stamps and live revision checks reject stale observations;
+UI receipt-time expiry and mutation recovery prevent stale green indicators.
+Profile help documents gateway DNS and full-configuration import requirements.
+See ADR 0038 and `tasks/done/312-reality-flow-activity.md` for the validation boundary.
+
+## 2026-11-06 — Owned REALITY to WARP chain verification (#316)
+
+Exercised the existing ADR 0012 userspace WARP clone through the owned VLESS/REALITY
+DO exit using an actual exported client profile with loopback-only diagnostic
+inbounds. Selected HTTPS trace, a real-public-IP TLS-name request, gateway FakeIP
+and UDP STUN reported Cloudflare exits. A configured-disabled WARP leg rejected
+selected requests while the direct control worked; restoring it recovered the
+chain. Four samples over 143.6 seconds remained successful across advancing
+standalone WARP health timestamps; that endpoint's health status stayed unknown
+and is distinct from chain verification. No DO service/route or local-machine
+route/DNS change was required. The run did not test a physical handshake outage,
+indefinite stability or same-exit DNS for shared destination rules.
+
+The existing IPinfo DO-only route was retained after IPinfo returned HTTP 429
+through WARP. The new selected WWW-only Cloudflare check keeps chain verification
+separate. The second client remained direct, client exports were byte-identical,
+protected state was preserved and temporary sessions/exports/processes were
+removed. Final Apply was clean with active services and released checked ingress;
+the actual panel showed the intended two-hop rule without writes or page errors.
+The [operational record](../../tasks/done/316-owned-reality-warp-chain.md) preserves
+the foreign local FakeIP diagnostic, final-state boundary, rollback and cleanup
+evidence. No runtime code, release or production change accompanies this record.
+
+## 2026-11-06 — Independent DO-hosted WARP exit (#318)
+
+Moved the sandbox WARP leg into a new independently authenticated DO REALITY
+service on TCP2443, restricted to RAC. The existing direct DO443 service retained
+its PID, configuration, unit and credentials. RAC now has two ordinary VLESS
+tunnels; the selected WWW-only CF rule uses DO + WARP with an empty second hop.
+After positive verification, the old native RAC WARP entry was removed and Apply
+completed with zero RAC WARP registrations/endpoints. Historical #316 remains
+unchanged as the record of the earlier topology.
+
+An actual exported client passed selected hostname, public-IP TLS-name, gateway
+FakeIP and temporary-scope UDP STUN checks. Stopping only the new service rejected
+the selected request while original DO IPinfo and RAC direct controls worked;
+recovery and post-cleanup HTTPS passed. Final UDP was observed before restoring
+the WWW-only matcher, not repeated after old-entry deletion. The observed NL/AMS
+Cloudflare exit matched the earlier chain and establishes no location guarantee
+or residential IP claim. No application code, production host, release or host-wide
+route changed. The [operational record](../../tasks/done/318-do-warp-egress.md)
+preserves exact topology, verification, rollback and evidence limits.
+
+## 2026-11-06 — Direct DO client profiles (#320)
+
+Added one fresh client user to each existing DO REALITY listener, retaining the
+RAC users, server keys, service units and route/DNS policy. Only the two owned
+services were restarted after checked atomic configuration publication. Additive
+public IPv4 TCP443/TCP2443 permits replace the earlier RAC-only access boundary;
+all original host rules and cloud rule membership/bindings remain. Cloud rule
+list order was provider-normalized, not treated as stable.
+
+Private URI/QR and full sing-box profiles point directly at DO. Actual-profile
+loopback probes passed TCP, UDP STUN and configured proxy DoH: direct exit
+165.22.196.130 with WARP off, versus Cloudflare exits with WARP on. No operator
+TUN or network change was made; Android on-device/import behavior and physical
+carrier path remain untested. The [operational record](../../tasks/done/320-direct-do-clients.md)
+retains rollback, exact evidence and access boundaries. Historical #318 remains
+unchanged. Existing RAC client smoke checks passed after both DO restarts; its
+protected saved-state fingerprint remained exact, Apply was clean and ingress
+released. No application code, production deployment or release changed.
+
+## 2026-11-06 — REALITY domain-denial preflight (#329)
+
+Added grouped reject-only preflight using the same compiled exact DNS projections,
+source scopes and unavailable actions, before shared resolution. Earlier positive
+address capability conservatively defers denial; unknown native metadata never
+proves domain-only. Candidate construction has a one-million node/reference bound.
+ADR 0041 records the coverage and unchanged captured-DNS C1 boundary.
+
+Pinned sing-box 1.12.25 loopback VLESS fixtures count actual upstream questions and
+TCP/UDP terminal sinks. Manual/plain/native/OR denials, disabled/empty targets,
+scoped earlier positive precedence, CIDR deferral and private post-resolve rejection
+are covered. A gateway FakeIP mapping persists across checked policy restart and
+its denied TCP/UDP payloads send zero upstream questions and reach zero sinks.
+A post-restart unselected-user request to that exact FakeIP produces one upstream
+question and reaches the direct sink, proving the mapping was restored.
+Only ingress TLS and terminal dials are adapted; no external provider, host route,
+public listener or operating-system client profile is exercised.
+
+## 2026-11-07 — Client applied web policy (#339)
+
+Added the bounded read-only client domain explanation contract from [ADR 0042](../../docs/decisions/0042-client-applied-policy-explanations.md). Committed policy/frozen lists, current eligibility and coherent rechecks remain separate from global pending edits. Conditional TCP/443 routing and gateway A-query outcomes preserve ordering, uncertainty and C1; no probes, profile exports or deployment/quality claims are introduced. The maintained invariants record the layer-specific behavior and validation boundary.

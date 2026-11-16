@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -632,5 +633,64 @@ func TestPoolConfigDropsStoredBlockedWithoutCrawl(t *testing.T) {
 	if group = urltestOf(t, opts, "pppp"); len(group.Outbounds) != 2 {
 		t.Fatalf("без чёрного списка в группе %d участников, ожидалось два",
 			len(group.Outbounds))
+	}
+}
+
+func TestPoolRejectsPlaintextShadowsocksWithoutChangingManualImport(t *testing.T) {
+	unsafe := []string{"ss://none:password@server.example:8388", "ss://bm9uZTpwYXNzd29yZA==@server.example:8388", "SS://NoNe:password@server.example:8388?", "ss://unknown:password@server.example:8388", "ss://:password@server.example:8388"}
+	servers := []store.PoolServer{{URL: "ss://aes-256-gcm:password@server.example:8388", Title: "encrypted"}}
+	for _, raw := range unsafe {
+		servers = append(servers, store.PoolServer{URL: raw, Title: "unsafe"})
+	}
+	cfg := mustGenerate(t, poolFixture(servers))
+	count := 0
+	for _, ob := range cfg.Outbounds {
+		if ob.Type != "shadowsocks" {
+			continue
+		}
+		count++
+		if ob.Options.(*option.ShadowsocksOutboundOptions).Method != "aes-256-gcm" {
+			t.Fatal("unsafe SS member generated")
+		}
+	}
+	if count != 1 {
+		t.Fatalf("encrypted members generated: %d", count)
+	}
+	for _, raw := range unsafe[:2] {
+		parsed, err := Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if parsed.Outbound.Options.(*option.ShadowsocksOutboundOptions).Method != "none" {
+			t.Fatal("manual plaintext compatibility changed")
+		}
+	}
+}
+
+// subscriptionFixture serves every catalog request from memory; no network is used.
+type subscriptionFixture string
+
+func (body subscriptionFixture) Do(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(string(body))), Header: make(http.Header)}, nil
+}
+
+func TestCatalogRejectsPlaintextAndUnknownShadowsocks(t *testing.T) {
+	const encrypted = "ss://aes-256-gcm:password@server.example:8388"
+	body := strings.Join([]string{
+		encrypted,
+		"ss://none:password@server.example:8388",
+		"ss://bm9uZTpwYXNzd29yZA==@server.example:8388",
+		"ss://NoNe:password@server.example:8388",
+		"ss://unknown:password@server.example:8388",
+		"ss://:password@server.example:8388",
+		"ss://aes-256-gcm:@server.example:8388",
+	}, "\n")
+	catalog := lists.PoolCatalog{Client: subscriptionFixture(body), Pause: -1, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), CheckKey: func(raw string) error { _, err := Parse(raw); return err }}
+	servers, err := catalog.Servers(context.Background(), "https://raw.githack.com/fixture/", store.PoolFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(servers) != 1 || servers[0].URL != encrypted {
+		t.Fatalf("catalog admitted unsafe members: %+v", servers)
 	}
 }

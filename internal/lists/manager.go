@@ -76,12 +76,16 @@ type Manager struct {
 	log     *slog.Logger
 	retry   time.Duration
 
-	mu       sync.RWMutex
-	interval time.Duration
-	sources  []Source
-	lists    map[string]List
-	states   map[string]SourceState
-	last     time.Time
+	mu              sync.RWMutex
+	interval        time.Duration
+	requested       []Source
+	committed       []Source
+	sourceTokens    map[string]uint64
+	nextSourceToken uint64
+	sources         []Source
+	lists           map[string]List
+	states          map[string]SourceState
+	last            time.Time
 
 	updates chan struct{}
 	wg      sync.WaitGroup
@@ -110,13 +114,57 @@ func NewManager(o ManagerOptions) *Manager {
 	return m
 }
 
-// SetSources задаёт набор списков. Вызывается при старте и при каждом изменении
-// правил; списки, выпавшие из набора, перестают обновляться, но остаются в кэше
-// на диске — их вернёт следующее правило с тем же URL.
+// SetSources replaces scheduler consumers (normally pending plus applied URLs).
+// Committed consumers are pinned independently so stale reconciliation cannot
+// release a source newly accepted by the publication gate.
 func (m *Manager) SetSources(src []Source) {
 	m.mu.Lock()
-	m.sources = append([]Source(nil), src...)
-	m.mu.Unlock()
+	defer m.mu.Unlock()
+	m.requested = append([]Source(nil), src...)
+	m.reconcileSources()
+}
+
+// SetCommittedSources replaces the accepted policy owner. The publication gate
+// calls this only after committing authority, or when loading recovery authority.
+// No callback into the gate is made while holding the manager lock.
+func (m *Manager) SetCommittedSources(src []Source) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.committed = append([]Source(nil), src...)
+	m.reconcileSources()
+}
+
+// reconcileSources runs under mu. Tokens follow continuous ownership, not each
+// SetSources call: ordinary refreshes survive reconciliation of unchanged URLs.
+func (m *Manager) reconcileSources() {
+	tokens := make(map[string]uint64)
+	var sources []Source
+	for _, owner := range [][]Source{m.requested, m.committed} {
+		for _, src := range owner {
+			if _, exists := tokens[src.URL]; exists {
+				continue
+			}
+			token, exists := m.sourceTokens[src.URL]
+			if !exists {
+				m.nextSourceToken++
+				token = m.nextSourceToken
+			}
+			tokens[src.URL] = token
+			sources = append(sources, src)
+		}
+	}
+	m.sources, m.sourceTokens = sources, tokens
+	for url := range m.lists {
+		if _, retained := tokens[url]; !retained && FormatOf(url) == FormatPlain {
+			delete(m.lists, url)
+		}
+	}
+	for url := range m.states {
+		if _, retained := tokens[url]; !retained && FormatOf(url) == FormatPlain {
+			delete(m.states, url)
+		}
+	}
+	// Disk bodies/validators and immutable native authority remain untouched.
 }
 
 // SetInterval меняет интервал обновления. Применяется со следующего срабатывания.
@@ -192,6 +240,10 @@ func (m *Manager) currentInterval() time.Duration {
 func (m *Manager) Refresh(ctx context.Context) error {
 	m.mu.RLock()
 	sources := append([]Source(nil), m.sources...)
+	tokens := make(map[string]uint64, len(sources))
+	for _, src := range sources {
+		tokens[src.URL] = m.sourceTokens[src.URL]
+	}
 	m.mu.RUnlock()
 
 	var errs []error
@@ -203,15 +255,17 @@ func (m *Manager) Refresh(ctx context.Context) error {
 		if err != nil {
 			errs = append(errs, err)
 			m.log.Warn("список пропущен", "url", src.URL, "err", err)
-			m.failState(src.URL, err)
+			m.failState(src.URL, tokens[src.URL], err)
 			continue
 		}
 		if res.Stale != nil && src.Format != FormatPlain {
 			errs = append(errs, res.Stale)
 		}
 		m.mu.Lock()
-		m.lists[src.URL] = res.List
-		m.storeState(src.URL, res)
+		if m.sourceTokens[src.URL] == tokens[src.URL] {
+			m.lists[src.URL] = res.List
+			m.storeState(src.URL, res)
+		}
 		m.mu.Unlock()
 	}
 
@@ -279,9 +333,12 @@ func (m *Manager) storeState(url string, res Refreshed) {
 
 // failState записывает исход, при котором отдать нечего вовсе: источник не
 // ответил и кэша нет.
-func (m *Manager) failState(url string, err error) {
+func (m *Manager) failState(url string, token uint64, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.sourceTokens[url] != token {
+		return
+	}
 	prev := m.states[url]
 	m.states[url] = SourceState{
 		URL:       url,

@@ -18,11 +18,15 @@ import (
 // applyGate owns all manual, list and pool publication (ADR 0023).
 // The editable database is never an automatic source of applied routing policy.
 type applyGate struct {
-	inner   *singbox.Applier
-	log     *slog.Logger
-	mu      sync.Mutex
-	base    store.Snapshot
-	network *networkPublication
+	activityEpoch  uint64
+	evidenceBoot   string
+	explainCompile func(store.Snapshot, singbox.PlainLists, singbox.ExplainRequest) (singbox.PolicyExplanation, error)
+	store          *store.Store
+	inner          *singbox.Applier
+	log            *slog.Logger
+	mu             sync.Mutex
+	base           store.Snapshot
+	network        *networkPublication
 }
 
 func newApplyGate(inner *singbox.Applier, network *networkPublication, log *slog.Logger) *applyGate {
@@ -85,6 +89,7 @@ func startApply(ctx context.Context, st *store.Store, pools *lists.PoolManager,
 		path:      filepath.Join(filepath.Dir(dbPath), networkstate.CommittedFile),
 		uncertain: true,
 	}, log)
+	g.store = st
 	g.network.validateWG = func(ctx context.Context, settings store.Settings) error {
 		peers, err := st.Peers(ctx)
 		if err != nil {
@@ -93,13 +98,13 @@ func startApply(ctx context.Context, st *store.Store, pools *lists.PoolManager,
 		return validateWGPolicy(settings, peers)
 	}
 	g.network.wg = func(ctx context.Context, settings store.Settings) error {
-		wg, err := startWG(ctx, st, settings)
-		if err != nil {
-			return err
-		}
-		return wg.Close()
+		return configureLiveWG(ctx, st, settings)
 	}
-	if err := g.recover(ctx, filepath.Join(filepath.Dir(dbPath), networkstate.BootstrapFile)); err != nil {
+	// Recovery owns the same admission gate before any watcher or periodic sync.
+	g.mu.Lock()
+	err := g.recover(ctx, filepath.Join(filepath.Dir(dbPath), networkstate.BootstrapFile))
+	g.mu.Unlock()
+	if err != nil {
 		return nil, err
 	}
 	if mgr != nil {
@@ -173,6 +178,9 @@ func (g *applyGate) recover(ctx context.Context, seedPath string) error {
 			}
 		}
 		g.base = committed.Policy
+		if g.network.manager != nil {
+			g.network.manager.SetCommittedSources(lists.Sources(committed.Policy))
+		}
 		g.network.contents = committed.Lists
 		g.network.initialized = true
 		if _, err := g.publish(ctx, committed.Policy, true, false); err != nil {

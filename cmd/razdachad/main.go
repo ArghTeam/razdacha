@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ArghTeam/razdacha/internal/api"
+	"github.com/ArghTeam/razdacha/internal/ingressguard"
 	"github.com/ArghTeam/razdacha/internal/lists"
 	"github.com/ArghTeam/razdacha/internal/netstack"
 	"github.com/ArghTeam/razdacha/internal/packaging"
@@ -33,6 +34,9 @@ var (
 const defaultDBPath = "/var/lib/razdacha/state.db"
 
 func main() {
+	guardIngress := flag.Bool("guard-ingress", false, "guard public client ingress before starting sing-box")
+	guardConfig := flag.String("guard-config", singbox.DefaultConfigPath, "checked sing-box configuration path")
+	guardManifest := flag.String("guard-manifest", "/var/lib/razdacha/public-ingress.json", "private ingress safety manifest path")
 	showVersion := flag.Bool("version", false, "показать версию и выйти")
 	listen := flag.String("listen", api.DefaultAddr,
 		"адрес HTTP-сервера панели; только loopback — наружу его открывает nginx")
@@ -43,6 +47,13 @@ func main() {
 		"снять nft-правила и маршрутизацию, wg0 оставить, и выйти")
 	flag.Parse()
 
+	if *guardIngress {
+		if err := ingressguard.Startup(*guardConfig, *guardManifest, func(e []ingressguard.Endpoint) error { return netstack.SetPublicClientGuard(e, true) }); err != nil {
+			slog.Error("Public ingress startup guard failed", "error", err)
+			os.Exit(2)
+		}
+		return
+	}
 	if *showVersion {
 		fmt.Println(version)
 		return
@@ -82,6 +93,9 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		return storePassword(ctx, st)
 	}
 
+	if err := guardSavedPublic(singbox.DefaultConfigPath, filepath.Join(filepath.Dir(dbPath), ingressManifestFile)); err != nil {
+		return fmt.Errorf("guard saved public ingress: %w", err)
+	}
 	nf, err := startNetfilter(ctx)
 	if err != nil {
 		return err
@@ -96,7 +110,6 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		return err
 	}
 	defer func() { _ = wg.Close() }()
-	go syncWGPeers(ctx, st, wg)
 	listsMgr := startLists(ctx, st, dbPath, slog.Default())
 	ensureBuiltinPool(ctx, st, slog.Default())
 	poolsMgr := startPools(ctx, st, slog.Default())
@@ -108,6 +121,8 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	if err != nil {
 		return err
 	}
+
+	go syncWGPeers(ctx, st, wg, apply)
 
 	// Без пароля демон не стартует: панель доступна из интернета, и запуск
 	// «пока без авторизации» отдал бы наружу root-демон (ADR 0009).
@@ -131,7 +146,8 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 		// Заливка nft уходит в слой api замыканием: `POST /api/apply`
 		// применяет обе половины — конфиг sing-box и таблицу (issue #119).
 
-		Applier: apply,
+		Applier:        apply,
+		RouteExplainer: apply,
 		// Содержимое plain-списков — тем же приёмом: генератор берёт домены и
 		// подсети из кэша планировщика, иначе они никуда не попадают
 		// (issue #125). Применению они уже отданы в startApply; здесь их берёт
@@ -231,12 +247,8 @@ func listsDiag(st *store.Store, m *lists.Manager) func(context.Context) (api.Dia
 	}
 }
 
-// wgSyncInterval — как часто состояние БД сверяется с интерфейсом.
-//
-// Сверка идёт диффом: на неизменном состоянии не выполняется ни одной записи и
-// живые хендшейки не страдают. Событийная перевыдача пиров приедет вместе с
-// применением конфига (issue #30), до неё периодическая сверка — способ не
-// заставлять пользователя перезапускать демон после добавления устройства.
+// wgSyncInterval preserves periodic admission of pending live peer edits.
+// Unchanged peers use a minimal diff and retain their live handshakes.
 const wgSyncInterval = 10 * time.Second
 
 // startWG поднимает wg0 по настройкам из БД. Интерфейс — не опция: без него
@@ -257,18 +269,14 @@ func startWG(ctx context.Context, st *store.Store, settings store.Settings) (*ne
 	return wg, nil
 }
 
-// syncWGPeers держит набор пиров на интерфейсе равным состоянию БД.
-// Интерфейс при остановке демона не снимается: рестарт не должен рвать клиентам
-// связь, а возврат системы в исходное состояние — дело удаления пакета.
-func syncWGPeers(ctx context.Context, st *store.Store, wg *netstack.WGManager) {
+// syncWGPeers reads and reconciles live credentials under the publication gate.
+// The interface survives daemon exit; reset/uninstall owns interface removal.
+func syncWGPeers(ctx context.Context, st *store.Store, wg *netstack.WGManager, gate *applyGate) {
 	ticker := time.NewTicker(wgSyncInterval)
 	defer ticker.Stop()
 	for {
-		peers, err := st.Peers(ctx)
-		if err != nil {
-			slog.Error("чтение пиров", "ошибка", err)
-		} else if _, err := wg.SyncPeers(ctx, peers); err != nil {
-			slog.Error("синхронизация пиров", "ошибка", err)
+		if err := gate.syncWGPeers(ctx, st, wg); err != nil && ctx.Err() == nil {
+			slog.Error("Reconcile live WireGuard peers", "error", err)
 		}
 		select {
 		case <-ctx.Done():
