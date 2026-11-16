@@ -31,12 +31,11 @@ export const peerById = (id) => state.peers.find((p) => p.id === id);
 export const listTitle = (key) =>
   (state.communityLists.find((l) => l.key === key) || {}).title || key;
 
-/* Заголовок вкладки — с адресом сервера: у оператора открыто несколько панелей
-   (прод, стенд), и по одному «razdacha» вкладки не различить. Нет адреса —
-   просто «razdacha», без хвоста ` · `. */
-export function applyDocTitle() {
-  const host = state.settings && state.settings.endpoint_host;
-  document.title = host ? `${host} · razdacha` : 'razdacha';
+// Panel identity comes from its URL, independently of the WireGuard endpoint.
+let docTitleLabel = 'Sign in';
+export function applyDocTitle(label = docTitleLabel) {
+  docTitleLabel = label;
+  document.title = [label, 'razdacha', location.hostname].filter(Boolean).join(' · ');
 }
 
 /* --- тосты ---------------------------------------------------------------- */

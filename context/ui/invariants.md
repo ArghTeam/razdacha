@@ -5,6 +5,10 @@ description: Static HTML/CSS/ES modules embedded from ui/dist; defaults instead 
 ---
 
 ## Invariants
+- Browser titles identify the current authentication gate or screen, followed by
+  `razdacha` and the current panel hostname. The WireGuard endpoint is not panel
+  identity. Titles update before API reads and on navigation/authentication changes;
+  settings refreshes preserve the current screen label.
 - Интерфейс — статика без сборщика в `ui/dist`, уезжает в бинарник через `go:embed`. Никакого npm и node в цепочке сборки демона.
 - Внешних ссылок в статике нет вовсе: ни CDN, ни шрифтов, ни картинок. Всё, что нужно панели, лежит рядом — иначе оно не попадёт в `go:embed`. Единственный внешний запрос — проверка свежего релиза у GitHub, и её делает **браузер**, а не демон: сервер наружу не ходит, панель работает и без исходящего интернета, а бейдж просто не появляется (#114).
 - Пустота не заполняется выдумкой: нет данных — так и говорим («не проверялся», «данные появятся позже»), а не показываем ноль.

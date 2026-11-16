@@ -1,5 +1,18 @@
 # Ui — log
 
+## 2026-11-16
+
+### #294 — Restore panel and screen browser titles to the current branch
+
+The title correction had remained on the earlier RC8 staging branch and open PR.
+The refreshed change identifies the panel by its URL hostname, independently of
+the WireGuard endpoint, and keeps the authentication gate and current screen in
+the title through login, navigation, settings refresh and logout.
+
+A synthetic Chromium check of the actual app modules covers all four screens,
+login/logout and an endpoint change without API mutations beyond synthetic auth.
+It establishes frontend behavior, not installed deployment or VPN connectivity.
+
 ## 2026-11-06 — Nullable WireGuard row observations (#328)
 
 WireGuard row bytes now use the same nonnegative safe-integer boundary as summary
