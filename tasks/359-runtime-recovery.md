@@ -30,3 +30,7 @@ recorded independently from deterministic checks.
 
 Production host operations are outside this implementation. No host changes were
 performed by the implementation worker.
+
+The concurrent generic administrative guard regression withdraws restart intent
+during the readiness callback. Automatic publication retains both barriers and
+uncertainty, and a subsequent automatic observation performs no restart.

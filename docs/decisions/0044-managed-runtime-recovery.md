@@ -24,3 +24,8 @@ preventing repeated runtime restart attempts. No manifest lock spans restart.
 
 Acceptance distinguishes deterministic regression tests from staging crash tests.
 This decision grants no broader recovery or connection continuity guarantee.
+
+Automatic staging and final release recheck the marked guarded intent under the
+manifest lock. Automatic staging preserves the marker across its checked runtime
+restart. A concurrent generic administrative guard withdraws intent and prevents
+release, including during the controller readiness wait.

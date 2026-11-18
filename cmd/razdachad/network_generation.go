@@ -59,10 +59,10 @@ func writeGeneration(path string, gen networkGeneration) error {
 // publish validates before mutation, then closes client ingress across every
 // publication boundary. The separate kernel guard survives daemon failure.
 func (g *applyGate) publish(ctx context.Context, snap store.Snapshot, recovery, repair bool) (singbox.ApplyResult, error) {
-	return g.publishChecked(ctx, snap, recovery, repair, nil)
+	return g.publishChecked(ctx, snap, recovery, repair, false, nil)
 }
 
-func (g *applyGate) publishChecked(ctx context.Context, snap store.Snapshot, recovery, repair bool, runtimeReady func(context.Context) error) (singbox.ApplyResult, error) {
+func (g *applyGate) publishChecked(ctx context.Context, snap store.Snapshot, recovery, repair bool, automatic bool, runtimeReady func(context.Context) error) (singbox.ApplyResult, error) {
 	g.activityEpoch++
 	n := g.network
 	artifactDir, err := filepath.Abs(filepath.Join(filepath.Dir(n.path), "lists", "native"))
@@ -178,7 +178,7 @@ func (g *applyGate) publishChecked(ctx context.Context, snap store.Snapshot, rec
 		return singbox.ApplyResult{}, err
 	}
 	if g.store != nil {
-		if err := g.stagePublic(candidate); err != nil {
+		if err := g.stagePublic(candidate, automatic); err != nil {
 			if errors.Is(err, errPublicPortBusy) {
 				return singbox.ApplyResult{}, err
 			}
@@ -244,7 +244,7 @@ func (g *applyGate) publishChecked(ctx context.Context, snap store.Snapshot, rec
 		return res, fmt.Errorf("clients remain guarded: %w", err)
 	}
 	if g.store != nil {
-		if err := g.releasePublic(candidate); err != nil {
+		if err := g.releasePublic(candidate, automatic); err != nil {
 			_ = n.guard(true)
 			return res, fmt.Errorf("clients remain guarded: release public ingress: %w", err)
 		}

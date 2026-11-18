@@ -81,7 +81,7 @@ func newRealityGateFixture(t *testing.T) *realityGateFixture {
 			t.Error("reload occurred with open client ingress")
 		}
 		// Exercise the actual independent helper while the publication mutex is held.
-		if err := ingressguard.Startup(a.ConfigPath, f.g.manifestPath(), func(_ []ingressguard.Endpoint) error { f.closed = true; return nil }); err != nil {
+		if err := ingressguard.RuntimeStartup(a.ConfigPath, f.g.manifestPath(), func(_ []ingressguard.Endpoint) error { f.closed = true; return nil }); err != nil {
 			return err
 		}
 		if f.failReload {
@@ -661,5 +661,29 @@ func TestFailedRuntimeStartupNeverRequestsAutomaticRepair(t *testing.T) {
 	}
 	if repaired, err := f.g.recoverRuntimeRestart(ctx); err != nil || repaired {
 		t.Fatalf("unsafe repair: %v", err)
+	}
+}
+
+func TestAutomaticRuntimeRecoveryPreservesConcurrentIntentionalGuard(t *testing.T) {
+	f := newRealityGateFixture(t)
+	ctx := context.Background()
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	if err := ingressguard.RuntimeStartup(f.g.configPath(), f.g.manifestPath(), func([]ingressguard.Endpoint) error { f.closed = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	f.g.network.checkRuntime = func(context.Context) error {
+		return ingressguard.Startup(f.g.configPath(), f.g.manifestPath(), func([]ingressguard.Endpoint) error { f.closed = true; return nil })
+	}
+	if repaired, err := f.g.recoverRuntimeRestart(ctx); err == nil || repaired {
+		t.Fatalf("intentional guard lost: %v", err)
+	}
+	if !f.closed || !f.wgClosed || !f.g.network.uncertain {
+		t.Fatal("recovery did not remain closed")
+	}
+	count := f.reloads
+	if repaired, err := f.g.recoverRuntimeRestart(ctx); err != nil || repaired || f.reloads != count {
+		t.Fatal("intentional guard retried")
 	}
 }

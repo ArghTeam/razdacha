@@ -36,11 +36,14 @@ func (g *applyGate) manifestPath() string {
 
 // stagePublic approves only the checked candidate and current disk image. The
 // cross-process lock is short and is never held across a service restart.
-func (g *applyGate) stagePublic(candidate []byte) error {
+func (g *applyGate) stagePublic(candidate []byte, automatic bool) error {
 	return ingressguard.WithLock(g.manifestPath(), func() error {
 		m, err := ingressguard.Read(g.manifestPath())
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
+		}
+		if automatic && (err != nil || !m.Guarded || !m.RuntimeRestart) {
+			return errors.New("automatic runtime recovery intent was withdrawn")
 		}
 		endpoints, err := ingressguard.ConfigEndpoints(candidate)
 		if err != nil {
@@ -86,7 +89,7 @@ func (g *applyGate) stagePublic(candidate []byte) error {
 		if err != nil {
 			return err
 		}
-		next := ingressguard.Manifest{Version: ingressguard.Version, Endpoints: endpoints, ConfigHashes: hashes, Guarded: true}
+		next := ingressguard.Manifest{Version: ingressguard.Version, Endpoints: endpoints, ConfigHashes: hashes, Guarded: true, RuntimeRestart: automatic}
 		if err := ingressguard.Write(g.manifestPath(), next); err != nil {
 			return err
 		}
@@ -101,8 +104,17 @@ func (g *applyGate) publicGuard(e []ingressguard.Endpoint, on bool) error {
 	return netstack.SetPublicClientGuard(e, on)
 }
 
-func (g *applyGate) releasePublic(candidate []byte) error {
+func (g *applyGate) releasePublic(candidate []byte, automatic bool) error {
 	return ingressguard.WithLock(g.manifestPath(), func() error {
+		if automatic {
+			m, err := ingressguard.Read(g.manifestPath())
+			if err != nil {
+				return err
+			}
+			if !m.Guarded || !m.RuntimeRestart {
+				return errors.New("automatic runtime recovery intent was withdrawn")
+			}
+		}
 		current, err := ingressguard.ReadConfig(g.configPath())
 		if err != nil {
 			return fmt.Errorf("verify checked runtime bytes before release: %w", err)
@@ -145,7 +157,7 @@ func (g *applyGate) closeForRevocation() error {
 	if err != nil {
 		return err
 	}
-	if err := g.stagePublic(b); err != nil {
+	if err := g.stagePublic(b, false); err != nil {
 		return err
 	}
 	g.network.uncertain = true

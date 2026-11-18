@@ -66,7 +66,7 @@ func (g *applyGate) recoverRuntimeRestart(ctx context.Context) (repaired bool, e
 	if !bytes.Equal(disk, memory) {
 		return false, fmt.Errorf("runtime recovery authority changed")
 	}
-	if _, err = g.publishChecked(ctx, g.base, true, false, n.checkRuntime); err != nil {
+	if _, err = g.publishChecked(ctx, g.base, true, false, true, n.checkRuntime); err != nil {
 		return false, err
 	}
 	return true, nil
