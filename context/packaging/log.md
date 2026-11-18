@@ -206,3 +206,9 @@ not zero outage or every application's connectivity. See the completed
 ## 2026-11-04 — #297 parallel authenticated client ingress
 
 Added the dormant-by-default Reality backend contract, private live credential boundary, committed admission and guarded publication/lifecycle integration. See [ADR 0032](../../docs/decisions/0032-parallel-authenticated-client-ingress.md) and [task 297](../../tasks/297-alternative-ingress.md) for scope and validation evidence. The packaging invariants record final behavior; this entry does not claim deployment or general DPI resistance.
+
+## 2026-11-18 — Independent runtime recovery (#359)
+
+Added bounded recovery of successful managed public startup guards through the
+committed publication path. Pending policy and intentional/uncertain barriers are
+excluded. Staging acceptance remains a separate operator check.

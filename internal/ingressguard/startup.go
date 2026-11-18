@@ -170,6 +170,15 @@ func startupState(configPath, manifestPath string) (*Manifest, []Endpoint, error
 // performs no DB access, daemon RPC, runtime restart or application-gate locking.
 // The short file lock includes authority reads, the marker and kernel callback.
 func Startup(configPath, manifestPath string, install func([]Endpoint) error) error {
+	return startup(configPath, manifestPath, install, false)
+}
+
+// RuntimeStartup records repair intent after a successful managed startup guard.
+func RuntimeStartup(configPath, manifestPath string, install func([]Endpoint) error) error {
+	return startup(configPath, manifestPath, install, true)
+}
+
+func startup(configPath, manifestPath string, install func([]Endpoint) error, runtime bool) error {
 	if install == nil {
 		return errors.New("public ingress installer is required")
 	}
@@ -182,12 +191,18 @@ func Startup(configPath, manifestPath string, install func([]Endpoint) error) er
 			// Never clear an earlier barrier merely because a legacy config is seen.
 			return nil
 		}
+		repair := runtime && len(endpoints) > 0 && (!manifest.Guarded || manifest.RuntimeRestart)
+		manifest.RuntimeRestart = false
 		manifest.Guarded = true
 		if err := Write(manifestPath, *manifest); err != nil {
 			return err
 		}
 		if err := install(endpoints); err != nil {
 			return fmt.Errorf("install startup public ingress guard: %w", err)
+		}
+		if repair {
+			manifest.RuntimeRestart = true
+			return Write(manifestPath, *manifest)
 		}
 		return nil
 	})

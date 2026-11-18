@@ -90,6 +90,7 @@ func startApply(ctx context.Context, st *store.Store, pools *lists.PoolManager,
 		uncertain: true,
 	}, log)
 	g.store = st
+	g.network.checkRuntime = waitRuntimeController
 	g.network.validateWG = func(ctx context.Context, settings store.Settings) error {
 		peers, err := st.Peers(ctx)
 		if err != nil {

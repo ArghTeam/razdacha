@@ -25,10 +25,11 @@ const (
 // and prepared configurations while Endpoints retains their union. Guarded records
 // durable closed intent; the caller also treats a failed release as uncertainty.
 type Manifest struct {
-	Version      int        `json:"version"`
-	Endpoints    []Endpoint `json:"endpoints"`
-	ConfigHashes []string   `json:"config_hashes"`
-	Guarded      bool       `json:"guarded"`
+	Version        int        `json:"version"`
+	Endpoints      []Endpoint `json:"endpoints"`
+	ConfigHashes   []string   `json:"config_hashes"`
+	Guarded        bool       `json:"guarded"`
+	RuntimeRestart bool       `json:"runtime_restart,omitempty"`
 }
 
 // HashConfig hashes the complete checked bytes, without normalizing their meaning.
@@ -40,6 +41,9 @@ func HashConfig(config []byte) string {
 func normalizeManifest(manifest Manifest) (Manifest, error) {
 	if manifest.Version != Version {
 		return Manifest{}, errors.New("unsupported public ingress manifest version")
+	}
+	if manifest.RuntimeRestart && !manifest.Guarded {
+		return Manifest{}, errors.New("runtime restart intent requires guarded ingress")
 	}
 	var err error
 	manifest.Endpoints, err = NormalizeEndpoints(manifest.Endpoints)
@@ -88,6 +92,9 @@ func Read(path string) (Manifest, error) {
 	guarded := bytes.TrimSpace(fields["guarded"])
 	if !bytes.Equal(guarded, []byte("true")) && !bytes.Equal(guarded, []byte("false")) {
 		return Manifest{}, errors.New("public ingress guarded marker must be a boolean")
+	}
+	if raw, exists := fields["runtime_restart"]; exists && !bytes.Equal(bytes.TrimSpace(raw), []byte("true")) && !bytes.Equal(bytes.TrimSpace(raw), []byte("false")) {
+		return Manifest{}, errors.New("runtime restart intent must be a boolean")
 	}
 	var manifest Manifest
 	decoder := json.NewDecoder(bytes.NewReader(data))

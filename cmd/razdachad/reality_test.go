@@ -539,3 +539,127 @@ func TestRealityFirstSavedGlobalEnableCanExportBeforeApply(t *testing.T) {
 		t.Fatal("export activated global listener", err)
 	}
 }
+
+func TestAutomaticRuntimeRestartRecovery(t *testing.T) {
+	for _, mode := range []string{"success", "intentional", "uncertain", "corrupt", "failure", "not-ready", "stale", "uninitialized"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newRealityGateFixture(t)
+			ctx := context.Background()
+			if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+				t.Fatal(err)
+			}
+			old := f.reloads
+			if err := ingressguard.RuntimeStartup(f.g.configPath(), f.g.manifestPath(), func([]ingressguard.Endpoint) error { f.closed = true; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			switch mode {
+			case "intentional":
+				if err := ingressguard.Startup(f.g.configPath(), f.g.manifestPath(), func([]ingressguard.Endpoint) error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+			case "uncertain":
+				f.g.network.uncertain = true
+			case "uninitialized":
+				f.g.network.initialized = false
+			case "stale":
+				f.g.base.Settings.EndpointHost = "stale.fixture.example"
+			case "corrupt":
+				if err := os.WriteFile(f.g.network.path, []byte("invalid"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "failure":
+				f.failReload = true
+			case "not-ready":
+				f.g.network.checkRuntime = func(context.Context) error { return errors.New("not ready") }
+			}
+			repaired, err := f.g.recoverRuntimeRestart(ctx)
+			if mode == "success" {
+				if err != nil || !repaired || f.closed || f.wgClosed || f.reloads != old+1 {
+					t.Fatalf("repair failed: %v", err)
+				}
+			} else {
+				if repaired || !f.closed {
+					t.Fatal("unsafe repair")
+				}
+				if (mode == "corrupt" || mode == "failure" || mode == "not-ready" || mode == "stale") && err == nil {
+					t.Fatal("missing error")
+				}
+			}
+			count := f.reloads
+			if _, err := f.g.recoverRuntimeRestart(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if f.reloads != count {
+				t.Fatal("repeated repair restart")
+			}
+		})
+	}
+}
+
+func TestRuntimeRecoveryKeepsPendingPolicyAndLiveRevocation(t *testing.T) {
+	f := newRealityGateFixture(t)
+	ctx := context.Background()
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(f.g.network.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := f.st.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending.EndpointHost = "pending.fixture.example"
+	if err := f.st.SaveSettings(ctx, pending); err != nil {
+		t.Fatal(err)
+	}
+	no := false
+	if _, err := f.st.PatchPeer(ctx, f.p.ID, store.PeerPatch{Enabled: &no}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ingressguard.RuntimeStartup(f.g.configPath(), f.g.manifestPath(), func([]ingressguard.Endpoint) error { f.closed = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if repaired, err := f.g.recoverRuntimeRestart(ctx); err != nil || !repaired {
+		t.Fatalf("repair failed: %v", err)
+	}
+	after, err := os.ReadFile(f.g.network.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("pending policy replaced committed authority")
+	}
+	if strings.Contains(string(f.loaded), "pending.fixture.example") {
+		t.Fatal("pending endpoint published")
+	}
+	live, err := f.st.Peer(ctx, f.p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live.Enabled {
+		t.Fatal("live revocation restored")
+	}
+}
+
+func TestFailedRuntimeStartupNeverRequestsAutomaticRepair(t *testing.T) {
+	f := newRealityGateFixture(t)
+	ctx := context.Background()
+	if _, err := f.g.ApplyCurrent(ctx, f.st); err != nil {
+		t.Fatal(err)
+	}
+	if err := ingressguard.RuntimeStartup(f.g.configPath(), f.g.manifestPath(), func([]ingressguard.Endpoint) error { return errors.New("guard failure") }); err == nil {
+		t.Fatal("missing failure")
+	}
+	m, err := ingressguard.Read(f.g.manifestPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Guarded || m.RuntimeRestart {
+		t.Fatal("failed guard requested repair")
+	}
+	if repaired, err := f.g.recoverRuntimeRestart(ctx); err != nil || repaired {
+		t.Fatalf("unsafe repair: %v", err)
+	}
+}

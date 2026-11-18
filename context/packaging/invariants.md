@@ -71,3 +71,5 @@ description: nginx, TLS, systemd, install/restore/uninstall, release archives an
 - Restore disables the global peer flag only when its WG method is disabled as Reality is stripped. Such clients remain editable while disabled and require explicit method selection plus configuration/Apply; every WG-enabled peer retains its enabled flag, keys and address.
 
 - CLI restore sanitizes panel sessions and authentication generation in the staged database before replacing live state; the restored password and WireGuard identities remain intact. Completion guidance requires fresh login and distinguishes reusable WireGuard profiles from mandatory REALITY reconfiguration, fresh profiles and explicit Apply. Public endpoint changes require updated profiles independently (#326).
+
+- Managed public runtime pre-start records successful independent restart intent. Generic startup/restore/emergency guards clear it. The daemon checks persisted committed authority and repairs through serialized checked publication. Failed repair retains uncertainty and explicit administrator recovery (ADR 0044).

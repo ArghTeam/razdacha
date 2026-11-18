@@ -48,7 +48,7 @@ func main() {
 	flag.Parse()
 
 	if *guardIngress {
-		if err := ingressguard.Startup(*guardConfig, *guardManifest, func(e []ingressguard.Endpoint) error { return netstack.SetPublicClientGuard(e, true) }); err != nil {
+		if err := ingressguard.RuntimeStartup(*guardConfig, *guardManifest, func(e []ingressguard.Endpoint) error { return netstack.SetPublicClientGuard(e, true) }); err != nil {
 			slog.Error("Public ingress startup guard failed", "error", err)
 			os.Exit(2)
 		}
@@ -123,6 +123,7 @@ func run(ctx context.Context, listen, dbPath string, setPassword bool) error {
 	}
 
 	go syncWGPeers(ctx, st, wg, apply)
+	go watchRuntimeRestarts(ctx, apply)
 
 	// Без пароля демон не стартует: панель доступна из интернета, и запуск
 	// «пока без авторизации» отдал бы наружу root-демон (ADR 0009).

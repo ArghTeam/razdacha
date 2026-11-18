@@ -382,6 +382,7 @@ func (g *applyGate) emergencyPublicGuard() error {
 			return err
 		}
 		m.Guarded = true
+		m.RuntimeRestart = false
 		if err := ingressguard.Write(g.manifestPath(), m); err != nil {
 			return err
 		}
