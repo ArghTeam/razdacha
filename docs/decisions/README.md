@@ -60,3 +60,5 @@
 - [0042: Client applied-policy explanations](0042-client-applied-policy-explanations.md) — conditional committed web TCP/443 and gateway A-query policy without probes.
 
 - [0043: Client connection evidence](0043-client-connection-evidence.md) — selected-client ingress and independent applied-exit HTTPS observations.
+
+- [0044: Managed runtime recovery](0044-managed-runtime-recovery.md) — checked committed recovery after independently guarded runtime startup.

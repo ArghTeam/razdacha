@@ -23,7 +23,7 @@ remain constraints; stored health never authorizes Direct fallback.
 | 3a | Disambiguate retained UDP non-response with no-fault controls | Complete: [#350](done/350-retained-udp-recovery.md), bounded idle confound; long-idle control EOF and UDP non-response without an outage |
 | 3b | Verify active UDP carrier recovery with matched no-fault traffic history | Complete: [#352](done/352-active-udp-recovery.md), one finite RAC outer-leg case; retained post-origin transactions and matched replay recovered |
 | 3c | Explicitly approved reserve exits, considering an independent host | Next: reviewed policy proposal; current Direct/WARP share one DO host, no implicit Direct fallback |
-| 4 | Recovery after network interruption, daemon/runtime failure and reboot | Planned; preserve committed policy and independent live admission |
+| 4 | Recovery after network interruption, daemon/runtime failure and reboot | In progress under #359; managed runtime recovery regression checks and separate staging acceptance |
 | 5 | Real Android/router clients, DNS, UDP and long connections under failure/recovery | Planned; compatible-client and finite-path evidence required |
 
 New transports, including the existing [#163](https://github.com/ArghTeam/razdacha/issues/163)
