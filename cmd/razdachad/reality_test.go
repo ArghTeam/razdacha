@@ -564,7 +564,7 @@ func TestAutomaticRuntimeRestartRecovery(t *testing.T) {
 			case "stale":
 				f.g.base.Settings.EndpointHost = "stale.fixture.example"
 			case "corrupt":
-				if err := os.WriteFile(f.g.network.path, []byte("invalid"), 0600); err != nil {
+				if err := os.WriteFile(f.g.network.path, []byte("invalid"), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			case "failure":
