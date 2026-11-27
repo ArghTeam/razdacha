@@ -1,3 +1,234 @@
+# 10 — OpenWrt router client
+
+## Verified Xiaomi and Deco setup
+
+Verified on 2026-11-27 with OpenWrt 24.10.4 on a Xiaomi Mi Router 3G. One razdacha
+client has WireGuard and VLESS + REALITY enabled. Native WireGuard and sing-box run
+independently on the router. The client's server-side policy covers the bridged
+Deco network. A phone on Deco Wi-Fi confirmed VPN internet access after the DHCP
+repair described below.
+
+Use this section for the current setup. The collapsed August record preserves the
+previous WireGuard-only procedure. Its interface names, port membership, policy
+tables and shared DNS changes belong to that older configuration.
+
+| Physical connection | OpenWrt port or bridge | Purpose |
+|---|---|---|
+| Jack 1, wired administration | `lan2` on `br-lan` | LuCI, SSH and direct WAN access |
+| Jack 2, Deco uplink | `lan1` on `br-rzd-mesh` | VPN-only access for Deco Wi-Fi and downstream Ethernet |
+| Recovery Wi-Fi `X-Direct` | `br-direct` | LuCI, SSH and direct WAN access |
+
+This mapping was established by testing the actual cables. Confirm it again on
+different hardware. Bridged Deco clients receive addresses from OpenWrt's mesh
+DHCP pool. Keep addresses, credentials and private profiles in protected router
+configuration and encrypted backups. Replace every angle-bracket placeholder
+before running an example. Keep command output containing addresses private.
+
+### Routing and bootstrap
+
+The `main` table retains its WAN default. Router DNS, NTP and the outer connections
+to both VPN endpoints remain reachable through WAN during startup and outages.
+TX with zero RX can have several causes. Check time synchronization, endpoint
+reachability, keys and actual traffic before attributing a failure to one cause.
+
+| Component | Current configuration |
+|---|---|
+| WireGuard | `rzd_wg`, MTU 1280, keepalive 25, `route_allowed_ips=0` |
+| VLESS + REALITY | sing-box TUN `rzvless0`, network `rzd_vless`, gVisor stack, IPv4, automatic routes disabled |
+| Recovery Wi-Fi | Priority 100 looks up table 200, containing its connected subnet and WAN default |
+| WireGuard probe | Priority 110 looks up table 1100 by tunnel source address, with unreachable rule 111 |
+| VLESS probe | Priority 112 looks up table 1101 by tunnel source address, with unreachable rule 113 |
+| Mesh traffic | Priority 120 looks up table 1110 by mesh subnet, with unreachable rule 121 |
+
+The recovery bridge has `bridge_empty=1`, preserving its address and routes before
+the Wi-Fi interface attaches. Its connected-subnet route keeps router replies on
+the recovery network.
+
+Table 1110 contains a default through the selected tunnel. The selector removes
+that default when both checks fail. The following unreachable rule blocks
+fallthrough to WAN. The mesh firewall zone forwards only to the VPN zone, which
+provides masquerading and MSS clamping. A narrow forwarding guard at priority -5
+drops mesh IPv6 and mesh traffic whose output device is outside `rzd_wg` and
+`rzvless0`, including established flows after a route change. Validate the complete
+ruleset with `fw4 check` before reloading the firewall.
+
+Mesh IPv6 is disabled on the bridge, with RA and DHCPv6 disabled and a forwarding
+drop. Mesh TCP and UDP DNS on port 53 are redirected to razdacha gateway DNS through
+the selected VPN. The shared router resolver keeps its independent WAN bootstrap
+path, preserving DNS for direct management when both VPNs fail.
+
+### Services and independent health checks
+
+| File or service | Role |
+|---|---|
+| `/etc/init.d/sing-box` | Independent VLESS service |
+| `/etc/sing-box/razdacha-router.json` | Private VLESS TUN configuration |
+| `/etc/init.d/razdacha-router-vpn` | procd-managed selector |
+| `/etc/razdacha-router-vpn/select.sh` | End-to-end probes and selected route |
+| `/etc/razdacha-router-vpn/probe.conf` | Private tunnel sources, DNS and expected egress |
+| `/tmp/razdacha-router-vpn/active` | `wg`, `vless` or `blocked` |
+| `/etc/nftables.d/90-rzd-mesh-guard.nft` | Independent forwarding guard |
+
+Each probe uses its own source address and policy table. It checks HTTPS against
+the expected egress and performs a UDP DNS lookup through the gateway. A handshake
+or existing interface alone cannot establish health. On this device the VLESS
+system TUN stack answered DNS while HTTPS failed. The gVisor stack passed both.
+
+The selector prefers WireGuard. It requires two consecutive failed samples to
+leave an active channel and four healthy WireGuard samples for normal failback
+from healthy VLESS. Startup requires two successes. If the active channel fails,
+an alternate with two successes can take over. Probe timeouts affect elapsed
+failover time. Applications can need to reconnect after a path change.
+
+Run the following checks once per tunnel using private profile values.
+`<PROBE_URL>` is a numeric HTTPS endpoint with a valid certificate and a trace
+response containing an `ip=` field. `<PROBE_IPV4>` is its destination address.
+
+```sh
+set -e
+source_address='<TUNNEL_SOURCE_IPV4>'
+device='<rzd_wg_OR_rzvless0>'
+probe_address='<PROBE_IPV4>'
+probe_url='<PROBE_URL>'
+gateway_dns='<GATEWAY_DNS_IPV4>'
+expected_egress='<EXPECTED_EGRESS_IPV4>'
+
+ip -4 route get "$probe_address" from "$source_address" |
+    grep -Fq "dev $device "
+echo 'Probe route verified'
+trace=$(curl -q -4 --interface "$source_address" -fsS \
+    --connect-timeout 5 --max-time 10 "$probe_url")
+printf '%s\n' "$trace" | grep -Fxq "ip=$expected_egress"
+echo 'HTTPS egress verified'
+for transport in +notcp +tcp; do
+    answer=$(dig -b "$source_address" @"$gateway_dns" example.net A \
+        "$transport" +time=3 +tries=1 +short)
+    printf '%s\n' "$answer" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+    echo "DNS response verified over $transport"
+done
+cat /tmp/razdacha-router-vpn/active
+```
+
+### DHCP recovery on the Deco network
+
+During the November checks, competing DHCP replies arrived from the physical Deco
+port. OpenWrt omitted the mesh DHCP pool from the generated dnsmasq configuration.
+A fresh client received a different gateway and failed HTTPS even though both
+router VPN probes passed. The observation established the ingress port. Ownership
+of the competing responder remained unverified.
+
+The repair explicitly enabled OpenWrt's DHCP pool on the dedicated mesh interface.
+Verify the section belongs to the intended network, then apply through wired
+management or X-Direct.
+
+```sh
+test "$(uci -q get dhcp.rzd_mesh.interface)" = 'rzd_mesh' || exit 1
+uci set dhcp.rzd_mesh.force='1'
+uci commit dhcp
+/etc/init.d/dnsmasq restart
+```
+
+Reconnect the affected Wi-Fi client to obtain a fresh lease. Compare its DHCP
+server, gateway and DNS with the private mesh configuration, then test HTTPS and
+gateway DNS. Three fresh leases passed DHCP, HTTPS and DNS after the repair.
+Competing offers stopped appearing during those trials and subsequent observation
+of the physical port. The user confirmed VPN internet on a phone through Deco.
+The repair required a dnsmasq restart.
+
+The `force` option enables the local pool when another DHCP server is detected.
+Another device can still answer inside Deco. If competing offers persist,
+identify that responder and disable its DHCP service. Where available, inspect
+Deco's Smart DHCP option under **More → Advanced → Smart DHCP**. Availability
+depends on model and firmware. The vendor describes the option in its
+[DHCP guidance](https://community.tp-link.com/en/home/forum/topic/832526?moduleId=39).
+
+### Acceptance checks after changes
+
+Perform disruptive checks in an agreed maintenance window with direct wired
+access and an armed rollback timer. Stage the VPN forwarding path with a separate
+client before moving the physical Deco port.
+
+1. Check LuCI, SSH, DHCP and direct internet independently over jack 1 and X-Direct.
+2. Check each tunnel's own route, expected HTTPS egress and UDP/TCP DNS response.
+3. Renew a real Deco Wi-Fi client's lease, verify its gateway, and test HTTPS and
+   DNS. Check a downstream Ethernet client as well when used.
+4. Interrupt each active transport and verify forwarding through the other.
+   Include an outage with the interface still present.
+5. Stop both transports and verify mesh HTTPS and UDP/TCP DNS fail while wired
+   management and X-Direct work. Restore VLESS first, then WireGuard, and verify
+   recovery and preferred-path failback.
+6. In a maintenance window, test full boots with each transport available alone.
+   Restore normal startup with both enabled and repeat real-client and management
+   checks after boot.
+
+The November tests covered full boots with each transport alone, transport failure
+while the WireGuard interface remained present, simultaneous failure, recovery and
+failback. Both tunnel HTTPS and DNS checks passed after the interface was renamed
+to its current name, `rzd_wg`. The rename and DHCP repair were
+applied without another reboot, so boot persistence of those final changes still
+needs verification in a future maintenance window.
+
+### Backups, rollback and recovery after a factory reset
+
+Create a new encrypted post-cutover backup outside the router, including the
+custom files below. The verified off-device pre-cutover copy supports rollback to
+the previous topology and predates the selector. Check `sysupgrade -l` privately
+before creating the new configuration archive. The November audit included the UCI
+network, wireless, firewall, DHCP and sing-box configuration, the nftables guard,
+private sing-box JSON and root crontab. It omitted the following custom files.
+
+- `/etc/init.d/razdacha-router-vpn`.
+- `/etc/razdacha-router-vpn/probe.conf` and `select.sh`.
+- `/root/razdacha-mesh-recovery/watchdog.sh`.
+
+Include these files and the intended rollback snapshot explicitly in a protected
+supplementary backup or configure their inclusion before creating the archive.
+Preserve private file permissions. Exclude an active `armed` marker and runtime
+state from a baseline restore. A copied cron entry needs its matching watchdog
+script. Confirm archive contents before relying on the backup.
+
+The tested watchdog runs from cron once a minute. Its armed state records a boot
+ID, a same-boot uptime deadline and a separate next-boot uptime deadline. It can
+restore the private pre-cutover UCI snapshot and stop the selector when reverting
+port membership. Choose the intended snapshot before arming it. A current backup
+and a pre-cutover snapshot represent different recovery points. Disarm the timer
+after client traffic and both administration paths pass.
+
+After a factory reset, files under `/root` and installed packages may be gone.
+Recover through direct Ethernet in the following order.
+
+1. Establish administration and WAN, verify the hardware port mapping, and enable
+   time synchronization.
+2. Install signed `kmod-wireguard`, `wireguard-tools`, `kmod-tun`, `sing-box-tiny`,
+   `curl` and `bind-dig` from the matching official feeds. Kernel modules must match
+   the installed kernel ABI. Configuration archives do not reinstall binaries.
+3. Extract the protected backup to a private staging directory. Review saved port
+   membership, firewall and startup settings before applying them. Begin with the
+   pre-cutover management topology or stage the post-cutover configuration with
+   the Deco port kept on its current network and VPN autostart held disabled.
+   Preserve private permissions and check both profiles against production.
+4. Restore and apply X-Direct, its empty bridge, DHCP, firewall and both table 200
+   routes. Verify it and wired management independently. Arm the watchdog against
+   the intended known-good rollback snapshot.
+5. Validate the staged VPN configuration with
+   `sing-box check -c /etc/sing-box/razdacha-router.json` and validate the full
+   firewall with `fw4 check` before starting services. Enable both VPN services and
+   the selector, then run the isolated-client acceptance checks.
+6. Move only the verified Deco port into `br-rzd-mesh`, renew downstream leases,
+   and check actual Deco Wi-Fi and Ethernet traffic before disarming rollback.
+
+The deployed custom selector and private profiles currently live on the router.
+Verify their presence in the new off-device backup before relying on it for a
+factory-reset recovery. WAN and the production gateway are shared dependencies of
+both protocols.
+
+Operational evidence is tracked in [epic #363](https://github.com/ArghTeam/razdacha/issues/363),
+[mesh isolation #365](https://github.com/ArghTeam/razdacha/issues/365) and
+[failover #366](https://github.com/ArghTeam/razdacha/issues/366).
+
+<details>
+<summary>Historical WireGuard-only setup verified on 2026-08-20</summary>
+
 # 10 — Роутер как клиент razdacha
 
 Как подключить OpenWrt-роутер к razdacha так, чтобы **весь трафик LAN и устройств за
@@ -293,3 +524,5 @@ ping -c2 -I 192.168.9.1 1.1.1.1                   # аварийная сеть 
 | Откат не помог, интернета всё равно нет | Клиентам раздали DNS `10.8.0.1` лизой на 12 часов; маршруты вернулись, а устройства продолжали спрашивать мёртвый адрес |
 | Туннель не поднимается после перезагрузки роутера, TX растёт, RX ноль | Часы из прошлого + анти-реплей WireGuard; NTP заперт внутри неподнявшегося туннеля (§0) |
 | Отложенный откат не сработал | Запускался внутри ssh-сессии и умер вместе с ней; нужен крон |
+
+</details>
